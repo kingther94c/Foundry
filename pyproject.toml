@@ -24,4 +24,7 @@ packages = ["src/foundry"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The sample repo under tests/fixtures is a golden-task fixture with a planted
+# bug: its own suite is meant to fail until the agent fixes it.
+norecursedirs = ["tests/fixtures"]
 filterwarnings = ["error::EncodingWarning"]

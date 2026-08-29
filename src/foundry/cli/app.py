@@ -19,6 +19,7 @@ from foundry import __version__
 from foundry.cli.render import Renderer
 from foundry.core.auth import ApiKeySource, CredentialVault, StaticTokenSource
 from foundry.core.backends.openai_compat import OpenAICompatBackend
+from foundry.core.backends.responses import ResponsesBackend
 from foundry.core.config import Config, load_config, user_dir
 from foundry.core.context import ContextManager
 from foundry.core.errors import AuthError, ConfigError, FoundryError
@@ -144,7 +145,16 @@ def build(workspace_path: Path, *, home: Path | None = None,
     except AuthError:
         pass  # reported at first use, so `doctor` and `sessions` still work
 
-    backend = OpenAICompatBackend(
+    backend_class = {
+        "openai_compat": OpenAICompatBackend,
+        "responses": ResponsesBackend,
+    }.get(config.backend.protocol)
+    if backend_class is None:
+        raise ConfigError(
+            f"unknown protocol {config.backend.protocol!r}; "
+            "supported: openai_compat, responses"
+        )
+    backend = backend_class(
         base_url=config.backend.base_url, model=config.backend.model, api_key=api_key,
         extra_headers=config.backend.headers, stream=config.backend.stream,
         client=HttpClient(read_timeout=config.backend.stream_idle_timeout_ms / 1000),
