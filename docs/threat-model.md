@@ -47,13 +47,29 @@
 | 崩溃的会话被误认为成功 | 无 termination 事件的 journal 一律判 `interrupted`；截尾末行可容忍 | [session.py](../src/foundry/core/session.py) |
 | 模型换措辞无限重试 | 失败指纹按「归一化操作 + 错误类」计数，文本变化不重置 | runtime.py `FailureTracker` |
 
-## 3.5 一条从实战中学到的原则：白名单可解析的形状，而非黑名单危险的形状
+## 3.5 三条从实战中学到的原则
 
-两轮对抗评审都在同一个地方抓到漏洞：命令分段器。第一轮补了 `&'foo'`（无空格调用操作符），第二轮就来了 `(git reset --hard)`、`&{git ...}`、`. git ...`、`cmd /c git ...`——枚举永远追不上。
+**三轮对抗评审，每一轮都攻破了命令分段器**——这个事实本身比任何单个漏洞都重要。
 
-现在的做法反过来：**命令头必须长得像一个普通可执行文件名**（`^[A-Za-z0-9_][A-Za-z0-9_.+-]*$`），否则整条命令判为不可解析、永不自动放行。同理 `effective_argv` 不再枚举 git 的全局选项，而是跳过**任何**以 `-` 开头的前导 token——第一轮漏掉 `--no-advice` 就足以让整张熔断表看错下标。
+### (a) 白名单可解析的形状，而非黑名单危险的形状
 
-**它解决不了什么**：`python -c "subprocess.run(['git','reset','--hard'])"` 一样有破坏性，任何解析都抓不到。所以解释器（python/node/…）**故意保持可放行**——拒绝 `python -m pytest` 代价极大而收益为零。"被批准的命令能做该程序能做的任何事"是 trusted-host 模型的属性，写在 §4 非目标里，分段器不假装解决它。分段器只保证一件事：**文本里直接写出来的危险命令，不会因为换个写法就绕过审批。**
+第一轮补了 `&'foo'`（无空格调用操作符），第二轮就来了 `(git reset --hard)`、`&{git ...}`、`. git ...`、`cmd /c git ...`；补了 `-C` 又漏 `--no-advice`。枚举永远追不上。
+
+现在反过来：**命令头必须长得像普通可执行文件名**（`^[A-Za-z0-9_][A-Za-z0-9_.+-]*$`），否则整条判为不可解析、永不自动放行；`effective_argv` 跳过**任何** `-` 开头的前导 token，而不是认识的那几个。
+
+### (b) 修复本身就是新漏洞的来源，且倾向于把硬保证换成软保证
+
+第二轮的 5 个新缺陷全部由第一轮修复造成；第三轮又抓到 2 个由第二轮修复造成。**同一类错误犯了两次**：为了标记"不可解析"而提前返回，丢掉了已解析的分段，于是 `git reset --hard; (foo)` 从熔断表的**不可批准 DENY** 掉成了**可批准 ASK**——而 system prompt 还在告诉模型这类操作"不可能被批准"。
+
+所以现在有一条结构性不变量测试（[tests/test_breaker_invariant.py](../tests/test_breaker_invariant.py)）：**任何装饰、模式、会话授权或 hook 改写，都不能让一条本身被熔断表禁止的命令变得可批准**，276 个组合自动生成。这比逐个补测试可靠——它防的是整类错误，不是想到的那几个写法。
+
+同理，`GIT_CONFIG_NOSYSTEM` 那个 critical 教训：**加固要问"它顺带关掉了什么合法行为"**，且验证必须跑在用户实际拥有的环境上（fixture 用普通 git 建仓，不用 Foundry 自己的硬化路径）。
+
+### (c) 明说解决不了什么
+
+`python -c "subprocess.run(['git','reset','--hard'])"` 一样有破坏性，任何解析都抓不到。所以解释器（python/node/…）**故意保持可放行**——拒绝 `python -m pytest` 代价极大而收益为零。"被批准的命令能做该程序能做的任何事"是 trusted-host 模型的属性（见 §4），分段器不假装解决它。
+
+分段器只保证一件事：**文本里直接写出来的危险命令，不会因为换个写法就绕过审批。**
 
 ## 4. 明确不防护的（V1 非目标）
 
@@ -65,24 +81,19 @@
 6. **NTLM/Kerberos 代理**。stdlib 不支持；检测到 407 Negotiate 时明确报错而非静默失败。
 7. **Job assign 的毫秒窗口**。`Popen` 返回后才能 assign，理论上存在极短窗口让子进程先派生孙进程逃出 job。stdlib 无法关闭该窗口。
 
-## 4.5 修复本身也会引入漏洞
-
-第二轮评审里，**5 个新缺陷是第一轮修复自己造成的**，其中一个是 critical：为"硬化"加的 `GIT_CONFIG_NOSYSTEM=1` 丢掉了 `core.autocrlf=true`（Git-for-Windows 的默认值），于是一个干净的 CRLF 仓库被判为全脏、补丁被当作脏文件编辑拒绝，**而整个 headless 运行仍然报告 `completed`——什么都没写**。这正是本项目最想消灭的失败形态：看起来像成功。
-
-它能瞒过全部测试，是因为所有 fixture 都用 `run_git`（即 Foundry 自己的硬化路径）建仓库。现在有一个 fixture 用**普通 git** 建（[tests/test_crlf_repo.py](../tests/test_crlf_repo.py)）——测试环境与真实环境的差异本身就是一类盲区。
-
-教训写在这里而不是提交信息里：安全加固的每一项都要问"它顺带关掉了什么合法行为"，并且验证要跑在**用户实际拥有的环境**上，而不是我们自己造的那个。
-
 ## 5. 验收方式
 
 这些不是声明，是测试：
 
-- **canary 泄漏套件**：以金丝雀凭证跑全流程，断言它不出现在 journal、artifact、audit、控制台（`test_cli_e2e.py::test_credentials_never_appear_in_the_journal`、`test_session.py`）。
+- **熔断表不变量**：20 条被禁命令 × 11 种装饰（链接、注释、CR 分隔、不可解析邻段、shell 包装）× 各模式/会话授权/hook 改写 = 276 个自动生成组合，全部必须 DENY 在第 0 步（`test_breaker_invariant.py`）。
+- **canary 泄漏套件**：以金丝雀凭证跑全流程，断言它不出现在 journal、artifact、audit、控制台（`test_cli_e2e.py`、`test_session.py`）。
 - **路径逃逸表**：junction、ADS、`..`、设备名、UNC、盘符相对全部被拒（`test_workspace.py`）。
-- **分段器攻击表**：链式命令、命令替换、重定向、调用操作符、别名（`test_segmenter.py`）。
-- **policy 决策表**：deny-wins、熔断表不可覆盖、accept_edits 下脏文件仍 ASK、dont_ask fail-closed、hook 改写重入熔断（`test_policy.py`）。
-- **进程树清理**：取消一个派生了孙进程的命令，无残留且不阻塞（`test_tools_command_git.py`）。
-- **证据链**：伪造的 claim 使 completed 降级为 partial（`test_runtime.py`、`test_golden_tasks.py`）。
+- **分段器攻击表**：链式命令、命令替换、重定向、调用操作符、别名、CR 分隔、PowerShell 注释、包装形式（`test_segmenter.py`、`test_security_regressions.py`、`test_security_round3.py`）。
+- **policy 决策表**：deny-wins、熔断表不可覆盖、accept_edits 下脏文件仍 ASK（含各种路径拼法）、dont_ask fail-closed、hook 改写重入熔断（`test_policy.py`）。
+- **真实 git 环境**：fixture 用**普通 git** 建仓（非 Foundry 硬化路径），覆盖 CRLF、含空格路径、重命名（`test_crlf_repo.py`、`test_security_round3.py`）。
+- **进程树清理**：取消一个派生了孙进程的命令，无残留且不阻塞；孙进程占管道时报告 incomplete 而非 exit 0（`test_tools_command_git.py`、`test_resource_bounds.py`）。
+- **资源上限**：命令输出 400MB 实测峰值 27MB；超限文件拒读并给出可用替代（`test_resource_bounds.py`）。
+- **证据链**：伪造的 claim 使 completed 降级为 partial；HEAD 移动同样降级（`test_runtime.py`、`test_golden_tasks.py`）。
 - **崩溃恢复**：截尾 journal 判 interrupted（`test_session.py`）。
 
 ## 6. V2 方向
