@@ -121,6 +121,7 @@ class AgentRuntime:
     model: str = "gpt-5"
     audit: object | None = None
 
+    git_baseline: object | None = None   # tools.git.GitBaseline
     failures: FailureTracker = field(default_factory=FailureTracker)
     _cancelled: bool = False
     _finish: TurnOutcome | None = None
@@ -299,6 +300,19 @@ class AgentRuntime:
             self._reply(call, f"{exc}", is_error=True)
             self._emit(ToolEnd(call.call_id, op.tool, False, str(exc)))
             return
+        except Exception as exc:  # noqa: BLE001
+            # A tool raising something outside the taxonomy -- an OSError from a
+            # locked file, a PathRejected (which is a ValueError) -- must become
+            # a tool result the model can act on. Letting it escape kills the
+            # session with a traceback and loses the turn's evidence.
+            detail = f"{type(exc).__name__}: {exc}"
+            self.failures.record(op, exc)
+            self._journal(EventType.ERROR, {"call_id": call.call_id, "tool": op.tool,
+                                            "error": detail})
+            self._emit(ErrorEvent(detail, category="tool_unexpected"))
+            self._reply(call, f"the tool failed unexpectedly: {detail}", is_error=True)
+            self._emit(ToolEnd(call.call_id, op.tool, False, detail))
+            return
 
         self.failures.clear(op)
 
@@ -347,7 +361,7 @@ class AgentRuntime:
     # -- termination ------------------------------------------------------
 
     def _finalize(self, outcome: TurnOutcome) -> TurnOutcome:
-        """The gate: a claimed ``completed`` must survive the journal."""
+        """The gate: a claimed ``completed`` must survive the journal and Git."""
         run_command = self.registry.tools.get("run_command")
         history = getattr(run_command, "history", [])
         result = verify_claims(list(outcome.claims), history, outcome.status.value)
@@ -355,16 +369,54 @@ class AgentRuntime:
         for claim in outcome.claims:
             self._journal(EventType.VALIDATION_CLAIM, claim.as_payload())
 
-        if result.rejected:
-            for problem in result.rejected:
-                self._emit(Notice(f"claim rejected: {problem}", level="warning"))
-
+        rejected = list(result.rejected)
         status, reason = result.status, result.reason
         summary = outcome.summary
-        if result.rejected:
-            summary += "\n\nRejected claims:\n" + "\n".join(f"  - {r}" for r in result.rejected)
+
+        # Fresh Git evidence at finish. A model that moved HEAD -- committing
+        # through a wrapper the breaker's argv scan cannot see -- would leave a
+        # clean-looking diff, so the baseline comparison is what catches it.
+        evidence = self._collect_git_evidence()
+        if evidence is not None:
+            self._journal(EventType.GIT_BASELINE, {
+                "phase": "final",
+                "head_now": evidence.head_now,
+                "head_moved": evidence.head_moved,
+                "session_changed": sorted(evidence.session_changed),
+                "preexisting_changed": sorted(evidence.preexisting_changed),
+            })
+            if evidence.head_moved:
+                rejected.append(
+                    f"HEAD moved during the session ({self.git_baseline.head[:12]} -> "
+                    f"{evidence.head_now[:12]}); the diff no longer reflects what changed"
+                )
+                status = TerminalStatus.PARTIAL
+                reason = "HEAD moved during the session"
+            if evidence.session_changed or evidence.preexisting_changed:
+                summary += "\n\nFiles changed by this session:\n" + (
+                    "\n".join(f"  - {p}" for p in sorted(evidence.session_changed))
+                    or "  (none)")
+                if evidence.preexisting_changed:
+                    summary += ("\nAlready modified before this session (not claimed):\n"
+                                + "\n".join(f"  - {p}" for p in sorted(evidence.preexisting_changed)))
+
+        for problem in rejected:
+            self._emit(Notice(f"claim rejected: {problem}", level="warning"))
+        if rejected:
+            summary += "\n\nRejected claims:\n" + "\n".join(f"  - {r}" for r in rejected)
 
         return self._terminate(status, reason, summary)
+
+    def _collect_git_evidence(self):
+        if self.git_baseline is None:
+            return None
+        from foundry.core.tools.git import collect_evidence
+
+        try:
+            return collect_evidence(self.tool_ctx.workspace.root, self.git_baseline)
+        except FoundryError as exc:
+            self._emit(Notice(f"could not collect final Git evidence: {exc}", level="warning"))
+            return None
 
     def _terminate(self, status: TerminalStatus, reason: str, summary: str = "") -> TurnOutcome:
         self._journal(EventType.TERMINATION, {"status": status.value, "reason": reason,

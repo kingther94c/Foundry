@@ -132,21 +132,40 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
             setattr(config.backend, key, value)
             config.record(f"backend.{key}", value, layer)
 
+    # A repository may only tighten. Without this, a cloned repo could set
+    # mode = "accept_edits" and grant itself step-4 auto-approval for every
+    # patch, or raise the budgets that bound a runaway loop -- both strict
+    # loosenings dressed as ordinary settings.
+    tighten_only = not allow_rules_permitted
     runtime = data.get("runtime", {})
+
     for key in ("max_tool_rounds", "max_tool_calls", "max_output_bytes",
                 "command_timeout_s", "session_retention_days"):
-        if key in runtime:
-            setattr(config, key, runtime[key])
-            config.record(key, runtime[key], layer)
+        if key not in runtime:
+            continue
+        value = runtime[key]
+        if tighten_only and isinstance(value, int) and value > getattr(config, key):
+            raise ConfigError(
+                f"{layer} config may only lower {key} (tried {value}, "
+                f"current {getattr(config, key)})"
+            )
+        setattr(config, key, value)
+        config.record(key, value, layer)
 
     if "mode" in runtime:
         try:
-            config.mode = Mode(str(runtime["mode"]))
-            config.record("mode", runtime["mode"], layer)
+            mode = Mode(str(runtime["mode"]))
         except ValueError as exc:
             raise ConfigError(
                 f"mode must be one of {', '.join(m.value for m in Mode)}"
             ) from exc
+        if tighten_only and mode not in (Mode.PLAN, Mode.DONT_ASK):
+            raise ConfigError(
+                f"a repository config may only select a more restrictive mode "
+                f"(plan or dont_ask), not {mode.value!r}"
+            )
+        config.mode = mode
+        config.record("mode", runtime["mode"], layer)
 
     if "permissions" in data:
         layer_enum = Layer.PROJECT if layer.startswith("project") else (

@@ -18,30 +18,64 @@ from foundry.core.errors import InvalidToolCall, ToolError
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput, truncate_middle
 from foundry.core.winapi import CREATE_NO_WINDOW, IS_WINDOWS, decode_output
 
+# A repository's own .git/config is attacker-controlled input whenever the repo
+# arrived as an archive, off a share, or was touched by an approved command.
+# Several git config keys turn `git diff` into a program launcher, so each is
+# neutralized explicitly rather than trusted:
+#   diff.external / diff.*.textconv / diff.*.command  -- run a program per file
+#   filter.*.clean / .smudge                          -- run a program per blob
+#   core.pager / core.editor / core.sshCommand        -- run a program
+#   core.fsmonitor / core.hooksPath                   -- run a program/hook
 _HARDENING = [
     "--no-pager",
     "-c", "core.fsmonitor=",
-    "-c", "core.hooksPath=",
+    "-c", "core.hooksPath=/dev/null",
+    "-c", "core.pager=cat",
+    "-c", "core.editor=false",
+    "-c", "core.sshCommand=false",
+    "-c", "diff.external=",
     "-c", "pager.diff=false",
     "-c", "pager.status=false",
-    "-c", "safe.directory=*",
+    "-c", "protocol.ext.allow=never",
+    "-c", "uploadpack.packObjectsHook=",
 ]
 
+# Applied to diff-family commands only: these reject configured helpers rather
+# than merely blanking them.
+_DIFF_HARDENING = ["--no-ext-diff", "--no-textconv"]
 
-def _git_env() -> dict[str, str]:
-    import os
+_DIFF_COMMANDS = frozenset({"diff", "show", "log", "format-patch"})
 
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+def _git_env(workspace: Path | None = None) -> dict[str, str]:
+    """A minimal environment for git.
+
+    ``run_command`` already filters credentials out of child environments; git
+    was handing a subprocess the *full* environment, which matters exactly when
+    a hostile config has convinced it to launch one.
+    """
+    from foundry.core.winapi import child_environment
+
+    env = child_environment()
+    env = {k: v for k, v in env.items() if not k.startswith("GIT_")}
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GIT_OPTIONAL_LOCKS"] = "0"
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_ATTR_NOSYSTEM"] = "1"
     return env
 
 
 def run_git(args: list[str], cwd: Path, timeout_s: int = 30) -> tuple[int, str, str]:
     flags = CREATE_NO_WINDOW if IS_WINDOWS else 0
+    hardening = list(_HARDENING)
+    # safe.directory is scoped to this workspace rather than "*": the wildcard
+    # switches off git's own ownership check everywhere.
+    hardening += ["-c", f"safe.directory={cwd.as_posix()}"]
+    extra = _DIFF_HARDENING if args and args[0] in _DIFF_COMMANDS else []
     try:
         proc = subprocess.run(
-            ["git", *_HARDENING, *args], cwd=str(cwd), env=_git_env(),
+            ["git", *hardening, args[0], *extra, *args[1:]] if args else ["git", *hardening],
+            cwd=str(cwd), env=_git_env(cwd),
             capture_output=True, timeout=timeout_s, creationflags=flags,
         )
     except FileNotFoundError as exc:

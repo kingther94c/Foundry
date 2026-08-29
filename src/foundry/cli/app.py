@@ -195,6 +195,7 @@ def build(workspace_path: Path, *, home: Path | None = None,
                       max_tool_calls=config.max_tool_calls),
         model=config.backend.model,
         audit=AuditLog(home / "audit.jsonl", default_redactor()),
+        git_baseline=baseline,
     )
     return Wiring(workspace=workspace, config=config, runtime=runtime,
                   renderer=renderer, session=session)
@@ -218,7 +219,9 @@ def cmd_session(args: argparse.Namespace) -> int:
     try:
         if args.task:
             outcome = wiring.runtime.run_turn(args.task)
-            status = outcome.status or TerminalStatus.COMPLETED
+            # Only the finish gate can produce 'completed'. A turn that simply
+            # ended is unfinished work, not success.
+            status = outcome.status or TerminalStatus.PARTIAL
         else:
             while True:
                 try:
@@ -340,7 +343,9 @@ def cmd_exec(args: argparse.Namespace) -> int:
     status = TerminalStatus.FAILED
     try:
         outcome = wiring.runtime.run_turn(args.task)
-        status = outcome.status or TerminalStatus.COMPLETED
+        # Only the finish gate can produce 'completed'. A turn that simply
+        # ended is unfinished work, not success.
+        status = outcome.status or TerminalStatus.PARTIAL
         if not args.json and outcome.text:
             print(outcome.text)
     except KeyboardInterrupt:

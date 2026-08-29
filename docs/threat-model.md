@@ -29,8 +29,14 @@
 | 威胁 | 防护 | 执行点 |
 |---|---|---|
 | 模型误改 workspace 外文件 | 路径必须是 workspace 相对；realpath+normcase+commonpath 双侧比对；逐组件拒绝 reparse point；拒绝 ADS/设备名/UNC/盘符相对 | [workspace.py](../src/foundry/core/workspace.py) |
-| 前缀白名单被链式命令绕过 | 命令按 `;` `|` `&&` `||` 分段，每段独立过 policy；别名归一（rm/del→Remove-Item）；无法可信解析即 ASK | [policy/segmenter.py](../src/foundry/core/policy/segmenter.py) |
-| 仓库自我提权 | 仓库配置只接受 deny/ask；连接类配置（endpoint/凭证/headers/proxy）只读机器本地层；写 `<workspace>/.foundry/` 被熔断表拒绝 | [config.py](../src/foundry/core/config.py)、[policy/engine.py](../src/foundry/core/policy/engine.py) |
+| 前缀白名单被链式命令绕过 | 命令按 `;` `\|` `&&` `\|\|` 分段；**ALLOW 规则必须覆盖每一段才成立**，DENY/ASK 命中任一段即生效；别名归一（rm/del→Remove-Item）；`&'foo'`（无空格调用操作符）判为不可解析；无法可信解析即 ASK | [policy/segmenter.py](../src/foundry/core/policy/segmenter.py)、[policy/engine.py](../src/foundry/core/policy/engine.py) `Rule.matches` |
+| 熔断表被参数形态绕过 | 比较前先归一化命令头并剥掉 git 全局选项（`-C`/`-c`/`--git-dir` 等），`git.exe`/`git -C . reset --hard` 与裸形式等价；`git checkout` 整体拒绝（分支名与路径不可区分，引导用 `git switch`） | policy/engine.py `check_breaker`、segmenter.py `effective_argv` |
+| 仓库 .git/config 让 git 变成程序启动器 | 显式关闭 `diff.external`、`--no-ext-diff --no-textconv`、`core.pager/editor/sshCommand`、`protocol.ext`；`safe.directory` 只限当前 workspace（不用 `*`）；git 子进程也走 `child_environment()` 过滤 | [tools/git.py](../src/foundry/core/tools/git.py) |
+| 只读工具穿过 junction 读到外部文件 | `os.walk` 会跟随 junction（`islink` 对其返回 False），故 `list_files`/`search_text` 下降时逐目录检查 reparse point | [tools/files.py](../src/foundry/core/tools/files.py) `_prune` |
+| 仓库自我提权 | 仓库配置只接受 deny/ask；**`[runtime]` 也只能收紧**（mode 只允许 plan/dont_ask，预算只能调低）；连接类配置（endpoint/凭证/headers/proxy）只读机器本地层；写 `<workspace>/.foundry/` 被熔断表拒绝 | [config.py](../src/foundry/core/config.py)、[policy/engine.py](../src/foundry/core/policy/engine.py) |
+| 补丁经 `Move to:` 覆盖未申报的文件 | 移动目标计入 `paths`，因而对熔断表、脏文件 ASK 规则和审批展示可见；目标已存在即拒绝；目标在**规划阶段**解析，非法路径不会在源文件已改写后才失败 | [tools/patch.py](../src/foundry/core/tools/patch.py) |
+| 补丁静默改错位置 | 宽容梯度的行级映射要求匹配落在行边界上，否则判失败并给提示——绝不把行内命中扩成整行替换 | tools/patch.py `_map_span` |
+| 模型经包装器移动 HEAD 使 diff 看起来干净 | 收口时重新采集 git 证据，HEAD 与 baseline 不一致即降级 `partial` 并记事件；报告区分本次会话改动与既有改动 | [runtime.py](../src/foundry/core/runtime.py) `_finalize` |
 | 销毁用户未提交的工作 | 熔断表拒绝 `git checkout -- / restore / reset --hard / clean / stash drop / stash clear`；baseline 记录脏文件，改脏文件强制 ASK | policy/engine.py |
 | 模型伪造"已验证" | `finish` 的每条 claim 必须引用真实 command 事件且 exit code 相符，否则降级 partial；HEAD 移动也降级 | [runtime.py](../src/foundry/core/runtime.py)、[tools/finish.py](../src/foundry/core/tools/finish.py) |
 | 凭证进入日志/上下文/事件流 | `SecretHandle` 不可打印；凭证只在 HTTP header 注入点解析；单一 choke point 做字节级 exact-match（UTF-8 与 UTF-16LE，先于 base64） | [auth.py](../src/foundry/core/auth.py)、[redaction.py](../src/foundry/core/redaction.py) |

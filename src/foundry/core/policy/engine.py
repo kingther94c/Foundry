@@ -25,7 +25,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Iterable
 
-from foundry.core.policy.segmenter import SegmentedCommand, canonicalize, segment_command
+from foundry.core.policy.segmenter import (
+    SegmentedCommand,
+    canonicalize,
+    effective_argv,
+    segment_command,
+)
 from foundry.core.tools.base import Operation, ToolKind
 
 
@@ -61,10 +66,21 @@ class Rule:
     rule_id: str = ""
     reason: str = ""
 
-    def matches(self, op: Operation) -> bool:
+    def matches(self, op: Operation, targets: tuple[str, ...] | None = None) -> bool:
+        """Match against every target the operation touches.
+
+        For a command, ``targets`` is one entry per segment: a rule has to hold
+        for each of them. Matching the joined string instead is the classic
+        allowlist bypass -- ``pytest -q; rm -r ~`` starts with ``pytest``.
+        """
         if self.tool not in ("*", op.tool):
             return False
-        return fnmatch.fnmatch(op.target, self.pattern)
+        candidates = targets if targets is not None else (op.target,)
+        if self.verdict is Verdict.ALLOW:
+            # An allow only stands if it covers everything that will run.
+            return all(fnmatch.fnmatch(t, self.pattern) for t in candidates)
+        # A deny or ask fires if it matches any part.
+        return any(fnmatch.fnmatch(t, self.pattern) for t in candidates)
 
     def identity(self) -> str:
         return self.rule_id or f"{self.layer.value}:{self.tool}({self.pattern})={self.verdict.value}"
@@ -121,8 +137,11 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
 
     parsed = segmented or segment_command(op.target)
     for segment in parsed.segments:
-        argv = tuple(a.lower() for a in segment.argv)
-        head = canonicalize(segment.argv[0]) if segment.argv else ""
+        # Canonicalize the head and drop git's global options, so `git -C .
+        # reset --hard` and `git.exe reset --hard` compare the same as the
+        # plain form. Indexing raw argv is how these tables get bypassed.
+        argv = tuple(a.lower() for a in effective_argv(segment.argv))
+        head = argv[0] if argv else ""
 
         for forbidden in DESTRUCTIVE_GIT:
             if argv[:len(forbidden)] == forbidden:
@@ -130,9 +149,19 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
                     f"'{' '.join(forbidden)}' destroys uncommitted work and is never permitted"
                 )
 
+        # `git checkout <name>` is ambiguous by design -- git cannot tell a
+        # branch from a pathspec either, which is why it added `switch` and
+        # `restore`. Since the pathspec form discards uncommitted work, the
+        # whole shape is refused and the model is pointed at `git switch`.
+        if head == "git" and len(argv) > 2 and argv[1] == "checkout":
+            return BreakerHit(
+                "'git checkout' can discard uncommitted work and is never permitted; "
+                "use 'git switch' to change branches"
+            )
+
         if head in RECURSIVE_DELETE_HEADS:
-            joined = " ".join(segment.argv[1:])
-            recursive = any(a.startswith(("-r", "/s", "-recurse")) for a in argv[1:])
+            joined = " ".join(argv[1:])
+            recursive = any(a.startswith(("-r", "/s", "-recurse", "/q")) for a in argv[1:])
             if recursive and _DANGEROUS_DELETE_TARGETS.search(joined):
                 return BreakerHit("recursive delete of a system or home directory is never permitted")
 
@@ -223,6 +252,15 @@ class PolicyEngine:
         if hit:
             return finish(Verdict.DENY, hit.reason, "breaker", 0)
 
+        # Rules match per segment for commands, and per touched path for
+        # patches, so nothing can hide behind a chain or a second file.
+        if segmented is not None and segmented.segments:
+            targets = tuple(s.canonical for s in segmented.segments) + (op.target,)
+        elif op.tool == "apply_patch":
+            targets = tuple(op.args.get("paths", ())) or (op.target,)
+        else:
+            targets = (op.target,)
+
         # Step 1 -- pre_tool hook. A rewrite restarts the pipeline so the breaker
         # and every rule bind the final input, not the original.
         if self.pre_tool and _depth == 0:
@@ -237,7 +275,7 @@ class PolicyEngine:
 
         # Step 2 -- DENY rules.
         for rule in self.rules:
-            if rule.verdict is Verdict.DENY and rule.matches(op):
+            if rule.verdict is Verdict.DENY and rule.matches(op, targets):
                 return finish(Verdict.DENY, rule.reason or "denied by rule", rule.identity(), 2)
 
         # Step 3 -- ASK rules, including the dirty-file guard.
@@ -250,7 +288,7 @@ class PolicyEngine:
                     "builtin.dirty_file", 3,
                 )
         for rule in self.rules:
-            if rule.verdict is Verdict.ASK and rule.matches(op):
+            if rule.verdict is Verdict.ASK and rule.matches(op, targets):
                 return finish(Verdict.ASK, rule.reason or "approval required", rule.identity(), 3)
 
         # An unparseable command can never be auto-allowed: the safety valve.
@@ -273,7 +311,7 @@ class PolicyEngine:
         if self._grant_key(op) in self.session_grants:
             return finish(Verdict.ALLOW, "approved earlier in this session", "session_grant", 5)
         for rule in self.rules:
-            if rule.verdict is Verdict.ALLOW and rule.matches(op):
+            if rule.verdict is Verdict.ALLOW and rule.matches(op, targets):
                 return finish(Verdict.ALLOW, rule.reason or "allowed by rule", rule.identity(), 5)
 
         # Step 6 -- interactive approval, or fail closed.

@@ -11,6 +11,7 @@ import fnmatch
 import hashlib
 import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,29 @@ MAX_SEARCH_MATCHES = 50
 MAX_LIST_ENTRIES = 200
 
 _SKIP_DIRS = frozenset({".git", "__pycache__", ".venv", "venv", "node_modules", ".pytest_cache"})
+
+_REPARSE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+
+
+def _is_reparse_point(path: Path) -> bool:
+    try:
+        return bool(getattr(path.lstat(), "st_file_attributes", 0) & _REPARSE)
+    except OSError:
+        return True  # unreadable: treat as unsafe and skip
+
+
+def _prune(dirpath: str, dirnames: list[str]) -> None:
+    """Drop skipped and reparse-point directories from an os.walk descent.
+
+    ``os.walk`` will not follow a symlink, but it does follow a Windows
+    junction -- ``islink`` reports False for one. Without this, a junction
+    inside the workspace lets a read-only tool return files from outside it,
+    while ``Workspace.resolve`` correctly refuses the same path.
+    """
+    dirnames[:] = [
+        d for d in dirnames
+        if d not in _SKIP_DIRS and not _is_reparse_point(Path(dirpath) / d)
+    ]
 
 
 def _digest(path: Path) -> str:
@@ -100,7 +124,7 @@ class ListFiles:
         pattern = op.args["pattern"]
         entries: list[tuple[float, str]] = []
         for dirpath, dirnames, filenames in os.walk(root.absolute):
-            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+            _prune(dirpath, dirnames)
             for filename in filenames:
                 if not fnmatch.fnmatch(filename, pattern):
                     continue
@@ -178,7 +202,7 @@ class SearchText:
         total = 0
 
         for dirpath, dirnames, filenames in os.walk(root.absolute):
-            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+            _prune(dirpath, dirnames)
             for filename in filenames:
                 if not fnmatch.fnmatch(filename, glob):
                     continue

@@ -46,7 +46,10 @@ _UNTRUSTED_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\$\("), "command substitution $(...)"),
     (re.compile(r"@\("), "array subexpression @(...)"),
     (re.compile(r"`"), "backtick escape"),
-    (re.compile(r"(?<!\S)&(?=\s|$)"), "call operator &"),
+    # The call operator, with or without a space before its argument: `&'git'`
+    # is as much an invocation as `& 'git'`, and only the spaced form used to
+    # be caught.
+    (re.compile(r"(?<!\S)&(?=\s|['\"]|$)"), "call operator &"),
     (re.compile(r"(?<![0-9<>])>{1,2}"), "output redirection"),
     (re.compile(r"(?<!\S)<(?!\S*>)"), "input redirection"),
     (re.compile(r"\binvoke-expression\b", re.IGNORECASE), "Invoke-Expression"),
@@ -151,13 +154,49 @@ def _tokenize(segment: str) -> tuple[str, ...]:
 
 def canonicalize(head: str) -> str:
     """Map an alias to its canonical cmdlet name, stripping any path and .exe."""
-    name = head.strip().lower()
+    name = head.strip().lower().lstrip("&").strip("'\"")
     if "/" in name or "\\" in name:
         name = re.split(r"[\\/]", name)[-1]
     for suffix in (".exe", ".cmd", ".bat", ".ps1"):
         if name.endswith(suffix):
             name = name[: -len(suffix)]
     return ALIASES.get(name, name)
+
+
+# Global options that may precede a subcommand. Without skipping these,
+# `git -C . reset --hard` looks nothing like `git reset --hard`.
+_GIT_GLOBAL_WITH_VALUE = frozenset({"-C", "-c", "--exec-path", "--git-dir", "--work-tree",
+                                    "--namespace", "--config-env"})
+_GIT_GLOBAL_FLAGS = frozenset({"--no-pager", "--paginate", "--bare", "--literal-pathspecs",
+                               "--no-replace-objects", "--no-optional-locks", "-P"})
+
+
+def effective_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
+    """Drop leading global options so the subcommand lands at index 1.
+
+    Applied before any breaker comparison: a table that indexes ``argv[1]``
+    is bypassed by a single ``-C .`` otherwise.
+    """
+    if not argv:
+        return argv
+    head = canonicalize(argv[0])
+    if head != "git":
+        return (head,) + argv[1:]
+
+    rest = list(argv[1:])
+    while rest:
+        token = rest[0]
+        if token in _GIT_GLOBAL_WITH_VALUE:
+            del rest[:2]
+            continue
+        if token in _GIT_GLOBAL_FLAGS:
+            del rest[:1]
+            continue
+        if any(token.startswith(f"{opt}=") for opt in _GIT_GLOBAL_WITH_VALUE):
+            del rest[:1]
+            continue
+        break
+    return (head, *rest)
 
 
 def segment_command(command: str) -> SegmentedCommand:

@@ -202,8 +202,21 @@ def locate(haystack: str, needle: str) -> Located | list[str]:
 
 
 def _map_span(original: str, transformed: str, needle: str) -> tuple[int, int] | None:
-    """Map a match in a line-wise transformed copy back to original offsets."""
-    line_index = transformed[:transformed.index(needle)].count("\n")
+    """Map a match in a line-wise transformed copy back to original offsets.
+
+    The mapping is line-granular, so it is only valid when the match covers
+    whole lines. A mid-line hit would otherwise be widened to the surrounding
+    lines and the replacement would swallow text the SEARCH block never named --
+    a silent mislocation, which this module refuses to do on principle.
+    """
+    index = transformed.index(needle)
+    ends_at = index + len(needle)
+    starts_on_line_boundary = index == 0 or transformed[index - 1] == "\n"
+    ends_on_line_boundary = ends_at == len(transformed) or transformed[ends_at] == "\n"
+    if not (starts_on_line_boundary and ends_on_line_boundary):
+        return None
+
+    line_index = transformed[:index].count("\n")
     span_lines = needle.count("\n") + 1
     original_lines = original.split("\n")
     if line_index + span_lines > len(original_lines):
@@ -253,6 +266,8 @@ class _Planned:
     line_ending: str
     had_bom: bool
     rungs: list[str] = field(default_factory=list)
+    move_target: Path | None = None
+    move_relative: str = ""
 
 
 @dataclass(slots=True)
@@ -291,8 +306,27 @@ class ApplyPatch:
             raise InvalidToolCall("patch must be a non-empty string")
 
         ops = parse_patch(patch)
-        paths = [op.path for op in ops]
-        summary = ", ".join(f"{op.action} {op.path}" for op in ops)
+
+        # One file per envelope: two Update blocks for the same path each plan
+        # against the original text, so the second write would silently discard
+        # the first while both report success.
+        seen: set[str] = set()
+        for file_op in ops:
+            if file_op.path in seen:
+                raise InvalidToolCall(
+                    f"{file_op.path} appears more than once; put all of a file's "
+                    "hunks in a single '*** Update File:' block"
+                )
+            seen.add(file_op.path)
+
+        # Move destinations count as touched paths. Leaving them out hides an
+        # unconditional whole-file overwrite from the breaker, the dirty-file
+        # rule, and the approval text.
+        paths = [op.path for op in ops] + [op.move_to for op in ops if op.move_to]
+        summary = ", ".join(
+            f"{op.action} {op.path}" + (f" -> {op.move_to}" if op.move_to else "")
+            for op in ops
+        )
         return Operation(
             tool=self.name, kind=self.kind,
             args={"patch": patch, "paths": paths},
@@ -327,16 +361,21 @@ class ApplyPatch:
 
             item.path.parent.mkdir(parents=True, exist_ok=True)
             _write_atomic(item.path, item.new_text, "utf-8", item.line_ending, item.had_bom)
-            ctx.read_tracker.record(item.relative,
-                                    hashlib.sha256(item.path.read_bytes()).hexdigest())
             self.failures.pop(item.op.path, None)
 
-            if item.op.move_to:
-                target = ctx.workspace.resolve(item.op.move_to, for_write=True)
-                target.absolute.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(item.path, target.absolute)
-                applied.append(f"updated and moved {item.relative} -> {target.relative}")
+            if item.move_target is not None:
+                # Destination was resolved and checked during planning, so this
+                # cannot fail partway and leave the source already rewritten.
+                item.move_target.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(item.path, item.move_target)
+                ctx.read_tracker.forget(item.relative)
+                ctx.read_tracker.record(
+                    item.move_relative,
+                    hashlib.sha256(item.move_target.read_bytes()).hexdigest())
+                applied.append(f"updated and moved {item.relative} -> {item.move_relative}")
             else:
+                ctx.read_tracker.record(
+                    item.relative, hashlib.sha256(item.path.read_bytes()).hexdigest())
                 verb = "created" if item.op.action == "add" else "updated"
                 detail = f" [{', '.join(sorted(set(item.rungs)))}]" if item.rungs and set(item.rungs) != {"exact"} else ""
                 applied.append(f"{verb} {item.relative}{detail}")
@@ -354,6 +393,20 @@ class ApplyPatch:
         resolved = ctx.workspace.resolve(file_op.path, for_write=True)
         path = resolved.absolute
 
+        move_target: Path | None = None
+        move_relative = ""
+        if file_op.move_to:
+            # Resolved here, inside the caller's try, so a rejected destination
+            # fails the file cleanly instead of aborting mid-write.
+            destination = ctx.workspace.resolve(file_op.move_to, for_write=True)
+            if destination.absolute.exists():
+                raise ToolError(
+                    f"move destination {destination.relative} already exists; "
+                    "delete it explicitly or choose another name"
+                )
+            move_target = destination.absolute
+            move_relative = destination.relative
+
         if file_op.action == "delete":
             if not path.is_file():
                 raise ToolError("file does not exist")
@@ -362,7 +415,8 @@ class ApplyPatch:
         if file_op.action == "add":
             if path.exists():
                 raise ToolError("file already exists; use Update File instead")
-            return _Planned(file_op, path, resolved.relative, file_op.content, "\n", False)
+            return _Planned(file_op, path, resolved.relative, file_op.content, "\n", False,
+                            move_target=move_target, move_relative=move_relative)
 
         if not path.is_file():
             raise ToolError("file does not exist")
@@ -389,7 +443,8 @@ class ApplyPatch:
             working = working[:result.start] + hunk.replace.replace("\r\n", "\n") + working[result.end:]
             rungs.append(result.rung)
 
-        return _Planned(file_op, path, resolved.relative, working, line_ending, had_bom, rungs)
+        return _Planned(file_op, path, resolved.relative, working, line_ending, had_bom,
+                        rungs, move_target, move_relative)
 
     @staticmethod
     def _explain(index: int, near: list[str], relative: str) -> str:
