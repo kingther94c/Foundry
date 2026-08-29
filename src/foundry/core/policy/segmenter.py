@@ -108,6 +108,52 @@ class SegmentedCommand:
         return not self.untrusted_reason and bool(self.segments)
 
 
+# Characters that can move where a *statement ends* or hide text from a reader:
+# comments, block comments, redirection, escapes, expansion, the call operator.
+# A command containing one is never auto-allowed, because whether Foundry's
+# reading matches PowerShell's cannot be settled by inspection -- four review
+# rounds each found a spelling where it did not.
+#
+# Parentheses and braces are deliberately absent: they group, but they cannot
+# hide a statement boundary, and `python -c "print(1)"` is far too common to
+# send to a prompt every time. A *grouped command* is still caught, by the
+# plain-head check and by paranoid_segments.
+_STRUCTURAL = frozenset("#<>$`^")
+
+# A lone `&` is the call operator; `&&` is a separator this module splits on.
+_LONE_AMPERSAND = re.compile(r"(?<!&)&(?!&)")
+
+
+def paranoid_segments(text: str) -> list[tuple[str, ...]]:
+    """Every statement a reading of this text might contain.
+
+    Splits on separators with no regard for quotes or comments, which is
+    deliberately wrong as a parse: it exists only to feed the circuit breaker.
+    Seeing a forbidden command under *any* plausible reading is enough to refuse
+    it, and this reading cannot be fooled by a construct Foundry has mis-lexed --
+    which is how `echo 'x'# don't` + newline and `a<# ; ... #>` both hid a
+    `git reset --hard` from earlier versions.
+
+    It can only ever add denials: nothing consults it to permit anything.
+    """
+    normalized = text.replace("&&", "\n").replace("||", "\n")
+    for separator in (";", "|", "\r"):
+        normalized = normalized.replace(separator, "\n")
+    out: list[tuple[str, ...]] = []
+    for line in normalized.split("\n"):
+        # Grouping, quoting, the call operator and the dot-source operator are
+        # stripped from token edges, so `(git`, `'git'`, `{git`, `&{git` and
+        # `. git` all read as `git`: an invoked command is still a command.
+        #
+        # This cannot create a false denial, because every breaker entry anchors
+        # on argv[0]: `echo "git reset --hard"` reads as head `echo`, not `git`.
+        edges = "'\"(){}[]&."
+        tokens = tuple(t.strip(edges) for t in line.split() if t.strip(edges))
+        if tokens:
+            out.append(tokens)
+    return out
+
+
 def strip_comments(text: str) -> str:
     """Remove PowerShell comments before anything else looks at the text.
 
@@ -233,12 +279,23 @@ def canonicalize(head: str) -> str:
     return ALIASES.get(name, name)
 
 
-# Global options that may precede a subcommand. Without skipping these,
-# `git -C . reset --hard` looks nothing like `git reset --hard`.
-_GIT_GLOBAL_WITH_VALUE = frozenset({"-C", "-c", "--exec-path", "--git-dir", "--work-tree",
-                                    "--namespace", "--config-env"})
-_GIT_GLOBAL_FLAGS = frozenset({"--no-pager", "--paginate", "--bare", "--literal-pathspecs",
-                               "--no-replace-objects", "--no-optional-locks", "-P"})
+# The subcommands the breaker reasons about, plus the common harmless ones.
+# `effective_argv` scans for the first of these rather than counting past global
+# options, so an option nobody enumerated cannot shift the subcommand out of the
+# slot every breaker entry inspects.
+GIT_SUBCOMMANDS = frozenset({
+    # destructive or history-rewriting: the ones the breaker names
+    "reset", "clean", "checkout", "restore", "switch", "stash", "rm", "mv",
+    "commit", "push", "rebase", "merge", "filter-branch", "checkout-index",
+    "read-tree", "worktree", "branch", "update-ref", "symbolic-ref", "reflog",
+    "gc", "prune", "am", "apply", "cherry-pick", "revert", "tag", "notes",
+    "sparse-checkout", "submodule", "replace", "update-index", "fetch", "pull",
+    "remote", "clone", "init",
+    # read-only, listed so a scan stops at them rather than running past
+    "status", "diff", "log", "show", "rev-parse", "config", "add", "ls-files",
+    "blame", "describe", "shortlog", "grep", "cat-file", "for-each-ref",
+    "rev-list", "bisect", "help", "version", "whatchanged", "archive",
+})
 
 
 def effective_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
@@ -255,13 +312,14 @@ def effective_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
     if head != "git":
         return (head,) + argv[1:]
 
+    # Skip leading options *and* anything that is not a git subcommand. Deciding
+    # which options take a separate value is the same enumeration trap in
+    # reverse: `--attr-source HEAD reset --hard` left "HEAD" at index 1 and the
+    # whole breaker table read the wrong slot. Scanning for the first token that
+    # is actually a subcommand cannot be shifted by an option nobody listed.
     rest = list(argv[1:])
-    while rest and rest[0].startswith("-"):
-        token = rest[0]
-        # `-C <dir>` and `-c <k=v>` take a separate value; `--opt=value` carries
-        # its own. Anything else is a lone flag.
-        takes_value = token in _GIT_GLOBAL_WITH_VALUE and "=" not in token
-        del rest[:2 if takes_value else 1]
+    while rest and (rest[0].startswith("-") or rest[0].lower() not in GIT_SUBCOMMANDS):
+        del rest[:1]
     return (head, *rest)
 
 
@@ -269,15 +327,30 @@ def segment_command(command: str) -> SegmentedCommand:
     if not command or not command.strip():
         return SegmentedCommand(raw=command, untrusted_reason="empty command")
 
-    # Comments first: they change where statements end, so every later pass has
-    # to see the text with them removed.
+    untrusted_reason = ""
+
+    # A structural character means Foundry's reading of the command and
+    # PowerShell's may differ, and every round of review found a spelling where
+    # they did. Such a command can still be denied -- see paranoid_segments --
+    # but it can never be auto-allowed.
+    structural = sorted(set(command) & _STRUCTURAL)
+    if _LONE_AMPERSAND.search(command):
+        structural.append("&")
+    if structural:
+        untrusted_reason = (
+            f"command contains shell syntax that changes its structure "
+            f"({' '.join(structural)})"
+        )
+
+    # Comments change where statements end, so every later pass sees the text
+    # with them removed.
     text = strip_comments(command)
 
-    untrusted_reason = ""
-    for pattern, reason in _UNTRUSTED_PATTERNS:
-        if pattern.search(text):
-            untrusted_reason = reason
-            break
+    if not untrusted_reason:
+        for pattern, reason in _UNTRUSTED_PATTERNS:
+            if pattern.search(text):
+                untrusted_reason = reason
+                break
 
     parts = _split_top_level(text)
     if any(p == "__UNBALANCED_QUOTE__" for p in parts):

@@ -38,6 +38,10 @@ _HARDENING = [
     "-c", "pager.status=false",
     "-c", "protocol.ext.allow=never",
     "-c", "uploadpack.packObjectsHook=",
+    # Without this, git escapes non-ASCII paths as "\303\251..." in porcelain
+    # output, so a file with an accented or CJK name never matched the dirty
+    # set and skipped the dirty-write guard.
+    "-c", "core.quotepath=false",
 ]
 
 # Applied to diff-family commands only: these reject configured helpers rather

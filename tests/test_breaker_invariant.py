@@ -20,6 +20,8 @@ from foundry.core.tools.base import Operation, ToolKind
 # One representative of every breaker rule.
 FORBIDDEN = [
     "git reset --hard HEAD",
+    "git --attr-source HEAD reset --hard",   # an option taking a separate value
+    "git -C . clean -fdx",
     "git clean -fdx",
     "git checkout -- .",
     "git restore src/app.py",
@@ -54,6 +56,12 @@ DECORATIONS = [
     "echo hi # don't\n{cmd}\n# that's all",    # apostrophes inside comments
     "{cmd} ; echo $env:PATH",                  # untrusted neighbour
     "echo a; {cmd}; echo b",
+    "echo 'x'# don't\n{cmd}\necho 'y'# it's",  # comment after a quote
+    "echo (1)# don't\n{cmd}\necho (2)# it's",  # comment after a paren
+    "echo a<# ; {cmd} #> b",                   # '<#' mid-token is not a comment
+    "({cmd})",                                 # grouped
+    "&{{{cmd}}}",                              # invoked script block
+    ". {cmd}",                                 # dot-sourced
 ]
 
 

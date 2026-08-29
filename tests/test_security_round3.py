@@ -233,9 +233,19 @@ def test_everyday_commands_remain_allowable(command, pattern):
 @pytest.mark.parametrize("command", [
     "python -m pytest -q",
     "npm run build",
-    "git commit -m 'fix #42'",   # a hash inside quotes is not a comment
+    "npm test -- --coverage",
     ".\\gradlew build",
     "my-tool.exe --flag",
+    'python -c "print(1)"',          # parentheses group, they do not hide
+    "dotnet test --filter Category=Unit",
+    "Get-ChildItem *.py",            # a glob is argument content
 ])
 def test_everyday_commands_are_parseable(command):
     assert segment_command(command).trusted
+
+
+def test_a_hash_costs_an_approval_even_when_quoted():
+    """Deliberate: two review rounds found comment spellings that hid a
+    statement, so any '#' means Foundry's reading may not be PowerShell's. The
+    command still runs -- it just needs a yes."""
+    assert not segment_command("git commit -m 'fix #42'").trusted

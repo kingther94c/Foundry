@@ -29,6 +29,7 @@ from foundry.core.policy.segmenter import (
     SegmentedCommand,
     canonicalize,
     effective_argv,
+    paranoid_segments,
     segment_command,
 )
 from foundry.core.tools.base import Operation, ToolKind
@@ -177,11 +178,22 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
         return None
 
     parsed = segmented or segment_command(op.target)
-    for segment in parsed.segments:
+
+    # Two readings: Foundry's parse, and a deliberately naive split that ignores
+    # quotes and comments entirely. A forbidden command found under *either* is
+    # refused. The naive reading exists because four review rounds each found a
+    # construct Foundry mis-lexed, and it cannot be fooled by a fifth: it makes
+    # no assumptions to be wrong about. It can only add denials.
+    readings: list[tuple[str, ...]] = [segment.argv for segment in parsed.segments]
+    readings.extend(paranoid_segments(op.target))
+
+    for raw_argv in readings:
+        if not raw_argv:
+            continue
         # Canonicalize the head and drop git's global options, so `git -C .
         # reset --hard` and `git.exe reset --hard` compare the same as the
         # plain form. Indexing raw argv is how these tables get bypassed.
-        argv = tuple(a.lower() for a in effective_argv(segment.argv))
+        argv = tuple(a.lower() for a in effective_argv(raw_argv))
         head = argv[0] if argv else ""
 
         for forbidden in DESTRUCTIVE_GIT:
