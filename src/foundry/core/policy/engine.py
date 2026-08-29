@@ -66,21 +66,29 @@ class Rule:
     rule_id: str = ""
     reason: str = ""
 
-    def matches(self, op: Operation, targets: tuple[str, ...] | None = None) -> bool:
-        """Match against every target the operation touches.
+    def matches(self, op: Operation, targets: tuple[set[str], ...] | None = None) -> bool:
+        """Match against every part of the operation.
 
-        For a command, ``targets`` is one entry per segment: a rule has to hold
-        for each of them. Matching the joined string instead is the classic
-        allowlist bypass -- ``pytest -q; rm -r ~`` starts with ``pytest``.
+        ``targets`` is one entry per part that will actually run -- a command
+        segment, or a path a patch touches. Each entry is the set of acceptable
+        spellings for that part (canonical and raw), and a rule matches a part
+        if it matches any spelling of it.
+
+        An ALLOW must cover *every* part: matching the joined string instead is
+        the classic allowlist bypass, since ``pytest -q; rm -r ~`` starts with
+        ``pytest``. A DENY or ASK fires if any part matches, which only makes
+        them stricter.
         """
         if self.tool not in ("*", op.tool):
             return False
-        candidates = targets if targets is not None else (op.target,)
+        parts = targets if targets is not None else ({op.target},)
+
+        def part_matches(spellings: set[str]) -> bool:
+            return any(fnmatch.fnmatch(s, self.pattern) for s in spellings)
+
         if self.verdict is Verdict.ALLOW:
-            # An allow only stands if it covers everything that will run.
-            return all(fnmatch.fnmatch(t, self.pattern) for t in candidates)
-        # A deny or ask fires if it matches any part.
-        return any(fnmatch.fnmatch(t, self.pattern) for t in candidates)
+            return all(part_matches(p) for p in parts)
+        return any(part_matches(p) for p in parts)
 
     def identity(self) -> str:
         return self.rule_id or f"{self.layer.value}:{self.tool}({self.pattern})={self.verdict.value}"
@@ -256,12 +264,18 @@ class PolicyEngine:
 
         # Rules match per segment for commands, and per touched path for
         # patches, so nothing can hide behind a chain or a second file.
+        #
+        # A segment contributes both its canonical and its raw spelling, and a
+        # rule need only match one of them: requiring both would make any rule
+        # for an aliased or path-qualified command impossible to write (a
+        # pattern cannot match "get-childitem src" and "dir src" at once),
+        # pushing users toward pattern="*".
         if segmented is not None and segmented.segments:
-            targets = tuple(s.canonical for s in segmented.segments) + (op.target,)
+            targets = tuple({s.canonical, s.text} for s in segmented.segments)
         elif op.tool == "apply_patch":
-            targets = tuple(op.args.get("paths", ())) or (op.target,)
+            targets = tuple({p} for p in op.args.get("paths", ())) or ({op.target},)
         else:
-            targets = (op.target,)
+            targets = ({op.target},)
 
         # Step 1 -- pre_tool hook. A rewrite restarts the pipeline so the breaker
         # and every rule bind the final input, not the original.

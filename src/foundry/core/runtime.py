@@ -448,18 +448,26 @@ class AgentRuntime:
         return self._terminate(status, reason, summary)
 
     def _refresh_credentials(self) -> bool:
-        """Re-acquire once per session. Returns whether a new value was applied."""
+        """Re-acquire once per session, and only retry if the value changed.
+
+        Never invalidates first: for the gateway source that clears the stored
+        credential, and nothing can re-acquire it yet -- one expired token would
+        log the user out permanently. Re-acquiring is harmless for both sources
+        and picks up a token refreshed out of band.
+        """
         if self.credentials is None or self._refreshed:
             return False
         self._refreshed = True
+        if not hasattr(self.backend, "api_key"):
+            return False
         try:
-            self.credentials.invalidate()
             handle = self.credentials.acquire()
         except FoundryError:
             return False
-        if not hasattr(self.backend, "api_key"):
-            return False
-        self.backend.api_key = handle.reveal()
+        fresh = handle.reveal()
+        if fresh == self.backend.api_key:
+            return False  # same credential: a second request would fail identically
+        self.backend.api_key = fresh
         return True
 
     def _collect_git_evidence(self):

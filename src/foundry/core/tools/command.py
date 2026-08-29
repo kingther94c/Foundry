@@ -61,6 +61,7 @@ class CommandResult:
     timed_out: bool = False
     encoding: str = "utf-8"
     dropped_bytes: int = 0
+    output_incomplete: bool = False
 
 
 def _drain(stream, budget: int, sink: list[bytes], dropped: list[int]) -> None:
@@ -148,8 +149,24 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
                 pass
             exit_code = None
 
+        # A grandchild that inherited the pipes keeps them open after the direct
+        # child exits, so the readers would block and their buffered bytes would
+        # be lost. Kill the job first: that closes the inherited handles, the
+        # readers see EOF, and the output already read is delivered.
         for reader in readers:
-            reader.join(timeout=5)
+            reader.join(timeout=2)
+        if any(reader.is_alive() for reader in readers):
+            if IS_WINDOWS:
+                job.terminate()
+            else:  # pragma: no cover - Windows is the supported platform
+                process.kill()
+            for reader in readers:
+                reader.join(timeout=3)
+
+        # If a reader still has not finished, the capture is incomplete. Saying
+        # so matters: reporting exit 0 with empty output would let a validation
+        # claim pass on a command whose output was never seen.
+        incomplete = any(reader.is_alive() for reader in readers)
         stdout = b"".join(out_chunks)
         stderr = b"".join(err_chunks)
     finally:
@@ -165,6 +182,7 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
         timed_out=timed_out,
         encoding=decoded.encoding,
         dropped_bytes=out_dropped[0] + err_dropped[0],
+        output_incomplete=incomplete,
     )
 
 
@@ -243,8 +261,11 @@ class RunCommand:
         self.last_event_ordinal = ordinal
         self.history.append({
             "command": op.args["command"],
-            "exit_code": result.exit_code,
+            # An incomplete capture cannot support a claim, so it is recorded as
+            # having no usable exit code rather than as a clean 0.
+            "exit_code": None if result.output_incomplete else result.exit_code,
             "event_ordinal": ordinal,
+            "output_incomplete": result.output_incomplete,
         })
 
         stdout = decode_output(result.stdout).text
@@ -267,6 +288,10 @@ class RunCommand:
         if result.dropped_bytes:
             header += (f"; {result.dropped_bytes} bytes of output were discarded "
                        "as it was produced (the command printed more than the capture limit)")
+        if result.output_incomplete:
+            header = ("OUTPUT INCOMPLETE: a process left running by this command kept the "
+                      "output pipe open, so what it printed could not be fully captured. "
+                      "Do not treat this run as evidence.\n" + header)
 
         return ToolOutput(
             content=f"$ {op.args['command']}\n{header}\n\n{body}".rstrip(),

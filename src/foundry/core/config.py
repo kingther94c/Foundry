@@ -144,7 +144,17 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         if key not in runtime:
             continue
         value = runtime[key]
-        if tighten_only and isinstance(value, int) and value > getattr(config, key):
+        # Type-check first, unconditionally. Checking inside the tighten test
+        # meant a TOML float slipped past it entirely -- 9999 was refused while
+        # 9999.0 was accepted -- and a string reached the code that slices tool
+        # output, where it failed every later tool call.
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ConfigError(
+                f"{key} must be an integer, got {type(value).__name__} ({value!r})"
+            )
+        if value < 1:
+            raise ConfigError(f"{key} must be positive, got {value}")
+        if tighten_only and value > getattr(config, key):
             raise ConfigError(
                 f"{layer} config may only lower {key} (tried {value}, "
                 f"current {getattr(config, key)})"

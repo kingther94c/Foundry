@@ -60,8 +60,14 @@ def _git_env(workspace: Path | None = None) -> dict[str, str]:
     env = {k: v for k, v in env.items() if not k.startswith("GIT_")}
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GIT_OPTIONAL_LOCKS"] = "0"
-    env["GIT_CONFIG_NOSYSTEM"] = "1"
-    env["GIT_ATTR_NOSYSTEM"] = "1"
+    # Deliberately NOT set: GIT_CONFIG_NOSYSTEM. The system config is
+    # administrator-owned and machine-local -- not the attacker-controlled input
+    # the hardening above defends against, which is the repository's own
+    # .git/config. Discarding it drops core.autocrlf=true, the default on every
+    # Git-for-Windows install, and then every CRLF worktree file reads as
+    # modified: the baseline calls a clean repo dirty, diffs come back as
+    # whole-file rewrites, and change attribution reports nothing. Dangerous
+    # system keys are neutralized by name in _HARDENING instead.
     return env
 
 

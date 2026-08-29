@@ -124,6 +124,81 @@ def test_effective_argv_skips_git_global_options():
     assert effective_argv(("git.exe", "stash", "drop")) == ("git", "stash", "drop")
 
 
+# --- second round: bypasses the first round of fixes still allowed -------
+
+
+@pytest.mark.parametrize("command", [
+    'python -c "print(1)"\rgit reset --hard',
+    "echo hi\r\ngit reset --hard",
+    "echo hi\rgit clean -fd",
+])
+def test_carriage_return_separates_statements(command):
+    """A bare CR ends a statement in PowerShell. Treating it as whitespace
+    collapsed a whole chain into one segment headed by the harmless command --
+    verified to actually revert a file before the fix."""
+    engine = PolicyEngine()
+    engine.add_rule(Rule(tool="run_command", pattern="python*", verdict=Verdict.ALLOW))
+    engine.add_rule(Rule(tool="run_command", pattern="echo*", verdict=Verdict.ALLOW))
+    decision, _ = engine.evaluate(cmd_op(command))
+    assert decision.verdict is Verdict.DENY
+
+
+@pytest.mark.parametrize("command", [
+    "git --no-advice reset --hard",
+    "git --icase-pathspecs reset --hard",
+    "git --glob-pathspecs reset --hard",
+    "git --noglob-pathspecs clean -fd",
+    "git --no-lazy-fetch reset --hard",
+    "git --attr-source=HEAD reset --hard",
+])
+def test_unenumerated_git_global_options_do_not_hide_the_subcommand(command):
+    """Enumerating git's global flags was the bug: the first one missing from
+    the list stopped the scan and the breaker read the wrong argv index."""
+    assert check_breaker(cmd_op(command)) is not None
+
+
+@pytest.mark.parametrize("command", [
+    "(git reset --hard)",
+    "( git reset --hard )",
+    "((git reset --hard))",
+    "&{git reset --hard}",
+    ". git reset --hard",
+    "cmd /c git reset --hard",
+    "powershell -NoProfile -Command git reset --hard",
+    "$cmd = 'git'; git reset --hard",
+])
+def test_wrapped_command_forms_are_never_auto_allowed(command):
+    """A head that is not a plain command name hides what runs. Allowlisting
+    the shape we can parse beats enumerating the shapes we cannot."""
+    engine = PolicyEngine()
+    engine.add_rule(Rule(tool="run_command", pattern="*", verdict=Verdict.ALLOW))
+    decision, _ = engine.evaluate(cmd_op(command))
+    assert decision.verdict is not Verdict.ALLOW
+
+
+@pytest.mark.parametrize("command,pattern", [
+    ("dir src", "get-childitem*"),          # canonical spelling
+    ("dir src", "dir*"),                    # raw spelling
+    ("git.exe status", "git status*"),
+    (".\\scripts\\build.ps1 -Release", ".\\scripts\\build.ps1*"),
+    ("python -m pytest -q", "python -m pytest*"),
+])
+def test_a_rule_can_be_written_for_the_spelling_the_user_types(command, pattern):
+    """Requiring a pattern to match both the canonical and raw spelling made
+    every alias rule impossible and pushed users toward pattern='*'."""
+    engine = PolicyEngine()
+    engine.add_rule(Rule(tool="run_command", pattern=pattern, verdict=Verdict.ALLOW))
+    decision, _ = engine.evaluate(cmd_op(command))
+    assert decision.verdict is Verdict.ALLOW
+
+
+def test_interpreters_are_still_allowable():
+    """python -m pytest is the most common legitimate command; refusing to
+    auto-allow it would buy nothing, since no parsing catches
+    python -c "subprocess.run(['git','reset'])" anyway."""
+    assert segment_command("python -m pytest -q").trusted
+
+
 # --- a repository cannot loosen its own settings -------------------------
 
 
@@ -345,12 +420,64 @@ def test_trailing_whitespace_rung_preserves_indentation(ctx):
     assert (root / "app.py").read_text(encoding="utf-8") == "def run():\n    return 2\n"
 
 
-def test_same_file_twice_in_one_patch_is_rejected(ctx):
+@pytest.mark.parametrize("second", ["a.py", "./a.py", "A.py", "sub/../a.py"])
+def test_same_file_twice_in_one_patch_is_rejected(ctx, second):
     """Two Update blocks for one path each plan against the original text, so
-    the second write would silently discard the first."""
+    the second write silently discards the first. Comparing raw strings let
+    './a.py' and 'A.py' slip past as different files."""
     from foundry.core.errors import InvalidToolCall
 
     with pytest.raises(InvalidToolCall, match="more than once"):
         ApplyPatch().validate({"patch": envelope(
             "*** Update File: a.py\n<<<<<<< SEARCH\nA = 1\n=======\nA = 2\n>>>>>>> REPLACE\n"
-            "*** Update File: a.py\n<<<<<<< SEARCH\nB = 1\n=======\nB = 2\n>>>>>>> REPLACE")})
+            f"*** Update File: {second}\n<<<<<<< SEARCH\nB = 1\n=======\nB = 2\n>>>>>>> REPLACE")})
+
+
+def test_two_moves_onto_one_destination_are_rejected(ctx):
+    """Both planned cleanly (neither destination existed yet) and both wrote,
+    so the first file's content was destroyed while both reported success."""
+    from foundry.core.errors import InvalidToolCall
+
+    with pytest.raises(InvalidToolCall, match="more than once"):
+        ApplyPatch().validate({"patch": envelope(
+            "*** Update File: a.py\n*** Move to: merged.py\n"
+            "<<<<<<< SEARCH\nA\n=======\nA1\n>>>>>>> REPLACE\n"
+            "*** Update File: b.py\n*** Move to: merged.py\n"
+            "<<<<<<< SEARCH\nB\n=======\nB1\n>>>>>>> REPLACE")})
+
+
+def test_a_move_onto_an_added_file_is_rejected(ctx):
+    from foundry.core.errors import InvalidToolCall
+
+    with pytest.raises(InvalidToolCall, match="more than once"):
+        ApplyPatch().validate({"patch": envelope(
+            "*** Update File: a.py\n*** Move to: dest.py\n"
+            "<<<<<<< SEARCH\nA\n=======\nA1\n>>>>>>> REPLACE\n"
+            "*** Add File: dest.py\n+added")})
+
+
+@pytest.mark.parametrize("value", ["9999.0", "1e9", '"9999"', "true"])
+def test_repo_config_budget_must_be_an_integer(tmp_path, value):
+    """The tighten check sat inside an isinstance(int) test, so a TOML float
+    skipped it entirely: 9999 was refused while 9999.0 was accepted."""
+    from foundry.core.config import load_config
+    from foundry.core.errors import ConfigError
+
+    workspace = tmp_path / "repo"
+    (workspace / ".foundry").mkdir(parents=True)
+    (workspace / ".foundry" / "config.toml").write_text(
+        f"[runtime]\nmax_tool_rounds = {value}\n", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_config(workspace, home=tmp_path / "home")
+
+
+def test_user_config_budget_must_also_be_an_integer(tmp_path):
+    """A string reached the code that slices tool output and broke every later
+    tool call, so the type check belongs in the user path too."""
+    from foundry.core.config import load_config
+    from foundry.core.errors import ConfigError
+
+    (tmp_path / "config.toml").write_text(
+        '[runtime]\nmax_output_bytes = "99999"\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="must be an integer"):
+        load_config(home=tmp_path)

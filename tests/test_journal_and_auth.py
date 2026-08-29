@@ -139,20 +139,34 @@ def test_expired_credential_is_refreshed_once_and_the_turn_continues(wiring):
     outcome = runtime.run_turn("do the work")
     session.close()
 
-    assert source.invalidated == 1
+    assert source.acquired == 1
     assert backend.attempts == 2
     assert outcome.status is None, "the session should continue, not terminate"
     assert outcome.text == "recovered"
 
 
-def test_a_credential_rejected_twice_blocks(wiring):
+def test_refresh_never_destroys_the_stored_credential(wiring):
+    """invalidate() on the gateway source clears the vault, and nothing can
+    re-acquire yet: one expired token would log the user out permanently."""
     backend = _ExpiringBackend()
     runtime, session = wiring(backend)
-    runtime.credentials = _Source(value="expired-token")  # refresh yields the same
+    source = _Source()
+    runtime.credentials = source
+
+    runtime.run_turn("do the work")
+    session.close()
+    assert source.invalidated == 0
+
+
+def test_an_unchanged_credential_does_not_cost_a_second_request(wiring):
+    backend = _ExpiringBackend()
+    runtime, session = wiring(backend)
+    runtime.credentials = _Source(value="expired-token")  # re-acquire yields the same
 
     outcome = runtime.run_turn("do the work")
     session.close()
 
+    assert backend.attempts == 1, "retrying an identical credential is a wasted request"
     assert outcome.status is TerminalStatus.BLOCKED
     assert "authentication" in outcome.summary
 

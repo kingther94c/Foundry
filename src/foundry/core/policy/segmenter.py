@@ -61,7 +61,28 @@ _UNTRUSTED_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\|\s*%"), "pipeline to ForEach-Object shorthand"),
 )
 
-_SEPARATORS = (";", "|", "&&", "||", "\n")
+_SEPARATORS = (";", "|", "&&", "||", "\n", "\r")
+
+# A head we can reason about is a plain command name: letters, digits, and the
+# punctuation that appears in real executable and cmdlet names. Anything else --
+# a grouping paren, a script block, dot-sourcing, a variable -- is a construct
+# whose effect is not readable from the token, so the segment is untrusted.
+# Allowlisting the shape we can parse is the only version of this that does not
+# need a new entry every time someone finds another spelling.
+_PLAIN_HEAD = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.+-]*$")
+
+# Shell wrappers that take another *command line* as an argument: `cmd /c git
+# reset --hard` is a git command with a shell in front of it, and the breaker
+# would otherwise only see "cmd".
+#
+# Interpreters (python, node, ...) are deliberately not here. `python -c
+# "subprocess.run(['git','reset','--hard'])"` is equally destructive and no
+# amount of parsing would catch it, while `python -m pytest` is the single most
+# common legitimate command -- refusing to auto-allow it buys nothing and costs
+# everything. That a command can do whatever the program does is a property of
+# the trusted-host model, stated in the threat model, not something the
+# segmenter pretends to solve.
+_NESTED_SHELLS = frozenset({"cmd", "powershell", "pwsh", "bash", "sh", "wsl", "zsh", "dash"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,7 +133,10 @@ def _split_top_level(text: str) -> list[str]:
             current = []
             i += 2
             continue
-        if char in (";", "|", "\n"):
+        if char in (";", "|", "\n", "\r"):
+            # A bare CR is a statement separator in PowerShell. Missing it
+            # collapsed a whole chain into one segment whose head was the
+            # harmless first command.
             parts.append("".join(current))
             current = []
             i += 1
@@ -141,7 +165,9 @@ def _tokenize(segment: str) -> tuple[str, ...]:
         if char in "'\"":
             quote = char
             continue
-        if char.isspace():
+        if char.isspace() and char not in ("\r", "\n"):
+            # CR and LF are separators, never token whitespace: treating them as
+            # whitespace merged two statements into one argv.
             if current:
                 tokens.append("".join(current))
                 current = []
@@ -174,8 +200,10 @@ _GIT_GLOBAL_FLAGS = frozenset({"--no-pager", "--paginate", "--bare", "--literal-
 def effective_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
     """Drop leading global options so the subcommand lands at index 1.
 
-    Applied before any breaker comparison: a table that indexes ``argv[1]``
-    is bypassed by a single ``-C .`` otherwise.
+    Skips *any* leading option rather than an enumerated list. Enumerating was
+    the bug: git has dozens of global flags, and the first one missing from the
+    list (``--no-advice``, ``--icase-pathspecs``, ...) stopped the scan and left
+    the whole breaker table looking at the wrong index.
     """
     if not argv:
         return argv
@@ -184,18 +212,12 @@ def effective_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
         return (head,) + argv[1:]
 
     rest = list(argv[1:])
-    while rest:
+    while rest and rest[0].startswith("-"):
         token = rest[0]
-        if token in _GIT_GLOBAL_WITH_VALUE:
-            del rest[:2]
-            continue
-        if token in _GIT_GLOBAL_FLAGS:
-            del rest[:1]
-            continue
-        if any(token.startswith(f"{opt}=") for opt in _GIT_GLOBAL_WITH_VALUE):
-            del rest[:1]
-            continue
-        break
+        # `-C <dir>` and `-c <k=v>` take a separate value; `--opt=value` carries
+        # its own. Anything else is a lone flag.
+        takes_value = token in _GIT_GLOBAL_WITH_VALUE and "=" not in token
+        del rest[:2 if takes_value else 1]
     return (head, *rest)
 
 
@@ -218,7 +240,22 @@ def segment_command(command: str) -> SegmentedCommand:
         argv = _tokenize(part)
         if not argv:
             return SegmentedCommand(raw=command, untrusted_reason="empty segment")
+
         canonical_head = canonicalize(argv[0])
+        # The head must look like a plain command name. A grouping paren, a
+        # script block, dot-sourcing, or a variable hides what actually runs,
+        # and no breaker entry can match a head it cannot read.
+        if not _PLAIN_HEAD.match(canonical_head):
+            return SegmentedCommand(
+                raw=command,
+                untrusted_reason=f"command name is not a plain executable: {argv[0]!r}",
+            )
+        if canonical_head in _NESTED_SHELLS and len(argv) > 1:
+            return SegmentedCommand(
+                raw=command,
+                untrusted_reason=f"{canonical_head} runs a command given as an argument",
+            )
+
         canonical = " ".join((canonical_head,) + argv[1:])
         segments.append(Segment(text=part, argv=argv, canonical=canonical))
 

@@ -307,17 +307,37 @@ class ApplyPatch:
 
         ops = parse_patch(patch)
 
-        # One file per envelope: two Update blocks for the same path each plan
-        # against the original text, so the second write would silently discard
-        # the first while both report success.
-        seen: set[str] = set()
+        # Every destination an envelope writes to must be distinct. Two ops on
+        # one file each plan against the original text, so the second write
+        # discards the first; two ops moving onto one destination overwrite each
+        # other -- and every case reports success.
+        #
+        # Compared on a normalized spelling, because "a.py", "./a.py", "A.py"
+        # and "sub\a.py" are the same file and comparing raw strings let them
+        # collide silently.
+        def key(path: str) -> str:
+            parts: list[str] = []
+            for part in path.replace("\\", "/").lower().split("/"):
+                if part in ("", "."):
+                    continue
+                if part == ".." and parts:
+                    parts.pop()
+                    continue
+                parts.append(part)
+            return "/".join(parts)
+
+        seen: dict[str, str] = {}
         for file_op in ops:
-            if file_op.path in seen:
-                raise InvalidToolCall(
-                    f"{file_op.path} appears more than once; put all of a file's "
-                    "hunks in a single '*** Update File:' block"
-                )
-            seen.add(file_op.path)
+            for path in (file_op.path, file_op.move_to):
+                if not path:
+                    continue
+                if key(path) in seen:
+                    raise InvalidToolCall(
+                        f"{path} is written more than once in this patch (also as "
+                        f"{seen[key(path)]}); each file may be the target of one "
+                        "operation, with all of its hunks in a single block"
+                    )
+                seen[key(path)] = path
 
         # Move destinations count as touched paths. Leaving them out hides an
         # unconditional whole-file overwrite from the breaker, the dirty-file
