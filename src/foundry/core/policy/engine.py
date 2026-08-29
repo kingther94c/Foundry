@@ -100,7 +100,9 @@ class Decision:
 # Hard-coded, unreachable by any rule, mode, or callback. Entries are written in
 # canonical form because the segmenter canonicalizes aliases before matching.
 
-PROTECTED_WRITE_FRAGMENTS = (".git/", ".git\\", ".foundry/", ".foundry\\")
+# Matched per path component: a substring check for ".git/" misses a path whose
+# final component is itself .git.
+PROTECTED_WRITE_NAMES = frozenset({".git", ".foundry"})
 
 DESTRUCTIVE_GIT = (
     ("git", "checkout", "--"),
@@ -128,8 +130,8 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
     """Returns a hit if the operation is categorically forbidden."""
     if op.kind is ToolKind.MUTATOR and op.tool == "apply_patch":
         for path in op.args.get("paths", []):
-            normalized = path.replace("\\", "/").lower()
-            if any(frag.replace("\\", "/") in f"/{normalized}" for frag in PROTECTED_WRITE_FRAGMENTS):
+            components = {p.lower() for p in path.replace("\\", "/").split("/")}
+            if components & PROTECTED_WRITE_NAMES:
                 return BreakerHit(f"writes to {path} are never permitted")
 
     if op.tool != "run_command":

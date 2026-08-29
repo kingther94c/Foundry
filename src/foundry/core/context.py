@@ -22,6 +22,7 @@ from foundry.core.conversation import (
     ToolUseBlock,
     Usage,
 )
+from foundry.core.redaction import Redactor, default_redactor
 
 MASK_AFTER_TURNS = 5
 MASK_NOTICE = "[output elided to save context; re-run the tool if you need it again]"
@@ -38,6 +39,7 @@ class ContextManager:
     mask_after_turns: int = MASK_AFTER_TURNS
     reserve_output_tokens: int = 8_000
 
+    redactor: Redactor = field(default_factory=default_redactor)
     history: list[Message] = field(default_factory=list)
     session_usage: Usage = field(default_factory=Usage)
     _turn_of_message: list[int] = field(default_factory=list)
@@ -57,8 +59,12 @@ class ContextManager:
         self.append(Message.text(Role.USER, text))
 
     def append_tool_result(self, call_id: str, content: str, *, is_error: bool = False) -> None:
+        # The third redaction sink. A command that printed a credential must not
+        # carry it into the next request just because the journal copy was
+        # scrubbed -- the model's context is the one that leaves the machine.
         self.append(Message(role=Role.TOOL,
-                            blocks=(ToolResultBlock(call_id=call_id, content=content,
+                            blocks=(ToolResultBlock(call_id=call_id,
+                                                    content=self.redactor.scrub(content),
                                                     is_error=is_error),)))
 
     def record_usage(self, usage: Usage) -> None:

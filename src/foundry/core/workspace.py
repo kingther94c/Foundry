@@ -50,8 +50,10 @@ class Workspace:
             raise PathRejected(f"workspace root is not a directory: {root}")
         self.root = resolved
         self._root_key = os.path.normcase(str(self.root))
-        # Paths that are inside the workspace but must never be written by tools.
-        self._protected = ("\\.git\\", "/.git/", "\\.foundry\\", "/.foundry/")
+        # Directories inside the workspace that tools must never write into.
+        # Matched per component, not as a substring: a check for "/.git/" misses
+        # a path whose last component *is* .git.
+        self._protected_names = frozenset({".git", ".foundry"})
 
     # -- validation -------------------------------------------------------
 
@@ -132,8 +134,8 @@ class Workspace:
         relative = os.path.relpath(real, self.root).replace("\\", "/")
 
         if for_write:
-            marker = os.path.normcase(str(real))
-            if any(p in marker for p in self._protected):
+            components = {part.lower() for part in relative.split("/")}
+            if components & self._protected_names:
                 raise PathRejected(f"writes to {relative} are never permitted")
 
         return ResolvedPath(absolute=real, relative=relative)
