@@ -10,7 +10,7 @@
 | OQ-3 | 公司 Gateway 协议假设是否成立？ | answered(部分) | Gateway 多模型（含 Claude）→ provider-agnostic IR → [D-006](decision-log.md)；细节 → OQ-6 |
 | OQ-4 | 自研的真实动机？ | answered | 公司合规约束 + 学习目的 → [D-007](decision-log.md) |
 | OQ-5 | ChatGPT 第三方登录可行性 | answered | **blocked-with-evidence**（[research/auth.md](research/auth.md)）；个人路径改 API key → [D-009](decision-log.md) |
-| OQ-6 | 公司 Gateway 具体信息：endpoint 形态（统一 OpenAI 兼容 / 按模型分协议）、认证方式（静态 key / SSO token / 轮换）、TLS/proxy 特殊要求（是否 NTLM 代理）、模型清单、协议差异文档 | **open** | 需用户回公司确认；确认前按可配置 adapter 设计推进（[requirements.md](requirements.md) §3.2），不阻塞 M0–M2 |
+| OQ-6 | 公司 Gateway **剩余未知**：内网 auth 的具体机制（HTTP 交换 / 内部可执行 / 浏览器 SSO）、endpoint 形态、模型清单 | **open（M3 前须定）** | 协议部分已关闭：OpenAI 系走 Responses、token 来自内网 auth → [D-022](decision-log.md)。M3 入场门 = 先取 tool-call 流式脱敏夹具 |
 | OQ-7 | 编辑工具格式选型 | answered | 模型中性锚定 search/replace 信封 → [D-010](decision-log.md) |
 | OQ-8 | 本地 OpenAI 兼容端点作 dev-only backend？ | answered | 接受（用户第二轮，随 D-009 一并确认）；仅开发冒烟，非产品路径 |
 | OQ-9 | session resume 进不进 V1？ | answered | schema 可重放、功能 V2 → [D-012](decision-log.md) |
@@ -22,3 +22,5 @@
 | OQ-15 | managed policy 层（公司 DENY floor）由谁编写和下发：IT 推送 `C:\ProgramData\Foundry\policy.toml`？随内部 wheel 打包？还是 V1 先不做 managed 层（个人自用阶段）？ | **open** | 不阻塞设计（层机制已预留）；部署公司前须定 |
 | OQ-16 | headless `foundry exec` 进 V1（M4 顺手做）还是 V2？ | open | 事件架构使其成本很低；M4 时按余量决定 |
 | OQ-17 | 仓库说明文件 `FOUNDRY.md`/`AGENTS.md` 进 V1 吗？ | answered | 进 V1，M2 交付（信任门控 + 字节上限；验证命令优先级 任务>仓库>模型）→ [D-019](decision-log.md) |
+| OQ-18 | 是否开源、用什么 license？ | answered | 暂不开源，license 推迟 → [D-021](decision-log.md) |
+| OQ-19 | session 保留策略默认值（条数 / 天数 / 体积上限）？artifact 是否需静态加密？ | open（M2 前须定） | Claude 倾向：默认保留 30 天 + 体积上限，用户可手动删除；不承诺未经验证的加密 |

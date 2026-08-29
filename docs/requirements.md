@@ -76,14 +76,16 @@ AgentRuntime（唯一的 loop）
 
 ### 3.2 公司 Gateway（多模型，含 Claude）
 
-事实修正（[D-006](decision-log.md)）：Gateway 上挂多家模型（含 Claude 等非 OpenAI 模型）。v0.1"优先支持 OpenAI Responses-compatible"不再是唯一假设。
+已知事实（[D-006](decision-log.md) / [D-022](decision-log.md)）：Gateway 挂多家模型；**OpenAI 系走 Responses API**；token 由**内网 auth 流程**获取后配合 Gateway URL 使用；Claude 模型存在但线协议未验证。
 
 硬性需求：
 - **内部表示 provider-agnostic**：conversation / tool-call / tool-result / 流式事件采用 Foundry 自有中间表示（内容块结构对齐 MCP 形态，为未来桥接留门）；各线协议（Chat Completions / Responses / Anthropic Messages / Gateway 自有）各写窄 adapter，adapter 只做互转，不拥有 loop。
-- backend 配置表（借鉴 codex `ModelProviderInfo`）：`{name, base_url, protocol, credential_source, http_headers, query_params, request_max_retries, stream_idle_timeout_ms, capabilities_override}`。
-- **capability probing + 优雅降级**（luban 教训）：企业 Gateway 必然偏离标准（流式模式、并行 tool call、缓存、usage 字段）；每个可选特性都要有降级路径并在 session 中记录探测结果。
-- TLS/proxy：默认用 `ssl.create_default_context()`（自动信任 Windows 系统证书库——公司 MITM 代理场景零配置）；支持 `FOUNDRY_CA_BUNDLE`/`SSL_CERT_FILE` 覆盖；代理读 `HTTPS_PROXY`/`NO_PROXY`；检测到 407 Negotiate（NTLM/Kerberos 代理）时给出明确报错（stdlib 不支持，V1 不承诺）。
-- 待确认信息（[OQ-6](open-questions.md)）：endpoint 形态、认证方式、模型清单、协议差异文档。确认前按上述可配置设计推进，不阻塞。
+- backend 配置表（借鉴 codex `ModelProviderInfo`）：`{name, base_url, protocol, credential_source, http_headers, query_params, request_max_retries, stream_idle_timeout_ms, capabilities_override}`；每个生效配置值记录 provenance（来自哪一层）。
+- **capability probing + 优雅降级**（luban 教训）：企业 Gateway 必然偏离标准（流式模式、并行 tool call、缓存、usage 字段）；每个可选特性都要有降级路径并在 session 中记录探测结果。**不静默模拟不支持的语义**。
+- **CredentialSource 合同**（吸收 Codex 版）：`acquire / expiry / refresh / logout`，机制可插拔（HTTP 交换 / 内部可执行 / 浏览器 SSO 待发现）；凭证以不可打印的 handle 流转，仅 HTTP 传输层解析——认证与协议 adapter 分离。
+- **M3 入场门**：先取得 Gateway 的 **tool-call 流式脱敏夹具**（普通响应 / 工具调用与续传 / usage / 限流 / 断流 / 畸形事件）再动手实现——"Responses-compatible"可能只覆盖对话而不覆盖 agentic 工具续传，这是最贵的返工风险。
+- TLS/proxy：默认用 `ssl.create_default_context()`（自动信任 Windows 系统证书库——公司 MITM 代理场景零配置）；支持 `FOUNDRY_CA_BUNDLE`/`SSL_CERT_FILE` 覆盖；代理读 `HTTPS_PROXY`/`NO_PROXY`；proxy/自定义 CA/mTLS **非 V1 验收项**（能力保留），407 Negotiate 明确报错。
+- 待确认（[OQ-6](open-questions.md)）：内网 auth 的具体机制、endpoint 形态、模型清单。
 
 ### 3.3 开发/测试路径（新增）
 
@@ -122,6 +124,8 @@ AgentRuntime（唯一的 loop）
 - 决策词汇固定 `ALLOW / ASK / DENY`，规则形如 `tool` 或 `tool(pattern)`（fnmatch），固定优先序 deny > ask > allow，**拒绝数字优先级**（gemini-cli 教训）。
 - DENY 返回给模型一个机器可读 reason 作为 tool result（loop 存活，模型可调整）；用户 Abort 才终止 turn。
 - 审批粒度：`一次 / 本会话（仅内存）/ 永久`。**永久规则写入 `~/.foundry/` 用户层配置（按 workspace 键控），不写 workspace 内文件**——否则 accept_edits 下模型可自我提权（评审发现）；生成规则为**精确串匹配**（无模式泛化），下次 policy 评估时生效。审批 UI 展示的命令/diff 与实际执行对象必须是同一字符串（what-you-approve-is-what-runs）；ASK 超时默认 DENY。模型输出永远不能触发规则持久化。
+- **审批绑定与失效**（吸收 Codex 版）：一次审批绑定「归一化操作 + cwd + env 策略 + 有效期」，任一字段变化即失效需重新审批；执行前重新校验时效性不变量（防审批与执行之间状态漂移）。
+- policy 决定落盘时记录：rule ID、策略版本/摘要、操作摘要、reason、时间——事后可复核"当时为什么放行"。
 - **内置 circuit breaker（第 0 步，硬编码表，任何 ALLOW 规则/mode/回调不可覆盖）**：
 
   | 类别 | 条目（canonical 形式，分段器先做别名归一：`rm/ri/del/erase → Remove-Item` 等） |
@@ -146,7 +150,7 @@ AgentRuntime（唯一的 loop）
 
 ### 4.3 配置分层与仓库信任（本节为分层的唯一权威定义，§1 与 design.md 引用此处）
 
-- **设置类（标量，如 model、shell、超时）**：CLI flag > 项目本地（.gitignored）> profile（用户配置内选定）> 用户 `~/.foundry/config.toml` > 内置默认。
+- **设置类（标量，如 model、shell、超时）**：CLI flag > 环境变量（`FOUNDRY_*`）> 项目本地（.gitignored）> profile（用户配置内选定）> 用户 `~/.foundry/config.toml` > 内置默认。**secrets 只能来自环境变量或凭证存储，禁止出现在仓库配置与普通 CLI 参数中**。
 - **policy 规则类**：各层规则列表**拼接**后统一按 deny > ask > allow 评估（层间先后不影响结果，deny-from-anywhere-wins）；例外：**managed 层**（管理员 ACL 目录如 `C:\ProgramData\Foundry\policy.toml`）的 DENY 为地板，且仓库签入层只接受 deny/ask。
 - **仓库内配置只能收紧**（新增 DENY/ASK），永远不能新增 ALLOW；endpoint、credential、headers、proxy 等连接类配置只能来自机器本地层。首次在新目录使用仓库提供的任何配置/说明文件前，一次性信任提示，记录于 `~/.foundry/trusted.json`。
 - **仓库说明文件（[D-019](decision-log.md)，M2 交付）**：V1 支持读取项目根 `FOUNDRY.md`（兼容 `AGENTS.md`），声明构建/测试命令与仓库注意事项，注入上下文（信任门控 + 字节上限）；验证命令优先级：任务指定 > 仓库文件声明 > 模型自选。
@@ -167,7 +171,8 @@ AgentRuntime（唯一的 loop）
 
 - 形态：`while 模型返回 tool calls：policy → 执行 → 回填 results → 重采样`；模型给出无 tool call 的最终消息即 turn 结束。中途用户输入进入队列，下一次采样时合并（codex mid-turn steering）。
 - 每轮请求为无状态全量历史（stateless full-history），便于 replay 与不持久化状态的 Gateway。
-- 限制：软性连续工具轮数上限（可配置）、单命令超时、每任务 token 上限（可选配置）；重复失败有限终止；同一文件连续编辑失败 2-3 次后强制 read_file（SWE-agent 错误复合曲线教训）。
+- 限制：软性连续工具轮数上限（可配置）、单命令超时、每任务 token 上限（可选配置）；同一文件连续编辑失败 2-3 次后强制 read_file（SWE-agent 错误复合曲线教训）。
+- **失败指纹**（吸收 Codex 版）：重复失败按「归一化操作 + 错误类」计数，**错误文本变化不重置计数器**；超过小阈值即终止或转人工，避免模型换个措辞无限重试。
 - **协议层必须接受一轮 N 个 tool call**（Responses/Claude 都会并行发）；V1 执行层按顺序串行，每个独立过 policy，全部回填后进入下一轮。
 - malformed / 未知 / 越权 tool call 不执行，返回结构化错误给模型。
 - 错误分类学：`TransientError（429/5xx/网络，指数退避重试，尊重 Retry-After）/ AuthError（refresh 后重试一次）/ FatalError（context 超限、内容拒绝）/ PolicyDenied`；retry 逻辑归 AgentRuntime，不散落各 backend；持续限流以 `blocked(rate_limited)` 终止而非无限等待。
@@ -203,18 +208,21 @@ AgentRuntime（唯一的 loop）
 ### 5.4 Workspace 边界
 
 - workspace = 显式传入或默认 cwd 的单一目录，**必须位于 git 仓库内**（否则启动拒绝并给出明确错误）；monorepo 允许以子目录为 workspace；多仓库任务 = 非目标。
-- 路径 containment：`realpath(strict)` 双侧解析 + `normcase` + `commonpath`，逐组件检查 reparse point（junction/symlink，`st_reparse_tag`）；显式拒绝 ADS（`file:stream`）、设备名（CON/NUL/COM1…含带扩展名形式）、UNC/`\\?\` 前缀、盘符相对路径（`C:foo`）、尾部点/空格。hardlink 与 TOCTOU 列为已知接受风险写进威胁模型。
+- **文件工具的路径参数 = workspace 相对逻辑路径**（吸收 Codex 版）：绝对路径、设备路径、UNC 一律拒绝——越界在接口层就不可表达。
+- 路径 containment：`realpath(strict)` 双侧解析 + `normcase` + `commonpath`，逐组件检查 reparse point（junction/symlink，`st_reparse_tag`）；显式拒绝 ADS（`file:stream`）、设备名（CON/NUL/COM1…含带扩展名形式）、UNC/`\\?\` 前缀、盘符相对路径（`C:foo`）、尾部点/空格。目标环境**无法创建 symlink 且无 Developer Mode**，故 V1 一律拒绝 reparse point 而不做"安全目标"分类。hardlink 与 TOCTOU 列为已知接受风险写进威胁模型。
 - 诚实披露：workspace 限制只约束文件工具；run_command 天然不受其约束，真正的闸门是 policy。
-- **脏工作区（[D-011](decision-log.md)）**：警告后继续；会话开始记录 baseline（HEAD SHA + `git status --porcelain=v2` 脏文件清单）；对 baseline 中已脏文件的 apply_patch **强制 ASK**；销毁性 git 命令内置 DENY（见 §4.1 circuit breaker）。
+- **脏工作区（[D-011](decision-log.md)）**：警告后继续；会话开始记录 baseline（HEAD SHA + `git status --porcelain=v2` + 相关未跟踪文件的元数据/摘要——单次 `git diff` 不足以覆盖未跟踪文件）；对 baseline 中已脏文件的 apply_patch **强制 ASK**；销毁性 git 命令内置 DENY（见 §4.1 circuit breaker）。
+- **乐观并发写保护**（吸收 Codex 版）：每次写入前校验目标文件自上次读取以来未变（内容摘要），变化则以 `stale` 失败并回传最新上下文，绝不覆盖；结果记录新旧摘要。分支名醒目显示但**不承载安全语义**（不硬编码 main 特殊行为）。
 
 ## 6. Session 与完成条件
 
 ### 6.1 SessionStore
 
-- 位置：`~/.foundry/sessions/YYYY/MM/DD/<ISO-ts>-<uuid>.jsonl`（永不放在 workspace 内；文件工具对该目录内置 DENY）；原子追加；可配置保留期。
+- 位置：`~/.foundry/sessions/<session-id>/events.jsonl` + 同目录 `artifacts/<sha256>`（**内容寻址**，吸收 Codex 版：事件只引用 digest/大小/媒体类型/截断态，artifact 不可按任意路径取回）；永不放在 workspace 内，文件工具对该目录内置 DENY；原子追加；保留期用户可配置。
 - 行信封从第一天冻结：`{ts, ordinal, type, v, payload}`；首行 header 记录 `{schema_version, foundry_version, session_id, workspace, profile, model}`。演进规则：只增不改不删，reader 跳过未知类型。**事件类型集的单一权威是 design.md §9**（git baseline 记为 `git_baseline` 事件而非 header 字段，与"ref 移动记为事件"的 §6.3 语义一致）。
 - 记录事件类别：model request/response（完整到可重建请求——**resume-ready，[D-012]**；**auth/Authorization 头除外**，重放时由 HTTP 层重新注入，绝不落盘）、tool call/result（含 policy 决定与 reason）、approval（展示串 + 用户决定）、command（argv、exit code、时长、原始输出 bytes）、token usage、validation、termination、capability probe、git_baseline。
 - **Resume 功能本身推 V2**；V1 只承诺 schema 可重放（这同时是 ReplayBackend 测试的基础，一石二鸟）。
+- **崩溃恢复语义**（吸收 Codex 版）：读取时容忍截尾的最后一条记录；**没有终止事件的 session 一律判为 `interrupted`，绝不可被误认为 completed**；终止/审批/命令完成事件写入后立即 flush。
 - 秘密处理（可验收表述，范围经评审修正）：
   - (a) **字节级 exact-match**：对 Foundry 自持凭证的 UTF-8 与 UTF-16LE 字节编码，在唯一写入 choke point 上、**在 base64 编码原始输出之前**做替换——保证范围 = "已知自持凭证的字面字节序列"，不做更大承诺；
   - (b) **artifact 落盘与 read_artifact 回读经过同一 choke point**（否则超限输出成为旁路）；
@@ -233,7 +241,9 @@ AgentRuntime（唯一的 loop）
 - `completed` 门禁：finish 时 runtime 自动执行 git_status/git_diff 核对；每条 `ValidationClaim{claim_text, command_event_id}` 与事件流交叉核验（事件存在、为 command_exec 类型、exit code 与声明一致）——任一不符则拒绝 `completed`（降级 `partial` 并说明）。
 - baseline 完整性：完成检查时校验 HEAD 未被移动（模型经 run_command commit/reset 会污染证据链）；任何 ref 移动记为事件并降级 `partial`。
 - 只读任务（答疑/评审）走 `completed(no_changes)` 路径：git status 与 baseline 一致即满足。
-- 其他状态：`partial / blocked / failed / cancelled`，每种都必须带 termination reason 事件。
+- **claims 可以为空**：显式声明"本任务未执行验证"是有效披露；编造或推断的成功不是（吸收 Codex 版）。
+- **变更归属分离报告**：最终报告区分「本次会话触碰的文件」与「baseline 已脏 / 会话期间被并发改动的文件」；只声称能证明的文件版本，不声称行级归属。
+- 其他状态：`partial / blocked / failed / cancelled`（外加恢复时判定的 `interrupted`），每种都必须带 termination reason 事件；一个 session **有且仅有一次**终止事件。
 
 ## 7. 打包与依赖
 
@@ -250,9 +260,12 @@ AgentRuntime（唯一的 loop）
 
 1. **安装验收**：干净 Windows 11 + Python 3.12，无外网，`pip --no-index` 从 wheelhouse 安装成功并跑通 `foundry doctor`。
 2. **golden 任务集**（自建小型样例仓库 fixture 进 repo，[D-020](decision-log.md)；5–10 个）：修失败测试、加测试、小重构、只读答疑各类至少一个；每个规定预期终止状态与证据形态。回归方式（评审修正）：ReplayBackend 按序号回放 + 对请求做**结构断言**（工具调用序列/关键字段），请求全文 diff 输出为测试产物供人工审查；"逐字节重建"单独作为 resume-ready 测试。prompt/loop 改动须过全套结构断言；夹具重录工作流（`foundry record`，对本地端点重录）为 M0 交付物。
-3. **负面用例**：越权/未知/malformed tool call 被拒且 loop 存活；DENY 不可被 ALLOW 覆盖（含 managed 层）；路径逃逸样例（junction、ADS、`..`、设备名）全部被拒；取消运行中的多级子进程树无孤儿残留；ASK 超时 = DENY；`completed` 在验证声明造假（引用不存在事件）时被拒。
-4. **离线测试验收**：全部单元/集成测试在无网络、无凭证机器上绿。
-5. **真实 E2E**：个人 API key 与（可用时）公司 Gateway 各跑通至少一个 golden 任务。
+3. **负面用例**：越权/未知/malformed tool call 被拒且 loop 存活；DENY 不可被 ALLOW 覆盖（含 managed 层）；路径逃逸样例（junction、ADS、`..`、设备名、盘符相对、UNC）全部被拒；取消运行中的多级子进程树无孤儿残留；ASK 超时 = DENY；`completed` 在验证声明造假（引用不存在事件）时被拒。
+4. **canary 泄漏套件**（吸收 Codex 版）：以金丝雀凭证跑通全流程，断言其**不出现在**控制台、prompt、session journal、artifact、异常字符串与诊断导出中——这是"凭证不泄漏"从声明变为可验收的唯一方式。
+5. **脏工作区矩阵**：staged / unstaged / untracked / 重命名 / 删除 / 非 UTF-8 与二进制 / 并发修改 / 编辑 baseline 已脏文件——证明既有工作不被丢弃也不被错误归属；**测试夹具复原不得使用破坏性 git 命令**。
+6. **崩溃恢复**：截尾 journal 不可被判为 completed；每种终止状态都能从脱敏日志重建。
+7. **离线测试验收**：全部单元/集成测试在无网络、无凭证机器上绿。
+8. **真实 E2E**：个人 API key 与（可用时）公司 Gateway 各跑通至少一个 golden 任务。
 
 ## 9. 非目标（V1 明确不做）
 

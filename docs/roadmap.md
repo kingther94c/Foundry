@@ -11,7 +11,7 @@
 - loop + ContextManager 投影（无 masking）+ 2 个工具（`read_file`、`list_files`）+ 最小 rich UI。
 - backend：`replay` + `openai_compat`（用**本地端点**冒烟——无凭证可验证，回应"开发环境没有 API"的约束）；`foundry record` 夹具重录工作流。
 - SessionStore 落盘 + 首个 golden transcript 回归测试。
-- **验收（评审修正，拆绑定/冒烟）**：绑定 = 无网络无凭证机器上 replay 套件全绿（机器可判）；冒烟 = 对本地端点（可选开发环境，需自装 LM Studio/Ollama）完成一次含 ≥1 个 read_file 调用、以 `completed(no_changes)` 干净终止的会话——终止状态与事件序列机器断言，回答质量人工目检、不作门禁。
+- **验收（评审修正，拆绑定/冒烟）**：绑定 = 无网络无凭证机器上 replay 套件全绿（机器可判）+ 崩溃恢复用例（截尾 journal 判 `interrupted` 而非 completed）；冒烟 = 对本地端点（可选开发环境，需自装 LM Studio/Ollama）完成一次含 ≥1 个 read_file 调用、以 `completed(no_changes)` 干净终止的会话——终止状态与事件序列机器断言，回答质量人工目检、不作门禁。
 
 ## M1a — 文件工具 + Policy 流水线（评审修正：原 M1 对独立开发者过肥，拆二）
 
@@ -19,7 +19,7 @@
 
 - apply_patch（锚定格式 + 逐文件原子 + 宽容梯度）、workspace 边界模块、其余文件/git 工具。
 - PolicyEngine 六步流水线（先覆盖文件工具）+ 审批 UI（once/session/always）+ 脏工作区策略（baseline + 脏文件 ASK 规则）。
-- **验收**：路径逃逸样例全拒（junction、ADS、`..`、设备名）；越权/malformed tool call 被拒且 loop 存活；accept_edits/脏文件/持久化规则三用例（需求 §4.1 测试表）；ASK 超时=DENY。
+- **验收**：路径逃逸样例全拒（junction、ADS、`..`、设备名、盘符相对、UNC）；越权/malformed tool call 被拒且 loop 存活；accept_edits/脏文件/持久化规则三用例（需求 §4.1 测试表）；ASK 超时=DENY；**脏工作区矩阵**（需求 §8.5，含并发修改致 `stale` 拒写）。
 
 ## M1b — run_command + 分段器（shell 已定：PowerShell 5.1，[D-018](decision-log.md)）
 
@@ -38,11 +38,11 @@
 
 ## M3 — 公司 Gateway
 
-**目标**：公司电脑可用。
+**目标**：公司电脑可用。**入场门（[D-022](decision-log.md)）：先取得 Gateway 的 tool-call 流式脱敏夹具**（普通响应 / 工具调用与续传 / usage / 限流 / 断流 / 畸形事件），再动手实现——"Responses-compatible"可能只覆盖对话而不覆盖 agentic 工具续传。
 
-- Gateway 信息落地（[OQ-6](open-questions.md)）：协议 adapter 选型收敛、credential source、TLS/proxy 实测（含 `FOUNDRY_CA_BUNDLE`）。
+- `responses` adapter（必选）+ CredentialSource（内网 auth 机制，[OQ-6](open-questions.md)）+ TLS/proxy 实测（含 `FOUNDRY_CA_BUNDLE`）。
 - capability probing + 降级路径；per-model profile（Claude 系 edit_format/prompt 变体）；managed policy 层（ProgramData DENY floor）。
-- **验收**：公司环境跑通 ≥1 个 golden 任务；capability probe 结果落盘；managed DENY 实测不可放松。
+- **验收**：公司环境跑通 ≥1 个 golden 任务；**canary 泄漏套件**（需求 §8.4）在真实凭证路径上通过；token 过期/重获取/限流/断流/畸形调用/超时各有有界测试；capability probe 结果落盘；managed DENY 实测不可放松。Claude 支持按观察到的协议单独决定接受或推迟。
 
 ## M4 — 打包加固 + 披露
 

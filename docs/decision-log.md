@@ -102,6 +102,25 @@
 - **日期**：2026-08-29　**状态**：已确认（用户第三轮回答，OQ-14）
 - **内容**：自建几十个文件的 Python 样例项目（含故意 bug 与测试）作为 fixture 进 Foundry repo；可移植、可分享、离线可用；公司仓库作 M3 补充验收。
 
+## D-021 V1 暂不开源，license 推迟
+- **日期**：2026-08-29　**状态**：已确认（用户第四轮回答；Codex 蓝图曾提议 Apache-2.0 开源）
+- **内容**：私有仓库推进，license 待定。文档可保留公司上下文不做脱敏。若日后开源，需补：provenance/license 审查约定、公司细节泛化。
+
+## D-022 采信公司 Gateway 情报：OpenAI 系走 Responses，token 来自内网 auth
+- **日期**：2026-08-29　**状态**：已确认（用户第四轮回答，源自其给 Codex 的答复）
+- **内容**：Gateway 上 OpenAI 系模型支持 **Responses API**；token 由**内网 auth 流程**获取后配合 Gateway URL 使用（具体机制 HTTP 交换 / 内部可执行 / 浏览器 SSO 待确认）；Claude 模型存在但线协议未验证。
+- **影响**：`responses` adapter 从"按需新增"升为 **M3 必选**；OQ-6 收窄为"内网 auth 机制 + endpoint 形态 + 模型清单"；**M3 入场门 = 先拿到 Gateway 的 tool-call 流式脱敏夹具**再实现（"Responses-compatible 只覆盖对话不覆盖工具续传"是高代价返工风险）。
+- **同批采信**：目标 Windows 环境不能创建 symlink、无 Developer Mode（→ V1 一律拒绝 reparse point）；proxy / 自定义 CA / mTLS 非 V1 验收项（能力保留）。
+
+## D-023 apply_patch 默认仍走交互审批（否决 Codex 版默认放行）
+- **日期**：2026-08-29　**状态**：已确认（用户第四轮回答）
+- **内容**：Codex 蓝图 FR-POL-04 主张默认放行 workspace 内精确补丁（对齐 Codex CLI 默认）。裁决：维持我方默认落交互审批，用户熟悉后切 `accept_edits` 即得同等体验；信任建立期更稳健。脏文件强制 ASK 与熔断表在两种模式下均生效。
+
+## D-024 吸收 Codex 蓝图的 13 项工程要点
+- **日期**：2026-08-29　**状态**：已确认（用户第四轮：以我方为主干、吸收值得的部分）
+- **内容**：canary 泄漏套件｜崩溃恢复语义（截尾容忍、无终止事件判 `interrupted`）｜内容寻址 artifacts｜失败指纹（按归一化操作+错误类计数，文本变化不重置）｜审批绑定 cwd/env/有效期｜policy 决定记 rule ID 与策略摘要｜env 配置层 + secrets 禁入仓库配置与 CLI 参数｜文件工具路径限 workspace 相对（绝对/设备路径不可表达）｜claims 可为空但须显式披露"未验证"｜变更归属分离报告｜假 HTTP server 的 adapter 合同测试 + 负向断言｜CredentialSource 合同与不可打印 SecretHandle｜脏工作区矩阵与"夹具复原禁用破坏性 git"。
+- **出处**：详见 [research/codex-blueprint-comparison.md](research/codex-blueprint-comparison.md)（Codex 分支 `codex/create-branch-codex-blueprint` / PR #1 保留存档，不合入）。
+
 ## 评审修正记录（2026-08-29 对抗评审，详见 git history 与评审归档）
 - §4.1 修机制矛盾：只读默认 = 内置 ALLOW 规则（步 5）；mutator 默认 = 落步 6 审批（非 ASK 规则，否则 accept_edits 与审批持久化永不生效）；脏文件 ASK = 内置 ASK 规则（步 3，压过 accept_edits）；补 mode 基线定义（dont_ask = fail-closed DENY）。
 - 审批"永久"规则改写入用户层（按 workspace 键控）而非 workspace 内文件；breaker 加 `<workspace>/.foundry/` 写保护——堵 accept_edits 下自我提权。

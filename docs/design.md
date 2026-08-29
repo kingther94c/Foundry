@@ -147,14 +147,16 @@ class ModelBackend(Protocol):
 # Capabilities: parallel_tool_calls, streaming, prompt_caching, usage_fields, custom_tools, max_context
 ```
 
-- Adapters（V1）：`openai_compat`（Chat Completions——个人 API key、本地端点、多数企业网关）、`replay`（夹具驱动，测试唯一指定）。**`responses` 与 `anthropic_messages` 同为按需新增**（OQ-6 的 Gateway 答案或个人路径实际需要触发时指派里程碑并记决策；codex 教训：不为"以防万一"养双协议）。M0 冻结 ModelBackend 协议前，用 Responses 线协议做一次纸面走查（IR↔Responses 映射表）以保住冻结承诺。
+- Adapters：`openai_compat`（Chat Completions——个人 API key、本地端点）、`replay`（夹具驱动，测试唯一指定）、**`responses`（M3 必选**——公司 Gateway 的 OpenAI 系模型走 Responses，[D-022](decision-log.md)）。`anthropic_messages` 仍为按需新增（Gateway 的 Claude 线协议未验证，观察到再定）。M0 冻结 ModelBackend 协议前用 Responses 线协议做纸面走查（IR↔Responses 映射表）以保住冻结承诺。
+- 协议不变量：provider 原生的续传标识与 tool-call id **保持不透明**，本地另建 id 用于 journal，不解释、不重编。
 - backend 配置表字段对齐 codex `ModelProviderInfo`（需求 §3.2）；每 model profile 额外携带：`edit_format: anchored_patch | whole_file`、`tool_schema_dialect`、`system_prompt_variant`。
 - 流式：SSE 逐行解析（httpc.py）；idle 超时；断流按 TransientError 重试（上限）。
-- AuthProvider：`get_credentials() / login() / logout() / refresh()`；凭证对象只注入 httpc 请求头，ContextManager/工具层拿不到引用（架构性隔离）；DPAPI 加解密（winapi.py），解密失败 = 未登录。
+- AuthProvider / CredentialSource：`acquire(scope) -> SecretHandle`、`refresh()`、`invalidate()`、`logout()`；**SecretHandle 不是可打印字符串**，只有 httpc 的请求头注入点能解析它，ContextManager/工具层拿不到引用（架构性隔离，吸收 Codex 版）；DPAPI 加解密（winapi.py），解密失败 = 未登录。公司路径的具体获取机制（HTTP 交换 / 内部可执行 / 浏览器 SSO）作为该接口的一个实现，待 OQ-6 确认。
 
 ## 9. SessionStore 与终止状态机
 
-- 行信封 `{ts, ordinal, type, v, payload}`；类型集：`session_meta / model_request / model_response / tool_call / tool_result / policy_decision / approval / command_exec / token_usage / capability_probe / validation_claim / git_baseline / termination`。
+- 行信封 `{ts, ordinal, type, v, payload}`；类型集：`session_meta / model_request / model_response / tool_call / tool_result / policy_decision / approval / command_exec / token_usage / capability_probe / validation_claim / git_baseline / termination`。artifacts 内容寻址存 `sessions/<id>/artifacts/<sha256>`，事件只引用摘要。
+- 写入串行化；终止 / 审批 / 命令完成事件立即 flush；读取端容忍截尾末行，无终止事件即判 `interrupted`。schema 迁移只在读侧做，历史 journal 不可变。
 - 写入 choke point 单一函数：exact-match 替换自持凭证（100% 可验收）+ best-effort 模式扫描；command 输出存原始 bytes(base64)。
 - `model_request` 完整到可重建（**auth/Authorization 头除外**——不落盘，重放时由 HTTP 层重注入）⇒ ReplayBackend 直接以 session 文件为夹具；resume（V2）= 同一重放机制。**Replay 匹配契约**：按序号回放 + 结构断言（工具调用序列/关键字段），请求全文 diff 作为测试产物输出供人工审查；逐字节一致性单独作 resume-ready 测试（否则 prompt 微调会红掉全部夹具、或盲回放验证不了任何东西）。夹具重录：`foundry record`（对本地端点，M0 交付）。
 - 终止状态机：`completed` 需 (a) runtime 自动 git 核对、(b) 全部 `validation_claim` 与 `command_exec` 事件交叉验证（event_id 存在且 exit code 一致）、(c) HEAD 未移动；否则降级 `partial`。只读任务走 `completed(no_changes)`。
@@ -163,8 +165,10 @@ class ModelBackend(Protocol):
 ## 10. 测试策略（第一天开始）
 
 1. **单元**：policy 流水线 = (rules, mode, call)→decision 决策表；命令分段器攻击样例表；路径边界攻击样例表；patch 应用梯度表；编码回退表。
-2. **回归**：golden transcripts + ReplayBackend 跑全 loop（无网络无凭证）；prompt/loop 任何改动必须过全套。
-3. **E2E 冒烟**：本地 OpenAI 兼容端点（免费）→ 个人 API key（少量）→ 公司 Gateway（可用时）。
+2. **回归**：golden transcripts + ReplayBackend 跑全 loop（无网络无凭证）；prompt/loop 任何改动必须过全套。夹具来自 `foundry record`，**生产 session 默认不转测试夹具**（含用户代码）。
+3. **adapter 合同测试**：对本地假 HTTP server 跑协议层（含限流、断流、畸形事件、续传标识），不依赖真实 Gateway。
+4. **负向断言**（吸收 Codex 版）：不止断言"期望输出出现"，还要断言"违禁事件从未发生"——被拒的调用没有执行事件、canary 凭证不在任何 sink、破坏性 git 命令零调用。
+5. **E2E 冒烟**：本地 OpenAI 兼容端点（免费）→ 个人 API key（少量）→ 公司 Gateway（可用时）。
 4. **失败遥测闭环**（aider 实践）：离线报告脚本从 session JSONL 统计 patch 首次成功率、失败分类、每任务轮数/token——"加 repo map / 开模糊匹配 / 某 backend 降级 whole-file"这类决定以数字驱动。
 
 ## 11. 依赖决策表

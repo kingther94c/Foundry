@@ -12,8 +12,8 @@
 | [docs/design.md](docs/design.md) | 设计方案：包结构、核心接口（IR/事件/policy/backend）、关键机制、依赖决策 |
 | [docs/roadmap.md](docs/roadmap.md) | 里程碑 M0–M4 与 V2 候选 |
 | [docs/decision-log.md](docs/decision-log.md) | 全部编号决定（含被推翻的），每条带理由与出处 |
-| [docs/open-questions.md](docs/open-questions.md) | 未决问题追踪（当前 open：OQ-6 公司 Gateway 细节、OQ-10 语言约定、OQ-15 managed policy 下发、OQ-16 headless 时点） |
-| [docs/research/](docs/research/) | 调研笔记：codex 深挖、Claude Code、gemini-cli/luban、aider/OpenHands/SWE-agent、ChatGPT 认证可行性、Windows/Python 约束、对 v0.1 的三视角批判 |
+| [docs/open-questions.md](docs/open-questions.md) | 未决问题追踪（当前 open：OQ-6 内网 auth 机制、OQ-10 语言约定、OQ-15 managed policy 下发、OQ-16 headless 时点、OQ-19 保留策略） |
+| [docs/research/](docs/research/) | 调研笔记：codex 深挖、Claude Code、gemini-cli/luban、aider/OpenHands/SWE-agent、ChatGPT 认证可行性、Windows/Python 约束、对 v0.1 的三视角批判、[与 Codex 蓝图的对比](docs/research/codex-blueprint-comparison.md) |
 
 ## 一句话状态
 
