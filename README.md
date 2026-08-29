@@ -2,7 +2,7 @@
 
 从零自研的本地 coding-agent runtime：Python 3.12、Windows、离线 wheel 安装。自己拥有 agent loop、tools、policy、provider、session 的全部代码与接口；不 fork、不调用、不冒充任何现有 coding agent。
 
-**当前状态：M0–M4 已实现并可运行**，835 个测试在无网络、无凭证的机器上通过（含 5 轮对抗评审后的安全回归，与 432 个自动生成的熔断表不变量组合）。
+**当前状态：M0–M4 已实现并可运行**，857 个测试在无网络、无凭证的机器上通过（含 5 轮对抗评审后的安全回归，与 432 个自动生成的熔断表不变量组合）。
 
 ## 快速开始
 
@@ -47,7 +47,7 @@ python scripts/build_wheelhouse.py
 src/foundry/core/     runtime（唯一的 loop）、policy、tools、backends、session、workspace、winapi
 src/foundry/cli/      终端 UI：事件订阅者 + 审批 UI + report
 src/foundry/prompts/  版本化的 system prompt
-tests/                835 个测试：golden 场景、攻击表、熔断表不变量
+tests/                857 个测试：golden 场景、攻击表、熔断表不变量
 ```
 
 `foundry.core` 不 import `foundry.cli`，也不 import 任何第三方包——两条都有测试强制（[tests/test_architecture_config.py](tests/test_architecture_config.py)）。
