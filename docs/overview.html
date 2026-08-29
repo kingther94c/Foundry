@@ -1,0 +1,542 @@
+<title>Foundry 设计蓝图</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700;900&family=Oswald:wght@500;600&display=swap">
+<style>
+  :root {
+    --bg: #ECEEF0;
+    --surface: #F7F8F9;
+    --surface2: #E3E6E9;
+    --ink: #1B2229;
+    --muted: #5C6772;
+    --line: #C7CDD4;
+    --accent: #B8430E;
+    --accent-soft: rgba(184, 67, 14, 0.09);
+    --brass: #806015;
+    --ok: #2E6B3F;
+    --shadow: 0 1px 3px rgba(27, 34, 41, 0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14181D;
+      --surface: #1C2229;
+      --surface2: #232B33;
+      --ink: #E7EAEC;
+      --muted: #98A3AD;
+      --line: #333D47;
+      --accent: #F26A2E;
+      --accent-soft: rgba(242, 106, 46, 0.12);
+      --brass: #D0A63E;
+      --ok: #6FBF85;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14181D;
+    --surface: #1C2229;
+    --surface2: #232B33;
+    --ink: #E7EAEC;
+    --muted: #98A3AD;
+    --line: #333D47;
+    --accent: #F26A2E;
+    --accent-soft: rgba(242, 106, 46, 0.12);
+    --brass: #D0A63E;
+    --ok: #6FBF85;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.75;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 980px; margin: 0 auto; padding: 48px 28px 72px; }
+
+  /* ---------- header ---------- */
+  header.masthead { border-bottom: 3px solid var(--ink); padding-bottom: 28px; margin-bottom: 12px; }
+  .wordmark {
+    font-family: "Oswald", "Arial Narrow", sans-serif;
+    font-weight: 600;
+    font-size: clamp(52px, 9vw, 88px);
+    letter-spacing: 0.02em;
+    line-height: 1;
+    margin: 0;
+    text-transform: uppercase;
+  }
+  .wordmark .spark { color: var(--accent); }
+  .tagline { font-size: 17px; font-weight: 500; margin: 14px 0 4px; max-width: 46em; text-wrap: balance; }
+  .tagline b { color: var(--accent); }
+  .subline { color: var(--muted); margin: 0; max-width: 52em; }
+  .meta-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-family: "IBM Plex Mono", Consolas, monospace;
+    font-size: 12px;
+    padding: 3px 10px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .chip.hot { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+  /* ---------- stats strip ---------- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); border-radius: 4px; background: var(--surface); margin: 26px 0 0; overflow: hidden; }
+  .stat { padding: 14px 18px; border-left: 1px solid var(--line); }
+  .stat:first-child { border-left: none; }
+  .stat .n { font-family: "Oswald", "Arial Narrow", sans-serif; font-size: 30px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .stat .n em { font-style: normal; color: var(--accent); }
+  .stat .l { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 56px; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .eyebrow::before { content: ""; width: 22px; height: 3px; background: var(--accent); }
+  h2 { font-size: 24px; font-weight: 900; margin: 0 0 14px; text-wrap: balance; }
+  .lede { color: var(--muted); max-width: 62em; margin: 0 0 20px; }
+  .lede b, .lede strong { color: var(--ink); }
+
+  /* ---------- why / priority ---------- */
+  .why { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .why-card { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 18px 20px; box-shadow: var(--shadow); }
+  .why-card h3 { margin: 0 0 6px; font-size: 15px; }
+  .why-card p { margin: 0; color: var(--muted); font-size: 14px; }
+  .priority {
+    margin-top: 16px;
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    padding: 12px 18px;
+    border-radius: 0 4px 4px 0;
+    font-size: 14px;
+  }
+  .priority code { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 13px; }
+
+  /* ---------- figures ---------- */
+  figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 20px 16px 12px; overflow-x: auto; box-shadow: var(--shadow); }
+  figure svg { display: block; max-width: 100%; height: auto; margin: 0 auto; min-width: 620px; }
+  figcaption { font-size: 13px; color: var(--muted); padding: 10px 8px 4px; border-top: 1px dashed var(--line); margin-top: 12px; }
+  figcaption b { color: var(--ink); }
+
+  /* ---------- policy pipeline ---------- */
+  .pipe { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+  .pipe-step {
+    flex: 1 1 110px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 10px 12px;
+    position: relative;
+    min-width: 108px;
+  }
+  .pipe-step .no { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 11px; color: var(--muted); }
+  .pipe-step .nm { font-weight: 700; font-size: 14px; line-height: 1.35; }
+  .pipe-step .d { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 2px; }
+  .pipe-step.breaker { border-color: var(--accent); background: var(--accent-soft); }
+  .pipe-step.breaker .no { color: var(--accent); }
+  .pipe-law { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .law {
+    font-size: 12.5px;
+    border: 1px dashed var(--line);
+    border-radius: 3px;
+    padding: 4px 10px;
+    color: var(--muted);
+    background: var(--surface);
+  }
+  .law b { color: var(--ink); }
+
+  /* ---------- decisions ---------- */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .dcard { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 16px 18px; box-shadow: var(--shadow); }
+  .dcard .dno { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 11.5px; color: var(--accent); letter-spacing: 0.06em; }
+  .dcard h3 { margin: 3px 0 6px; font-size: 15.5px; line-height: 1.45; }
+  .dcard p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  .dcard p b { color: var(--ink); }
+  .evidence { grid-column: 1 / -1; background: var(--surface2); border: 1px solid var(--line); border-radius: 4px; padding: 16px 18px; }
+  .evidence .dno { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 11.5px; color: var(--accent); letter-spacing: 0.06em; }
+  .evidence h3 { margin: 3px 0 8px; font-size: 15.5px; }
+  .evidence ul { margin: 0; padding-left: 20px; font-size: 13.5px; color: var(--muted); }
+  .evidence li { margin: 3px 0; }
+  .evidence li b { color: var(--ink); }
+
+  /* ---------- tools ---------- */
+  .tools { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tool {
+    font-family: "IBM Plex Mono", Consolas, monospace;
+    font-size: 13px;
+    padding: 5px 12px;
+    border-radius: 3px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .tool.mut { border-color: var(--accent); background: var(--accent-soft); }
+  .tool small { font-family: "Noto Sans SC", sans-serif; color: var(--muted); font-size: 11.5px; margin-left: 6px; }
+  .tools-legend { font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+  .tools-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--line); background: var(--surface); vertical-align: -1px; margin-right: 4px; }
+  .tools-legend .sw.m { border-color: var(--accent); background: var(--accent-soft); }
+
+  /* ---------- roadmap ---------- */
+  .miles { list-style: none; margin: 0; padding: 0; position: relative; }
+  .miles::before { content: ""; position: absolute; left: 7px; top: 8px; bottom: 8px; width: 2px; background: var(--line); }
+  .miles li { position: relative; padding: 0 0 16px 32px; }
+  .miles li:last-child { padding-bottom: 0; }
+  .miles li::before {
+    content: ""; position: absolute; left: 0; top: 7px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--bg); border: 3px solid var(--accent);
+  }
+  .miles li.v2::before { border-color: var(--muted); }
+  .miles .mtag { font-family: "Oswald", "Arial Narrow", sans-serif; font-weight: 600; font-size: 16px; letter-spacing: 0.03em; margin-right: 10px; }
+  .miles .mtitle { font-weight: 700; }
+  .miles .mdesc { color: var(--muted); font-size: 13.5px; }
+
+  /* ---------- open questions ---------- */
+  .oq { border: 1px solid var(--line); border-radius: 4px; background: var(--surface); overflow: hidden; }
+  .oq-row { display: grid; grid-template-columns: 84px 1fr; border-top: 1px solid var(--line); padding: 10px 16px; gap: 12px; font-size: 14px; }
+  .oq-row:first-child { border-top: none; }
+  .oq-row .id { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 12.5px; color: var(--brass); }
+  .oq-row .q b { font-weight: 700; }
+  .oq-row .q small { color: var(--muted); display: block; font-size: 12.5px; }
+
+  /* ---------- footer ---------- */
+  footer { margin-top: 60px; border-top: 3px solid var(--ink); padding-top: 18px; display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  footer .docmap { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 12px; color: var(--muted); line-height: 2; }
+  footer .docmap b { color: var(--ink); font-weight: 500; }
+  footer .stamp { font-family: "IBM Plex Mono", Consolas, monospace; font-size: 12px; color: var(--muted); text-align: right; line-height: 2; }
+  footer .stamp .hot { color: var(--accent); }
+
+  a { color: inherit; }
+  @media (max-width: 680px) {
+    .page { padding: 32px 18px 56px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .stat:nth-child(3) { border-left: none; }
+    .stat:nth-child(n+3) { border-top: 1px solid var(--line); }
+    .why, .grid2 { grid-template-columns: 1fr; }
+    .oq-row { grid-template-columns: 1fr; gap: 2px; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <h1 class="wordmark">Foundry<span class="spark">.</span></h1>
+    <p class="tagline">从零自研的本地 coding-agent runtime——自己拥有 <b>loop、tools、policy、provider、session</b> 的全部代码与接口。</p>
+    <p class="subline">不 fork、不调用、不冒充任何现有 coding agent；研读 Codex / Claude Code / gemini-cli / aider / OpenHands 的公开设计，借鉴百家之长后独立实现。</p>
+    <div class="meta-chips">
+      <span class="chip hot">BLUEPRINT · 需求 v0.2</span>
+      <span class="chip">Windows</span>
+      <span class="chip">Python 3.12</span>
+      <span class="chip">离线 wheel 安装</span>
+      <span class="chip">trusted-host（无沙箱，诚实披露）</span>
+      <span class="chip">2026-08-29</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="n">20</div><div class="l">编号决定（含 1 条被推翻）</div></div>
+      <div class="stat"><div class="n">9</div><div class="l">调研笔记归档</div></div>
+      <div class="stat"><div class="n"><em>25</em></div><div class="l">对抗评审发现并修复</div></div>
+      <div class="stat"><div class="n">4</div><div class="l">未决问题（不阻塞动工）</div></div>
+    </div>
+  </header>
+
+  <section>
+    <div class="eyebrow">Why Foundry</div>
+    <h2>动机决定优先级</h2>
+    <div class="why">
+      <div class="why-card">
+        <h3>公司环境硬约束</h3>
+        <p>公司电脑不允许安装 Codex CLI / Claude Code，模型访问只能走公司 Gateway 的 API；软件分发走内部源（JFrog），Python + 内部 wheel 目录是最确定的通道。</p>
+      </div>
+      <div class="why-card">
+        <h3>学习目的</h3>
+        <p>吃透 coding-agent runtime 的设计。此前用 Agent SDK 攒过 mini-codex 体验一般——Foundry 要赢在完全掌控与设计质量，宁窄而精。</p>
+      </div>
+    </div>
+    <div class="priority">设计优先级（冲突时按此裁决）：<code>可审计 &gt; 少依赖/离线可装 &gt; 清晰实现 &gt; 功能数量</code></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Model Paths</div>
+    <h2>三个环境，同一套 runtime</h2>
+    <p class="lede">个人、公司、开发三条路径只切换<b>认证与协议 adapter 层</b>；loop 与 tools 完全共用。原计划的 ChatGPT 订阅登录经限定调研确认 <b>blocked</b>——图中虚线即被否决的路径。</p>
+    <figure>
+      <svg viewBox="0 0 860 330" role="img" aria-label="三条模型路径（个人 API key、公司 Gateway、开发 Replay/本地端点）汇入同一套 AgentRuntime；ChatGPT 订阅路径被标记为 blocked">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g fill="none" stroke="currentColor" stroke-width="1.3">
+          <!-- source boxes -->
+          <rect x="20" y="96" width="200" height="52" rx="4"/>
+          <rect x="20" y="172" width="200" height="52" rx="4"/>
+          <rect x="20" y="248" width="200" height="52" rx="4"/>
+          <!-- blocked node -->
+          <rect x="20" y="22" width="200" height="46" rx="4" stroke-dasharray="5 4" opacity="0.55"/>
+        </g>
+        <!-- runtime box (accent) -->
+        <rect x="560" y="96" width="280" height="204" rx="5" fill="none" stroke="var(--accent)" stroke-width="2.2"/>
+        <rect x="560" y="96" width="280" height="204" rx="5" fill="var(--accent)" opacity="0.06"/>
+
+        <!-- arrows -->
+        <g stroke="currentColor" stroke-width="1.3" fill="none">
+          <line x1="220" y1="122" x2="552" y2="152" marker-end="url(#arr)"/>
+          <line x1="220" y1="198" x2="552" y2="198" marker-end="url(#arr)"/>
+          <line x1="220" y1="274" x2="552" y2="244" marker-end="url(#arr)"/>
+          <line x1="220" y1="45" x2="380" y2="45" stroke-dasharray="5 4" opacity="0.55"/>
+        </g>
+        <!-- blocked X -->
+        <g stroke="var(--accent)" stroke-width="2.4" opacity="0.9">
+          <line x1="392" y1="33" x2="416" y2="57"/>
+          <line x1="416" y1="33" x2="392" y2="57"/>
+        </g>
+
+        <!-- text -->
+        <g fill="currentColor" font-size="14" font-weight="700">
+          <text x="36" y="118">个人电脑</text>
+          <text x="36" y="194">公司电脑</text>
+          <text x="36" y="270">开发 / 测试</text>
+          <text x="36" y="42" opacity="0.6">ChatGPT 订阅登录</text>
+        </g>
+        <g fill="currentColor" font-size="11.5" opacity="0.72">
+          <text x="36" y="136">OpenAI 平台 API key</text>
+          <text x="36" y="212">公司 Gateway · 多模型（含 Claude）</text>
+          <text x="36" y="288">ReplayBackend + 本地 OpenAI 兼容端点</text>
+          <text x="36" y="59" opacity="0.85">官方无第三方推理途径 → blocked</text>
+        </g>
+        <!-- arrow labels -->
+        <g fill="currentColor" font-size="11" opacity="0.72">
+          <text x="270" y="122">api.openai.com（Responses / Chat Completions）</text>
+          <text x="270" y="190">协议可配置 adapter · capability probing</text>
+          <text x="270" y="278">无凭证、离线可测 · 免费冒烟</text>
+          <text x="430" y="49" fill="var(--accent)" opacity="1" font-weight="700">D-009 · 证据存档</text>
+        </g>
+        <!-- runtime content -->
+        <g fill="currentColor">
+          <text x="700" y="130" font-size="15" font-weight="900" text-anchor="middle">同一套 AgentRuntime</text>
+          <text x="700" y="152" font-size="12" opacity="0.72" text-anchor="middle">9 个工具 · PolicyEngine · SessionStore</text>
+          <line x1="580" y1="170" x2="820" y2="170" stroke="currentColor" stroke-width="1" opacity="0.25"/>
+          <text x="700" y="196" font-size="12" opacity="0.85" text-anchor="middle">内部表示 provider-agnostic（IR）</text>
+          <text x="700" y="218" font-size="12" opacity="0.85" text-anchor="middle">adapter 只做 IR ↔ 线协议互转</text>
+          <text x="700" y="240" font-size="12" opacity="0.85" text-anchor="middle">不拥有 loop，不得另起第二套</text>
+          <text x="700" y="276" font-size="11.5" fill="var(--accent)" font-weight="700" text-anchor="middle">Gateway 挂多家模型 ⇒ 不绑死任何私有格式</text>
+        </g>
+      </svg>
+      <figcaption><b>路径图。</b>虚线为被否决的 ChatGPT 订阅路径：官方 "Sign in with ChatGPT" 只授予身份不给推理；Codex 订阅端点有 originator 白名单，非 Codex 客户端 403，使用即须冒充（违 ToS，有封号先例）。个人路径改用平台 API key（D-009）。</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="eyebrow">Architecture</div>
+    <h2>事件流驱动的核心</h2>
+    <p class="lede">UI 与 runtime 第一天解耦：CLI 只是<b>类型化事件流</b>的第一个订阅者，审批是异步事件对而非阻塞输入——headless 模式、未来 IDE 前端因此近乎免费。SessionStore 是单一事实源，逐字节可重放。</p>
+    <figure>
+      <svg viewBox="0 0 860 434" role="img" aria-label="Foundry 架构：CLI 与 AgentRuntime 之间双向事件流；runtime 内含 ContextManager、PolicyEngine、ToolExecutor、SessionStore；ModelBackend 适配器与 workspace、session 文件的关系">
+        <defs>
+          <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <!-- CLI -->
+        <rect x="250" y="16" width="360" height="46" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+        <text x="430" y="36" font-size="14" font-weight="700" fill="currentColor" text-anchor="middle">Foundry CLI（rich 终端）</text>
+        <text x="430" y="53" font-size="11.5" fill="currentColor" opacity="0.72" text-anchor="middle">事件订阅者 · 审批 UI · 渲染前剥 ANSI/OSC</text>
+
+        <!-- two queues -->
+        <g stroke="currentColor" stroke-width="1.3" fill="none">
+          <line x1="340" y1="62" x2="340" y2="118" marker-end="url(#arr2)"/>
+          <line x1="520" y1="118" x2="520" y2="62" marker-end="url(#arr2)"/>
+        </g>
+        <g fill="currentColor" font-size="11" opacity="0.72">
+          <text x="330" y="94" text-anchor="end">Op：输入 · 审批决定 · 中断</text>
+          <text x="530" y="94">Event：流式输出 · 审批请求 · token 记账</text>
+        </g>
+
+        <!-- runtime container -->
+        <rect x="60" y="120" width="740" height="182" rx="5" fill="none" stroke="var(--accent)" stroke-width="2.2"/>
+        <rect x="60" y="120" width="740" height="182" rx="5" fill="var(--accent)" opacity="0.05"/>
+        <text x="78" y="145" font-size="14" font-weight="900" fill="currentColor">AgentRuntime</text>
+        <text x="200" y="145" font-size="11.5" fill="currentColor" opacity="0.72">while 模型返回 tool calls：policy → 执行 → 回填 → 重采样（asyncio）</text>
+
+        <g fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="80" y="162" width="160" height="58" rx="4"/>
+          <rect x="260" y="162" width="160" height="58" rx="4"/>
+          <rect x="440" y="162" width="160" height="58" rx="4"/>
+          <rect x="620" y="162" width="160" height="58" rx="4"/>
+        </g>
+        <g fill="currentColor" font-size="13" font-weight="700" text-anchor="middle">
+          <text x="160" y="185">ContextManager</text>
+          <text x="340" y="185">PolicyEngine</text>
+          <text x="520" y="185">ToolExecutor</text>
+          <text x="700" y="185">SessionStore</text>
+        </g>
+        <g fill="currentColor" font-size="10.5" opacity="0.72" text-anchor="middle">
+          <text x="160" y="202">投影 · 截断 · masking</text>
+          <text x="160" y="215">token 记账</text>
+          <text x="340" y="202">六步流水线</text>
+          <text x="340" y="215">ALLOW / ASK / DENY</text>
+          <text x="520" y="202">9 工具 · workspace 边界</text>
+          <text x="520" y="215">Job Object 进程树</text>
+          <text x="700" y="202">versioned JSONL</text>
+          <text x="700" y="215">单一事实源 · 可重放</text>
+        </g>
+        <!-- policy gate arrow -->
+        <line x1="420" y1="191" x2="432" y2="191" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr2)"/>
+        <text x="430" y="252" font-size="11" fill="currentColor" opacity="0.72" text-anchor="middle">每个副作用动作先过 policy；DENY 带 reason 回给模型，loop 存活</text>
+
+        <!-- backend -->
+        <rect x="80" y="330" width="330" height="84" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+        <text x="98" y="354" font-size="13" font-weight="700" fill="currentColor">ModelBackend adapters</text>
+        <text x="98" y="373" font-size="11.5" fill="currentColor" opacity="0.72">openai_compat · replay ·（按需：responses / anthropic）</text>
+        <text x="98" y="391" font-size="11.5" fill="currentColor" opacity="0.72">AuthProvider：凭证 DPAPI 加密，仅 HTTP 注入层可见</text>
+        <line x1="245" y1="302" x2="245" y2="322" stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#arr2)"/>
+        <text x="258" y="318" font-size="11" fill="currentColor" opacity="0.72">无状态全量历史 · SSE 流式 · stdlib HTTP</text>
+
+        <!-- workspace -->
+        <rect x="470" y="330" width="160" height="84" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+        <text x="550" y="360" font-size="13" font-weight="700" fill="currentColor" text-anchor="middle">workspace</text>
+        <text x="550" y="378" font-size="11.5" fill="currentColor" opacity="0.72" text-anchor="middle">git 仓库（强制）</text>
+        <text x="550" y="394" font-size="11.5" fill="currentColor" opacity="0.72" text-anchor="middle">baseline + 脏文件 ASK</text>
+        <line x1="530" y1="302" x2="530" y2="322" stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#arr2)"/>
+
+        <!-- session files -->
+        <rect x="660" y="330" width="140" height="84" rx="4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="6 4"/>
+        <text x="730" y="360" font-size="12.5" font-weight="700" fill="currentColor" text-anchor="middle">~/.foundry/</text>
+        <text x="730" y="378" font-size="11" fill="currentColor" opacity="0.72" text-anchor="middle">sessions/*.jsonl</text>
+        <text x="730" y="394" font-size="11" fill="currentColor" opacity="0.72" text-anchor="middle">audit.jsonl · 凭证</text>
+        <line x1="710" y1="302" x2="710" y2="322" stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#arr2)"/>
+      </svg>
+      <figcaption><b>核心架构。</b>秘密脱敏走同一 choke point 的三个应用点（session/artifact 写入、事件发出、上下文组装）；session 记录完整到可重建每次模型请求——这同时是 ReplayBackend 离线测试与 V2 resume 的共同基础。</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="eyebrow">Policy Pipeline</div>
+    <h2>无沙箱时代的唯一防线</h2>
+    <p class="lede">V1 是 trusted-host：审批是行为约束而非安全边界，首次运行明确披露。PolicyEngine 采纳 Claude Code Agent SDK 公开的六步评估规范，外加最先执行的硬编码熔断表。</p>
+    <div class="pipe">
+      <div class="pipe-step breaker"><div class="no">STEP 0</div><div class="nm">Circuit Breaker</div><div class="d">硬编码表，任何规则 / mode 不可覆盖：.git、~/.foundry、销毁性 git、递归删除</div></div>
+      <div class="pipe-step"><div class="no">STEP 1</div><div class="nm">pre_tool 回调</div><div class="d">可扩展点；改写输入后从 STEP 0 重入</div></div>
+      <div class="pipe-step"><div class="no">STEP 2</div><div class="nm">DENY 规则</div><div class="d">任意层 DENY 不可被任何 ALLOW 翻转</div></div>
+      <div class="pipe-step"><div class="no">STEP 3</div><div class="nm">ASK 规则</div><div class="d">内置：脏文件写操作（压过 accept_edits）</div></div>
+      <div class="pipe-step"><div class="no">STEP 4</div><div class="nm">Mode 基线</div><div class="d">default · accept_edits · plan · dont_ask</div></div>
+      <div class="pipe-step"><div class="no">STEP 5</div><div class="nm">ALLOW 规则</div><div class="d">只读工具内置放行；「永久批准」落此层</div></div>
+      <div class="pipe-step"><div class="no">STEP 6</div><div class="nm">交互审批</div><div class="d">headless / dont_ask 时 = DENY（fail-closed）</div></div>
+    </div>
+    <div class="pipe-law">
+      <span class="law"><b>can't parse → ASK</b>：命令无法可信分段时一律询问（分段器按 PowerShell 5.1 语法，先做别名归一）</span>
+      <span class="law"><b>what-you-approve-is-what-runs</b>：审批展示串与执行对象同源</span>
+      <span class="law"><b>仓库配置只能收紧</b>：签入层仅 deny/ask，连接类配置只认机器本地</span>
+      <span class="law"><b>prompt injection 写进威胁模型</b>：一切工具输出视为不可信输入</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Key Decisions</div>
+    <h2>六个改变走向的决定</h2>
+    <div class="grid2">
+      <div class="evidence">
+        <div class="dno">D-009 · 推翻草稿最高优先项</div>
+        <h3>ChatGPT 登录 → blocked-with-evidence，个人路径改用 API key</h3>
+        <ul>
+          <li>官方 <b>"Sign in with ChatGPT"</b> 只授予身份（姓名/邮箱/头像），不给推理与订阅额度，且需申请审核；</li>
+          <li>Codex 订阅端点 <b>originator 白名单</b>：非 Codex 客户端 403，用即须协议层冒充——违 OpenAI ToS 与 Foundry 章程，有封号先例；</li>
+          <li>OpenAI 认可的程序化路径只有平台 API key。开发验证不受影响：<b>ReplayBackend</b> 离线全覆盖 + 本地模型端点免费冒烟。</li>
+        </ul>
+      </div>
+      <div class="dcard">
+        <div class="dno">D-006 / D-010</div>
+        <h3>多模型 Gateway ⇒ 弃 V4A，编辑格式选模型中性</h3>
+        <p>V4A 是 GPT 私有训练格式，Claude 用之崩坏。apply_patch = 信封 + <b>锚定文本 search/replace</b>（Claude Code / OpenHands / aider 独立收敛的方案），逐文件原子、失败带最近似行提示。</p>
+      </div>
+      <div class="dcard">
+        <div class="dno">D-017</div>
+        <h3>finish 工具：completed 门禁机器可验</h3>
+        <p>验证声明经 <b>finish{status, claims}</b> 提交，runtime 与事件流交叉核验（命令事件存在、exit code 一致、HEAD 未移动）——模型口头声称"已验证"不再可能通过。</p>
+      </div>
+      <div class="dcard">
+        <div class="dno">D-014 / D-018</div>
+        <h3>依赖预算：运行时仅 rich（+可选 prompt_toolkit）</h3>
+        <p>HTTP/SSE 自研于 stdlib（信任 Windows 系统证书库，公司 MITM 代理零配置）；DPAPI 与 Job Object 走 ctypes；shell 固定 <b>PowerShell 5.1</b>（预装零依赖）。</p>
+      </div>
+      <div class="dcard">
+        <div class="dno">D-004 / D-012</div>
+        <h3>交互式优先；schema 第一天可重放</h3>
+        <p>核心形态是终端会话，UI 与 loop 解耦。session JSONL 可逐字节重建每次模型请求——resume 功能推 V2，但 schema 不欠债。</p>
+      </div>
+      <div class="dcard">
+        <div class="dno">D-011 / D-019 / D-020</div>
+        <h3>脏工作区、仓库说明文件、验收基准</h3>
+        <p>脏工作区警告继续 + 脏文件写强制 ASK；<b>FOUNDRY.md</b> 声明测试命令（信任门控，M2）；golden 任务集跑在自建样例仓 fixture 上，是改 prompt/loop 的回归基准。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Tool Surface</div>
+    <h2>九个工具，窄而可靠</h2>
+    <p class="lede">SWE-agent 的 ACI 消融证据：简洁、合并、带护栏的工具面实测提分。V1 冻结为九个，每个自带输出上限与截断标记，超限完整输出落盘由 read_artifact 取回。</p>
+    <div class="tools">
+      <span class="tool">list_files<small>mtime 排序</small></span>
+      <span class="tool">search_text<small>命中上限 ~50</small></span>
+      <span class="tool">read_file<small>窗口式 + 行号</small></span>
+      <span class="tool mut">apply_patch<small>锚定 search/replace</small></span>
+      <span class="tool mut">run_command<small>PS 5.1 · Job Object</small></span>
+      <span class="tool">read_artifact<small>超限输出取回</small></span>
+      <span class="tool">git_status<small>硬化调用</small></span>
+      <span class="tool">git_diff<small>硬化调用</small></span>
+      <span class="tool">finish<small>收口 + 证据核验</small></span>
+    </div>
+    <p class="tools-legend"><span class="sw"></span> 只读 · 内置 ALLOW　<span class="sw m"></span> mutator · 落交互审批（accept_edits 基线可放行 workspace 内补丁）</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">Roadmap</div>
+    <h2>每个里程碑以"可运行 + 可验收"收口</h2>
+    <p class="lede">排序原则：最大不确定项不上关键路径。全部单元/集成测试必须在<b>无网络、无凭证</b>的机器上通过。</p>
+    <ul class="miles">
+      <li><span class="mtag">M0</span><span class="mtitle">Walking skeleton · 接口冻结</span><br><span class="mdesc">IR / 事件协议 / ModelBackend / session 信封四大接口冻结；loop + 只读工具 + replay/本地端点冒烟 + foundry record 夹具重录。</span></li>
+      <li><span class="mtag">M1a</span><span class="mtitle">文件工具 + Policy 流水线</span><br><span class="mdesc">apply_patch、workspace 边界、六步流水线（先覆盖文件工具）、审批 UI、脏工作区策略。</span></li>
+      <li><span class="mtag">M1b</span><span class="mtitle">run_command + 命令分段器</span><br><span class="mdesc">Job Object 进程树、env 过滤、编码回退；分段器 + circuit breaker 全表 + audit.jsonl（全项目安全敏感度最高的 300 行）。</span></li>
+      <li><span class="mtag">M2</span><span class="mtitle">个人路径 E2E + 验收任务集</span><br><span class="mdesc">login/DPAPI、错误分类学、finish + ValidationClaim 核验、FOUNDRY.md、golden 任务集 5–10 个 + 失败遥测报告。</span></li>
+      <li><span class="mtag">M3</span><span class="mtitle">公司 Gateway</span><br><span class="mdesc">协议 adapter 收敛、capability probing + 降级、per-model profile（Claude 系变体）、managed policy 地板。</span></li>
+      <li><span class="mtag">M4</span><span class="mtitle">打包加固 + 披露</span><br><span class="mdesc">wheelhouse 流水线 + 干净机安装验收、威胁模型文档、doctor；headless exec 按余量。</span></li>
+      <li class="v2"><span class="mtag">V2</span><span class="mtitle">候选池</span><br><span class="mdesc">session resume · LLM 摘要压缩 · update_plan · skills · subagent seam · MCP 桥 · shadow-git checkpoint。</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="eyebrow">Open Questions</div>
+    <h2>还开着的四个问题（不阻塞动工）</h2>
+    <div class="oq">
+      <div class="oq-row"><span class="id">OQ-6</span><span class="q"><b>公司 Gateway 细节</b><small>endpoint 形态 / 认证方式 / 模型清单 / 协议差异文档——需回公司确认；确认前按可配置 adapter 推进</small></span></div>
+      <div class="oq-row"><span class="id">OQ-10</span><span class="q"><b>语言约定</b><small>文档中文、代码与注释英文——按此假设执行中，待正式确认</small></span></div>
+      <div class="oq-row"><span class="id">OQ-15</span><span class="q"><b>managed policy 下发方式</b><small>IT 推送 ProgramData 文件？随内部 wheel？层机制已预留，部署公司前须定</small></span></div>
+      <div class="oq-row"><span class="id">OQ-16</span><span class="q"><b>headless exec 时点</b><small>事件架构使其成本很低；M4 按余量进 V1，否则 V2</small></span></div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="docmap">
+      <b>docs/</b>requirements.md · design.md · roadmap.md<br>
+      <b>docs/</b>decision-log.md（D-001…D-020）· open-questions.md<br>
+      <b>docs/research/</b>codex · claude-code · gemini-cli+luban · aider+openhands · auth · windows-python · 3× critique
+    </div>
+    <div class="stamp">
+      FOUNDRY · blueprint worktree<br>
+      需求 v0.2 · <span class="hot">2026-08-29</span> · 经 3 轮确认 + 对抗评审
+    </div>
+  </footer>
+
+</div>
