@@ -1,0 +1,50 @@
+name: CI
+
+# Windows only, by design: the path, process, and encoding behaviour Foundry
+# depends on cannot be established on another platform, and a green Linux run
+# would be a false signal.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Test
+        # -X warn_default_encoding surfaces any open() without an explicit
+        # encoding, which on a non-UTF-8 console silently corrupts the journal.
+        run: python -X warn_default_encoding -m pytest tests -q
+
+  offline-install:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheelhouse
+        run: python scripts/build_wheelhouse.py
+
+      - name: Install from the wheelhouse with no index
+        # The real target machine has no package index. A single sdist-only
+        # transitive dependency would only fail there, so it fails here first.
+        run: |
+          python -m venv fresh
+          fresh\Scripts\python.exe -m pip install --no-index --find-links wheelhouse foundry
+          fresh\Scripts\python.exe -m foundry --version
+          fresh\Scripts\python.exe -m foundry doctor

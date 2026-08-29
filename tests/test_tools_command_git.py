@@ -183,7 +183,7 @@ def test_timeout_kills_descendant_processes(tmp_path):
     survivors = subprocess.run(
         ["powershell.exe", "-NoProfile", "-Command",
          f"(Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%{child.name}%'\").Count"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     if survivors.returncode == 0 and survivors.stdout.strip().isdigit():
         assert int(survivors.stdout.strip()) == 0, "orphaned grandchild survived"

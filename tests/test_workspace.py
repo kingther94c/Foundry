@@ -87,7 +87,7 @@ def test_rejects_junction_pointing_outside(ws, tmp_path):
     link = ws.root / "escape"
     result = subprocess.run(
         ["cmd", "/c", "mklink", "/J", str(link), str(outside)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     if result.returncode != 0:  # pragma: no cover - environment dependent
         pytest.skip(f"could not create junction: {result.stderr.strip()}")
