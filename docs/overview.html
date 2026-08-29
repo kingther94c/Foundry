@@ -235,7 +235,7 @@
     <p class="tagline">从零自研的本地 coding-agent runtime——自己拥有 <b>loop、tools、policy、provider、session</b> 的全部代码与接口。</p>
     <p class="subline">不 fork、不调用、不冒充任何现有 coding agent；研读 Codex / Claude Code / gemini-cli / aider / OpenHands 的公开设计，借鉴百家之长后独立实现。</p>
     <div class="meta-chips">
-      <span class="chip hot">BLUEPRINT · 需求 v0.2</span>
+      <span class="chip hot">M0–M4 已实现 · 233 测试通过</span>
       <span class="chip">Windows</span>
       <span class="chip">Python 3.12</span>
       <span class="chip">离线 wheel 安装</span>
@@ -244,9 +244,9 @@
     </div>
     <div class="stats">
       <div class="stat"><div class="n">24</div><div class="l">编号决定（含 1 条被推翻）</div></div>
-      <div class="stat"><div class="n">10</div><div class="l">调研笔记归档</div></div>
-      <div class="stat"><div class="n"><em>25</em></div><div class="l">对抗评审发现并修复</div></div>
-      <div class="stat"><div class="n">5</div><div class="l">未决问题（不阻塞动工）</div></div>
+      <div class="stat"><div class="n">233</div><div class="l">测试（离线、无凭证）</div></div>
+      <div class="stat"><div class="n"><em>9</em></div><div class="l">工具面（V1 冻结）</div></div>
+      <div class="stat"><div class="n">5</div><div class="l">依赖 wheel（纯 Python）</div></div>
     </div>
   </header>
 
@@ -509,14 +509,14 @@
   <section>
     <div class="eyebrow">Roadmap</div>
     <h2>每个里程碑以"可运行 + 可验收"收口</h2>
-    <p class="lede">排序原则：最大不确定项不上关键路径。全部单元/集成测试必须在<b>无网络、无凭证</b>的机器上通过。</p>
+    <p class="lede">排序原则：最大不确定项不上关键路径。全部 233 个测试在<b>无网络、无凭证</b>的机器上通过；真实运行已验证：agent 跑失败测试 → 读文件 → 打补丁 → 重跑测试转绿 → 带证据收口，exit 0。</p>
     <ul class="miles">
-      <li><span class="mtag">M0</span><span class="mtitle">Walking skeleton · 接口冻结</span><br><span class="mdesc">IR / 事件协议 / ModelBackend / session 信封四大接口冻结；loop + 只读工具 + replay/本地端点冒烟 + foundry record 夹具重录。</span></li>
-      <li><span class="mtag">M1a</span><span class="mtitle">文件工具 + Policy 流水线</span><br><span class="mdesc">apply_patch、workspace 边界、六步流水线（先覆盖文件工具）、审批 UI、脏工作区策略。</span></li>
-      <li><span class="mtag">M1b</span><span class="mtitle">run_command + 命令分段器</span><br><span class="mdesc">Job Object 进程树、env 过滤、编码回退；分段器 + circuit breaker 全表 + audit.jsonl（全项目安全敏感度最高的 300 行）。</span></li>
-      <li><span class="mtag">M2</span><span class="mtitle">个人路径 E2E + 验收任务集</span><br><span class="mdesc">login/DPAPI、错误分类学、finish + ValidationClaim 核验、FOUNDRY.md、golden 任务集 5–10 个 + 失败遥测报告。</span></li>
-      <li><span class="mtag">M3</span><span class="mtitle">公司 Gateway</span><br><span class="mdesc">协议 adapter 收敛、capability probing + 降级、per-model profile（Claude 系变体）、managed policy 地板。</span></li>
-      <li><span class="mtag">M4</span><span class="mtitle">打包加固 + 披露</span><br><span class="mdesc">wheelhouse 流水线 + 干净机安装验收、威胁模型文档、doctor；headless exec 按余量。</span></li>
+      <li><span class="mtag">M0</span><span class="mtitle">Walking skeleton · 接口冻结 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">IR / 事件协议 / ModelBackend / session 信封四接口已冻结；replay backend + <code>foundry record</code> 夹具重录就绪。</span></li>
+      <li><span class="mtag">M1a</span><span class="mtitle">文件工具 + Policy 流水线 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">apply_patch（逐文件原子 + 宽容梯度）、workspace 边界、六步流水线、审批 UI、脏工作区策略。攻击表与决策表全绿。</span></li>
+      <li><span class="mtag">M1b</span><span class="mtitle">run_command + 命令分段器 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">Job Object 进程树（实测无孤儿残留）、env 过滤、编码回退；分段器 + 熔断表全表 + audit.jsonl。</span></li>
+      <li><span class="mtag">M2</span><span class="mtitle">个人路径 E2E + 验收任务集 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">login/DPAPI、错误分类学、finish 证据链、FOUNDRY.md、8 个 golden 场景、<code>foundry report</code> 遥测。</span></li>
+      <li><span class="mtag">M3</span><span class="mtitle">公司 Gateway <span style="color:var(--brass)">部分</span></span><br><span class="mdesc">responses adapter + 12 项合同测试已就绪，流式降级已实现；<b>入场门未过</b>——真实 Gateway 的 tool-call 流式夹具待取（OQ-6）。</span></li>
+      <li><span class="mtag">M4</span><span class="mtitle">打包加固 + 披露 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">净 venv <code>--no-index</code> 安装实测通过（5 个纯 py wheel）；威胁模型文档；<code>foundry exec</code> 已进 V1。</span></li>
       <li class="v2"><span class="mtag">V2</span><span class="mtitle">候选池</span><br><span class="mdesc">session resume · LLM 摘要压缩 · update_plan · skills · subagent seam · MCP 桥 · shadow-git checkpoint。</span></li>
     </ul>
   </section>
