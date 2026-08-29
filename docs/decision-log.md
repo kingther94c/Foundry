@@ -84,3 +84,18 @@
 ## D-016 并发模型 = asyncio 核心
 - **日期**：2026-08-29　**状态**：暂定（Claude 提出）
 - **内容**：streaming/取消/超时用 asyncio 表达（Windows ProactorEventLoop 支持子进程）；同步工具体 `asyncio.to_thread` 包装。接口签名以此冻结——事后从 sync 改 async 等于重写。
+
+## D-017 finish 工具 = 终止状态与 ValidationClaim 的唯一产生通道
+- **日期**：2026-08-29　**状态**：暂定（对抗评审发现 §6.3 门禁缺产生机制后补）
+- **内容**：V1 工具面 8→9：`finish{status, summary, claims:[{claim_text, command_event_id}]}`；runtime 核验（事件存在、exit code 一致、git 核对、HEAD 未移动）后才发 Termination；不符降级 `partial`。交互会话普通 turn 不调 finish 正常结束；会话无 finish 关闭按上下文记 `cancelled`/`partial`。
+- **理由**："completed 门禁机器可执行"若无结构化产生通道，就退化为解析自由文本的君子协定——验收项"造假被拒"将无实现载体。
+
+## 评审修正记录（2026-08-29 对抗评审，详见 git history 与评审归档）
+- §4.1 修机制矛盾：只读默认 = 内置 ALLOW 规则（步 5）；mutator 默认 = 落步 6 审批（非 ASK 规则，否则 accept_edits 与审批持久化永不生效）；脏文件 ASK = 内置 ASK 规则（步 3，压过 accept_edits）；补 mode 基线定义（dont_ask = fail-closed DENY）。
+- 审批"永久"规则改写入用户层（按 workspace 键控）而非 workspace 内文件；breaker 加 `<workspace>/.foundry/` 写保护——堵 accept_edits 下自我提权。
+- 只读白名单加参数约束（路径过 containment）；裸 git 移出白名单（防绕过硬化 git 工具）。
+- apply_patch 语义统一为**逐文件原子**（原文混用 codex 全原子与 aider 部分应用）。
+- 秘密 choke point 范围修正：字节级 exact-match、先于 base64、覆盖 artifact 写/读与事件发出；model_request 不落盘 auth 头。
+- breaker 表 canonical 化（别名归一前置；补 `git restore`/`stash clear` 与 PowerShell/cmd 删除形式）。
+- ReplayBackend 匹配契约：序号回放 + 结构断言（非逐字节，否则 prompt 微调红全套）；`foundry record` 重录工作流进 M0。
+- M1 拆 M1a（文件工具，不被 OQ-13 阻塞）/ M1b（run_command + 分段器）；`responses` adapter 降为按需新增。

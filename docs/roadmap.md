@@ -9,26 +9,32 @@
 
 - 冻结四大接口：IR（conversation.py）、事件协议（events.py）、ModelBackend 协议、SessionStore 行信封。
 - loop + ContextManager 投影（无 masking）+ 2 个工具（`read_file`、`list_files`）+ 最小 rich UI。
-- backend：`replay` + `openai_compat`（用**本地端点**冒烟——无凭证可验证，回应"开发环境没有 API"的约束）。
+- backend：`replay` + `openai_compat`（用**本地端点**冒烟——无凭证可验证，回应"开发环境没有 API"的约束）；`foundry record` 夹具重录工作流。
 - SessionStore 落盘 + 首个 golden transcript 回归测试。
-- **验收**：无网络无凭证机器上全测试绿；本地模型端到端答对一个代码问答。
+- **验收（评审修正，拆绑定/冒烟）**：绑定 = 无网络无凭证机器上 replay 套件全绿（机器可判）；冒烟 = 对本地端点（可选开发环境，需自装 LM Studio/Ollama）完成一次含 ≥1 个 read_file 调用、以 `completed(no_changes)` 干净终止的会话——终止状态与事件序列机器断言，回答质量人工目检、不作门禁。
 
-## M1 — 全工具面 + Policy
+## M1a — 文件工具 + Policy 流水线（评审修正：原 M1 对独立开发者过肥，拆二）
 
-**目标**：能改代码、能跑命令、能被拦住。
+**目标**：能改代码、能被拦住。**不被 OQ-13 阻塞，可立即开工。**
 
-- 8 个工具全量（apply_patch 锚定格式 + 宽容梯度；run_command Job Object/env 过滤/编码回退；workspace 边界模块）。
-- PolicyEngine 六步流水线 + 命令分段器 + circuit breaker + 审批 UI（once/session/always）+ audit.jsonl。
-- 脏工作区策略（baseline + 脏文件 ASK）。
-- **验收**：需求 §8.3 负面用例全绿（越权拒绝、路径逃逸样例、DENY 不可覆盖、取消无孤儿进程、ASK 超时=DENY）。
+- apply_patch（锚定格式 + 逐文件原子 + 宽容梯度）、workspace 边界模块、其余文件/git 工具。
+- PolicyEngine 六步流水线（先覆盖文件工具）+ 审批 UI（once/session/always）+ 脏工作区策略（baseline + 脏文件 ASK 规则）。
+- **验收**：路径逃逸样例全拒（junction、ADS、`..`、设备名）；越权/malformed tool call 被拒且 loop 存活；accept_edits/脏文件/持久化规则三用例（需求 §4.1 测试表）；ASK 超时=DENY。
+
+## M1b — run_command + 分段器（前置：OQ-13 shell 选型）
+
+**目标**：能跑命令、能清理。
+
+- run_command（Job Object 进程树、env 过滤、编码回退、输出上限+artifact 溢出）+ 命令分段器（别名归一 + can't-parse→ASK）+ circuit breaker 全表 + audit.jsonl。
+- **验收**：DENY 不可被 ALLOW 覆盖（用户/项目层）；取消运行中的多级子进程树无孤儿残留；分段器攻击样例表全绿；breaker 别名绕过样例全拒。
 
 ## M2 — 个人路径 E2E + 验收任务集
 
 **目标**：真实云端模型跑通 golden 任务。
 
-- `foundry login`（API key + DPAPI 存储）；错误分类学 + retry/backoff；token 记账 + observation masking；终止状态机 + ValidationClaim 核验。
-- golden 任务集 5–10 个（修测试/加测试/重构/答疑）+ 失败遥测报告脚本。
-- **验收**：需求 §8.2 + §8.5（个人半边）；`completed` 造假用例被拒。
+- `foundry login`（API key + DPAPI 存储）；错误分类学 + retry/backoff；token 记账 + observation masking；`finish` 工具 + 终止状态机 + ValidationClaim 核验；`foundry sessions [list|show|export]`（评审修正：V1 CLI 需求补 owner）。
+- golden 任务集 5–10 个（修测试/加测试/重构/答疑；**前置：OQ-14 样例仓库选型，M2 前须定**）+ 失败遥测报告脚本。
+- **验收**：需求 §8.2 + §8.5（个人半边）；`completed` 造假用例（引用不存在事件/exit code 不符）被拒。
 
 ## M3 — 公司 Gateway
 

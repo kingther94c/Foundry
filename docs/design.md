@@ -82,7 +82,8 @@ async def run_turn(user_input):
         turn = await backend.sample(history, tools=profile.tool_schemas)
         session.record_model_turn(turn)
         if not turn.tool_calls:
-            return finalize(turn)                          # 终止状态机（§9）
+            return end_of_turn(turn)                       # 普通 turn 结束，对话继续；
+                                                           # 任务收口经 finish 工具 → 终止状态机（§9）
         for call in turn.tool_calls:                       # V1 串行；每个独立过 policy
             decision = await policy.evaluate(call)
             result = await execute_or_reject(call, decision)
@@ -99,7 +100,7 @@ async def run_turn(user_input):
 ## 5. ContextManager
 
 - `project(session) -> list[Message]`：**transcript ≠ 模型上下文**，投影是显式函数（openhands 事件流思想），保证同一 session 重放得到逐字节相同请求。
-- 组装顺序（codex 分层）：`[base system prompt] + [由 policy 配置生成的 permissions 段——告诉模型真实的自动放行/审批边界] + [FOUNDRY.md/AGENTS.md（信任门控，字节上限）] + [environment context: OS/shell/cwd/git 状态] + [对话历史]`。
+- 组装顺序（codex 分层）：`[base system prompt] + [由 policy 配置生成的 permissions 段——告诉模型真实的自动放行/审批边界] + [FOUNDRY.md/AGENTS.md（信任门控，字节上限；进 V1 与否见 OQ-17，暂定进）] + [environment context: OS/shell/cwd/git 状态] + [对话历史]`。
 - 输出预算：每个工具输出有字节上限，超限时 head+tail 截断 + `[truncated: N bytes, artifact_id=…]` 标记，完整输出落盘 session 目录由 `read_artifact` 取回。
 - **observation masking**（V1 的"压缩"）：早于最近 N（默认 5）轮的工具输出投影为一行 stub（`[output elided; re-run tool if needed]`）；system/任务/最近轮完整保留。证据：与 LLM 摘要等效且零额外依赖（arXiv 2508.21433；SWE-agent +3pt）。LLM 摘要压缩 = V2，届时以 `Compacted` 事件进 log（openhands condensation-as-event）。
 - token 记账：累计真实 usage，逼近 backend 上下文上限 → 干净终止 `partial(context_exhausted)`，绝不让请求 400。
@@ -118,10 +119,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
 ```
 
 - 规则语法：`tool` / `tool(pattern)`，fnmatch，目标键 per tool（run_command→分段后命令串；文件工具→workspace 相对路径）。固定优先序，无数字优先级（gemini-cli 反例）。
-- 层合并：managed(ProgramData, ACL) > 用户 > 项目本地(.gitignored) > 内置默认；**规则列表跨层拼接后按 deny>ask>allow 评估**（等价于 deny-from-anywhere-wins）；仓库签入层只接受 deny/ask。
-- 命令分段器：针对唯一指定 shell 写保守 tokenizer；`;` `|` `&&` `||` 分段逐段匹配；`$( )`、反引号、`&` 调用符、重定向、env 前缀 → 不可信分段 → ASK。分段器单独成模块、表驱动测试（这是全项目安全敏感度最高的 300 行）。
-- circuit breaker 表（硬编码，先于一切规则）：见需求 §4.1。
-- 审批持久化：`always` 写入项目本地 settings（生成规则，来源标注）；模型输出不能触发持久化；ASK 超时 DENY。
+- 层合并：**分层唯一权威 = 需求 §4.3**（设置类按优先链；规则类跨层拼接后 deny>ask>allow，managed DENY 为地板，仓库签入层只接受 deny/ask）。
+- 命令分段器：针对唯一指定 shell 写保守 tokenizer，**分段前先做别名归一**（`rm/ri/del/erase → Remove-Item` 类，breaker 匹配依赖它）；操作符集**取决于 OQ-13 的 shell 选型**（注意：Windows PowerShell 5.1 不支持 `&&`/`||`）；`$( )`、反引号、`&` 调用符、重定向、env 前缀 → 不可信分段 → ASK。分段器单独成模块、表驱动测试（这是全项目安全敏感度最高的 300 行）。
+- circuit breaker 表（第 0 步，先于一切）：见需求 §4.1 的显式表（含 `<workspace>/.foundry/` 写保护——审批持久化机制的配套，防 accept_edits 下自我提权）。
+- **pre_tool 改写输入 → 从第 0 步重入流水线**；breaker/规则/审批展示/执行全部绑定最终输入（不变量，进测试表）。
+- 审批持久化：`always` 写入 **`~/.foundry/` 用户层配置、按 workspace 键控**（不写 workspace 内文件）；生成规则为精确串匹配、无模式泛化，下次评估生效；模型输出不能触发持久化；ASK 超时 DENY。
 - 启动时 lint 规则集：未知工具名、必然 dead 的规则 → 警告。
 
 ## 7. ToolExecutor 与工具实现要点
@@ -130,9 +132,10 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
 - 工具带 `kind: readonly | mutator` 标签驱动默认 policy 与（V2）并行度。
 - **workspace 边界检查**（文件工具共用）：双侧 `realpath(strict)` + `normcase` + `commonpath`；逐组件 `lstat` 查 reparse tag；拒绝 ADS/设备名/UNC/`\\?\`/盘符相对/尾点尾空格。独立模块 + 攻击样例测试集。
 - `run_command`（winapi.py）：`CreateJobObjectW + KILL_ON_JOB_CLOSE + AssignProcessToJobObject`；`CREATE_NEW_PROCESS_GROUP`；优雅取消先 `CTRL_BREAK_EVENT` 后 `TerminateJobObject`；`taskkill /T /F` 兜底；Popen→Assign 之间的毫秒级窗口列为已知风险。bytes 捕获 → UTF-8 优先 / OEM 回退（比较 U+FFFD 数取优）；子进程 env = 过滤后的最小集 + `PYTHONUTF8=1`。
-- `apply_patch`：纯进程内 Python（补丁体绝不过 argv/子进程——codex #15003）；解析→定位全部 hunk→逐文件 temp+`os.replace` 原子写；宽容梯度 精确→CRLF/BOM→行尾空白→失败带"最近似行"提示；锚文本 0/>1 命中结构化报错；保留原编码与 EOL 风格；可选 post-edit `compile()` 检查。补丁格式说明由解析器常量生成进 prompts/（同源，防漂移）。
+- `apply_patch`：纯进程内 Python（补丁体绝不过 argv/子进程——codex #15003）；**逐文件原子语义**（需求 §5.3）：全量解析定位后，任一 hunk 失败的文件整个不触盘，通过的文件 temp+`os.replace` 写入，per-文件/per-hunk 状态报告指示只重发失败文件；宽容梯度 精确→CRLF/BOM→行尾空白→失败带"最近似行"提示；锚文本 0/>1 命中结构化报错；保留原编码与 EOL 风格；可选 post-edit `compile()` 检查。补丁格式说明由解析器常量生成进 prompts/（同源，防漂移；应用语义同文说明）。
 - `git_status/git_diff`：硬化参数 + 剥 `GIT_*` env（防 fsmonitor/hooks/pager 代码执行面）。
-- `read_artifact(artifact_id, offset?)`：只读 session 目录内落盘输出，分页。
+- `read_artifact(artifact_id, offset?)`：artifact_id 为不透明 token，仅经当前会话内存索引解析（拒绝一切路径语义），仅限本会话产物；输出走与其他工具相同的截断+脱敏路径。
+- `finish(status, summary, claims)`：任务收口工具；runtime 按需求 §6.3 核验 claims 与 git 状态后发 Termination（`[暂定 D-017]`）。
 
 ## 8. ModelBackend 与 AuthProvider
 
@@ -144,7 +147,7 @@ class ModelBackend(Protocol):
 # Capabilities: parallel_tool_calls, streaming, prompt_caching, usage_fields, custom_tools, max_context
 ```
 
-- Adapters（V1）：`openai_compat`（Chat Completions——个人 API key、本地端点、多数企业网关）、`responses`（OpenAI Responses——个人路径可选、Responses 型网关）、`replay`（夹具驱动，测试唯一指定）。`anthropic_messages` 仅在公司 Gateway 确认按原生协议暴露 Claude 时新增（OQ-6 待定）。
+- Adapters（V1）：`openai_compat`（Chat Completions——个人 API key、本地端点、多数企业网关）、`replay`（夹具驱动，测试唯一指定）。**`responses` 与 `anthropic_messages` 同为按需新增**（OQ-6 的 Gateway 答案或个人路径实际需要触发时指派里程碑并记决策；codex 教训：不为"以防万一"养双协议）。M0 冻结 ModelBackend 协议前，用 Responses 线协议做一次纸面走查（IR↔Responses 映射表）以保住冻结承诺。
 - backend 配置表字段对齐 codex `ModelProviderInfo`（需求 §3.2）；每 model profile 额外携带：`edit_format: anchored_patch | whole_file`、`tool_schema_dialect`、`system_prompt_variant`。
 - 流式：SSE 逐行解析（httpc.py）；idle 超时；断流按 TransientError 重试（上限）。
 - AuthProvider：`get_credentials() / login() / logout() / refresh()`；凭证对象只注入 httpc 请求头，ContextManager/工具层拿不到引用（架构性隔离）；DPAPI 加解密（winapi.py），解密失败 = 未登录。
@@ -153,7 +156,7 @@ class ModelBackend(Protocol):
 
 - 行信封 `{ts, ordinal, type, v, payload}`；类型集：`session_meta / model_request / model_response / tool_call / tool_result / policy_decision / approval / command_exec / token_usage / capability_probe / validation_claim / git_baseline / termination`。
 - 写入 choke point 单一函数：exact-match 替换自持凭证（100% 可验收）+ best-effort 模式扫描；command 输出存原始 bytes(base64)。
-- `model_request` 完整到可逐字节重建 ⇒ ReplayBackend 直接以 session 文件为夹具；resume（V2）= 同一重放机制。
+- `model_request` 完整到可重建（**auth/Authorization 头除外**——不落盘，重放时由 HTTP 层重注入）⇒ ReplayBackend 直接以 session 文件为夹具；resume（V2）= 同一重放机制。**Replay 匹配契约**：按序号回放 + 结构断言（工具调用序列/关键字段），请求全文 diff 作为测试产物输出供人工审查；逐字节一致性单独作 resume-ready 测试（否则 prompt 微调会红掉全部夹具、或盲回放验证不了任何东西）。夹具重录：`foundry record`（对本地端点，M0 交付）。
 - 终止状态机：`completed` 需 (a) runtime 自动 git 核对、(b) 全部 `validation_claim` 与 `command_exec` 事件交叉验证（event_id 存在且 exit code 一致）、(c) HEAD 未移动；否则降级 `partial`。只读任务走 `completed(no_changes)`。
 - `~/.foundry/audit.jsonl` 独立追加（工具不可写）。
 
