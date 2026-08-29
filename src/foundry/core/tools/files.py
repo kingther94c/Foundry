@@ -24,6 +24,11 @@ from foundry.core.workspace import PathRejected
 DEFAULT_READ_LINES = 250
 MAX_SEARCH_MATCHES = 50
 MAX_LIST_ENTRIES = 200
+# Reading a file to return a 250-line window should not depend on the file's
+# size: a repository can easily hold a dataset or a packed log, and list_files
+# advertises them.
+MAX_READ_BYTES = 20_000_000
+MAX_SEARCH_FILE_BYTES = 5_000_000
 
 _SKIP_DIRS = frozenset({".git", "__pycache__", ".venv", "venv", "node_modules", ".pytest_cache"})
 
@@ -208,6 +213,8 @@ class SearchText:
                     continue
                 full = Path(dirpath) / filename
                 try:
+                    if full.stat().st_size > MAX_SEARCH_FILE_BYTES:
+                        continue  # a dataset or packed log, not source
                     text = full.read_text(encoding="utf-8", errors="strict")
                 except (UnicodeDecodeError, OSError):
                     continue  # binary or unreadable: skip quietly
@@ -275,6 +282,14 @@ class ReadFile:
             raise ToolError(str(exc)) from exc
         if not resolved.absolute.is_file():
             raise ToolError(f"file not found: {op.args['path']}")
+
+        size = resolved.absolute.stat().st_size
+        if size > MAX_READ_BYTES:
+            raise ToolError(
+                f"{resolved.relative} is {size // 1_000_000} MB, too large to read "
+                f"(limit {MAX_READ_BYTES // 1_000_000} MB). Use search_text to find "
+                "what you need, or run_command with a tool that streams."
+            )
 
         raw = resolved.absolute.read_bytes()
         if b"\x00" in raw[:8000]:

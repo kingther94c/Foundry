@@ -13,6 +13,7 @@ model that emits one anyway cannot slip a second command past policy.
 from __future__ import annotations
 
 import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -59,6 +60,37 @@ class CommandResult:
     duration_ms: int
     timed_out: bool = False
     encoding: str = "utf-8"
+    dropped_bytes: int = 0
+
+
+def _drain(stream, budget: int, sink: list[bytes], dropped: list[int]) -> None:
+    """Read a pipe to EOF, keeping at most ``budget`` bytes.
+
+    ``communicate()`` buffers everything the child writes, so the output cap
+    used to limit what was *journaled*, not what was allocated: a command
+    printing in a loop could exhaust memory well before its timeout fired.
+    This keeps a bounded head and counts the rest.
+    """
+    kept = 0
+    total = 0
+    try:
+        while True:
+            chunk = stream.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if kept < budget:
+                room = budget - kept
+                sink.append(chunk[:room])
+                kept += min(len(chunk), room)
+    except (OSError, ValueError):
+        pass
+    finally:
+        dropped[0] = total - kept
+        try:
+            stream.close()
+        except (OSError, ValueError):
+            pass
 
 
 def run_process(command: str, *, cwd: str, timeout_s: int,
@@ -66,7 +98,7 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
     """Run one command under a job object so the whole tree can be killed.
 
     The job also releases pipe handles a grandchild inherited, which is what
-    keeps ``communicate()`` from blocking forever after a kill.
+    keeps the readers from blocking forever after a kill.
     """
     argv = (POWERSHELL + [command + _EXIT_CODE_EPILOGUE] if IS_WINDOWS
             else ["/bin/sh", "-c", command])
@@ -86,8 +118,23 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
             # Millisecond race here is documented in winapi.ProcessJob.
             job.assign(int(process._handle))  # type: ignore[attr-defined]
 
+        # Drain both pipes on threads with a hard byte budget, so a runaway
+        # writer cannot allocate more than the cap regardless of how fast it
+        # produces output.
+        out_chunks: list[bytes] = []
+        err_chunks: list[bytes] = []
+        out_dropped, err_dropped = [0], [0]
+        readers = [
+            threading.Thread(target=_drain, args=(process.stdout, MAX_CAPTURE_BYTES,
+                                                  out_chunks, out_dropped), daemon=True),
+            threading.Thread(target=_drain, args=(process.stderr, MAX_CAPTURE_BYTES,
+                                                  err_chunks, err_dropped), daemon=True),
+        ]
+        for reader in readers:
+            reader.start()
+
         try:
-            stdout, stderr = process.communicate(timeout=timeout_s)
+            process.wait(timeout=timeout_s)
             timed_out = False
             exit_code = process.returncode
         except subprocess.TimeoutExpired:
@@ -96,22 +143,28 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
                 taskkill_tree(process.pid)
                 process.kill()
             try:
-                stdout, stderr = process.communicate(timeout=5)
+                process.wait(timeout=5)
             except subprocess.TimeoutExpired:  # pragma: no cover - defensive
-                stdout, stderr = b"", b""
+                pass
             exit_code = None
+
+        for reader in readers:
+            reader.join(timeout=5)
+        stdout = b"".join(out_chunks)
+        stderr = b"".join(err_chunks)
     finally:
         job.close()
 
     duration_ms = int((time.monotonic() - started) * 1000)
-    decoded = decode_output(stdout[:MAX_CAPTURE_BYTES])
+    decoded = decode_output(stdout)
     return CommandResult(
         exit_code=exit_code,
-        stdout=stdout[:MAX_CAPTURE_BYTES],
-        stderr=stderr[:MAX_CAPTURE_BYTES],
+        stdout=stdout,
+        stderr=stderr,
         duration_ms=duration_ms,
         timed_out=timed_out,
         encoding=decoded.encoding,
+        dropped_bytes=out_dropped[0] + err_dropped[0],
     )
 
 
@@ -211,6 +264,9 @@ class RunCommand:
             header = f"TIMED OUT after {op.args['timeout_s']}s (process tree terminated)"
         else:
             header = f"exit code {result.exit_code} in {result.duration_ms}ms"
+        if result.dropped_bytes:
+            header += (f"; {result.dropped_bytes} bytes of output were discarded "
+                       "as it was produced (the command printed more than the capture limit)")
 
         return ToolOutput(
             content=f"$ {op.args['command']}\n{header}\n\n{body}".rstrip(),
