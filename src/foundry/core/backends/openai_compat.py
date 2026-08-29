@@ -192,7 +192,9 @@ class OpenAICompatBackend:
         except NotStreaming:
             # The endpoint does not stream. Degrade for the rest of the session
             # rather than returning an empty turn, which would look like the
-            # model had nothing to say.
+            # model had nothing to say. This costs one repeated request, on the
+            # first turn only, which is the price of discovering the capability
+            # from behaviour instead of from a separate probe call.
             self.stream = False
             yield from self._single({**body, "stream": False})
             return
