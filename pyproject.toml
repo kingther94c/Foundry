@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "foundry"
+version = "0.1.0.dev0"
+description = "A local coding-agent runtime for trusted Windows hosts"
+requires-python = "==3.12.*"
+dependencies = [
+    "rich>=13.7,<15",
+]
+
+[project.scripts]
+foundry = "foundry.__main__:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/foundry"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error::EncodingWarning"]
