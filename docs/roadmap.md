@@ -14,7 +14,7 @@
 | M3 公司 Gateway | **部分** | `responses` adapter + 合同测试已就绪；**入场门未过**——真实 Gateway 夹具待取（[OQ-6](open-questions.md)） |
 | M4 打包加固 + 披露 | **完成** | 净 venv `--no-index` 安装实测通过；威胁模型文档；`foundry exec` 已进 V1 |
 
-233 个测试在无网络、无凭证机器上通过。真实 E2E（个人 API key / 公司 Gateway）仍待用户在有凭证的环境执行。
+835 个测试在无网络、无凭证机器上通过。真实 E2E（个人 API key / 公司 Gateway）仍待用户在有凭证的环境执行。
 
 ## M0 — Walking skeleton（接口冻结里程碑）
 
