@@ -21,7 +21,7 @@
 - PolicyEngine 六步流水线（先覆盖文件工具）+ 审批 UI（once/session/always）+ 脏工作区策略（baseline + 脏文件 ASK 规则）。
 - **验收**：路径逃逸样例全拒（junction、ADS、`..`、设备名）；越权/malformed tool call 被拒且 loop 存活；accept_edits/脏文件/持久化规则三用例（需求 §4.1 测试表）；ASK 超时=DENY。
 
-## M1b — run_command + 分段器（前置：OQ-13 shell 选型）
+## M1b — run_command + 分段器（shell 已定：PowerShell 5.1，[D-018](decision-log.md)）
 
 **目标**：能跑命令、能清理。
 
@@ -32,8 +32,8 @@
 
 **目标**：真实云端模型跑通 golden 任务。
 
-- `foundry login`（API key + DPAPI 存储）；错误分类学 + retry/backoff；token 记账 + observation masking；`finish` 工具 + 终止状态机 + ValidationClaim 核验；`foundry sessions [list|show|export]`（评审修正：V1 CLI 需求补 owner）。
-- golden 任务集 5–10 个（修测试/加测试/重构/答疑；**前置：OQ-14 样例仓库选型，M2 前须定**）+ 失败遥测报告脚本。
+- `foundry login`（API key + DPAPI 存储）；错误分类学 + retry/backoff；token 记账 + observation masking；`finish` 工具 + 终止状态机 + ValidationClaim 核验；`foundry sessions [list|show|export]`（评审修正：V1 CLI 需求补 owner）；`FOUNDRY.md` 仓库说明文件（[D-019](decision-log.md)）。
+- golden 任务集 5–10 个（修测试/加测试/重构/答疑；样例仓库 = 自建 fixture 进 repo，[D-020](decision-log.md)）+ 失败遥测报告脚本。
 - **验收**：需求 §8.2 + §8.5（个人半边）；`completed` 造假用例（引用不存在事件/exit code 不符）被拒。
 
 ## M3 — 公司 Gateway

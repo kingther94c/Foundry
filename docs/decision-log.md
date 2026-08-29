@@ -70,25 +70,37 @@
 - **内容**：JSONL 记录完整到可逐字节重建每次模型请求（同时是 ReplayBackend 测试的基础）；`foundry resume` 的功能层（列表/选择/状态校验）推 V2。
 
 ## D-013 PolicyEngine = 六步流水线 + deny-wins 合并律 + circuit breaker
-- **日期**：2026-08-29　**状态**：暂定（Claude 依据 Claude Code Agent SDK 公开规范提出）
+- **日期**：2026-08-29　**状态**：已确认（用户第三轮批量确认）
 - **内容**：`pre_tool 回调 → DENY → ASK → mode 基线 → ALLOW → 交互审批(headless=DENY)`；规则跨层拼接、deny-from-anywhere-wins；固定优先序拒绝数字优先级；"can't parse → ASK"安全阀；硬编码 circuit breaker（.git、~/.foundry、销毁性命令）。
 
 ## D-014 依赖预算：stdlib 优先，运行时仅 rich（+可选 prompt_toolkit）
-- **日期**：2026-08-29　**状态**：暂定（Claude 依据 Windows/Python 调研提出）
+- **日期**：2026-08-29　**状态**：已确认（用户第三轮批量确认）
 - **内容**：HTTP/SSE 自研于 stdlib（换 Windows 系统证书库零配置，公司 MITM 代理免配置）；DPAPI/Job Object 走 ctypes；不用 httpx/requests/keyring/psutil/pydantic/textual。理由与落选对比见 [design.md](design.md) §11。
 
 ## D-015 read_artifact = 超限工具输出的落盘取回
-- **日期**：2026-08-29　**状态**：暂定（v0.1 未定义，Claude 采批判建议定义）
+- **日期**：2026-08-29　**状态**：已确认（用户第三轮批量确认）
 - **内容**：artifact = 本会话内工具输出超出上下文预算而落盘的完整原文，按 artifact_id 寻址，只读，仅限 session 目录。与 ContextManager 截断策略配对。
 
 ## D-016 并发模型 = asyncio 核心
-- **日期**：2026-08-29　**状态**：暂定（Claude 提出）
+- **日期**：2026-08-29　**状态**：已确认（用户第三轮批量确认）
 - **内容**：streaming/取消/超时用 asyncio 表达（Windows ProactorEventLoop 支持子进程）；同步工具体 `asyncio.to_thread` 包装。接口签名以此冻结——事后从 sync 改 async 等于重写。
 
 ## D-017 finish 工具 = 终止状态与 ValidationClaim 的唯一产生通道
-- **日期**：2026-08-29　**状态**：暂定（对抗评审发现 §6.3 门禁缺产生机制后补）
+- **日期**：2026-08-29　**状态**：已确认（用户第三轮批量确认；机制由对抗评审发现缺失后补）
 - **内容**：V1 工具面 8→9：`finish{status, summary, claims:[{claim_text, command_event_id}]}`；runtime 核验（事件存在、exit code 一致、git 核对、HEAD 未移动）后才发 Termination；不符降级 `partial`。交互会话普通 turn 不调 finish 正常结束；会话无 finish 关闭按上下文记 `cancelled`/`partial`。
 - **理由**："completed 门禁机器可执行"若无结构化产生通道，就退化为解析自由文本的君子协定——验收项"造假被拒"将无实现载体。
+
+## D-018 run_command 唯一 shell = Windows PowerShell 5.1（powershell.exe -NoProfile）
+- **日期**：2026-08-29　**状态**：已确认（用户第三轮回答，OQ-13）
+- **内容**：零额外依赖、所有 Windows 预装。分段器按 5.1 语法写（`;`、管道 `|`；**无 `&&`/`||`**）；system prompt 明确告知模型"5.1 无 `&&`，用 `;` 代替"；模型误用得到清晰 parse error 可自行修正。落选：cmd（模型不熟）、Git Bash（安装形态不保证）、pwsh 7（需离线分发 ~100MB，抵触少依赖）。
+
+## D-019 仓库说明文件 FOUNDRY.md/AGENTS.md 进 V1（M2 交付）
+- **日期**：2026-08-29　**状态**：已确认（用户第三轮回答，OQ-17）
+- **内容**：项目根 `FOUNDRY.md`（兼容读 `AGENTS.md`）声明构建/测试命令与仓库注意事项，信任门控 + 字节上限注入上下文；验证命令优先级：任务指定 > 仓库声明 > 模型自选。
+
+## D-020 golden 验收任务集 = 自建小型样例仓库（fixture 进 repo）
+- **日期**：2026-08-29　**状态**：已确认（用户第三轮回答，OQ-14）
+- **内容**：自建几十个文件的 Python 样例项目（含故意 bug 与测试）作为 fixture 进 Foundry repo；可移植、可分享、离线可用；公司仓库作 M3 补充验收。
 
 ## 评审修正记录（2026-08-29 对抗评审，详见 git history 与评审归档）
 - §4.1 修机制矛盾：只读默认 = 内置 ALLOW 规则（步 5）；mutator 默认 = 落步 6 审批（非 ASK 规则，否则 accept_edits 与审批持久化永不生效）；脏文件 ASK = 内置 ASK 规则（步 3，压过 accept_edits）；补 mode 基线定义（dont_ask = fail-closed DENY）。

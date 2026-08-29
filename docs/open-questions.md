@@ -15,10 +15,10 @@
 | OQ-8 | 本地 OpenAI 兼容端点作 dev-only backend？ | answered | 接受（用户第二轮，随 D-009 一并确认）；仅开发冒烟，非产品路径 |
 | OQ-9 | session resume 进不进 V1？ | answered | schema 可重放、功能 V2 → [D-012](decision-log.md) |
 | OQ-10 | 文档/代码语言约定：文档中文、代码+标识符+注释英文？ | open | Claude 按此假设执行中；如有异议随时改 |
-| OQ-11 | `read_artifact` 的本意？ | answered[暂定] | 定义为超限工具输出落盘取回 → [D-015](decision-log.md)；如与你本意不符请指出 |
+| OQ-11 | `read_artifact` 的本意？ | answered | 定义为超限工具输出落盘取回 → [D-015](decision-log.md)（第三轮确认） |
 | OQ-12 | 脏工作区策略 | answered | 警告继续 + 脏文件写强制 ASK → [D-011](decision-log.md) |
-| OQ-13 | run_command 的唯一 shell 选型（评审补充关键事实）：① powershell.exe 5.1——预装但**不支持 `&&`/`||`**（PS7 才有，模型爱用会报 parse error）；② pwsh 7——语法全但需额外离线分发，抵触少依赖原则；③ cmd `/c`——语法最简、分段器最好写但模型不熟；④ Git Bash——模型最熟（bash 习语）但依赖 Git for Windows 的安装形态 | **open（M1b 前须定）** | 决定分段器操作符集（安全敏感 300 行）与 system prompt |
-| OQ-14 | golden 验收任务集在哪个仓库上做：公开样例仓库（可进 repo、可分享）还是公司真实仓库（更真但不可移植）？ | **open（M2 前须定）** | Claude 倾向：公开小型样例仓库进 repo + 公司仓库作 M3 补充验收 |
+| OQ-13 | run_command 的唯一 shell 选型？ | answered | **PowerShell 5.1**（预装零依赖；分段器按 5.1 语法，无 `&&`；prompt 告知模型）→ [D-018](decision-log.md) |
+| OQ-14 | golden 验收任务集在哪个仓库上做？ | answered | 自建小型样例仓库 fixture 进 repo；公司仓库作 M3 补充 → [D-020](decision-log.md) |
 | OQ-15 | managed policy 层（公司 DENY floor）由谁编写和下发：IT 推送 `C:\ProgramData\Foundry\policy.toml`？随内部 wheel 打包？还是 V1 先不做 managed 层（个人自用阶段）？ | **open** | 不阻塞设计（层机制已预留）；部署公司前须定 |
 | OQ-16 | headless `foundry exec` 进 V1（M4 顺手做）还是 V2？ | open | 事件架构使其成本很低；M4 时按余量决定 |
-| OQ-17 | 仓库说明文件 `FOUNDRY.md`/`AGENTS.md` 进 V1 吗？（声明构建/测试命令与注意事项，信任门控 + 字节上限注入上下文；验证命令优先级：任务 > 仓库文件 > 模型自选。它是仓库提供的 prompt 输入=注入面，不应默默进 V1） | **open** | 评审发现它藏在 design 里而 requirements 未拥有；Claude 倾向进 V1（M2） |
+| OQ-17 | 仓库说明文件 `FOUNDRY.md`/`AGENTS.md` 进 V1 吗？ | answered | 进 V1，M2 交付（信任门控 + 字节上限；验证命令优先级 任务>仓库>模型）→ [D-019](decision-log.md) |

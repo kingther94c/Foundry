@@ -92,7 +92,7 @@ AgentRuntime（唯一的 loop）
 
 ## 4. Policy 与审批（trusted-host）
 
-### 4.1 PolicyEngine：六步流水线 `[暂定 D-013]`（采纳 Claude Code Agent SDK 公开规范）
+### 4.1 PolicyEngine：六步流水线（[D-013](decision-log.md)，采纳 Claude Code Agent SDK 公开规范）
 
 ```text
 0 circuit breaker（硬编码表，先于一切；见下）
@@ -137,7 +137,7 @@ AgentRuntime（唯一的 loop）
 ### 4.2 run_command 的诚实设计
 
 命令行为安全判定的前提是解析命令，而 Windows 有 cmd/PowerShell/git-bash 三种语法，字符串前缀匹配已被反复证明可绕过（Claude Code CVE-2025-66032 等）。V1 规则：
-- 固定**唯一 shell**（`[暂定]` PowerShell `-NoProfile -Command`，模型可读性与现代工具兼容性最好；见 [OQ-13](open-questions.md)）。
+- 固定**唯一 shell = Windows PowerShell 5.1**（`powershell.exe -NoProfile -Command`，[D-018](decision-log.md)）：预装零依赖；分段器按 5.1 语法（`;`、管道 `|`；**5.1 无 `&&`/`||`**）；system prompt 明确告知模型"无 `&&`，用 `;` 代替"。
 - 自动 ALLOW 只匹配保守分段后的每一段；命令含替换/链式/重定向等元字符而无法可信分段时，**一律 ASK**（"can't parse → ASK" 安全阀）。
 - DENY 字符串匹配仅作纵深防御，文档明确其非边界属性。
 - 执行：`cwd` 强制显式、超时、输出上限；**Job Object（ctypes，KILL_ON_JOB_CLOSE）托管进程树**，cancel/timeout 一次性击杀全部子孙，`taskkill /T /F` 兜底；无持久 shell 会话（stateless per call，mini-swe-agent 教训）。
@@ -149,7 +149,7 @@ AgentRuntime（唯一的 loop）
 - **设置类（标量，如 model、shell、超时）**：CLI flag > 项目本地（.gitignored）> profile（用户配置内选定）> 用户 `~/.foundry/config.toml` > 内置默认。
 - **policy 规则类**：各层规则列表**拼接**后统一按 deny > ask > allow 评估（层间先后不影响结果，deny-from-anywhere-wins）；例外：**managed 层**（管理员 ACL 目录如 `C:\ProgramData\Foundry\policy.toml`）的 DENY 为地板，且仓库签入层只接受 deny/ask。
 - **仓库内配置只能收紧**（新增 DENY/ASK），永远不能新增 ALLOW；endpoint、credential、headers、proxy 等连接类配置只能来自机器本地层。首次在新目录使用仓库提供的任何配置/说明文件前，一次性信任提示，记录于 `~/.foundry/trusted.json`。
-- **仓库说明文件 `[暂定 OQ-17]`**：V1 支持读取项目根 `FOUNDRY.md`（或 `AGENTS.md`），声明构建/测试命令与仓库注意事项，注入上下文（信任门控 + 字节上限）；验证命令优先级：任务指定 > 仓库文件声明 > 模型自选。是否进 V1 待用户裁决。
+- **仓库说明文件（[D-019](decision-log.md)，M2 交付）**：V1 支持读取项目根 `FOUNDRY.md`（兼容 `AGENTS.md`），声明构建/测试命令与仓库注意事项，注入上下文（信任门控 + 字节上限）；验证命令优先级：任务指定 > 仓库文件声明 > 模型自选。
 - **"公司固定 DENY 不可覆盖"的诚实定位**（批判-安全 #4）：在未被篡改的安装内，运行时任何途径（任务、审批、CLI flag）都不能放松 managed DENY——这可以做到；对抗本机管理员故意改源码/配置——做不到，真正的边界在 Gateway 服务端（模型白名单、请求日志）。此定位必须写进披露文档，不做过度承诺。
 
 ### 4.4 威胁模型与披露（新增章节，v0.1 完全缺失 prompt injection）
@@ -171,7 +171,7 @@ AgentRuntime（唯一的 loop）
 - **协议层必须接受一轮 N 个 tool call**（Responses/Claude 都会并行发）；V1 执行层按顺序串行，每个独立过 policy，全部回填后进入下一轮。
 - malformed / 未知 / 越权 tool call 不执行，返回结构化错误给模型。
 - 错误分类学：`TransientError（429/5xx/网络，指数退避重试，尊重 Retry-After）/ AuthError（refresh 后重试一次）/ FatalError（context 超限、内容拒绝）/ PolicyDenied`；retry 逻辑归 AgentRuntime，不散落各 backend；持续限流以 `blocked(rate_limited)` 终止而非无限等待。
-- 并发模型：**asyncio 核心** `[暂定 D-016]`（streaming、取消、超时的自然表达；Windows ProactorEventLoop 支持子进程）；同步工具用 `asyncio.to_thread` 包装。
+- 并发模型：**asyncio 核心**（[D-016](decision-log.md)；streaming、取消、超时的自然表达；Windows ProactorEventLoop 支持子进程）；同步工具用 `asyncio.to_thread` 包装。
 
 ### 5.2 V1 工具面（9 个，各自带输出上限与截断标记）
 
@@ -182,9 +182,9 @@ AgentRuntime（唯一的 loop）
 | `read_file` | 窗口式（~250 行）带行号与省略计数；登记 read-before-edit 状态 | ALLOW |
 | `apply_patch` | 见 §5.3 | 落第 6 步交互审批；accept_edits 基线下 workspace 内 ALLOW（机制见 §4.1） |
 | `run_command` | 见 §4.2 | 落第 6 步交互审批 |
-| `read_artifact` | 读取本会话因超限落盘的完整工具输出。artifact_id 为**不透明 token**，只经当前会话内存索引解析（不接受任何路径语义），仅限本会话产物；输出与其他工具输出走同一截断+脱敏路径回入上下文（v0.1 未定义，现定义于此 `[暂定 D-015]`） | ALLOW |
+| `read_artifact` | 读取本会话因超限落盘的完整工具输出。artifact_id 为**不透明 token**，只经当前会话内存索引解析（不接受任何路径语义），仅限本会话产物；输出与其他工具输出走同一截断+脱敏路径回入上下文（v0.1 未定义，现定义 [D-015](decision-log.md)） | ALLOW |
 | `git_status` / `git_diff` | 硬化调用：`git --no-pager -c core.fsmonitor= -c core.hooksPath=`，剥离 `GIT_*` env，`GIT_TERMINAL_PROMPT=0` | ALLOW |
-| `finish` | 模型显式提交任务收口：`{status, summary, claims:[{claim_text, command_event_id}]}`；runtime 据 §6.3 核验后发 Termination 事件（`[暂定 D-017]`，为 ValidationClaim 提供唯一产生通道） | ALLOW |
+| `finish` | 模型显式提交任务收口：`{status, summary, claims:[{claim_text, command_event_id}]}`；runtime 据 §6.3 核验后发 Termination 事件（[D-017](decision-log.md)，ValidationClaim 的唯一产生通道） | ALLOW |
 
 工具描述文字 = 短段落 + 一个示例（SWE-agent ACI 证据：简洁、合并、带护栏的工具面实测提分）。V1 冻结为此 9 个，不再增补；`update_plan`（可见计划）列为 V2 候选。
 
@@ -229,7 +229,7 @@ AgentRuntime（唯一的 loop）
 
 ### 6.3 完成条件（机器可执行）
 
-- **产生通道（评审修正：原文缺失）**：验证声明经 `finish` 工具提交（§5.2，`[暂定 D-017]`）——模型调用 `finish{status, summary, claims}`，runtime 核验后才发 Termination；交互会话中不调用 finish 的普通 turn 正常结束（对话继续），会话最终状态在 finish 或会话关闭时落定（无 finish 而关闭 → 按上下文记 `cancelled`/`partial`）。
+- **产生通道（评审修正：原文缺失）**：验证声明经 `finish` 工具提交（§5.2，[D-017](decision-log.md)）——模型调用 `finish{status, summary, claims}`，runtime 核验后才发 Termination；交互会话中不调用 finish 的普通 turn 正常结束（对话继续），会话最终状态在 finish 或会话关闭时落定（无 finish 而关闭 → 按上下文记 `cancelled`/`partial`）。
 - `completed` 门禁：finish 时 runtime 自动执行 git_status/git_diff 核对；每条 `ValidationClaim{claim_text, command_event_id}` 与事件流交叉核验（事件存在、为 command_exec 类型、exit code 与声明一致）——任一不符则拒绝 `completed`（降级 `partial` 并说明）。
 - baseline 完整性：完成检查时校验 HEAD 未被移动（模型经 run_command commit/reset 会污染证据链）；任何 ref 移动记为事件并降级 `partial`。
 - 只读任务（答疑/评审）走 `completed(no_changes)` 路径：git status 与 baseline 一致即满足。
@@ -238,7 +238,7 @@ AgentRuntime（唯一的 loop）
 ## 7. 打包与依赖
 
 - Python 3.12；纯 Python wheel（`py3-none-any`）；build backend hatchling（锁版本）。
-- **依赖预算 `[暂定 D-014]`（枚举制，新增依赖需过决策记录）**：
+- **依赖预算（[D-014](decision-log.md)，枚举制，新增依赖需过决策记录）**：
   - 运行时必选：`rich`（终端渲染，4 个纯 py wheel）
   - 运行时可选：`prompt_toolkit`（审批/输入增强，+wcwidth 共 2 wheel）
   - **明确不用**：httpx/requests（stdlib http.client + ssl 自研 ~300 行，换取 Windows 系统证书库零配置与 0 wheel）、keyring（DPAPI ctypes 直连，且其后端有 2560 字节上限）、psutil（Job Object ctypes）、pydantic（dataclasses + 手写校验）、textual、tree-sitter。
@@ -249,7 +249,7 @@ AgentRuntime（唯一的 loop）
 ## 8. V1 验收标准（v0.1 完全缺失）
 
 1. **安装验收**：干净 Windows 11 + Python 3.12，无外网，`pip --no-index` 从 wheelhouse 安装成功并跑通 `foundry doctor`。
-2. **golden 任务集**（固定样例仓库 `[暂定 OQ-14]`，5–10 个）：修失败测试、加测试、小重构、只读答疑各类至少一个；每个规定预期终止状态与证据形态。回归方式（评审修正）：ReplayBackend 按序号回放 + 对请求做**结构断言**（工具调用序列/关键字段），请求全文 diff 输出为测试产物供人工审查；"逐字节重建"单独作为 resume-ready 测试。prompt/loop 改动须过全套结构断言；夹具重录工作流（`foundry record`，对本地端点重录）为 M0 交付物。
+2. **golden 任务集**（自建小型样例仓库 fixture 进 repo，[D-020](decision-log.md)；5–10 个）：修失败测试、加测试、小重构、只读答疑各类至少一个；每个规定预期终止状态与证据形态。回归方式（评审修正）：ReplayBackend 按序号回放 + 对请求做**结构断言**（工具调用序列/关键字段），请求全文 diff 输出为测试产物供人工审查；"逐字节重建"单独作为 resume-ready 测试。prompt/loop 改动须过全套结构断言；夹具重录工作流（`foundry record`，对本地端点重录）为 M0 交付物。
 3. **负面用例**：越权/未知/malformed tool call 被拒且 loop 存活；DENY 不可被 ALLOW 覆盖（含 managed 层）；路径逃逸样例（junction、ADS、`..`、设备名）全部被拒；取消运行中的多级子进程树无孤儿残留；ASK 超时 = DENY；`completed` 在验证声明造假（引用不存在事件）时被拒。
 4. **离线测试验收**：全部单元/集成测试在无网络、无凭证机器上绿。
 5. **真实 E2E**：个人 API key 与（可用时）公司 Gateway 各跑通至少一个 golden 任务。
