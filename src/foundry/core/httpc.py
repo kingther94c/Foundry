@@ -1,0 +1,216 @@
+"""A small HTTP/SSE client on the standard library.
+
+Chosen over httpx (7 wheels) and requests (5) for one decisive reason beyond
+size: ``ssl.create_default_context()`` loads the Windows CA and ROOT stores, so a
+corporate TLS-inspecting proxy whose CA is installed machine-wide works with no
+configuration. certifi-backed clients trust only the Mozilla bundle and fail with
+CERTIFICATE_VERIFY_FAILED until someone discovers SSL_CERT_FILE -- the single
+most common enterprise support ticket for Python HTTP clients.
+
+Scope is deliberately narrow: POST JSON, stream SSE, honour proxy settings, and
+raise the error taxonomy. No redirects, no connection pooling.
+"""
+
+from __future__ import annotations
+
+import base64
+import http.client
+import json
+import os
+import socket
+import ssl
+import time
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass, field
+from typing import Iterator
+
+from foundry.core.errors import AuthError, FatalError, ProtocolError, TransientError
+
+DEFAULT_CONNECT_TIMEOUT = 30.0
+DEFAULT_READ_TIMEOUT = 300.0
+
+
+@dataclass(frozen=True, slots=True)
+class Response:
+    status: int
+    headers: dict[str, str]
+    body: bytes
+
+    def json(self) -> dict:
+        try:
+            return json.loads(self.body.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ProtocolError(f"response was not valid JSON: {exc}") from exc
+
+
+def _build_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
+    if ca_bundle:
+        context = ssl.create_default_context(cafile=ca_bundle)
+    else:
+        # Loads the Windows CA/ROOT stores: corporate MITM CAs work unconfigured.
+        context = ssl.create_default_context()
+    return context
+
+
+def _proxy_for(url: str) -> str | None:
+    proxies = urllib.request.getproxies()  # env vars and the Windows registry
+    parsed = urllib.parse.urlsplit(url)
+    if urllib.request.proxy_bypass(parsed.hostname or ""):
+        return None
+    return proxies.get(parsed.scheme)
+
+
+@dataclass(slots=True)
+class HttpClient:
+    ca_bundle: str | None = field(default_factory=lambda: os.environ.get("FOUNDRY_CA_BUNDLE")
+                                  or os.environ.get("SSL_CERT_FILE"))
+    connect_timeout: float = DEFAULT_CONNECT_TIMEOUT
+    read_timeout: float = DEFAULT_READ_TIMEOUT
+
+    def _connect(self, url: str) -> tuple[http.client.HTTPConnection, str]:
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme not in ("http", "https"):
+            raise FatalError(f"unsupported URL scheme: {parsed.scheme!r}")
+        host, port = parsed.hostname, parsed.port
+        path = parsed.path or "/"
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
+
+        proxy = _proxy_for(url)
+        if proxy:
+            proxy_parts = urllib.parse.urlsplit(proxy)
+            if parsed.scheme == "https":
+                conn = http.client.HTTPSConnection(
+                    proxy_parts.hostname, proxy_parts.port or 8080,
+                    timeout=self.connect_timeout,
+                    context=_build_ssl_context(self.ca_bundle),
+                ) if proxy_parts.scheme == "https" else http.client.HTTPConnection(
+                    proxy_parts.hostname, proxy_parts.port or 8080, timeout=self.connect_timeout)
+                headers = {}
+                if proxy_parts.username:
+                    token = base64.b64encode(
+                        f"{proxy_parts.username}:{proxy_parts.password or ''}".encode()
+                    ).decode()
+                    headers["Proxy-Authorization"] = f"Basic {token}"
+                conn.set_tunnel(host, port or 443, headers=headers)
+                return conn, path
+            conn = http.client.HTTPConnection(proxy_parts.hostname, proxy_parts.port or 8080,
+                                              timeout=self.connect_timeout)
+            return conn, url
+
+        if parsed.scheme == "https":
+            return http.client.HTTPSConnection(
+                host, port or 443, timeout=self.connect_timeout,
+                context=_build_ssl_context(self.ca_bundle),
+            ), path
+        return http.client.HTTPConnection(host, port or 80, timeout=self.connect_timeout), path
+
+    def post_json(self, url: str, payload: dict, headers: dict[str, str]) -> Response:
+        conn, path = self._connect(url)
+        body = json.dumps(payload).encode("utf-8")
+        send_headers = {"Content-Type": "application/json", "Accept": "application/json",
+                        **headers}
+        try:
+            conn.request("POST", path, body=body, headers=send_headers)
+            conn.sock.settimeout(self.read_timeout)
+            raw = conn.getresponse()
+            data = raw.read()
+            response = Response(status=raw.status,
+                                headers={k.lower(): v for k, v in raw.getheaders()},
+                                body=data)
+        except (socket.timeout, TimeoutError) as exc:
+            raise TransientError(f"request timed out: {exc}") from exc
+        except (http.client.HTTPException, OSError) as exc:
+            raise TransientError(f"connection failed: {exc}") from exc
+        finally:
+            conn.close()
+
+        raise_for_status(response)
+        return response
+
+    def stream_sse(self, url: str, payload: dict, headers: dict[str, str]) -> Iterator[dict]:
+        """Yield parsed SSE ``data:`` payloads until the stream ends.
+
+        Staleness is enforced by the socket timeout, since http.client has no
+        overall read deadline.
+        """
+        conn, path = self._connect(url)
+        body = json.dumps(payload).encode("utf-8")
+        send_headers = {"Content-Type": "application/json", "Accept": "text/event-stream",
+                        **headers}
+        try:
+            conn.request("POST", path, body=body, headers=send_headers)
+            conn.sock.settimeout(self.read_timeout)
+            raw = conn.getresponse()
+
+            if raw.status >= 400:
+                raise_for_status(Response(status=raw.status,
+                                          headers={k.lower(): v for k, v in raw.getheaders()},
+                                          body=raw.read()))
+
+            for line in raw:
+                text = line.decode("utf-8", errors="replace").strip()
+                if not text or text.startswith(":"):
+                    continue
+                if not text.startswith("data:"):
+                    continue
+                data = text[5:].strip()
+                if data == "[DONE]":
+                    return
+                try:
+                    yield json.loads(data)
+                except json.JSONDecodeError as exc:
+                    raise ProtocolError(f"malformed SSE payload: {exc}") from exc
+        except (socket.timeout, TimeoutError) as exc:
+            raise TransientError(f"stream stalled: {exc}") from exc
+        except (http.client.HTTPException, OSError) as exc:
+            raise TransientError(f"stream failed: {exc}") from exc
+        finally:
+            conn.close()
+
+
+def raise_for_status(response: Response) -> None:
+    """Map HTTP status onto the error taxonomy the runtime acts on."""
+    if response.status < 400:
+        return
+
+    detail = response.body.decode("utf-8", errors="replace")[:500]
+
+    if response.status in (401, 403):
+        raise AuthError(f"authentication rejected (HTTP {response.status})", payload=detail)
+    if response.status == 429:
+        retry_after = response.headers.get("retry-after")
+        seconds = None
+        if retry_after:
+            try:
+                seconds = float(retry_after)
+            except ValueError:
+                seconds = None
+        raise TransientError("rate limited (HTTP 429)", payload=detail, retry_after=seconds)
+    if response.status == 407:
+        raise AuthError(
+            "the proxy requires authentication. If it uses NTLM or Kerberos "
+            "(Proxy-Authenticate: Negotiate), Foundry cannot authenticate to it; "
+            "set HTTPS_PROXY to a proxy that accepts Basic auth or bypass it.",
+            payload=detail,
+        )
+    if response.status >= 500:
+        raise TransientError(f"server error (HTTP {response.status})", payload=detail)
+    raise FatalError(f"request rejected (HTTP {response.status})", payload=detail)
+
+
+def retry_with_backoff(operation, *, attempts: int = 4, base_delay: float = 1.0,
+                       sleep=time.sleep):
+    """Retry only what the taxonomy marks transient, honouring Retry-After."""
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return operation()
+        except TransientError as exc:
+            last = exc
+            if attempt == attempts - 1:
+                break
+            delay = exc.retry_after if exc.retry_after is not None else base_delay * (2 ** attempt)
+            sleep(min(delay, 60.0))
+    raise last  # type: ignore[misc]
