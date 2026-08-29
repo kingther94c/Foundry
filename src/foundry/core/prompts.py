@@ -39,9 +39,18 @@ def permissions_paragraph(policy: PolicyEngine) -> str:
     }[policy.mode]
     lines.append(mode_text)
 
-    allow = [f"  - {r.tool} ({r.pattern})" for r in policy.rules
+    def one_line(text: str, limit: int = 120) -> str:
+        """Rule text is repository-supplied. Rendering it raw let a deny rule's
+        reason write extra lines into this paragraph -- including a convincing
+        'Also allowed without asking:' -- and mislead the model about what the
+        engine will actually permit."""
+        flattened = " ".join(text.split())
+        return flattened[:limit] + ("..." if len(flattened) > limit else "")
+
+    allow = [f"  - {one_line(r.tool)} ({one_line(r.pattern)})" for r in policy.rules
              if r.verdict is Verdict.ALLOW and r.layer.value != "builtin"]
-    deny = [f"  - {r.tool} ({r.pattern}){': ' + r.reason if r.reason else ''}"
+    deny = [f"  - {one_line(r.tool)} ({one_line(r.pattern)})"
+            + (f": {one_line(r.reason)}" if r.reason else "")
             for r in policy.rules if r.verdict is Verdict.DENY]
 
     lines.append("Reading, searching, and inspecting Git are always allowed.")

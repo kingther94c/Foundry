@@ -201,6 +201,12 @@ class AgentRuntime:
 
             for call in turn.tool_calls:
                 self.budget.calls += 1
+                # Checked per call, not once per round: a backend returning
+                # thousands of tool calls in a single turn executed all of them
+                # while the limit was only inspected at the top of the loop.
+                over = self.budget.check(self.context.session_usage.total)
+                if over:
+                    return self._terminate(TerminalStatus.PARTIAL, over)
                 self._dispatch(call)
                 if self._finish is not None:
                     return self._finalize(self._finish)

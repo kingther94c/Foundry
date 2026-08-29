@@ -37,6 +37,10 @@
 | 仓库自我提权 | 仓库配置只接受 deny/ask；**`[runtime]` 也只能收紧**（mode 只允许 plan/dont_ask，预算只能调低）；连接类配置（endpoint/凭证/headers/proxy）只读机器本地层；写 `<workspace>/.foundry/` 被熔断表拒绝 | [config.py](../src/foundry/core/config.py)、[policy/engine.py](../src/foundry/core/policy/engine.py) |
 | 补丁经 `Move to:` 覆盖未申报的文件 | 移动目标计入 `paths`，因而对熔断表、脏文件 ASK 规则和审批展示可见；目标已存在即拒绝；目标在**规划阶段**解析，非法路径不会在源文件已改写后才失败 | [tools/patch.py](../src/foundry/core/tools/patch.py) |
 | 补丁静默改错位置 | 宽容梯度的行级映射要求匹配落在行边界上，否则判失败并给提示——绝不把行内命中扩成整行替换 | tools/patch.py `_map_span` |
+| 补丁解析器把 SEARCH 内容当成分隔符 | 一个 hunk 内出现多个 `=======` 时判**歧义并拒绝**（并提示改用整文件重写）——修改含冲突标记的文件是最可能触发它的任务，而按第一个分隔符切分会静默写出错误内容并报告成功 | tools/patch.py `parse_patch` |
+| 同一文件在一个补丁里被写两次 | 文本归一化（大小写/`./`/`..`/分隔符）在 validate 阶段拦一道，执行阶段再按 `realpath` 归一化拦第二道（8.3 短名只有后者能识别） | tools/patch.py |
+| 仓库规则文本注入 system prompt | 规则的 tool/pattern/reason 渲染前压成单行并截断——否则 deny 规则的 reason 可以往权限段里写出一段以假乱真的"以下命令无需批准" | [prompts.py](../src/foundry/core/prompts.py) |
+| 单轮返回海量 tool call 耗尽预算 | 预算在**每次调用前**检查，而非每轮开头一次（后者曾让一轮执行 5000 次调用） | runtime.py |
 | 模型经包装器移动 HEAD 使 diff 看起来干净 | 收口时重新采集 git 证据，HEAD 与 baseline 不一致即降级 `partial` 并记事件；报告区分本次会话改动与既有改动 | [runtime.py](../src/foundry/core/runtime.py) `_finalize` |
 | 销毁用户未提交的工作 | 熔断表拒绝 `git checkout -- / restore / reset --hard / clean / stash drop / stash clear`；baseline 记录脏文件，改脏文件强制 ASK | policy/engine.py |
 | 模型伪造"已验证" | `finish` 的每条 claim 必须引用真实 command 事件且 exit code 相符，否则降级 partial；HEAD 移动也降级 | [runtime.py](../src/foundry/core/runtime.py)、[tools/finish.py](../src/foundry/core/tools/finish.py) |
@@ -57,9 +61,13 @@
 
 第一轮补了 `&'foo'`，第二轮来了 `(git reset --hard)`、`&{git ...}`、`cmd /c git ...`；第三轮写了注释剥离，第四轮就发现它**两头都错**——`'x'#` 后面的注释没识别（漏剥），`a<# ; git reset --hard #>` 中间的 `<#` 又被当成块注释（多剥，把 PowerShell 真会执行的语句直接抹掉）。四轮四破，每次都是上一轮没想到的写法。继续打补丁只会买到第五次。
 
-**结构性的解法：拒绝不再依赖"正确解析 PowerShell"。**
+**做法：熔断表同时扫描两个独立读法，任一命中即拒绝。**
 
-`paranoid_segments()` 用一个**故意错误**的读法重扫命令——完全无视引号、注释、分组，只按分隔符切开，并把引号/括号/调用操作符从 token 边缘剥掉。它只被熔断表使用：**只能增加拒绝，永远不能放行**。它抓不住的东西不会变得可执行，而它不会被任何词法陷阱骗到——因为它压根没做假设。每条熔断规则都锚定 `argv[0]`，所以 `echo "git reset --hard"` 这种字符串提及不会误判。
+`paranoid_segments()` 用一个**故意粗糙**的读法重扫命令——无视引号、注释、分组，只按分隔符与括号切开，并把引号/括号/`&`/`.`/逗号从 token 边缘剥掉。它只被熔断表使用：**只能增加拒绝，永远不能放行**。每条熔断规则都锚定 `argv[0]`，所以 `echo "git reset --hard"` 这种字符串提及不会误判。
+
+**⚠️ 曾经的过度声称，以及第五轮的纠正**：这里一度写着"拒绝不再依赖正确解析 PowerShell"。**那是错的**——第五轮直接证伪：`paranoid_segments` 不是"没有词法分析"，它是**第二个词法分析器**，有自己的盲区。`git reset ,--hard` 就同时骗过了两者（PowerShell 的逗号数组操作符把 `--hard` 交给 git，而两个读法都只看到字面 token `,--hard`），实测放行并销毁未提交的工作。
+
+诚实的表述是：**纵深防御，不是保证**。两个独立读法意味着攻击必须同时骗过两者，这比一个解析器强，但比"保证"弱。逗号已归一化，中缀括号已切分，但下一个 PowerShell 语法特性可能还会同时骗过它们。真正的边界仍然是 §1 那句话：没有沙箱。
 
 自动放行这一侧则收紧到可验证的小语法：**含有能移动语句边界或隐藏文本的字符（`# < > $ ` ^` 或孤立 `&`）的命令，一律不可自动放行**。括号花括号故意不在其中——它们能分组但不能隐藏边界，而 `python -c "print(1)"` 太常见了；分组形式由命令头检查和 paranoid 读法负责。
 
@@ -69,7 +77,7 @@
 
 ### (b) 修复本身就是新漏洞的来源，且倾向于把硬保证换成软保证
 
-第二轮的 5 个新缺陷全部由第一轮修复造成；第三轮抓到 2 个由第二轮造成；第四轮的**两个 critical 都在第三轮写的注释剥离器里**。**同一类错误犯了两次**：为了标记"不可解析"而提前返回，丢掉了已解析的分段，于是 `git reset --hard; (foo)` 从熔断表的**不可批准 DENY** 掉成了**可批准 ASK**——而 system prompt 还在告诉模型这类操作"不可能被批准"。
+第二轮的 5 个新缺陷全部由第一轮修复造成；第三轮抓到 2 个由第二轮造成；第四轮的**两个 critical 都在第三轮写的注释剥离器里**；第五轮证伪了第四轮的收敛声称。**同一类错误犯了两次**：为了标记"不可解析"而提前返回，丢掉了已解析的分段，于是 `git reset --hard; (foo)` 从熔断表的**不可批准 DENY** 掉成了**可批准 ASK**——而 system prompt 还在告诉模型这类操作"不可能被批准"。
 
 所以现在有一条结构性不变量测试（[tests/test_breaker_invariant.py](../tests/test_breaker_invariant.py)）：**任何装饰、模式、会话授权或 hook 改写，都不能让一条本身被熔断表禁止的命令变得可批准**——22 条被禁命令 × 17 种装饰 = **432 个自动生成组合**。它防的是整类错误，不是想到的那几个写法；第四轮那两个 critical 事后加进装饰表，一秒就能复现。
 

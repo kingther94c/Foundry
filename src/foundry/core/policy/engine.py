@@ -193,7 +193,12 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
         # Canonicalize the head and drop git's global options, so `git -C .
         # reset --hard` and `git.exe reset --hard` compare the same as the
         # plain form. Indexing raw argv is how these tables get bypassed.
-        argv = tuple(a.lower() for a in effective_argv(raw_argv))
+        #
+        # Leading commas are stripped because PowerShell's array operator lets
+        # any non-first argument be written `,--hard`: git receives `--hard`,
+        # but the token this table compares against was `,--hard`. Every
+        # flag-keyed entry below was bypassable that way.
+        argv = tuple(a.lower().lstrip(",") for a in effective_argv(raw_argv))
         head = argv[0] if argv else ""
 
         for forbidden in DESTRUCTIVE_GIT:

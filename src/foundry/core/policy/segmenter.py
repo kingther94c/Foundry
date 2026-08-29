@@ -124,31 +124,39 @@ _STRUCTURAL = frozenset("#<>$`^")
 _LONE_AMPERSAND = re.compile(r"(?<!&)&(?!&)")
 
 
+# Characters that separate statements, plus the grouping delimiters that can
+# glue a statement onto a keyword (`if(1){git reset --hard}`).
+_PARANOID_BREAKS = ";|\r\n(){}"
+
+# Stripped from a token's edges so `(git`, `'git'`, `{git`, `&{git`, `. git` and
+# `,--hard` all read as the thing PowerShell would pass along.
+_PARANOID_EDGES = "'\"(){}[]&.,"
+
+
 def paranoid_segments(text: str) -> list[tuple[str, ...]]:
-    """Every statement a reading of this text might contain.
+    """A second, deliberately naive reading of the command.
 
-    Splits on separators with no regard for quotes or comments, which is
-    deliberately wrong as a parse: it exists only to feed the circuit breaker.
-    Seeing a forbidden command under *any* plausible reading is enough to refuse
-    it, and this reading cannot be fooled by a construct Foundry has mis-lexed --
-    which is how `echo 'x'# don't` + newline and `a<# ; ... #>` both hid a
-    `git reset --hard` from earlier versions.
+    Honest framing: this is **not** "no lexer". It is a second lexer with its
+    own blind spots, and round five demonstrated one (`git reset ,--hard`, where
+    PowerShell's comma operator passes `--hard` to git while both readings
+    emitted the literal token `,--hard`). What it buys is defence in depth: two
+    independent readings, and the breaker denies on either, so a trick has to
+    fool *both* to hide a command. That is weaker than a guarantee and stronger
+    than one parser.
 
-    It can only ever add denials: nothing consults it to permit anything.
+    It can only ever add denials: nothing consults it to permit anything, so a
+    fragment it reads wrongly cannot authorize anything.
     """
     normalized = text.replace("&&", "\n").replace("||", "\n")
-    for separator in (";", "|", "\r"):
+    for separator in _PARANOID_BREAKS:
         normalized = normalized.replace(separator, "\n")
+
     out: list[tuple[str, ...]] = []
     for line in normalized.split("\n"):
-        # Grouping, quoting, the call operator and the dot-source operator are
-        # stripped from token edges, so `(git`, `'git'`, `{git`, `&{git` and
-        # `. git` all read as `git`: an invoked command is still a command.
-        #
-        # This cannot create a false denial, because every breaker entry anchors
-        # on argv[0]: `echo "git reset --hard"` reads as head `echo`, not `git`.
-        edges = "'\"(){}[]&."
-        tokens = tuple(t.strip(edges) for t in line.split() if t.strip(edges))
+        # Every breaker entry anchors on argv[0], so `echo "git reset --hard"`
+        # reads as head `echo` and is not a false denial.
+        tokens = tuple(t.strip(_PARANOID_EDGES) for t in line.split()
+                       if t.strip(_PARANOID_EDGES))
         if tokens:
             out.append(tokens)
     return out

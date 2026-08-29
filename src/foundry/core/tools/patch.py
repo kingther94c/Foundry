@@ -101,20 +101,42 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
             hunks: list[Hunk] = []
             while i < last and lines[i].strip() == SEARCH_OPEN:
                 i += 1
-                search: list[str] = []
-                while i < last and lines[i].strip() != DIVIDER:
-                    search.append(lines[i])
-                    i += 1
-                if i >= last:
-                    raise PatchParseError(f"hunk for {path} is missing {DIVIDER!r}")
-                i += 1
-                replace: list[str] = []
-                while i < last and lines[i].strip() != REPLACE_CLOSE:
-                    replace.append(lines[i])
-                    i += 1
-                if i >= last:
+                start = i
+                # Find the hunk's end first, then require exactly one divider
+                # inside it. A file being patched can legitimately contain
+                # `=======` -- resolving a merge conflict is the likeliest task
+                # that does -- and splitting at the first one silently produced
+                # a wrong SEARCH and a wrong REPLACE, then reported success.
+                close = None
+                dividers: list[int] = []
+                scan = i
+                while scan < last:
+                    stripped = lines[scan].strip()
+                    if stripped == REPLACE_CLOSE:
+                        close = scan
+                        break
+                    if stripped == SEARCH_OPEN:
+                        break  # a new hunk opened: this one was never closed
+                    if stripped == DIVIDER:
+                        dividers.append(scan)
+                    scan += 1
+
+                if close is None:
                     raise PatchParseError(f"hunk for {path} is missing {REPLACE_CLOSE!r}")
-                i += 1
+                if not dividers:
+                    raise PatchParseError(f"hunk for {path} is missing {DIVIDER!r}")
+                if len(dividers) > 1:
+                    raise PatchParseError(
+                        f"hunk for {path} contains {len(dividers)} {DIVIDER!r} lines, so "
+                        "where the SEARCH text ends is ambiguous. If the file contains "
+                        "conflict markers, rewrite the whole file with "
+                        "'*** Delete File:' followed by '*** Add File:' instead."
+                    )
+
+                divider = dividers[0]
+                search = lines[start:divider]
+                replace = lines[divider + 1:close]
+                i = close + 1
                 hunks.append(Hunk("\n".join(search), "\n".join(replace)))
             if not hunks:
                 raise PatchParseError(f"update of {path} has no {SEARCH_OPEN} hunk")
@@ -359,10 +381,28 @@ class ApplyPatch:
         ops = parse_patch(op.args["patch"])
         planned: list[_Planned] = []
         rejected: list[str] = []
+        # Second uniqueness check, on paths the workspace actually resolved.
+        # validate()'s textual normalizer cannot see that LONGFI~1.PY and
+        # longfilename.py are one file; realpath can, and two plans for one file
+        # each compute their text from the original, so the later write would
+        # discard the earlier one while both reported success.
+        claimed: dict[str, str] = {}
 
         for file_op in ops:
             try:
-                planned.append(self._plan(file_op, ctx))
+                item = self._plan(file_op, ctx)
+                for target, label in ((item.path, item.relative),
+                                      (item.move_target, item.move_relative)):
+                    if target is None:
+                        continue
+                    identity = os.path.normcase(str(target))
+                    if identity in claimed:
+                        raise ToolError(
+                            f"{label} is the same file as {claimed[identity]}, which this "
+                            "patch already writes; combine them into one operation"
+                        )
+                    claimed[identity] = label
+                planned.append(item)
             except (ToolError, PathRejected) as exc:
                 self.failures[file_op.path] = self.failures.get(file_op.path, 0) + 1
                 note = ""

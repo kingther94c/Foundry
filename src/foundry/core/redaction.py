@@ -86,7 +86,18 @@ class Redactor:
                     continue
                 if needle and needle in data:
                     data = data.replace(needle, PLACEHOLDER_BYTES)
-        return data
+
+        # The same best-effort pattern pass `scrub` applies. Without it the
+        # journal's command record -- the one sink holding full, untruncated
+        # output on disk -- kept credential-shaped strings that the model's own
+        # ephemeral context had already had removed.
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            return data
+        for pattern in _PATTERNS:
+            text = pattern.sub(PLACEHOLDER, text)
+        return text.encode("utf-8")
 
     def scrub_obj(self, obj):
         """Recursively scrub strings inside a JSON-shaped structure."""
