@@ -29,8 +29,9 @@
 | 威胁 | 防护 | 执行点 |
 |---|---|---|
 | 模型误改 workspace 外文件 | 路径必须是 workspace 相对；realpath+normcase+commonpath 双侧比对；逐组件拒绝 reparse point；拒绝 ADS/设备名/UNC/盘符相对 | [workspace.py](../src/foundry/core/workspace.py) |
-| 前缀白名单被链式命令绕过 | 命令按 `;` `\|` `&&` `\|\|` 分段；**ALLOW 规则必须覆盖每一段才成立**，DENY/ASK 命中任一段即生效；别名归一（rm/del→Remove-Item）；`&'foo'`（无空格调用操作符）判为不可解析；无法可信解析即 ASK | [policy/segmenter.py](../src/foundry/core/policy/segmenter.py)、[policy/engine.py](../src/foundry/core/policy/engine.py) `Rule.matches` |
-| 熔断表被参数形态绕过 | 比较前先归一化命令头并剥掉 git 全局选项（`-C`/`-c`/`--git-dir` 等），`git.exe`/`git -C . reset --hard` 与裸形式等价；`git checkout` 整体拒绝（分支名与路径不可区分，引导用 `git switch`） | policy/engine.py `check_breaker`、segmenter.py `effective_argv` |
+| 前缀白名单被链式命令绕过 | 命令按 `;` `\|` `&&` `\|\|` CR/LF 分段；**ALLOW 必须覆盖每一段才成立**，DENY/ASK 命中任一段或整条即生效；别名归一（rm/del→Remove-Item）；含结构性字符（`#` `<` `>` `$` 反引号 `^` 或孤立 `&`）或命令头不像普通可执行名者，一律不可自动放行 | [policy/segmenter.py](../src/foundry/core/policy/segmenter.py)、[policy/engine.py](../src/foundry/core/policy/engine.py) `Rule.matches` |
+| **词法陷阱使危险命令对熔断表隐形** | 熔断表额外扫描一个**故意错误的读法**（`paranoid_segments`）：无视引号/注释/分组按分隔符切开，剥掉边缘的引号、括号、`&`、`.`。只增拒绝不增放行，因而不会被任何未预料的写法骗过（注释吞换行、`<#` 中缀、分组、script block 皆已覆盖） | segmenter.py `paranoid_segments` |
+| 熔断表被参数形态绕过 | 命令头归一化（`git.exe`→`git`、别名展开）；`effective_argv` **扫描到第一个真正的 git 子命令**而非跳过枚举出的全局选项（`--attr-source HEAD` 曾把子命令挤出检查位）；`git checkout` 整体拒绝并引导 `git switch`，`git switch --discard-changes` 同样拒绝 | policy/engine.py `check_breaker`、segmenter.py `effective_argv` |
 | 仓库 .git/config 让 git 变成程序启动器 | 显式关闭 `diff.external`、`--no-ext-diff --no-textconv`、`core.pager/editor/sshCommand`、`protocol.ext`；`safe.directory` 只限当前 workspace（不用 `*`）；git 子进程也走 `child_environment()` 过滤 | [tools/git.py](../src/foundry/core/tools/git.py) |
 | 只读工具穿过 junction 读到外部文件 | `os.walk` 会跟随 junction（`islink` 对其返回 False），故 `list_files`/`search_text` 下降时逐目录检查 reparse point | [tools/files.py](../src/foundry/core/tools/files.py) `_prune` |
 | 仓库自我提权 | 仓库配置只接受 deny/ask；**`[runtime]` 也只能收紧**（mode 只允许 plan/dont_ask，预算只能调低）；连接类配置（endpoint/凭证/headers/proxy）只读机器本地层；写 `<workspace>/.foundry/` 被熔断表拒绝 | [config.py](../src/foundry/core/config.py)、[policy/engine.py](../src/foundry/core/policy/engine.py) |
@@ -43,7 +44,7 @@
 | 测试代码窃取环境里的密钥 | 子进程 env 只保留最小集，剔除含 KEY/TOKEN/SECRET/PASSWORD/AWS_ 等片段的变量 | [winapi.py](../src/foundry/core/winapi.py) `child_environment` |
 | 超时后孤儿进程占住文件锁 | Job Object（KILL_ON_JOB_CLOSE）托管进程树，一次杀光并释放继承的管道句柄 | winapi.py `ProcessJob` |
 | 终端转义序列注入（OSC 52 剪贴板外传等） | 渲染前剥离 ANSI/OSC/控制字符，rich markup 转义 | [cli/render.py](../src/foundry/cli/render.py) |
-| git 调用本身的代码执行面 | 内置 git 工具硬化：`--no-pager -c core.fsmonitor= -c core.hooksPath=`，剥离 `GIT_*`；裸 git 不入只读白名单 | [tools/git.py](../src/foundry/core/tools/git.py) |
+| 非 ASCII 文件名绕过脏文件保护 | git 默认把非 ASCII 路径转义为 `\303\251…`，于是带重音或中文名的文件永远匹配不上脏集合；硬化参数加 `core.quotepath=false` | tools/git.py `_HARDENING` |
 | 崩溃的会话被误认为成功 | 无 termination 事件的 journal 一律判 `interrupted`；截尾末行可容忍 | [session.py](../src/foundry/core/session.py) |
 | 模型换措辞无限重试 | 失败指纹按「归一化操作 + 错误类」计数，文本变化不重置 | runtime.py `FailureTracker` |
 
