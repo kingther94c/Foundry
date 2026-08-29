@@ -196,6 +196,7 @@ def build(workspace_path: Path, *, home: Path | None = None,
         model=config.backend.model,
         audit=AuditLog(home / "audit.jsonl", default_redactor()),
         git_baseline=baseline,
+        credentials=source,
     )
     return Wiring(workspace=workspace, config=config, runtime=runtime,
                   renderer=renderer, session=session)

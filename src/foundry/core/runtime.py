@@ -122,9 +122,11 @@ class AgentRuntime:
     audit: object | None = None
 
     git_baseline: object | None = None   # tools.git.GitBaseline
+    credentials: object | None = None    # auth.CredentialSource, for refresh
     failures: FailureTracker = field(default_factory=FailureTracker)
     _cancelled: bool = False
     _finish: TurnOutcome | None = None
+    _refreshed: bool = False
 
     # -- helpers ----------------------------------------------------------
 
@@ -161,8 +163,21 @@ class AgentRuntime:
             try:
                 turn = self._sample()
             except AuthError as exc:
-                self._emit(ErrorEvent(str(exc), category=exc.category, fatal=True))
-                return self._terminate(TerminalStatus.BLOCKED, f"authentication: {exc}")
+                # A gateway token that expires mid-task should cost one refresh,
+                # not the session. Exactly one retry: a credential that is
+                # rejected twice is not going to work on the third try.
+                if self._refresh_credentials():
+                    self._emit(Notice("credentials refreshed; retrying", level="info"))
+                    try:
+                        turn = self._sample()
+                    except AuthError as retry_exc:
+                        self._emit(ErrorEvent(str(retry_exc), category=retry_exc.category,
+                                              fatal=True))
+                        return self._terminate(TerminalStatus.BLOCKED,
+                                               f"authentication: {retry_exc}")
+                else:
+                    self._emit(ErrorEvent(str(exc), category=exc.category, fatal=True))
+                    return self._terminate(TerminalStatus.BLOCKED, f"authentication: {exc}")
             except TransientError as exc:
                 self._emit(ErrorEvent(str(exc), category=exc.category, fatal=True))
                 return self._terminate(TerminalStatus.BLOCKED, f"provider unavailable: {exc}")
@@ -198,10 +213,21 @@ class AgentRuntime:
             tools=self.registry.schemas(),
             model=self.model,
         )
+        # The journal has to hold enough to rebuild the request, or "the
+        # transcript is the source of truth" is only a slogan: replay, resume,
+        # and any audit of what was actually sent all read this record. The
+        # Authorization header is the one thing deliberately absent.
         self._journal(EventType.MODEL_REQUEST, {
             "model": self.model,
             "message_count": len(request.messages),
             "tools": [t.name for t in request.tools],
+            "messages": [
+                {
+                    "role": message.role.value,
+                    "blocks": [self._block_payload(b) for b in message.blocks],
+                }
+                for message in request.messages
+            ],
         })
 
         text_parts: list[str] = []
@@ -337,6 +363,20 @@ class AgentRuntime:
         self._emit(ToolEnd(call.call_id, op.tool, not output.is_error,
                            content.splitlines()[0] if content else ""))
 
+    @staticmethod
+    def _block_payload(block) -> dict:
+        from foundry.core.conversation import TextBlock, ToolResultBlock, ToolUseBlock as TU
+
+        if isinstance(block, TextBlock):
+            return {"kind": "text", "text": block.text}
+        if isinstance(block, TU):
+            return {"kind": "tool_use", "call_id": block.call_id, "name": block.name,
+                    "arguments": block.arguments}
+        if isinstance(block, ToolResultBlock):
+            return {"kind": "tool_result", "call_id": block.call_id,
+                    "content": block.content, "is_error": block.is_error}
+        return {"kind": "unknown"}
+
     def _reply(self, call: ToolUseBlock, content: str, *, is_error: bool = False) -> None:
         self.context.append_tool_result(call.call_id, content, is_error=is_error)
 
@@ -406,6 +446,21 @@ class AgentRuntime:
             summary += "\n\nRejected claims:\n" + "\n".join(f"  - {r}" for r in rejected)
 
         return self._terminate(status, reason, summary)
+
+    def _refresh_credentials(self) -> bool:
+        """Re-acquire once per session. Returns whether a new value was applied."""
+        if self.credentials is None or self._refreshed:
+            return False
+        self._refreshed = True
+        try:
+            self.credentials.invalidate()
+            handle = self.credentials.acquire()
+        except FoundryError:
+            return False
+        if not hasattr(self.backend, "api_key"):
+            return False
+        self.backend.api_key = handle.reveal()
+        return True
 
     def _collect_git_evidence(self):
         if self.git_baseline is None:
