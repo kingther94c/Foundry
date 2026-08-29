@@ -20,7 +20,7 @@
 | OQ-13 | run_command 的唯一 shell 选型？ | answered | **PowerShell 5.1**（预装零依赖；分段器按 5.1 语法，无 `&&`；prompt 告知模型）→ [D-018](decision-log.md) |
 | OQ-14 | golden 验收任务集在哪个仓库上做？ | answered | 自建小型样例仓库 fixture 进 repo；公司仓库作 M3 补充 → [D-020](decision-log.md) |
 | OQ-15 | managed policy 层（公司 DENY floor）由谁编写和下发：IT 推送 `C:\ProgramData\Foundry\policy.toml`？随内部 wheel 打包？还是 V1 先不做 managed 层（个人自用阶段）？ | **open** | 不阻塞设计（层机制已预留）；部署公司前须定 |
-| OQ-16 | headless `foundry exec` 进 V1（M4 顺手做）还是 V2？ | open | 事件架构使其成本很低；M4 时按余量决定 |
+| OQ-16 | headless `foundry exec` 进 V1（M4 顺手做）还是 V2？ | answered | **进 V1**——事件架构使其成本极低，已实现（ASK→DENY fail-closed，`--json` 事件流） |
 | OQ-17 | 仓库说明文件 `FOUNDRY.md`/`AGENTS.md` 进 V1 吗？ | answered | 进 V1，M2 交付（信任门控 + 字节上限；验证命令优先级 任务>仓库>模型）→ [D-019](decision-log.md) |
 | OQ-18 | 是否开源、用什么 license？ | answered | 暂不开源，license 推迟 → [D-021](decision-log.md) |
 | OQ-19 | session 保留策略默认值（条数 / 天数 / 体积上限）？artifact 是否需静态加密？ | open（M2 前须定） | Claude 倾向：默认保留 30 天 + 体积上限，用户可手动删除；不承诺未经验证的加密 |

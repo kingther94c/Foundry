@@ -3,6 +3,19 @@
 > 排序原则（批判-架构 #1 采纳）：最大不确定项不上关键路径；每个里程碑以"可运行 + 可验收"收口。
 > v0.1 的排序错误已修正：原"ChatGPT 登录最优先"随 blocked 结论（[D-009](decision-log.md)）自然解除；个人路径 API key 与公司 Gateway 同协议族，骨架先行不再有认证阻塞。
 
+## 状态（2026-08-29）
+
+| 里程碑 | 状态 | 备注 |
+|---|---|---|
+| M0 骨架 + 接口冻结 | **完成** | IR/事件/backend/session 四接口已冻结；replay + `foundry record` 就绪 |
+| M1a 文件工具 + policy | **完成** | 攻击表、决策表全绿 |
+| M1b run_command + 分段器 | **完成** | Job Object 进程树清理实测无孤儿 |
+| M2 个人路径 E2E + 验收集 | **完成** | golden 场景 8 个；`finish` 证据链；`foundry report` |
+| M3 公司 Gateway | **部分** | `responses` adapter + 合同测试已就绪；**入场门未过**——真实 Gateway 夹具待取（[OQ-6](open-questions.md)） |
+| M4 打包加固 + 披露 | **完成** | 净 venv `--no-index` 安装实测通过；威胁模型文档；`foundry exec` 已进 V1 |
+
+233 个测试在无网络、无凭证机器上通过。真实 E2E（个人 API key / 公司 Gateway）仍待用户在有凭证的环境执行。
+
 ## M0 — Walking skeleton（接口冻结里程碑）
 
 **目标**：`foundry` 能在样例仓库开一个交互会话，用只读工具回答一个问题，全程事件流驱动。
