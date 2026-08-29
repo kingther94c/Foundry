@@ -57,6 +57,24 @@ class Layer(str, Enum):
 POLICY_VERSION = 1
 
 
+def normalize_path(path: str) -> str:
+    """One spelling for a workspace-relative path.
+
+    Model-supplied envelopes, git porcelain output, and rule patterns all name
+    the same files differently; comparing raw strings has repeatedly let an
+    alternate spelling slip past a guard.
+    """
+    parts: list[str] = []
+    for part in path.replace("\\", "/").lower().split("/"):
+        if part in ("", "."):
+            continue
+        if part == ".." and parts:
+            parts.pop()
+            continue
+        parts.append(part)
+    return "/".join(parts)
+
+
 @dataclass(frozen=True, slots=True)
 class Rule:
     tool: str            # tool name or "*"
@@ -88,7 +106,11 @@ class Rule:
 
         if self.verdict is Verdict.ALLOW:
             return all(part_matches(p) for p in parts)
-        return any(part_matches(p) for p in parts)
+        # DENY and ASK also match the whole command line, so a pattern that
+        # spans a separator (`*;*`, `git status; *`) still works. Dropping it
+        # made such rules match nothing at all, silently.
+        return (any(part_matches(p) for p in parts)
+                or fnmatch.fnmatch(op.target, self.pattern))
 
     def identity(self) -> str:
         return self.rule_id or f"{self.layer.value}:{self.tool}({self.pattern})={self.verdict.value}"
@@ -123,8 +145,17 @@ DESTRUCTIVE_GIT = (
 
 RECURSIVE_DELETE_HEADS = ("remove-item", "format-volume", "clear-disk")
 
-_DANGEROUS_DELETE_TARGETS = re.compile(
-    r"(^|[\s'\"])([a-z]:[\\/]?$|[a-z]:[\\/](windows|users|program files)|~[\\/]?$|/$)",
+# Matched against each argument on its own. Anchoring against the joined string
+# meant a switch written after the path pushed the target off the end:
+# `Remove-Item -Recurse -Force C:\` was caught, `Remove-Item -Force C:\ -Recurse`
+# was not, and PowerShell binds parameters in any order.
+_DANGEROUS_DELETE_TARGET = re.compile(
+    r"^['\"]?("
+    r"[a-z]:[\\/]?|"                              # a drive root
+    r"[a-z]:[\\/](windows|users|program files).*|"  # a system tree
+    r"~[\\/]?|/|"                                  # home or root
+    r"\$home[\\/]?|\$profile|\$pwd|\$env:userprofile[\\/]?"  # unexpanded variables
+    r")['\"]?$",
     re.IGNORECASE,
 )
 
@@ -169,10 +200,39 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
                 "use 'git switch' to change branches"
             )
 
+        # ...and `git switch` itself discards work when forced. Recommending it
+        # above while leaving the forced form uncovered pointed the model
+        # straight at the gap.
+        if head == "git" and len(argv) > 1 and argv[1] == "switch":
+            if any(a in ("--discard-changes", "-f", "--force") for a in argv[2:]):
+                return BreakerHit(
+                    "'git switch --discard-changes/--force' throws away uncommitted "
+                    "work and is never permitted"
+                )
+
+        # Other ways to destroy the working tree or rewrite history.
+        if head == "git" and len(argv) > 1:
+            subcommand = argv[1]
+            if subcommand == "rm" and any(a in ("-f", "--force") for a in argv[2:]):
+                return BreakerHit("'git rm --force' is never permitted")
+            if subcommand in ("filter-branch", "checkout-index"):
+                return BreakerHit(f"'git {subcommand}' is never permitted")
+            if subcommand == "read-tree" and "--reset" in argv[2:]:
+                return BreakerHit("'git read-tree --reset' discards work and is never permitted")
+            if subcommand == "worktree" and len(argv) > 2 and argv[2] == "remove":
+                return BreakerHit("'git worktree remove' is never permitted")
+            # argv is lowercased here, so -D and -d are indistinguishable.
+            # Branch management is a non-goal anyway, so both are refused.
+            if subcommand == "branch" and any(a in ("-d", "--delete") for a in argv[2:]):
+                return BreakerHit("deleting a branch is never permitted")
+            if subcommand in ("update-ref", "symbolic-ref") and "-d" in argv[2:]:
+                return BreakerHit(f"'git {subcommand} -d' is never permitted")
+            if subcommand == "reflog" and len(argv) > 2 and argv[2] == "expire":
+                return BreakerHit("'git reflog expire' destroys recovery data and is never permitted")
+
         if head in RECURSIVE_DELETE_HEADS:
-            joined = " ".join(argv[1:])
             recursive = any(a.startswith(("-r", "/s", "-recurse", "/q")) for a in argv[1:])
-            if recursive and _DANGEROUS_DELETE_TARGETS.search(joined):
+            if recursive and any(_DANGEROUS_DELETE_TARGET.match(a) for a in argv[1:]):
                 return BreakerHit("recursive delete of a system or home directory is never permitted")
 
         if head == "git" and len(argv) > 1 and argv[1] in ("push", "commit", "rebase", "merge"):
@@ -296,7 +356,12 @@ class PolicyEngine:
 
         # Step 3 -- ASK rules, including the dirty-file guard.
         if op.tool == "apply_patch":
-            touched = [p for p in op.args.get("paths", []) if p in self.dirty_files]
+            # Both sides normalized: the envelope's spelling comes from the
+            # model, dirty_files comes from git porcelain. Comparing raw
+            # strings let './src/app.py' and 'src\app.py' skip the guard that
+            # exists precisely to outrank accept_edits.
+            dirty = {normalize_path(p) for p in self.dirty_files}
+            touched = [p for p in op.args.get("paths", []) if normalize_path(p) in dirty]
             if touched:
                 return finish(
                     Verdict.ASK,

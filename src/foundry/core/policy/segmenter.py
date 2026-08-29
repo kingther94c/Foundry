@@ -108,6 +108,50 @@ class SegmentedCommand:
         return not self.untrusted_reason and bool(self.segments)
 
 
+def strip_comments(text: str) -> str:
+    """Remove PowerShell comments before anything else looks at the text.
+
+    PowerShell strips ``# ...`` to end of line before lexing, so an apostrophe
+    in a comment is inert there. To a quote-tracking splitter it *opens* a quote
+    region that swallows every following newline, collapsing a whole script into
+    one benign-looking statement -- verified to run `git reset --hard` past the
+    breaker. Comments are removed first so both the splitter and the tokenizer
+    see what PowerShell would.
+    """
+    out: list[str] = []
+    quote: str | None = None
+    i = 0
+    while i < len(text):
+        char = text[i]
+        if quote:
+            out.append(char)
+            if char == quote:
+                quote = None
+            i += 1
+            continue
+        if char in "'\"":
+            quote = char
+            out.append(char)
+            i += 1
+            continue
+        if char == "<" and text[i:i + 2] == "<#":
+            end = text.find("#>", i + 2)
+            i = len(text) if end == -1 else end + 2
+            continue
+        if char == "#" and (i == 0 or text[i - 1].isspace() or text[i - 1] in ";|&"):
+            end = len(text)
+            for terminator in ("\n", "\r"):
+                found = text.find(terminator, i)
+                if found != -1:
+                    end = min(end, found)
+            out.append("\n")  # the comment ended the statement
+            i = end + 1 if end < len(text) else end
+            continue
+        out.append(char)
+        i += 1
+    return "".join(out)
+
+
 def _split_top_level(text: str) -> list[str]:
     """Split on separators that are outside quotes."""
     parts: list[str] = []
@@ -225,38 +269,61 @@ def segment_command(command: str) -> SegmentedCommand:
     if not command or not command.strip():
         return SegmentedCommand(raw=command, untrusted_reason="empty command")
 
-    for pattern, reason in _UNTRUSTED_PATTERNS:
-        if pattern.search(command):
-            return SegmentedCommand(raw=command, untrusted_reason=reason)
+    # Comments first: they change where statements end, so every later pass has
+    # to see the text with them removed.
+    text = strip_comments(command)
 
-    parts = _split_top_level(command)
+    untrusted_reason = ""
+    for pattern, reason in _UNTRUSTED_PATTERNS:
+        if pattern.search(text):
+            untrusted_reason = reason
+            break
+
+    parts = _split_top_level(text)
     if any(p == "__UNBALANCED_QUOTE__" for p in parts):
+        # The split itself is unreliable here, so there is nothing to hand the
+        # breaker.
         return SegmentedCommand(raw=command, untrusted_reason="unbalanced quote")
     if not parts:
-        return SegmentedCommand(raw=command, untrusted_reason="empty command")
+        return SegmentedCommand(raw=command,
+                                untrusted_reason=untrusted_reason or "empty command")
 
+    # Parsing continues even for an untrusted command. The segments are only
+    # ever used to *deny*: an untrusted command can never be auto-allowed, so a
+    # partial read can add a categorical denial but never permit anything.
+    # Returning early instead meant `Remove-Item -Recurse $env:USERPROFILE`
+    # reached an approvable prompt rather than the breaker.
     segments: list[Segment] = []
+
     for part in parts:
         argv = _tokenize(part)
         if not argv:
-            return SegmentedCommand(raw=command, untrusted_reason="empty segment")
+            untrusted_reason = untrusted_reason or "empty segment"
+            continue
 
         canonical_head = canonicalize(argv[0])
         # The head must look like a plain command name. A grouping paren, a
         # script block, dot-sourcing, or a variable hides what actually runs,
         # and no breaker entry can match a head it cannot read.
+        #
+        # An unreadable segment makes the whole command untrusted -- it can
+        # never be auto-allowed -- but the *readable* segments are still
+        # returned. Discarding them let `git reset --hard; (foo)` fall through
+        # to an approvable "cannot be parsed" prompt instead of the breaker's
+        # categorical denial, turning a hard guarantee into a soft one.
         if not _PLAIN_HEAD.match(canonical_head):
-            return SegmentedCommand(
-                raw=command,
-                untrusted_reason=f"command name is not a plain executable: {argv[0]!r}",
-            )
+            untrusted_reason = untrusted_reason or (
+                f"command name is not a plain executable: {argv[0]!r}")
+            continue
         if canonical_head in _NESTED_SHELLS and len(argv) > 1:
-            return SegmentedCommand(
-                raw=command,
-                untrusted_reason=f"{canonical_head} runs a command given as an argument",
-            )
+            untrusted_reason = untrusted_reason or (
+                f"{canonical_head} runs a command given as an argument")
+            continue
 
         canonical = " ".join((canonical_head,) + argv[1:])
         segments.append(Segment(text=part, argv=argv, canonical=canonical))
 
-    return SegmentedCommand(raw=command, segments=tuple(segments))
+    if not segments and not untrusted_reason:
+        return SegmentedCommand(raw=command, untrusted_reason="empty command")
+    return SegmentedCommand(raw=command, segments=tuple(segments),
+                            untrusted_reason=untrusted_reason)

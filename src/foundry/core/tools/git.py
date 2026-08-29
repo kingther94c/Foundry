@@ -114,6 +114,40 @@ class GitBaseline:
         }
 
 
+def parse_porcelain_path(line: str) -> str | None:
+    """Extract the path from one ``git status --porcelain=v2`` line.
+
+    The path sits at a fixed field index, not at the end: splitting on
+    whitespace mangles any path containing a space, and a rename line is
+    ``<current>\\t<original>`` so taking the last tab field yields the path that
+    no longer exists. Both produced dirty-file entries naming files that were
+    not on disk, which meant the real file skipped the dirty-write guard.
+
+        1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
+        2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <X><score> <path>\\t<origPath>
+        u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>
+        ? <path>
+    """
+    if not line:
+        return None
+    marker = line[0]
+    if marker == "?":
+        return line[2:].strip() or None
+    if marker == "!":
+        return None  # ignored file
+
+    field_index = {"1": 8, "2": 9, "u": 10}.get(marker)
+    if field_index is None:
+        return None
+    fields = line.split(" ", field_index)
+    if len(fields) <= field_index:
+        return None
+    path = fields[field_index]
+    if marker == "2":
+        path = path.split("\t", 1)[0]  # the current path, not the original
+    return path.strip() or None
+
+
 def is_git_repository(path: Path) -> bool:
     code, out, _ = run_git(["rev-parse", "--is-inside-work-tree"], path)
     return code == 0 and out.strip() == "true"
@@ -134,15 +168,13 @@ def capture_baseline(path: Path) -> GitBaseline:
     dirty: set[str] = set()
     untracked: set[str] = set()
     for line in status.splitlines():
-        if not line:
+        path = parse_porcelain_path(line)
+        if path is None:
             continue
-        marker = line[0]
-        if marker == "?":
-            untracked.add(line[2:].strip())
-        elif marker in "12":
-            dirty.add(line.rsplit("\t", 1)[-1].strip() if "\t" in line else line.split()[-1])
-        elif marker == "u":
-            dirty.add(line.split()[-1])
+        if line[0] == "?":
+            untracked.add(path)
+        else:
+            dirty.add(path)
 
     return GitBaseline(head=head_sha, branch=branch_name,
                        dirty_paths=frozenset(dirty), untracked_paths=frozenset(untracked))
@@ -260,11 +292,8 @@ def collect_evidence(path: Path, baseline: GitBaseline) -> GitEvidence:
 
     changed: set[str] = set()
     for line in status.splitlines():
-        if not line:
-            continue
-        if line[0] == "?":
-            changed.add(line[2:].strip())
-        elif line[0] in "12u":
-            changed.add(line.rsplit("\t", 1)[-1].strip() if "\t" in line else line.split()[-1])
+        path = parse_porcelain_path(line)
+        if path is not None:
+            changed.add(path)
 
     return GitEvidence(baseline=baseline, head_now=head_now, changed=frozenset(changed))
