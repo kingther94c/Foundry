@@ -68,12 +68,14 @@ def test_read_file_refuses_an_oversized_file(ctx):
         tool.execute(tool.validate({"path": "data.csv", "line_count": 5}), ctx)
 
 
-def test_read_file_error_names_an_alternative(ctx):
+def test_read_file_error_names_a_workable_alternative(ctx):
+    """Not search_text: anything over the read limit is also over search's own
+    limit, so that advice returns '(no matches)' for a string that is there."""
     big = ctx.workspace.root / "data.csv"
     with big.open("wb") as fh:
         fh.truncate(MAX_READ_BYTES + 1)
     tool = ReadFile()
-    with pytest.raises(ToolError, match="search_text"):
+    with pytest.raises(ToolError, match="Select-String|run_command"):
         tool.execute(tool.validate({"path": "data.csv"}), ctx)
 
 
@@ -82,8 +84,9 @@ def test_read_file_still_reads_ordinary_files(ctx):
     assert "x = 1" in tool.execute(tool.validate({"path": "small.py"}), ctx).content
 
 
-def test_search_skips_oversized_files(ctx):
-    """A packed log should not be decoded in full just to grep the repo."""
+def test_search_reports_the_files_it_skipped(ctx):
+    """A packed log should not be decoded in full to grep the repo -- but a
+    skipped file must not be indistinguishable from one with no match."""
     big = ctx.workspace.root / "huge.txt"
     with big.open("w", encoding="utf-8") as fh:
         fh.write("needle\n")
@@ -91,4 +94,6 @@ def test_search_skips_oversized_files(ctx):
 
     tool = SearchText()
     out = tool.execute(tool.validate({"query": "needle"}), ctx)
-    assert "huge.txt" not in out.content
+    assert "were not searched" in out.content
+    assert "huge.txt" in out.content
+    assert out.metadata["skipped"] == 1

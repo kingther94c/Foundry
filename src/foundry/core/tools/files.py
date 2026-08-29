@@ -204,6 +204,7 @@ class SearchText:
         regex = re.compile(op.args["query"], flags)
         glob = op.args["glob"]
         matches: list[str] = []
+        skipped: list[str] = []
         total = 0
 
         for dirpath, dirnames, filenames in os.walk(root.absolute):
@@ -214,7 +215,11 @@ class SearchText:
                 full = Path(dirpath) / filename
                 try:
                     if full.stat().st_size > MAX_SEARCH_FILE_BYTES:
-                        continue  # a dataset or packed log, not source
+                        # Named in the output: "(no matches)" must never cover a
+                        # file that was not actually searched.
+                        skipped.append(
+                            os.path.relpath(full, ctx.workspace.root).replace("\\", "/"))
+                        continue
                     text = full.read_text(encoding="utf-8", errors="strict")
                 except (UnicodeDecodeError, OSError):
                     continue  # binary or unreadable: skip quietly
@@ -225,13 +230,22 @@ class SearchText:
                         if len(matches) < MAX_SEARCH_MATCHES:
                             matches.append(f"{rel}:{lineno}: {line.strip()[:200]}")
 
+        note = ""
+        if skipped:
+            listed = ", ".join(skipped[:5]) + (" ..." if len(skipped) > 5 else "")
+            note = (f"\n\n[{len(skipped)} file(s) over "
+                    f"{MAX_SEARCH_FILE_BYTES // 1_000_000} MB were not searched: {listed}. "
+                    "Use run_command with Select-String to search those.]")
+
         if not matches:
-            return ToolOutput(content="(no matches)", metadata={"count": 0})
+            return ToolOutput(content="(no matches)" + note,
+                              metadata={"count": 0, "skipped": len(skipped)})
         body = "\n".join(matches)
         if total > MAX_SEARCH_MATCHES:
             body += (f"\n\n[{total} total matches, showing {MAX_SEARCH_MATCHES}. "
                      "Narrow the query or restrict path/glob.]")
-        return ToolOutput(content=body, metadata={"count": total})
+        return ToolOutput(content=body + note,
+                          metadata={"count": total, "skipped": len(skipped)})
 
 
 @dataclass(slots=True)
@@ -285,10 +299,13 @@ class ReadFile:
 
         size = resolved.absolute.stat().st_size
         if size > MAX_READ_BYTES:
+            # Not "use search_text": anything over this limit is also over
+            # search_text's own, so that advice would return "(no matches)" for
+            # a string that is provably there.
             raise ToolError(
                 f"{resolved.relative} is {size // 1_000_000} MB, too large to read "
-                f"(limit {MAX_READ_BYTES // 1_000_000} MB). Use search_text to find "
-                "what you need, or run_command with a tool that streams."
+                f"(limit {MAX_READ_BYTES // 1_000_000} MB). Use run_command with a "
+                "tool that streams, such as Select-String or Get-Content -TotalCount."
             )
 
         raw = resolved.absolute.read_bytes()
