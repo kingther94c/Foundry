@@ -19,13 +19,14 @@ from foundry import __version__
 from foundry.cli.render import Renderer
 from foundry.core.auth import ApiKeySource, CredentialVault, StaticTokenSource
 from foundry.core.backends.openai_compat import OpenAICompatBackend
+from foundry.core.backends.recording import RecordingBackend
 from foundry.core.backends.responses import ResponsesBackend
 from foundry.core.config import Config, load_config, user_dir
 from foundry.core.context import ContextManager
 from foundry.core.errors import AuthError, ConfigError, FoundryError
 from foundry.core.events import EXIT_CODES, EventSink, TerminalStatus
 from foundry.core.httpc import HttpClient
-from foundry.core.policy.engine import PolicyEngine, builtin_rules
+from foundry.core.policy.engine import Mode, PolicyEngine, builtin_rules
 from foundry.core.prompts import (
     base_system_prompt,
     environment_paragraph,
@@ -74,14 +75,25 @@ def _remember_trust(home: Path, workspace: Path) -> None:
     path.write_text(json.dumps({"trusted": sorted(trusted)}, indent=2), encoding="utf-8")
 
 
-def _confirm_trust(console: Console, home: Path, workspace: Path) -> bool:
-    """Trust-on-first-use before repository-supplied config or docs are read."""
+def _confirm_trust(console: Console, home: Path, workspace: Path, *,
+                   interactive: bool = True) -> bool:
+    """Trust-on-first-use before repository-supplied config or docs are read.
+
+    Without a person to ask -- a headless run -- the answer is no. Prompting
+    into a closed stdin would either hang or read EOF as consent.
+    """
     if str(workspace) in _trusted_paths(home):
         return True
     has_input = (workspace / ".foundry" / "config.toml").is_file() or any(
         (workspace / name).is_file() for name in ("FOUNDRY.md", "AGENTS.md")
     )
     if not has_input:
+        return False
+    if not interactive or not sys.stdin or not sys.stdin.isatty():
+        console.print(
+            f"[dim]{workspace} provides Foundry instructions; not loading them "
+            "because this run is unattended. Run interactively once to trust it.[/dim]"
+        )
         return False
     console.print(
         f"[yellow]{workspace} provides Foundry instructions or settings.[/yellow]\n"
@@ -98,7 +110,8 @@ def _confirm_trust(console: Console, home: Path, workspace: Path) -> bool:
 
 
 def build(workspace_path: Path, *, home: Path | None = None,
-          overrides: dict | None = None, console: Console | None = None) -> Wiring:
+          overrides: dict | None = None, console: Console | None = None,
+          interactive: bool = True) -> Wiring:
     console = console or Console()
     home = home or user_dir()
 
@@ -114,7 +127,7 @@ def build(workspace_path: Path, *, home: Path | None = None,
             "point it at a repository."
         )
 
-    trusted = _confirm_trust(console, home, workspace.root)
+    trusted = _confirm_trust(console, home, workspace.root, interactive=interactive)
     config = load_config(workspace.root if trusted else None, overrides=overrides, home=home)
 
     baseline = capture_baseline(workspace.root)
@@ -289,6 +302,82 @@ def cmd_sessions(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_exec(args: argparse.Namespace) -> int:
+    """Headless: one task, no prompts, ASK resolves to DENY.
+
+    Fail-closed is the whole point. An unattended run that silently approved
+    whatever it was asked would be strictly worse than one that stops.
+    """
+    console = Console(stderr=True)
+    try:
+        wiring = build(Path(args.workspace).resolve(),
+                       overrides={"mode": Mode.DONT_ASK}, console=console,
+                       interactive=False)
+    except FoundryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_CODES[TerminalStatus.FAILED]
+
+    wiring.runtime.approval = None  # nobody to ask
+    wiring.runtime.policy.interactive = False
+
+    if args.json:
+        import json as _json
+
+        sink_events: list[str] = []
+
+        def as_json(event) -> None:
+            payload = {"kind": getattr(event, "kind", "event")}
+            for attribute in ("text", "display", "tool", "status", "reason", "summary",
+                              "message", "ok"):
+                value = getattr(event, attribute, None)
+                if value is not None:
+                    payload[attribute] = value.value if hasattr(value, "value") else value
+            sink_events.append(_json.dumps(payload, ensure_ascii=False))
+            print(sink_events[-1], flush=True)
+
+        wiring.runtime.events.subscribe(as_json)
+
+    status = TerminalStatus.FAILED
+    try:
+        outcome = wiring.runtime.run_turn(args.task)
+        status = outcome.status or TerminalStatus.COMPLETED
+        if not args.json and outcome.text:
+            print(outcome.text)
+    except KeyboardInterrupt:
+        wiring.runtime.cancel()
+        status = TerminalStatus.CANCELLED
+    finally:
+        if not wiring.session._terminated:
+            wiring.session.record_termination(status, "headless run ended")
+        wiring.session.close()
+    return EXIT_CODES.get(status, 0)
+
+
+def cmd_record(args: argparse.Namespace) -> int:
+    """Capture a session as a replay fixture for the offline suite."""
+    console = Console()
+    try:
+        wiring = build(Path(args.workspace).resolve(), console=console)
+    except FoundryError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_CODES[TerminalStatus.FAILED]
+
+    recorder = RecordingBackend(inner=wiring.runtime.backend,
+                                fixture_path=Path(args.output))
+    wiring.runtime.backend = recorder
+    wiring.renderer.show_disclosure(str(wiring.workspace.root),
+                                    wiring.config.backend.model, wiring.config.mode.value)
+    try:
+        wiring.runtime.run_turn(args.task)
+    finally:
+        if not wiring.session._terminated:
+            wiring.session.record_termination(TerminalStatus.CANCELLED, "recording ended")
+        wiring.session.close()
+        path = recorder.save()
+        console.print(f"[green]recorded[/green] {len(recorder.captured)} turns to {path}")
+    return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     from foundry.cli.report import render
 
@@ -366,6 +455,18 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("task", nargs="?", help="run one task then exit")
     run.add_argument("--workspace", default=".", help="repository to work in")
     run.set_defaults(func=cmd_session)
+
+    execute = sub.add_parser("exec", help="run one task headlessly (approvals are denied)")
+    execute.add_argument("task")
+    execute.add_argument("--workspace", default=".")
+    execute.add_argument("--json", action="store_true", help="emit the event stream as JSONL")
+    execute.set_defaults(func=cmd_exec)
+
+    record = sub.add_parser("record", help="capture a session as a replay fixture")
+    record.add_argument("task")
+    record.add_argument("--output", required=True, help="fixture file to write")
+    record.add_argument("--workspace", default=".")
+    record.set_defaults(func=cmd_record)
 
     login = sub.add_parser("login", help="store an API key")
     login.set_defaults(func=cmd_login)

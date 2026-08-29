@@ -41,7 +41,7 @@ from foundry.core.conversation import (
     Usage,
 )
 from foundry.core.errors import ProtocolError
-from foundry.core.httpc import HttpClient, retry_with_backoff
+from foundry.core.httpc import HttpClient, NotStreaming, retry_with_backoff
 
 
 def _message_to_items(message: Message) -> list[dict[str, Any]]:
@@ -201,7 +201,14 @@ class ResponsesBackend:
         model = body["model"]
         completed = False
 
-        for event in self.client.stream_sse(self.endpoint, body, self._headers()):
+        try:
+            stream = list(self.client.stream_sse(self.endpoint, body, self._headers()))
+        except NotStreaming:
+            self.stream = False
+            yield from self._single({**body, "stream": False})
+            return
+
+        for event in stream:
             kind = event.get("type", "")
 
             if kind == "response.output_text.delta":

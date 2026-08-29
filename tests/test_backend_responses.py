@@ -37,7 +37,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         self.server.last_body = json.loads(self.rfile.read(length) or b"{}")
-        if self.script.get("sse"):
+        if self.script.get("sse") is not None:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.end_headers()

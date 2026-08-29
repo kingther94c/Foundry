@@ -31,6 +31,18 @@ DEFAULT_CONNECT_TIMEOUT = 30.0
 DEFAULT_READ_TIMEOUT = 300.0
 
 
+class NotStreaming(Exception):
+    """The server answered a stream request with a single JSON response.
+
+    Not an error in the taxonomy sense: it is a capability difference, and the
+    backend degrades to non-streaming rather than failing the turn.
+    """
+
+    def __init__(self, message: str, *, body: bytes) -> None:
+        super().__init__(message)
+        self.body = body
+
+
 @dataclass(frozen=True, slots=True)
 class Response:
     status: int
@@ -132,6 +144,11 @@ class HttpClient:
     def stream_sse(self, url: str, payload: dict, headers: dict[str, str]) -> Iterator[dict]:
         """Yield parsed SSE ``data:`` payloads until the stream ends.
 
+        If the server answers with JSON instead of an event stream -- which a
+        gateway that does not implement streaming will do -- this raises
+        :class:`NotStreaming` carrying the body, so the caller can parse it as a
+        single response rather than silently producing an empty turn.
+
         Staleness is enforced by the socket timeout, since http.client has no
         overall read deadline.
         """
@@ -148,6 +165,14 @@ class HttpClient:
                 raise_for_status(Response(status=raw.status,
                                           headers={k.lower(): v for k, v in raw.getheaders()},
                                           body=raw.read()))
+
+            content_type = raw.getheader("Content-Type", "")
+            if "event-stream" not in content_type.lower():
+                raise NotStreaming(
+                    f"server replied with {content_type or 'no content type'} "
+                    "instead of an event stream",
+                    body=raw.read(),
+                )
 
             for line in raw:
                 text = line.decode("utf-8", errors="replace").strip()

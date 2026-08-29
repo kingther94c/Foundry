@@ -34,7 +34,7 @@ from foundry.core.conversation import (
     Usage,
 )
 from foundry.core.errors import ProtocolError
-from foundry.core.httpc import HttpClient, retry_with_backoff
+from foundry.core.httpc import HttpClient, NotStreaming, retry_with_backoff
 
 _STOP_REASONS = {
     "stop": StopReason.END_TURN,
@@ -187,7 +187,17 @@ class OpenAICompatBackend:
         finish_reason = "stop"
         model = body["model"]
 
-        for chunk in self.client.stream_sse(self.endpoint, body, self._headers()):
+        try:
+            chunks = list(self.client.stream_sse(self.endpoint, body, self._headers()))
+        except NotStreaming:
+            # The endpoint does not stream. Degrade for the rest of the session
+            # rather than returning an empty turn, which would look like the
+            # model had nothing to say.
+            self.stream = False
+            yield from self._single({**body, "stream": False})
+            return
+
+        for chunk in chunks:
             if chunk.get("usage"):
                 usage = _usage_from(chunk["usage"])
             model = chunk.get("model", model)
