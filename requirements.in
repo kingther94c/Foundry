@@ -1,0 +1,3 @@
+# Runtime dependencies. Every addition needs a decision-log entry: each one is a
+# wheel that must exist in the offline wheelhouse on a locked-down machine.
+rich>=13.7,<15

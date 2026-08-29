@@ -279,6 +279,17 @@ def cmd_sessions(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report(args: argparse.Namespace) -> int:
+    from foundry.cli.report import render
+
+    root = user_dir() / "sessions"
+    if not root.is_dir():
+        Console().print("[dim]no sessions recorded yet[/dim]")
+        return 0
+    print(render(root, as_json=args.json))
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     console = Console()
     ok = True
@@ -356,6 +367,10 @@ def build_parser() -> argparse.ArgumentParser:
     sessions.add_argument("session_id", nargs="?")
     sessions.add_argument("--limit", type=int, default=20)
     sessions.set_defaults(func=cmd_sessions)
+
+    report = sub.add_parser("report", help="summarize recorded sessions")
+    report.add_argument("--json", action="store_true")
+    report.set_defaults(func=cmd_report)
 
     doctor = sub.add_parser("doctor", help="check the environment")
     doctor.set_defaults(func=cmd_doctor)
