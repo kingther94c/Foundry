@@ -235,16 +235,16 @@
     <p class="tagline">从零自研的本地 coding-agent runtime——自己拥有 <b>loop、tools、policy、provider、session</b> 的全部代码与接口。</p>
     <p class="subline">不 fork、不调用、不冒充任何现有 coding agent；研读 Codex / Claude Code / gemini-cli / aider / OpenHands 的公开设计，借鉴百家之长后独立实现。</p>
     <div class="meta-chips">
-      <span class="chip hot">M0–M4 已实现 · 5 轮对抗评审</span>
+      <span class="chip hot">M0–M4 已实现 · 6 轮对抗评审 · 净室验证通过</span>
       <span class="chip">Windows</span>
       <span class="chip">Python 3.12</span>
       <span class="chip">离线 wheel 安装</span>
       <span class="chip">trusted-host（无沙箱，诚实披露）</span>
-      <span class="chip">2026-08-29</span>
+      <span class="chip">2026-08-30</span>
     </div>
     <div class="stats">
-      <div class="stat"><div class="n">24</div><div class="l">编号决定（含 1 条被推翻）</div></div>
-      <div class="stat"><div class="n">857</div><div class="l">测试（离线、无凭证）</div></div>
+      <div class="stat"><div class="n">27</div><div class="l">编号决定（含 1 条被推翻）</div></div>
+      <div class="stat"><div class="n">1111</div><div class="l">测试（离线、无凭证）</div></div>
       <div class="stat"><div class="n"><em>9</em></div><div class="l">工具面（V1 冻结）</div></div>
       <div class="stat"><div class="n">5</div><div class="l">依赖 wheel（纯 Python）</div></div>
     </div>
@@ -486,14 +486,25 @@
         <p>OpenAI 系走 <b>Responses</b>、token 来自内网 auth ⇒ responses adapter 升为 M3 必选，<b>入场门 = 先取 tool-call 流式夹具</b>。另吸收：canary 泄漏套件、崩溃恢复语义、内容寻址 artifacts、失败指纹、审批绑定有效期、变更归属分离报告。</p>
       </div>
       <div class="evidence">
-        <div class="dno">实现后 · 5 轮对抗评审</div>
+        <div class="dno">实现后 · 第 1–5 轮对抗评审</div>
         <h3>四轮都攻破了命令分段器——于是不再依赖它做拒绝</h3>
         <ul>
           <li>枚举危险写法追不上：补了 <b>&amp;'foo'</b> 就来 <b>(git reset --hard)</b>，补了注释剥离就来 <b>a&lt;# ; … #&gt;</b>（PowerShell 会执行，而剥离器把它抹掉了）；</li>
           <li>更糟的是<b>修复自己造成新缺陷</b>：4 个 critical 里有 3 个出在上一轮的修复里，且两次都是把「不可批准的 DENY」降级成「可批准的 ASK」；</li>
           <li>结构性解法：熔断表额外扫描一个<b>故意错误的读法</b>——无视引号/注释/分组，只增拒绝不增放行，因而没有可被欺骗的假设；自动放行侧收紧到可验证的小语法；</li>
-          <li>并用 <b>432 个自动生成的不变量组合</b>守住「任何装饰都不能让被禁命令变得可批准」，防的是整类错误而非想到的写法。</li>
+          <li>并用 <b>540 个自动生成的不变量组合</b>守住「任何装饰都不能让被禁命令变得可批准」，防的是整类错误而非想到的写法。</li>
         </ul>
+      </div>
+      <div class="evidence">
+        <div class="dno">第 6 轮 · 净室验证</div>
+        <h3>缺陷不在某一层里，而在两层的接缝上</h3>
+        <ul>
+          <li>补丁工具知道 <b>AVERYL~1.PY</b> 和长名是同一个文件；policy 层比字符串，于是 8.3 别名绕过了脏文件守卫——那条规则存在的唯一理由就是压过 accept_edits；</li>
+          <li>编码判定用「谁产生的替换字符少」，而可回退码页把 256 个字节全映射、<b>永远产生不了替换字符</b>：一个坏字节就把整段输出翻成乱码，而输出在容量上限处本就按字节切；</li>
+          <li>系统提示词告诉模型「merge 永远被拒」，<b>git pull</b> 干的就是那个 merge，却直接走过熔断表——提示词现由熔断表常量生成，并有双向对齐测试；</li>
+          <li>最尖锐的一个是<b>净室验证</b>抓到的、不是测试套件：凭证跨两个流式 delta 落下，两个片段都不匹配，渲染器再拼回屏幕——事件流干净、终端泄漏。</li>
+        </ul>
+        <p><b>跨层的性质要跨层地验。</b>收口于一次真实净室端到端：重建 wheelhouse → <code>--no-index</code> 装进全新 venv → 跑真实任务，14 项检查全过。</p>
       </div>
     </div>
   </section>
@@ -519,7 +530,7 @@
   <section>
     <div class="eyebrow">Roadmap</div>
     <h2>每个里程碑以"可运行 + 可验收"收口</h2>
-    <p class="lede">排序原则：最大不确定项不上关键路径。全部 857 个测试在<b>无网络、无凭证</b>的机器上通过；真实运行已验证：agent 跑失败测试 → 读文件 → 打补丁 → 重跑测试转绿 → 带证据收口，exit 0。</p>
+    <p class="lede">排序原则：最大不确定项不上关键路径。全部 1111 个测试在<b>无网络、无凭证</b>的机器上通过；真实运行已验证：agent 跑失败测试 → 读文件 → 打补丁 → 重跑测试转绿 → 带证据收口，exit 0。</p>
     <ul class="miles">
       <li><span class="mtag">M0</span><span class="mtitle">Walking skeleton · 接口冻结 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">IR / 事件协议 / ModelBackend / session 信封四接口已冻结；replay backend + <code>foundry record</code> 夹具重录就绪。</span></li>
       <li><span class="mtag">M1a</span><span class="mtitle">文件工具 + Policy 流水线 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">apply_patch（逐文件原子 + 宽容梯度）、workspace 边界、六步流水线、审批 UI、脏工作区策略。攻击表与决策表全绿。</span></li>
@@ -551,7 +562,7 @@
     </div>
     <div class="stamp">
       FOUNDRY · blueprint worktree<br>
-      需求 v0.2 · <span class="hot">2026-08-29</span> · 经 3 轮确认 + 对抗评审
+      需求 v0.2 · <span class="hot">2026-08-30</span> · 经 3 轮确认 + 6 轮对抗评审
     </div>
   </footer>
 
