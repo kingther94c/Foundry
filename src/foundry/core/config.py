@@ -152,8 +152,13 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
             raise ConfigError(
                 f"{key} must be an integer, got {type(value).__name__} ({value!r})"
             )
-        if value < 1:
-            raise ConfigError(f"{key} must be positive, got {value}")
+        floor = 1024 if key == "max_output_bytes" else 1
+        if value < floor:
+            raise ConfigError(
+                f"{key} must be at least {floor}, got {value}"
+                + (" (a smaller cap leaves no room for a useful tool result)"
+                   if key == "max_output_bytes" else "")
+            )
         if tighten_only and value > getattr(config, key):
             raise ConfigError(
                 f"{layer} config may only lower {key} (tried {value}, "

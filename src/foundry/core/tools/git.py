@@ -275,7 +275,12 @@ class GitEvidence:
 
     @property
     def head_moved(self) -> bool:
-        return bool(self.baseline.head) and self.head_now != self.baseline.head
+        # No guard on the baseline being non-empty: a repository with no commits
+        # records head="", which switched this check off for the whole session
+        # -- so a first commit made mid-run went undetected, and that is exactly
+        # the case the check exists for. A repo that stays empty compares "" to
+        # "" and is still False.
+        return self.head_now != self.baseline.head
 
     @property
     def session_changed(self) -> frozenset[str]:

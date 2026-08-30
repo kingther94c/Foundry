@@ -285,6 +285,8 @@ class AgentRuntime:
                                     display=call.name, reason=f"invalid tool call: {exc}"))
             return
 
+        op = self._canonicalize_paths(op)
+
         self._journal(EventType.TOOL_CALL, {
             "call_id": call.call_id, "name": op.tool, "target": op.target,
             "display": op.display,
@@ -412,6 +414,35 @@ class AgentRuntime:
         self._reply(call, content, is_error=output.is_error)
         self._emit(ToolEnd(call.call_id, op.tool, not output.is_error,
                            content.splitlines()[0] if content else ""))
+
+    def _canonicalize_paths(self, op: Operation) -> Operation:
+        """Give policy the spelling the filesystem agrees with.
+
+        Textual normalization cannot see that AVERYL~1.PY and
+        averylongfilename.py are one file, so an 8.3 alias skipped the
+        dirty-file guard -- the rule that exists to outrank accept_edits -- and
+        an uncommitted file was rewritten with no prompt. The tool layer already
+        resolves through the workspace; policy has to see the same names.
+        """
+        paths = op.args.get("paths")
+        if not paths:
+            return op
+        workspace = getattr(self.tool_ctx, "workspace", None)
+        if workspace is None:
+            return op
+
+        resolved: list[str] = []
+        for path in paths:
+            try:
+                resolved.append(workspace.resolve(path).relative)
+            except Exception:  # noqa: BLE001 - an invalid path is the tool's to reject
+                resolved.append(path)
+        if resolved == list(paths):
+            return op
+
+        from dataclasses import replace as _replace
+
+        return _replace(op, args={**op.args, "paths": resolved})
 
     @staticmethod
     def _block_payload(block) -> dict:

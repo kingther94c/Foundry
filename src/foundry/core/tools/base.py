@@ -107,10 +107,21 @@ def truncate_middle(text: str, limit: int) -> tuple[str, bool]:
 
     Head-and-tail beats a plain head cut: a failing test's summary is usually at
     the end of the output, and the command that produced it at the start.
+
+    The result never exceeds ``limit``. It used to: ``limit // 2 - 40`` reaches
+    zero at 80 and goes negative below it, and ``text[-0:]`` is the whole
+    string, so a small cap returned the entire input -- or, negative, the input
+    with its middle duplicated.
     """
     if len(text) <= limit:
         return text, False
+
     keep = limit // 2 - 40
+    if keep <= 0:
+        # No room for a banner and two halves; a plain head cut is all the
+        # budget allows.
+        return text[:limit], True
+
     head, tail = text[:keep], text[-keep:]
     dropped = len(text) - len(head) - len(tail)
     return f"{head}\n\n[... {dropped} characters elided ...]\n\n{tail}", True

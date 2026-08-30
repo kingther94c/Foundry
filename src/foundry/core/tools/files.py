@@ -385,13 +385,30 @@ class ReadArtifact:
         )
 
     def execute(self, op: Operation, ctx: ToolContext) -> ToolOutput:
+        offset = op.args["offset"]
+        limit = ctx.max_output_bytes
         try:
-            text = ctx.artifacts.read_text(op.args["artifact_id"], offset=op.args["offset"],
-                                           limit=ctx.max_output_bytes)
+            # One extra character reveals whether more remains. Requesting
+            # exactly the cap made truncate_middle unable to fire, so this tool
+            # -- the one the others point at for the full data -- was the only
+            # one that cut silently, reporting truncated=False.
+            window = ctx.artifacts.read_text(op.args["artifact_id"], offset=offset,
+                                             limit=limit + 1)
         except KeyError as exc:
             raise ToolError(
                 f"unknown artifact id {op.args['artifact_id'][:12]}; artifacts are only "
                 "readable within the session that produced them"
             ) from exc
-        body, truncated = truncate_middle(text, ctx.max_output_bytes)
-        return ToolOutput(content=body, truncated=truncated)
+
+        if not window:
+            raise ToolError(
+                f"offset {offset} is past the end of artifact "
+                f"{op.args['artifact_id'][:12]}; there is nothing more to read"
+            )
+
+        has_more = len(window) > limit
+        body = window[:limit]
+        if has_more:
+            body += (f"\n\n[showing characters {offset}-{offset + limit}; call "
+                     f"read_artifact again with offset={offset + limit} for more]")
+        return ToolOutput(content=body, truncated=has_more)
