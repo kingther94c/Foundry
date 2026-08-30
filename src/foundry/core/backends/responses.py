@@ -41,7 +41,8 @@ from foundry.core.conversation import (
     Usage,
 )
 from foundry.core.errors import ProtocolError, TransientError
-from foundry.core.httpc import HttpClient, NotStreaming, retry_with_backoff
+from foundry.core.httpc import (HttpClient, NotStreaming, open_retrying_stream,
+                                retry_with_backoff)
 
 
 def _message_to_items(message: Message) -> list[dict[str, Any]]:
@@ -202,12 +203,12 @@ class ResponsesBackend:
         completed = False
 
         try:
-            stream = retry_with_backoff(
-                lambda: list(self.client.stream_sse(
+            stream = open_retrying_stream(
+                lambda: self.client.stream_sse(
                     self.endpoint, body, self._headers(),
                     # Responses signals completion with its own event, checked
                     # below, rather than the Chat Completions [DONE] sentinel.
-                    expect_done_sentinel=False)),
+                    expect_done_sentinel=False),
                 attempts=self.max_retries,
             )
         except NotStreaming:

@@ -50,7 +50,7 @@ from foundry.core.events import (
     TurnStarted,
     new_id,
 )
-from foundry.core.policy.engine import Decision, PolicyEngine, Verdict
+from foundry.core.policy.engine import POLICY_VERSION, Decision, PolicyEngine, Verdict
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput
 from foundry.core.tools.finish import ValidationClaim, verify_claims
@@ -298,6 +298,10 @@ class AgentRuntime:
             "reason": decision.reason, "rule_id": decision.rule_id, "step": decision.step,
             "policy_digest": decision.policy_digest,
             "operation_digest": decision.operation_digest,
+            # The digest identifies which rules were in force; the version says
+            # how to read them. Without it a replay tool comparing two journals
+            # cannot tell a rule change from an evaluator change.
+            "policy_version": POLICY_VERSION,
         })
 
         if decision.verdict is Verdict.DENY:

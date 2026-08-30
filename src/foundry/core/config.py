@@ -65,7 +65,12 @@ class Config:
     max_tool_rounds: int = 40
     max_tool_calls: int = 200
     max_output_bytes: int = 32_000
-    command_timeout_s: int = 120
+    # A ceiling, not a default: run_command keeps its own lower default and
+    # clamps every request to this. Shipping it at the tool's own maximum leaves
+    # stock behaviour unchanged while giving an operator a knob that bites.
+    command_timeout_s: int = 600
+    # Reserved (OQ-19): nothing prunes sessions yet. Deleting a developer's
+    # journals on a default they never chose is not a change to make quietly.
     session_retention_days: int = 30
     rules: list[Rule] = field(default_factory=list)
     provenance: dict[str, Provenance] = field(default_factory=dict)

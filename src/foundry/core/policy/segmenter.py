@@ -61,7 +61,11 @@ _UNTRUSTED_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\|\s*%"), "pipeline to ForEach-Object shorthand"),
 )
 
-_SEPARATORS = (";", "|", "&&", "||", "\n", "\r")
+# Statement separators, longest first so '&&' is not read as two '&'. This is
+# the definition _split_top_level walks; it used to be a decorative copy beside
+# a hardcoded duplicate, so it read as the place separators are configured while
+# editing it changed nothing.
+_SEPARATORS: tuple[str, ...] = ("&&", "||", ";", "|", "\n", "\r")
 
 # A head we can reason about is a plain command name: letters, digits, and the
 # punctuation that appears in real executable and cmdlet names. Anything else --
@@ -248,19 +252,14 @@ def _split_top_level(text: str) -> list[str]:
             current.append(char)
             i += 1
             continue
-        two = text[i:i + 2]
-        if two in ("&&", "||"):
+        # A bare CR is a statement separator in PowerShell. Missing it collapsed
+        # a whole chain into one segment whose head was the harmless first
+        # command.
+        separator = next((s for s in _SEPARATORS if text.startswith(s, i)), None)
+        if separator is not None:
             parts.append("".join(current))
             current = []
-            i += 2
-            continue
-        if char in (";", "|", "\n", "\r"):
-            # A bare CR is a statement separator in PowerShell. Missing it
-            # collapsed a whole chain into one segment whose head was the
-            # harmless first command.
-            parts.append("".join(current))
-            current = []
-            i += 1
+            i += len(separator)
             continue
         current.append(char)
         i += 1

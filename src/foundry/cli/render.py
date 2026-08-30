@@ -164,12 +164,23 @@ class Renderer:
         }
         while True:
             try:
+                # Parentheses, not brackets: rich reads [y] as a style tag and
+                # deletes it, so the prompt rendered as "allow? es / ession /
+                # alays / o / bort:" -- four truncated words and no sign of
+                # which key to press, on the one surface the whole safety model
+                # depends on a human reading.
                 answer = self.console.input(
-                    "[bold]allow?[/bold] [y]es / [s]ession / al[w]ays / [n]o / [a]bort: "
+                    "[bold]allow?[/bold] (y)es / (s)ession / al(w)ays / (n)o / (a)bort: "
                 ).strip().lower()
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
+                # Nobody is there. Fail closed.
                 self.console.print("[yellow]no answer: denying[/yellow]")
                 return ApprovalChoice.DENY
+            except KeyboardInterrupt:
+                # Somebody is there and wants to stop. Denying one operation and
+                # resampling burned tokens against an explicit stop signal.
+                self.console.print("[yellow]interrupted: aborting the task[/yellow]")
+                return ApprovalChoice.ABORT
             if answer in prompts:
                 return prompts[answer]
             if answer[:1] in prompts:

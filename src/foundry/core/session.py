@@ -25,7 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from foundry.core.events import TerminalStatus
+from foundry.core.conversation import IR_VERSION
+from foundry.core.events import PROTOCOL_VERSION, TerminalStatus
 from foundry.core.redaction import Redactor, default_redactor
 
 SCHEMA_VERSION = 1
@@ -186,6 +187,12 @@ class SessionStore:
                      foundry_version: str) -> None:
         self.append(EventType.SESSION_META, {
             "schema_version": SCHEMA_VERSION,
+            # Declared but never written, these three were a promise of forward
+            # compatibility that no reader could act on. A replay tool has to
+            # know which IR, event protocol and policy vintage produced a
+            # journal before it can decide whether it understands the file.
+            "ir_version": IR_VERSION,
+            "protocol_version": PROTOCOL_VERSION,
             "foundry_version": foundry_version,
             "session_id": self.session_id,
             "workspace": workspace,

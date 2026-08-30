@@ -9,7 +9,7 @@ Frozen at M0 (design.md section 8).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterator, Literal, Protocol, runtime_checkable
 
 from foundry.core.conversation import Capabilities, ModelTurn, ToolUseBlock, TurnRequest, Usage
@@ -81,13 +81,3 @@ def collect_turn(events: Iterator[StreamEvent]) -> ModelTurn:
 
         raise ProtocolError("backend stream ended without a finished turn")
     return turn
-
-
-@dataclass(slots=True)
-class RecordingHook:
-    """Collects the request bodies a backend sent, for fixture capture."""
-
-    requests: list[RequestRecord] = field(default_factory=list)
-
-    def record(self, record: RequestRecord) -> None:
-        self.requests.append(record)

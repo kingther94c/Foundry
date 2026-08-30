@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
+import uuid
 
 import pytest
 
@@ -160,16 +162,21 @@ def test_timeout_kills_the_process(ctx):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="process-tree kill is the Windows path")
 def test_timeout_kills_descendant_processes(tmp_path):
-    """A grandchild must not survive, and must not hold the pipe open."""
-    marker = tmp_path / "child_alive.txt"
+    """A grandchild must not survive, and must not hold the pipe open.
+
+    The survivor query used to filter on the literal string 'child.py', which
+    the querying powershell's own command line contains -- so it always matched
+    itself, PowerShell 5.1 prints nothing for a single-object .Count, and the
+    isdigit() guard skipped the one assertion this test exists for. On a machine
+    where anything else mentioned the file it failed instead. A per-run token,
+    handed to the probe through the environment so it never appears in the
+    probe's own command line, distinguishes real survivors from the search.
+    """
+    token = f"foundrykill{uuid.uuid4().hex}"
     child = tmp_path / "child.py"
-    child.write_text(
-        "import time\n"
-        f"open(r'{marker}', 'w').write('x')\n"
-        "time.sleep(60)\n",
-        encoding="utf-8",
-    )
-    spawn = f"import subprocess,time; subprocess.Popen([r'{sys.executable}', r'{child}']); time.sleep(60)"
+    child.write_text("import sys, time\ntime.sleep(60)\n", encoding="utf-8")
+    spawn = (f"import subprocess,time; subprocess.Popen([r'{sys.executable}', "
+             f"r'{child}', '{token}']); time.sleep(60)")
     command = f'python -c "{spawn}"'
 
     started = time.monotonic()
@@ -180,13 +187,22 @@ def test_timeout_kills_descendant_processes(tmp_path):
     assert elapsed < 20, "communicate() blocked: a descendant kept the pipe open"
 
     time.sleep(1)
-    survivors = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-Command",
-         f"(Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%{child.name}%'\").Count"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    probe = (
+        "$m = $env:FOUNDRY_KILL_MARKER; "
+        "@(Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%$m%'\" | "
+        "Where-Object { $_.ProcessId -ne $PID }).Count"
     )
-    if survivors.returncode == 0 and survivors.stdout.strip().isdigit():
-        assert int(survivors.stdout.strip()) == 0, "orphaned grandchild survived"
+    survivors = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", probe],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env={**os.environ, "FOUNDRY_KILL_MARKER": token},
+    )
+    # Unconditional: a probe that cannot be evaluated is a test failure, not a
+    # silent pass. Nothing about the guarantee is verified if this is skipped.
+    assert survivors.returncode == 0, f"survivor probe failed: {survivors.stderr}"
+    count = survivors.stdout.strip()
+    assert count.isdigit(), f"survivor probe printed {count!r}, not a count"
+    assert int(count) == 0, "orphaned grandchild survived the process-tree kill"
 
 
 # --- git tools ------------------------------------------------------------

@@ -79,7 +79,7 @@
 
 第二轮的 5 个新缺陷全部由第一轮修复造成；第三轮抓到 2 个由第二轮造成；第四轮的**两个 critical 都在第三轮写的注释剥离器里**；第五轮证伪了第四轮的收敛声称。**同一类错误犯了两次**：为了标记"不可解析"而提前返回，丢掉了已解析的分段，于是 `git reset --hard; (foo)` 从熔断表的**不可批准 DENY** 掉成了**可批准 ASK**——而 system prompt 还在告诉模型这类操作"不可能被批准"。
 
-所以现在有一条结构性不变量测试（[tests/test_breaker_invariant.py](../tests/test_breaker_invariant.py)）：**任何装饰、模式、会话授权或 hook 改写，都不能让一条本身被熔断表禁止的命令变得可批准**——22 条被禁命令 × 17 种装饰 = **432 个自动生成组合**。它防的是整类错误，不是想到的那几个写法；第四轮那两个 critical 事后加进装饰表，一秒就能复现。
+所以现在有一条结构性不变量测试（[tests/test_breaker_invariant.py](../tests/test_breaker_invariant.py)）：**任何装饰、模式、会话授权或 hook 改写，都不能让一条本身被熔断表禁止的命令变得可批准**——22 条被禁命令 × 17 种装饰 = 374 个组合，连同各命令单独一次、各模式、会话授权与 hook 改写，共 **432 个自动生成用例**。它防的是整类错误，不是想到的那几个写法；第四轮那两个 critical 事后加进装饰表，一秒就能复现。
 
 同理，`GIT_CONFIG_NOSYSTEM` 那个 critical 教训：**加固要问"它顺带关掉了什么合法行为"**，且验证必须跑在用户实际拥有的环境上（fixture 用普通 git 建仓，不用 Foundry 自己的硬化路径）。
 
@@ -103,7 +103,7 @@
 
 这些不是声明，是测试：
 
-- **熔断表不变量**：22 条被禁命令 × 17 种装饰（链接、注释、CR 分隔、不可解析邻段、shell 包装、分组、script block、dot-source）× 各模式/会话授权/hook 改写 = 432 个自动生成组合，全部必须 DENY 在第 0 步（`test_breaker_invariant.py`）。
+- **熔断表不变量**：22 条被禁命令 × 17 种装饰（链接、注释、CR 分隔、不可解析邻段、shell 包装、分组、script block、dot-source）= 374 个组合；加上单命令基线 22、各模式 24、会话授权 6、hook 改写 6，共 432 个自动生成用例，全部必须 DENY 在第 0 步（`test_breaker_invariant.py`）。
 - **canary 泄漏套件**：以金丝雀凭证跑全流程，断言它不出现在 journal、artifact、audit、控制台（`test_cli_e2e.py`、`test_session.py`）。
 - **路径逃逸表**：junction、ADS、`..`、设备名、UNC、盘符相对全部被拒（`test_workspace.py`）。
 - **分段器攻击表**：链式命令、命令替换、重定向、调用操作符、别名、CR 分隔、PowerShell 注释、包装形式（`test_segmenter.py`、`test_security_regressions.py`、`test_security_round3.py`）。

@@ -206,28 +206,67 @@ def decode_output(data: bytes) -> DecodedOutput:
 
     Modern tools (git, ripgrep, Python with PYTHONUTF8) write UTF-8 into a pipe;
     cmd built-ins and legacy tools write the OEM code page -- on a zh-CN machine
-    that is cp936. Try UTF-8 first, fall back to OEM, and keep whichever produced
-    fewer replacement characters.
+    that is cp936.
+
+    The decision is "is this UTF-8 at all", not "which decode looks tidier". The
+    earlier version kept whichever produced fewer U+FFFD, but the fallbacks are
+    single-byte code pages that map all 256 values and can never produce one --
+    so any UTF-8 stream with a single damaged byte lost that comparison and the
+    whole output was handed to the model as mojibake. ``_drain`` cuts at the
+    capture cap mid-character by construction, so that was not a rare case: it
+    was every large non-ASCII output.
     """
     if not data:
         return DecodedOutput("", "utf-8", 0)
 
+    try:
+        return DecodedOutput(data.decode("utf-8"), "utf-8", 0)
+    except UnicodeDecodeError:
+        pass
+
+    # A cut at the byte cap leaves a partial sequence at the very end. Decoding
+    # the whole prefix and dropping those few bytes preserves the text; treating
+    # it as evidence of a different encoding destroys it.
+    body, tail = _split_incomplete_tail(data)
+    if tail and not body:
+        return DecodedOutput("", "utf-8", 0)
+    if tail:
+        try:
+            return DecodedOutput(body.decode("utf-8"), "utf-8", 0)
+        except UnicodeDecodeError:
+            pass
+
     primary = data.decode("utf-8", errors="replace")
     primary_bad = primary.count("�")
-    if primary_bad == 0:
-        return DecodedOutput(primary, "utf-8", 0)
 
-    for codec in ("oem", "cp936", "mbcs"):
-        try:
-            alternate = data.decode(codec, errors="replace")
-        except LookupError:
-            continue
-        alternate_bad = alternate.count("�")
-        if alternate_bad < primary_bad:
-            return DecodedOutput(alternate, codec, alternate_bad)
-        break
+    # Genuine legacy output fails on essentially every high byte; damaged UTF-8
+    # fails on a handful. Only the first case justifies changing codec. A short
+    # legacy run whose bytes happen to form valid UTF-8 pairs still reads as
+    # UTF-8 -- unavoidable, and the cheaper of the two mistakes.
+    high_bytes = sum(1 for byte in data if byte > 0x7F)
+    if high_bytes and primary_bad * 2 >= high_bytes:
+        for codec in ("oem", "cp936", "mbcs"):
+            try:
+                alternate = data.decode(codec, errors="replace")
+            except LookupError:
+                continue
+            return DecodedOutput(alternate, codec, alternate.count("�"))
 
     return DecodedOutput(primary, "utf-8", primary_bad)
+
+
+def _split_incomplete_tail(data: bytes) -> tuple[bytes, bytes]:
+    """Split off a trailing UTF-8 sequence that was cut short, if that is all
+    that is wrong. Returns ``(body, tail)``; an empty tail means no such cut."""
+    for back in range(1, min(4, len(data)) + 1):
+        lead = data[-back]
+        if lead < 0x80:
+            return data, b""
+        if lead < 0xC0:                       # continuation byte, keep walking
+            continue
+        expected = 2 if lead < 0xE0 else 3 if lead < 0xF0 else 4
+        return (data[:-back], data[-back:]) if back < expected else (data, b"")
+    return data, b""
 
 
 def child_environment(base: dict[str, str] | None = None) -> dict[str, str]:

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import http.client
+import itertools
 import json
 import os
 import socket
@@ -239,6 +240,32 @@ def raise_for_status(response: Response) -> None:
     if response.status >= 500:
         raise TransientError(f"server error (HTTP {response.status})", payload=detail)
     raise FatalError(f"request rejected (HTTP {response.status})", payload=detail)
+
+
+def open_retrying_stream(make_stream, *, attempts: int = 4, sleep=time.sleep):
+    """Retry the connection, then hand back a lazy iterator over the rest.
+
+    Wrapping the whole stream in ``list()`` made it retryable but stopped it
+    being a stream: nothing reached the renderer until the model had finished
+    generating, and the full response sat in memory as parsed dicts. Since
+    ``stream_sse`` is a generator, everything worth retrying -- the connect, the
+    status line, a 429 with its Retry-After, a gateway answering JSON instead of
+    an event stream -- surfaces on the first ``next()``, so pulling exactly one
+    event under retry keeps that recovery and gives up only the rarer mid-stream
+    drop, which cannot be retried anyway once deltas have been shown.
+    """
+    def connect():
+        iterator = iter(make_stream())
+        try:
+            return iterator, next(iterator), True
+        except StopIteration:
+            return iterator, None, False
+
+    iterator, first, has_first = retry_with_backoff(
+        connect, attempts=attempts, sleep=sleep)
+    if not has_first:
+        return iter(())
+    return itertools.chain((first,), iterator)
 
 
 def retry_with_backoff(operation, *, attempts: int = 4, base_delay: float = 1.0,

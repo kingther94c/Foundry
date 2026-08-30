@@ -34,7 +34,8 @@ from foundry.core.conversation import (
     Usage,
 )
 from foundry.core.errors import ProtocolError
-from foundry.core.httpc import HttpClient, NotStreaming, retry_with_backoff
+from foundry.core.httpc import (HttpClient, NotStreaming, open_retrying_stream,
+                                retry_with_backoff)
 
 _STOP_REASONS = {
     "stop": StopReason.END_TURN,
@@ -192,8 +193,8 @@ class OpenAICompatBackend:
             # to the non-streaming path left request_max_retries and the
             # Retry-After handling dead on the default path, so a single 429
             # from a real gateway killed an in-progress task.
-            chunks = retry_with_backoff(
-                lambda: list(self.client.stream_sse(self.endpoint, body, self._headers())),
+            chunks = open_retrying_stream(
+                lambda: self.client.stream_sse(self.endpoint, body, self._headers()),
                 attempts=self.max_retries,
             )
         except NotStreaming:

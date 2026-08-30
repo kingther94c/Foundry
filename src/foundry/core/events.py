@@ -10,6 +10,7 @@ Frozen at M0 (design.md section 3). Additive changes only.
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -228,19 +229,48 @@ class Shutdown:
     kind: Literal["shutdown"] = "shutdown"
 
 
+# The inbound half of the frozen protocol. No subscriber sends ops yet -- the
+# CLI answers approvals through a callback -- but the type is what an IDE bridge
+# or headless runner binds to, and dropping it would leave the docstring's
+# "events out, ops in" describing a one-way interface.
 Op = UserInput | ApprovalDecision | Interrupt | Shutdown
 
 
 @dataclass(slots=True)
 class EventSink:
     """Where the runtime publishes. Subscribers are plain callables so tests can
-    collect events without any async plumbing."""
+    collect events without any async plumbing.
+
+    Every event passes the redactor on its way out. This is the sink
+    redaction.py names second, and it was the one that had no implementation:
+    the journal wrote ``[redacted]`` while ``foundry exec --json`` printed the
+    same credential verbatim to stdout, so redirecting a run into a CI log
+    captured exactly what the audited journal refused to keep.
+    """
 
     _subscribers: list = field(default_factory=list)
+    redactor: object | None = None
 
     def subscribe(self, callback) -> None:
         self._subscribers.append(callback)
 
     def emit(self, event: Event) -> None:
+        event = self._scrub(event)
         for callback in self._subscribers:
             callback(event)
+
+    def _scrub(self, event: Event) -> Event:
+        if self.redactor is None:
+            return event
+        # Exact type, not isinstance: ApprovalChoice and TerminalStatus are str
+        # subclasses, and rewriting one into a plain string would break every
+        # subscriber that compares against the enum.
+        changed = {}
+        for f in dataclasses.fields(event):
+            value = getattr(event, f.name)
+            if type(value) is not str or not value:
+                continue
+            scrubbed = self.redactor.scrub(value)
+            if scrubbed != value:
+                changed[f.name] = scrubbed
+        return dataclasses.replace(event, **changed) if changed else event

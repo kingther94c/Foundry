@@ -276,9 +276,16 @@ class RunCommand:
         if not workdir.absolute.is_dir():
             raise ToolError(f"cwd is not a directory: {op.args['cwd']}")
 
+        # config.command_timeout_s is range-checked, provenance-tracked and
+        # protected by the tighten-only rule, but nothing read it: an operator
+        # who lowered the knob to bound runaway commands got no bound at all,
+        # and the model could still ask for the full 600 seconds.
+        ceiling = getattr(ctx, "max_command_timeout_s", MAX_TIMEOUT_S)
+        timeout_s = min(op.args["timeout_s"], ceiling)
+
         env = child_environment(ctx.env_policy)
         result = run_process(op.args["command"], cwd=str(workdir.absolute),
-                             timeout_s=op.args["timeout_s"], env=env,
+                             timeout_s=timeout_s, env=env,
                              cancelled=getattr(ctx, "cancelled", None))
 
         # `;` does not stop on failure and only the last statement's code
@@ -322,7 +329,10 @@ class RunCommand:
             body += f"\n\n[full output saved; read_artifact artifact_id=\"{artifact_id}\"]"
 
         if result.timed_out:
-            header = f"TIMED OUT after {op.args['timeout_s']}s (process tree terminated)"
+            header = f"TIMED OUT after {timeout_s}s (process tree terminated)"
+            if timeout_s < op.args["timeout_s"]:
+                header += (f"; this machine's configured ceiling is {ceiling}s, so the "
+                           f"{op.args['timeout_s']}s you asked for was not available")
         else:
             header = f"exit code {result.exit_code} in {result.duration_ms}ms"
         if result.dropped_bytes:

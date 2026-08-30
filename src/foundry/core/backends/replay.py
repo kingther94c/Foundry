@@ -218,9 +218,3 @@ def write_fixture(path: Path, entries: list[tuple[TurnRequest, ModelTurn]],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def dump_request(record: RequestRecord) -> str:
-    """Human-readable request dump, emitted as a test artifact on drift."""
-    return json.dumps({"model": record.model, "endpoint": record.endpoint,
-                       "body": record.body}, ensure_ascii=False, indent=2)

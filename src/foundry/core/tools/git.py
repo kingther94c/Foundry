@@ -161,8 +161,16 @@ def capture_baseline(path: Path) -> GitBaseline:
     code, head, err = run_git(["rev-parse", "HEAD"], path)
     head_sha = head.strip() if code == 0 else ""  # a repo with no commits yet
 
-    code, branch, _ = run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
-    branch_name = branch.strip() if code == 0 else "(detached)"
+    # symbolic-ref, not rev-parse --abbrev-ref: the latter *succeeds* on a
+    # detached HEAD (printing the literal "HEAD") and *fails* on an unborn
+    # branch, so the fallback fired in exactly the case where the branch name
+    # was known and stayed silent in the case it was written for. The model's
+    # environment paragraph read "Git branch: (detached)" on a fresh `git init
+    # -b main`, and "Git branch: HEAD" on a real detached checkout.
+    code, branch, _ = run_git(["symbolic-ref", "--short", "-q", "HEAD"], path)
+    branch_name = branch.strip() if code == 0 and branch.strip() else "(detached)"
+    if not head_sha and code == 0:
+        branch_name = f"{branch_name} (no commits yet)"
 
     # porcelain=v2 also reports untracked files, which a plain `git diff` misses.
     code, status, err = run_git(["status", "--porcelain=v2", "--untracked-files=all"], path)

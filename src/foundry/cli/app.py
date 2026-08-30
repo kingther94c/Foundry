@@ -212,14 +212,15 @@ def build(workspace_path: Path, *, home: Path | None = None,
     )
 
     renderer = Renderer(console=console)
-    sink = EventSink()
+    sink = EventSink(redactor=default_redactor())
     sink.subscribe(renderer.handle)
 
     runtime = AgentRuntime(
         backend=backend, registry=registry, policy=policy, context=context,
         tool_ctx=ToolContext(workspace=workspace, artifacts=session.artifacts,
                              read_tracker=ReadTracker(),
-                             max_output_bytes=config.max_output_bytes),
+                             max_output_bytes=config.max_output_bytes,
+                             max_command_timeout_s=config.command_timeout_s),
         session=session, events=sink, approval=renderer.ask_approval,
         budget=Budget(max_tool_rounds=config.max_tool_rounds,
                       max_tool_calls=config.max_tool_calls),
@@ -289,22 +290,50 @@ def cmd_login(args: argparse.Namespace) -> int:
     console = Console()
     home = user_dir()
     vault = CredentialVault(home / "auth.json")
+
+    # Which credential this machine actually uses. Storing an api_key while the
+    # configured source reads a token left the user with a "saved" message and
+    # an AuthError on the next run, and the error told them to run this very
+    # command again.
+    config = load_config(home=home)
+    gateway = config.backend.credential_source == "gateway_token"
+    label = "gateway token" if gateway else "OpenAI API key"
+
     console.print(
-        "Paste an OpenAI API key. Foundry stores it encrypted for your Windows "
-        "account (DPAPI) and never puts it in prompts or logs."
+        f"Paste a{'' if gateway else 'n'} {label}. Foundry stores it encrypted for "
+        "your Windows account (DPAPI) and never puts it in prompts or logs."
     )
+
+    # getpass.win_getpass reads the console directly through msvcrt and ignores
+    # stdin entirely, so the EOFError handler below could never fire and a
+    # piped or detached `foundry login` hung forever instead of failing.
+    if not sys.stdin.isatty():
+        env_var = "FOUNDRY_GATEWAY_TOKEN" if gateway else "OPENAI_API_KEY"
+        console.print(
+            f"[red]stdin is not a terminal[/red], so there is nowhere safe to type a "
+            f"secret. Set {env_var} in the environment instead."
+        )
+        return 1
+
     try:
         import getpass
 
-        key = getpass.getpass("api key: ").strip()
+        secret = getpass.getpass(f"{label.lower()}: ").strip()
     except (EOFError, KeyboardInterrupt):
         console.print("\n[yellow]cancelled[/yellow]")
         return 1
-    if not key:
-        console.print("[red]no key entered[/red]")
+    except OSError as exc:                       # no console attached at all
+        console.print(f"[red]cannot read from the console:[/red] {exc}")
         return 1
-    ApiKeySource(vault).store(key)
-    console.print(f"[green]saved[/green] {home / 'auth.json'}")
+    if not secret:
+        console.print("[red]nothing entered[/red]")
+        return 1
+
+    if gateway:
+        StaticTokenSource(vault).store(secret)
+    else:
+        ApiKeySource(vault).store(secret)
+    console.print(f"[green]saved[/green] {home / 'auth.json'} ({label})")
     return 0
 
 

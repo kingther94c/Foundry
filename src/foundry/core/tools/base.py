@@ -71,6 +71,10 @@ class ToolContext:
     read_tracker: "ReadTracker"
     emit: Any = None                   # callable(Event) | None
     max_output_bytes: int = 32_000
+    # Ceiling on any single command, from config.command_timeout_s. The tool's
+    # own default stays lower; this is the bound an operator (or a repository,
+    # which may only lower it) can actually enforce.
+    max_command_timeout_s: int = 600
     env_policy: Any = None
     # Polled by long-running tools so a cancel reaches a running child rather
     # than only being noticed between calls.

@@ -62,10 +62,6 @@ def _prune(dirpath: str, dirnames: list[str]) -> None:
     ]
 
 
-def _digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def _require_str(args: dict[str, Any], key: str, default: str | None = None) -> str:
     value = args.get(key, default)
     if value is None:
