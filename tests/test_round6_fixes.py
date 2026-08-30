@@ -60,6 +60,7 @@ def test_a_credential_never_reaches_a_subscriber(event, field):
     what the audited journal refused to keep."""
     sink, seen = _sink_with_canary()
     sink.emit(event)
+    sink.flush()   # text deltas are held until the stream moves on
     assert CANARY not in getattr(seen[0], field)
     assert "[redacted]" in getattr(seen[0], field)
 
@@ -76,6 +77,51 @@ def test_redaction_does_not_damage_enum_fields():
     assert request.approval_kind is ApprovalKind.COMMAND
     assert request.options[0] is ApprovalChoice.ONCE
     assert request.kind == "approval_request"
+
+
+def test_a_credential_split_across_deltas_is_still_removed():
+    """Scrubbing each delta on its own is not enough. The model's text arrives
+    in arbitrary chunks, so an echoed credential almost always straddles two of
+    them, neither fragment matches, and the renderer reassembles it on screen --
+    which is exactly how it reached the terminal in the clean-install run."""
+    sink, seen = _sink_with_canary()
+    for i in range(0, len(CANARY), 7):
+        sink.emit(MessageDelta(text=CANARY[i:i + 7]))
+    sink.emit(Termination(TerminalStatus.COMPLETED, "done"))
+
+    reassembled = "".join(e.text for e in seen if isinstance(e, MessageDelta))
+    assert CANARY not in reassembled
+    assert "[redacted]" in reassembled
+
+
+@pytest.mark.parametrize("chunk", [1, 2, 3, 5, 13, 64])
+def test_no_chunk_size_lets_a_credential_through(chunk):
+    sink, seen = _sink_with_canary()
+    text = f"before {CANARY} after"
+    for i in range(0, len(text), chunk):
+        sink.emit(MessageDelta(text=text[i:i + chunk]))
+    sink.flush()
+
+    reassembled = "".join(e.text for e in seen if isinstance(e, MessageDelta))
+    assert CANARY not in reassembled
+    assert reassembled.startswith("before ") and reassembled.endswith(" after")
+
+
+def test_held_text_is_released_in_order_before_the_next_event():
+    sink, seen = _sink_with_canary()
+    sink.emit(MessageDelta(text="thinking about it"))
+    sink.emit(ToolBegin("c1", "read_file", "read app.py"))
+
+    kinds = [type(e).__name__ for e in seen]
+    assert kinds == ["MessageDelta", "ToolBegin"], kinds
+    assert seen[0].text == "thinking about it"
+
+
+def test_ordinary_text_is_not_swallowed():
+    sink, seen = _sink_with_canary()
+    sink.emit(MessageDelta(text="a" * 500))
+    sink.flush()
+    assert "".join(e.text for e in seen) == "a" * 500
 
 
 def test_a_sink_without_a_redactor_still_works():

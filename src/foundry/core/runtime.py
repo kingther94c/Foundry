@@ -567,6 +567,13 @@ class AgentRuntime:
             return None
 
     def _terminate(self, status: TerminalStatus, reason: str, summary: str = "") -> TurnOutcome:
+        # The sink holds a tail of streamed text so a credential cannot straddle
+        # two deltas unseen. Every path here is followed by an event that would
+        # release it anyway; flushing first makes that independent of ordering.
+        flush = getattr(self.events, "flush", None)
+        if callable(flush):
+            flush()
+
         # A journal that could not be written means the evidence for this run is
         # incomplete; the report must say so rather than reading as a clean
         # record of what happened.

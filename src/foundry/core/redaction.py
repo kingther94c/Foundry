@@ -54,6 +54,13 @@ class Redactor:
         with self._lock:
             return len(self._values)
 
+    @property
+    def longest_registered(self) -> int:
+        """How far a streaming sink must look back to be sure a registered value
+        cannot straddle a chunk boundary."""
+        with self._lock:
+            return max((len(v) for v in self._values), default=0)
+
     def scrub(self, text: str) -> str:
         """Exact-match removal of registered values, then best-effort patterns."""
         if not text:

@@ -250,14 +250,60 @@ class EventSink:
 
     _subscribers: list = field(default_factory=list)
     redactor: object | None = None
+    _held: str = ""
 
     def subscribe(self, callback) -> None:
         self._subscribers.append(callback)
 
     def emit(self, event: Event) -> None:
-        event = self._scrub(event)
-        for callback in self._subscribers:
-            callback(event)
+        for ready in self._prepare(event):
+            for callback in self._subscribers:
+                callback(ready)
+
+    def _prepare(self, event: Event) -> list[Event]:
+        """Scrub, holding back the tail of a text stream.
+
+        Scrubbing each delta on its own is not enough: the model's text arrives
+        in arbitrary chunks, so a credential it echoes almost always straddles
+        two of them and neither fragment matches anything. The renderer then
+        reassembles it on screen. So text deltas keep a tail that could still
+        turn out to be the start of a secret, and release it once the next chunk
+        proves it is not.
+        """
+        if self.redactor is None:
+            return [event]
+
+        if isinstance(event, MessageDelta):
+            self._held = self.redactor.scrub(self._held + event.text)
+            keep = self._hold_size()
+            if len(self._held) <= keep:
+                return []
+            emit, self._held = self._held[:-keep], self._held[-keep:]
+            return [dataclasses.replace(event, text=emit)]
+
+        # Anything else ends the run of text: release what was held, in order.
+        pending: list[Event] = []
+        if self._held:
+            pending.append(MessageDelta(text=self.redactor.scrub(self._held)))
+            self._held = ""
+        pending.append(self._scrub(event))
+        return pending
+
+    def _hold_size(self) -> int:
+        """Enough to span the longest credential Foundry actually holds, which
+        is the removal this module guarantees. A pattern match longer than this
+        can still straddle -- pattern scanning is best-effort by design."""
+        longest = getattr(self.redactor, "longest_registered", 0)
+        return max(int(longest or 0), 64)
+
+    def flush(self) -> None:
+        """Release any held text. Called when a stream ends without a following
+        event, so nothing is lost at shutdown."""
+        if self._held and self.redactor is not None:
+            text = self.redactor.scrub(self._held)
+            self._held = ""
+            for callback in self._subscribers:
+                callback(MessageDelta(text=text))
 
     def _scrub(self, event: Event) -> Event:
         if self.redactor is None:
