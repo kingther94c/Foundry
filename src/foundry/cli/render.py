@@ -30,6 +30,7 @@ from foundry.core.events import (
     TokenCount,
     ToolBegin,
     ToolEnd,
+    ToolRejected,
     TurnComplete,
 )
 
@@ -100,6 +101,12 @@ class Renderer:
             mark = "[green]ok[/green]" if event.ok else "[red]failed[/red]"
             detail = f" {safe(event.summary)}" if self.verbose and event.summary else ""
             self.console.print(f"   {mark}{detail}")
+        elif isinstance(event, ToolRejected):
+            # The most safety-relevant thing the system does is refuse a
+            # destructive command; it used to produce no output at all.
+            where = f" [{event.rule_id}]" if event.rule_id and self.verbose else ""
+            self.console.print(f"[red]x[/red] {safe(event.display)}")
+            self.console.print(f"   [red]{safe(event.reason)}{where}[/red]")
         elif isinstance(event, TokenCount):
             if self.verbose:
                 total = event.session_total

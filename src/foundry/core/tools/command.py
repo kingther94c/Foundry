@@ -16,7 +16,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from foundry.core.conversation import ToolSchema
 from foundry.core.errors import InvalidToolCall, ToolError
@@ -96,11 +96,16 @@ def _drain(stream, budget: int, sink: list[bytes], dropped: list[int]) -> None:
 
 
 def run_process(command: str, *, cwd: str, timeout_s: int,
-                env: dict[str, str] | None = None) -> CommandResult:
+                env: dict[str, str] | None = None,
+                cancelled: Callable[[], bool] | None = None) -> CommandResult:
     """Run one command under a job object so the whole tree can be killed.
 
     The job also releases pipe handles a grandchild inherited, which is what
     keeps the readers from blocking forever after a kill.
+
+    ``cancelled`` is polled while waiting so the runtime's cancel flag reaches a
+    running child, and so Ctrl+C is not swallowed for the command's whole
+    duration.
     """
     argv = (POWERSHELL + [command + _EXIT_CODE_EPILOGUE] if IS_WINDOWS
             else ["/bin/sh", "-c", command])
@@ -135,10 +140,33 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
         for reader in readers:
             reader.start()
 
+        # Polled rather than one blocking wait: process.wait() releases the GIL
+        # inside WaitForSingleObject, so Ctrl+C could not be delivered until the
+        # child exited on its own -- with the 600s max timeout, a supervising
+        # user could be unable to abort for ten minutes. Short slices let the
+        # interpreter run its signal handlers, and let a cancel flag be noticed.
+        timed_out = False
+        exit_code = None
+        deadline = time.monotonic() + timeout_s
         try:
-            process.wait(timeout=timeout_s)
-            timed_out = False
-            exit_code = process.returncode
+            while True:
+                try:
+                    process.wait(timeout=0.2)
+                    exit_code = process.returncode
+                    break
+                except subprocess.TimeoutExpired:
+                    if cancelled is not None and cancelled():
+                        raise KeyboardInterrupt from None
+                    if time.monotonic() >= deadline:
+                        raise
+        except KeyboardInterrupt:
+            if not (IS_WINDOWS and job.terminate()):
+                taskkill_tree(process.pid)
+                process.kill()
+            for reader in readers:
+                reader.join(timeout=2)
+            job.close()
+            raise
         except subprocess.TimeoutExpired:
             timed_out = True
             if not (IS_WINDOWS and job.terminate()):
@@ -250,7 +278,8 @@ class RunCommand:
 
         env = child_environment(ctx.env_policy)
         result = run_process(op.args["command"], cwd=str(workdir.absolute),
-                             timeout_s=op.args["timeout_s"], env=env)
+                             timeout_s=op.args["timeout_s"], env=env,
+                             cancelled=getattr(ctx, "cancelled", None))
 
         # `;` does not stop on failure and only the last statement's code
         # survives, so a chain whose first half failed is recorded as exit 0 --

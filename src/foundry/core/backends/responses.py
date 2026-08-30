@@ -40,7 +40,7 @@ from foundry.core.conversation import (
     TurnRequest,
     Usage,
 )
-from foundry.core.errors import ProtocolError
+from foundry.core.errors import ProtocolError, TransientError
 from foundry.core.httpc import HttpClient, NotStreaming, retry_with_backoff
 
 
@@ -202,7 +202,14 @@ class ResponsesBackend:
         completed = False
 
         try:
-            stream = list(self.client.stream_sse(self.endpoint, body, self._headers()))
+            stream = retry_with_backoff(
+                lambda: list(self.client.stream_sse(
+                    self.endpoint, body, self._headers(),
+                    # Responses signals completion with its own event, checked
+                    # below, rather than the Chat Completions [DONE] sentinel.
+                    expect_done_sentinel=False)),
+                attempts=self.max_retries,
+            )
         except NotStreaming:
             self.stream = False
             yield from self._single({**body, "stream": False})
@@ -262,8 +269,14 @@ class ResponsesBackend:
             calls.append(ToolUseBlock(call_id=slot["call_id"], name=slot["name"],
                                       arguments=slot["arguments"] or "{}"))
 
-        if not completed and not text_parts and not calls:
-            raise ProtocolError("stream ended without a completed response")
+        if not completed:
+            # Partial content without a completion event means the connection
+            # was cut mid-turn; accepting it presented a truncated answer as the
+            # model's complete one. Transient, so the turn is retried.
+            raise TransientError(
+                "the response stream ended without a completion event; "
+                "the connection was cut mid-turn"
+            )
 
         for call in calls:
             yield ToolCallComplete(call)

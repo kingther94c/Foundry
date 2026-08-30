@@ -141,7 +141,8 @@ class HttpClient:
         raise_for_status(response)
         return response
 
-    def stream_sse(self, url: str, payload: dict, headers: dict[str, str]) -> Iterator[dict]:
+    def stream_sse(self, url: str, payload: dict, headers: dict[str, str],
+                   *, expect_done_sentinel: bool = True) -> Iterator[dict]:
         """Yield parsed SSE ``data:`` payloads until the stream ends.
 
         If the server answers with JSON instead of an event stream -- which a
@@ -174,6 +175,7 @@ class HttpClient:
                     body=raw.read(),
                 )
 
+            terminated = False
             for line in raw:
                 text = line.decode("utf-8", errors="replace").strip()
                 if not text or text.startswith(":"):
@@ -182,11 +184,25 @@ class HttpClient:
                     continue
                 data = text[5:].strip()
                 if data == "[DONE]":
+                    terminated = True
                     return
                 try:
                     yield json.loads(data)
                 except json.JSONDecodeError as exc:
                     raise ProtocolError(f"malformed SSE payload: {exc}") from exc
+
+            # A chunked body that ends without its terminating chunk reads as a
+            # clean EOF, so a connection dropped mid-turn was indistinguishable
+            # from a model that finished speaking: a truncated half-sentence was
+            # presented as the complete answer. Transient, so it is retried.
+            #
+            # Only Chat Completions sends [DONE]; the Responses protocol signals
+            # completion with its own event, so that adapter checks for itself.
+            if expect_done_sentinel and not terminated:
+                raise TransientError(
+                    "the response stream ended without its terminator; "
+                    "the connection was cut mid-turn"
+                )
         except (socket.timeout, TimeoutError) as exc:
             raise TransientError(f"stream stalled: {exc}") from exc
         except (http.client.HTTPException, OSError) as exc:

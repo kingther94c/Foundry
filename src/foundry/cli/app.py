@@ -368,7 +368,7 @@ def cmd_exec(args: argparse.Namespace) -> int:
         def as_json(event) -> None:
             payload = {"kind": getattr(event, "kind", "event")}
             for attribute in ("text", "display", "tool", "status", "reason", "summary",
-                              "message", "ok"):
+                              "message", "ok", "rule_id", "step"):
                 value = getattr(event, attribute, None)
                 if value is not None:
                     payload[attribute] = value.value if hasattr(value, "value") else value

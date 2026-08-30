@@ -107,6 +107,24 @@ class ToolEnd:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolRejected:
+    """A tool call that never ran: malformed, denied by policy, or declined.
+
+    Without this the most safety-relevant thing the system does -- refusing a
+    destructive command -- produced no output at all, and a headless run could
+    not be told apart from one where everything was blocked.
+    """
+
+    call_id: str
+    tool: str
+    display: str
+    reason: str
+    rule_id: str = ""
+    step: int = -1
+    kind: Literal["tool_rejected"] = "tool_rejected"
+
+
+@dataclass(frozen=True, slots=True)
 class ApprovalRequest:
     """What the user is shown must be what runs: ``display`` is rendered from
     the same normalized operation the executor receives."""
@@ -173,6 +191,7 @@ Event = (
     | ToolBegin
     | ToolOutputDelta
     | ToolEnd
+    | ToolRejected
     | ApprovalRequest
     | TokenCount
     | TurnComplete

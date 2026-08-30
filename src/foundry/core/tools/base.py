@@ -72,6 +72,9 @@ class ToolContext:
     emit: Any = None                   # callable(Event) | None
     max_output_bytes: int = 32_000
     env_policy: Any = None
+    # Polled by long-running tools so a cancel reaches a running child rather
+    # than only being noticed between calls.
+    cancelled: Any = None              # callable() -> bool | None
 
 
 @dataclass(slots=True)

@@ -188,7 +188,14 @@ class OpenAICompatBackend:
         model = body["model"]
 
         try:
-            chunks = list(self.client.stream_sse(self.endpoint, body, self._headers()))
+            # Retried like any other request. Applying retry_with_backoff only
+            # to the non-streaming path left request_max_retries and the
+            # Retry-After handling dead on the default path, so a single 429
+            # from a real gateway killed an in-progress task.
+            chunks = retry_with_backoff(
+                lambda: list(self.client.stream_sse(self.endpoint, body, self._headers())),
+                attempts=self.max_retries,
+            )
         except NotStreaming:
             # The endpoint does not stream. Degrade for the rest of the session
             # rather than returning an empty turn, which would look like the

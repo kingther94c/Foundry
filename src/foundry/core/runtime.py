@@ -45,6 +45,7 @@ from foundry.core.events import (
     TokenCount,
     ToolBegin,
     ToolEnd,
+    ToolRejected,
     TurnComplete,
     TurnStarted,
     new_id,
@@ -280,6 +281,8 @@ class AgentRuntime:
             # told why so the loop can continue.
             self._reply(call, f"invalid tool call: {exc}", is_error=True)
             self._journal(EventType.TOOL_CALL, {"name": call.name, "rejected": str(exc)})
+            self._emit(ToolRejected(call_id=call.call_id, tool=call.name,
+                                    display=call.name, reason=f"invalid tool call: {exc}"))
             return
 
         self._journal(EventType.TOOL_CALL, {
@@ -298,6 +301,9 @@ class AgentRuntime:
         if decision.verdict is Verdict.DENY:
             self._audit(op, f"DENY:{decision.rule_id}", "blocked")
             self._reply(call, f"blocked by policy: {decision.reason}", is_error=True)
+            self._emit(ToolRejected(call_id=call.call_id, tool=op.tool, display=op.display,
+                                    reason=decision.reason, rule_id=decision.rule_id,
+                                    step=decision.step))
             return
 
         if decision.verdict is Verdict.ASK:
@@ -309,6 +315,8 @@ class AgentRuntime:
                 self._cancelled = True
                 self._audit(op, "ABORT", "aborted")
                 self._reply(call, "the user aborted the task", is_error=True)
+                self._emit(ToolRejected(call_id=call.call_id, tool=op.tool,
+                                        display=op.display, reason="aborted by the user"))
                 return
             if choice is ApprovalChoice.DENY:
                 self._audit(op, "DENY:user", "declined")
@@ -322,6 +330,9 @@ class AgentRuntime:
                                 is_error=True)
                 else:
                     self._reply(call, "the user declined this operation", is_error=True)
+                self._emit(ToolRejected(call_id=call.call_id, tool=op.tool,
+                                        display=op.display, reason=decision.reason,
+                                        rule_id=decision.rule_id, step=decision.step))
                 return
             if choice is ApprovalChoice.SESSION:
                 self.policy.grant_for_session(op)

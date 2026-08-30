@@ -25,7 +25,7 @@ from foundry.core.conversation import (
     ToolUseBlock,
     TurnRequest,
 )
-from foundry.core.errors import ProtocolError
+from foundry.core.errors import ProtocolError, TransientError
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -210,8 +210,21 @@ def test_provider_failure_becomes_a_protocol_error(server):
         collect_turn(iter(backend.stream_turn(request_with_history())))
 
 
-def test_empty_stream_is_a_protocol_error(server):
+def test_a_stream_without_a_completion_event_is_transient(server):
+    """A cut connection is retryable, not fatal -- and accepting the partial
+    content would present a truncated answer as the model's complete one."""
     _Handler.script = {"sse": []}
-    backend = ResponsesBackend(base_url=base_url(server), model="gpt-5")
-    with pytest.raises(ProtocolError, match="without a completed response"):
+    backend = ResponsesBackend(base_url=base_url(server), model="gpt-5", max_retries=1)
+    with pytest.raises(TransientError, match="cut mid-turn"):
+        collect_turn(iter(backend.stream_turn(request_with_history())))
+
+
+def test_a_truncated_stream_does_not_become_a_finished_turn(server):
+    """Partial text arrived, then the connection dropped: the half-sentence
+    must not be handed to the runtime as the model's answer."""
+    _Handler.script = {"sse": [
+        {"type": "response.output_text.delta", "delta": "The fix is to change line 12 to "},
+    ]}
+    backend = ResponsesBackend(base_url=base_url(server), model="gpt-5", max_retries=1)
+    with pytest.raises(TransientError, match="cut mid-turn"):
         collect_turn(iter(backend.stream_turn(request_with_history())))
