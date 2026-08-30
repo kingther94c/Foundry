@@ -79,9 +79,22 @@
 
 第二轮的 5 个新缺陷全部由第一轮修复造成；第三轮抓到 2 个由第二轮造成；第四轮的**两个 critical 都在第三轮写的注释剥离器里**；第五轮证伪了第四轮的收敛声称。**同一类错误犯了两次**：为了标记"不可解析"而提前返回，丢掉了已解析的分段，于是 `git reset --hard; (foo)` 从熔断表的**不可批准 DENY** 掉成了**可批准 ASK**——而 system prompt 还在告诉模型这类操作"不可能被批准"。
 
-所以现在有一条结构性不变量测试（[tests/test_breaker_invariant.py](../tests/test_breaker_invariant.py)）：**任何装饰、模式、会话授权或 hook 改写，都不能让一条本身被熔断表禁止的命令变得可批准**——22 条被禁命令 × 17 种装饰 = 374 个组合，连同各命令单独一次、各模式、会话授权与 hook 改写，共 **432 个自动生成用例**。它防的是整类错误，不是想到的那几个写法；第四轮那两个 critical 事后加进装饰表，一秒就能复现。
+所以现在有一条结构性不变量测试（[tests/test_breaker_invariant.py](../tests/test_breaker_invariant.py)）：**任何装饰、模式、会话授权或 hook 改写，都不能让一条本身被熔断表禁止的命令变得可批准**——28 条被禁命令 × 17 种装饰 = 476 个组合，连同各命令单独一次、各模式、会话授权与 hook 改写，共 **540 个自动生成用例**。它防的是整类错误，不是想到的那几个写法；第四轮那两个 critical 事后加进装饰表，一秒就能复现。
 
 同理，`GIT_CONFIG_NOSYSTEM` 那个 critical 教训：**加固要问"它顺带关掉了什么合法行为"**，且验证必须跑在用户实际拥有的环境上（fixture 用普通 git 建仓，不用 Foundry 自己的硬化路径）。
+
+### (b2) 第六轮：漏洞不在某一层里，而在两层的接缝上
+
+前五轮都在打分段器。第六轮找到的东西形状完全不同：**每一层单看都对，合起来不对**。
+
+- 补丁工具知道 `AVERYL~1.PY` 和长名是同一个文件；policy 层做的是字符串比较，于是 8.3 别名绕过了脏文件守卫——那条规则存在的唯一理由就是压过 `accept_edits`。
+- `decode_output` 用"谁产生的替换字符少"来选编码，可回退编码是把 256 个字节全映射的单字节码页，**永远产生不了替换字符**。于是一个坏字节就把整段输出翻成乱码；而 `_drain` 在容量上限处按字节切，天然会切断多字节字符。
+- 系统提示词告诉模型"merge 永远被拒"，`git pull` 干的就是那个 merge，却直接走过熔断表。
+- `command_timeout_s` 有类型检查、有 provenance、有"仓库只能收紧"保护——**没有任何代码读它**。
+
+最尖锐的一个是净室验证抓到的，而不是测试套件：事件按字段脱敏是对的，但模型的文本是**分块流式**到达的，凭证跨两个 delta 落下，两个片段都不匹配任何东西，渲染器再把它拼回屏幕上。事件流干净、终端泄漏。
+
+教训写下来：**"每一处都正确"不蕴含"合起来正确"**。所以现在有 [tests/test_prompt_matches_breaker.py](../tests/test_prompt_matches_breaker.py)（承诺与表双向对齐）、`categorical_denials()`（提示词由熔断表的常量生成而非手写）、以及一次真实的净室端到端（重建 wheelhouse → `--no-index` 装进全新 venv → 跑真实任务 → 检查 canary 不在事件、渲染、stdout 与日志里）。**跨层的性质要跨层地验。**
 
 ### (c) 明说解决不了什么
 
@@ -103,8 +116,10 @@
 
 这些不是声明，是测试：
 
-- **熔断表不变量**：22 条被禁命令 × 17 种装饰（链接、注释、CR 分隔、不可解析邻段、shell 包装、分组、script block、dot-source）= 374 个组合；加上单命令基线 22、各模式 24、会话授权 6、hook 改写 6，共 432 个自动生成用例，全部必须 DENY 在第 0 步（`test_breaker_invariant.py`）。
-- **canary 泄漏套件**：以金丝雀凭证跑全流程，断言它不出现在 journal、artifact、audit、控制台（`test_cli_e2e.py`、`test_session.py`）。
+- **熔断表不变量**：28 条被禁命令 × 17 种装饰（链接、注释、CR 分隔、不可解析邻段、shell 包装、分组、script block、dot-source）= 476 个组合；加上单命令基线 28、各模式 24、会话授权 6、hook 改写 6，共 540 个自动生成用例，全部必须 DENY 在第 0 步（`test_breaker_invariant.py`）。
+- **canary 泄漏套件**：以金丝雀凭证跑全流程，断言它不出现在 journal、artifact、audit、事件流与控制台；**并按 1/2/3/5/13/64 字节分块**发送，验证跨 delta 的凭证同样被删（`test_cli_e2e.py`、`test_session.py`、`test_round6_fixes.py`）。
+- **提示词与熔断表双向对齐**：表拒绝的每一族都必须在提示词里被点名，提示词声称"永远拒绝"的每个 git 子命令都必须真的被拒（`test_prompt_matches_breaker.py`）。手写那段话时它承诺 merge 被拒，而 `git pull` 走了过去。
+- **跨层拼写一致**：8.3 短名、CRLF、大小写等在工具层解析过的路径，policy 必须看到同一个拼写（`test_drift_fixes.py`）。
 - **路径逃逸表**：junction、ADS、`..`、设备名、UNC、盘符相对全部被拒（`test_workspace.py`）。
 - **分段器攻击表**：链式命令、命令替换、重定向、调用操作符、别名、CR 分隔、PowerShell 注释、包装形式（`test_segmenter.py`、`test_security_regressions.py`、`test_security_round3.py`）。
 - **policy 决策表**：deny-wins、熔断表不可覆盖、accept_edits 下脏文件仍 ASK（含各种路径拼法）、dont_ask fail-closed、hook 改写重入熔断（`test_policy.py`）。

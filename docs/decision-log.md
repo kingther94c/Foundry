@@ -130,3 +130,20 @@
 - breaker 表 canonical 化（别名归一前置；补 `git restore`/`stash clear` 与 PowerShell/cmd 删除形式）。
 - ReplayBackend 匹配契约：序号回放 + 结构断言（非逐字节，否则 prompt 微调红全套）；`foundry record` 重录工作流进 M0。
 - M1 拆 M1a（文件工具，不被 OQ-13 阻塞）/ M1b（run_command + 分段器）；`responses` adapter 降为按需新增。
+
+## D-025 熔断表覆盖所有移动 HEAD 的 git 子命令；`git clean -n` 例外
+- **日期**：2026-08-30　**状态**：已确认（第六轮评审）
+- **背景**：系统提示词手写着"git commit/push/rebase/merge 永远被拒且不可批准"，但 `git pull`——它执行的正是那个 merge——直接走过熔断表。用户写一条 `run_command`/`git *` 的 allow 规则就会自动放行它；而它移动 HEAD，`_finalize` 随后把整轮降级为 `partial`，于是**跑了"被允许"的命令的会话永远无法报 completed**。`cherry-pick` / `revert` / `am` 同理，`git apply` 则绕开了 apply_patch 的读前置、脏文件守卫与锚点解析。
+- **内容**：`HISTORY_MOVING_GIT` 增补 pull / cherry-pick / revert / am；`git apply` 单列（理由指向 apply_patch）。反向地，`git clean -n|--dry-run` 只列不删，此前被以"destroys uncommitted work"拒绝——这句话对它是假的，且它正是模型"先看再问"的唯一手段，故按读法逐一豁免（naive 读法看不见的标志解锁不了任何东西）。
+- **防再犯**：提示词那段由 `categorical_denials()` 从熔断表常量生成；`test_prompt_matches_breaker.py` 双向断言。手写的清单会漂移，这次就漂了。
+
+## D-026 `command_timeout_s` 定为上限而非默认值，出厂即工具自身上限
+- **日期**：2026-08-30　**状态**：已确认（第六轮评审）
+- **内容**：该键有类型检查、range 检查、provenance、以及"仓库只能收紧"保护——却没有任何代码读它。现经 `ToolContext.max_command_timeout_s` 下沉到工具层并在 `RunCommand.execute` 夹紧；工具保留自己较低的默认值（120s），配置项出厂值设为工具上限（600s），因此**出厂行为不变**，但运维/仓库调低它时真的生效，超时消息会说明被夹紧的原因。
+- **同批**：`session_retention_days` 仍无实现（[OQ-19](open-questions.md)），已在代码里标注为保留项——按一个用户从未选择过的默认值删除他的会话日志，不是可以顺手做的事。
+
+## D-027 事件流按流式脱敏（保留回看窗口），而非逐事件脱敏
+- **日期**：2026-08-30　**状态**：已确认（净室验证发现）
+- **背景**：redaction.py 声明三个 sink，事件那个从未实现——journal 写 `[redacted]`，`foundry exec --json` 把同一个凭证原样打到 stdout。补上逐字段脱敏后，净室端到端仍抓到泄漏：模型文本是**分块流式**到达的，凭证跨两个 `MessageDelta` 落下，两个片段都不匹配，渲染器再拼回屏幕。
+- **内容**：`EventSink` 保留一段尾巴，长度取"Foundry 实际持有的最长凭证"——那正是本模块承诺的删除范围——下一块到达或流结束时释放。比该尾巴更长的**模式**匹配仍可能跨块漏掉；模式扫描本就标注 best-effort，不改这个定位。
+- **教训**：跨层的性质要跨层地验。单元测试看到的是干净的事件流，终端上是明文。
