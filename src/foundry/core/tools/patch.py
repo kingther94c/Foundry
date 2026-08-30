@@ -53,6 +53,7 @@ DIVIDER = "======="
 REPLACE_CLOSE = ">>>>>>> REPLACE"
 
 MAX_EDIT_FAILURES_PER_FILE = 3
+TMP_SUFFIX = ".foundry-tmp"
 
 
 class PatchParseError(InvalidToolCall):
@@ -263,8 +264,19 @@ def _near_misses(haystack: str, needle: str) -> list[str]:
 # --- file writing ---------------------------------------------------------
 
 
-def _detect_line_ending(text: str) -> str:
-    return "\r\n" if "\r\n" in text else "\n"
+def _detect_line_ending(text: str) -> tuple[str, bool]:
+    """The file's dominant ending, and whether it is mixed.
+
+    A file with even one CRLF used to have *every* line rewritten as CRLF,
+    because the whole file is normalized to LF before editing. Untouched lines
+    changed silently in both directions, git reported a whole-file rewrite, and
+    the change attribution the finish gate depends on became meaningless.
+    """
+    crlf = text.count("\r\n")
+    lf = text.count("\n") - crlf
+    if crlf and lf:
+        return ("\r\n" if crlf >= lf else "\n"), True
+    return ("\r\n" if crlf else "\n"), False
 
 
 def _write_atomic(path: Path, text: str, encoding: str, line_ending: str,
@@ -274,7 +286,7 @@ def _write_atomic(path: Path, text: str, encoding: str, line_ending: str,
     data = text.encode(encoding)
     if had_bom and not data.startswith(b"\xef\xbb\xbf"):
         data = b"\xef\xbb\xbf" + data
-    tmp = path.with_name(path.name + ".foundry-tmp")
+    tmp = path.with_name(path.name + TMP_SUFFIX)
     tmp.write_bytes(data)
     os.replace(tmp, path)
 
@@ -290,6 +302,7 @@ class _Planned:
     rungs: list[str] = field(default_factory=list)
     move_target: Path | None = None
     move_relative: str = ""
+    notes: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -411,34 +424,26 @@ class ApplyPatch:
                             "read it again before retrying)")
                 rejected.append(f"{file_op.path}: {exc}{note}")
 
+        # An I/O failure here must not discard the record of what already
+        # landed: a read-only file partway through an envelope used to raise
+        # out of execute(), so a file deleted by an earlier operation was gone
+        # with nothing saying so, and the model was told only "the tool failed
+        # unexpectedly". Each item is isolated, and what happened is reported.
         applied: list[str] = []
         for item in planned:
-            if item.op.action == "delete":
-                item.path.unlink()
-                ctx.read_tracker.forget(item.relative)
-                applied.append(f"deleted {item.relative}")
-                continue
-
-            item.path.parent.mkdir(parents=True, exist_ok=True)
-            _write_atomic(item.path, item.new_text, "utf-8", item.line_ending, item.had_bom)
-            self.failures.pop(item.op.path, None)
-
-            if item.move_target is not None:
-                # Destination was resolved and checked during planning, so this
-                # cannot fail partway and leave the source already rewritten.
-                item.move_target.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(item.path, item.move_target)
-                ctx.read_tracker.forget(item.relative)
-                ctx.read_tracker.record(
-                    item.move_relative,
-                    hashlib.sha256(item.move_target.read_bytes()).hexdigest())
-                applied.append(f"updated and moved {item.relative} -> {item.move_relative}")
-            else:
-                ctx.read_tracker.record(
-                    item.relative, hashlib.sha256(item.path.read_bytes()).hexdigest())
-                verb = "created" if item.op.action == "add" else "updated"
-                detail = f" [{', '.join(sorted(set(item.rungs)))}]" if item.rungs and set(item.rungs) != {"exact"} else ""
-                applied.append(f"{verb} {item.relative}{detail}")
+            try:
+                self._apply_one(item, ctx, applied)
+            except OSError as exc:
+                self.failures[item.op.path] = self.failures.get(item.op.path, 0) + 1
+                rejected.append(f"{item.relative}: {type(exc).__name__}: {exc}")
+                # A temp file left by a replace that never completed would
+                # otherwise show up as an untracked file this session created.
+                tmp = item.path.with_name(item.path.name + TMP_SUFFIX)
+                if tmp.exists():
+                    try:
+                        tmp.unlink()
+                    except OSError:
+                        pass
 
         lines = []
         if applied:
@@ -448,6 +453,34 @@ class ApplyPatch:
         content = "\n\n".join(lines) if lines else "(no operations)"
         return ToolOutput(content=content, is_error=bool(rejected),
                           metadata={"applied": len(applied), "rejected": len(rejected)})
+
+    def _apply_one(self, item: _Planned, ctx: ToolContext, applied: list[str]) -> None:
+        if item.op.action == "delete":
+            item.path.unlink()
+            ctx.read_tracker.forget(item.relative)
+            applied.append(f"deleted {item.relative}")
+            return
+
+        item.path.parent.mkdir(parents=True, exist_ok=True)
+        _write_atomic(item.path, item.new_text, "utf-8", item.line_ending, item.had_bom)
+        self.failures.pop(item.op.path, None)
+
+        if item.move_target is not None:
+            item.move_target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(item.path, item.move_target)
+            ctx.read_tracker.forget(item.relative)
+            ctx.read_tracker.record(
+                item.move_relative,
+                hashlib.sha256(item.move_target.read_bytes()).hexdigest())
+            applied.append(f"updated and moved {item.relative} -> {item.move_relative}")
+            return
+
+        ctx.read_tracker.record(
+            item.relative, hashlib.sha256(item.path.read_bytes()).hexdigest())
+        verb = "created" if item.op.action == "add" else "updated"
+        notes = sorted(set(item.rungs) - {"exact"}) + list(item.notes)
+        detail = f" [{', '.join(notes)}]" if notes else ""
+        applied.append(f"{verb} {item.relative}{detail}")
 
     def _plan(self, file_op: FileOp, ctx: ToolContext) -> _Planned:
         resolved = ctx.workspace.resolve(file_op.path, for_write=True)
@@ -463,6 +496,19 @@ class ApplyPatch:
                 raise ToolError(
                     f"move destination {destination.relative} already exists; "
                     "delete it explicitly or choose another name"
+                )
+            # mkdir(parents=True) raises when a path component is an existing
+            # file, which used to surface only after the source was already
+            # rewritten -- and the model's natural retry then failed to locate,
+            # because its SEARCH text no longer matched.
+            parent = destination.absolute.parent
+            probe = parent
+            while probe != probe.parent and not probe.exists():
+                probe = probe.parent
+            if probe.exists() and not probe.is_dir():
+                raise ToolError(
+                    f"cannot move to {destination.relative}: {probe.name} is a file, "
+                    "not a directory"
                 )
             move_target = destination.absolute
             move_relative = destination.relative
@@ -491,9 +537,16 @@ class ApplyPatch:
         except UnicodeDecodeError as exc:
             raise ToolError(f"file is not valid UTF-8 ({exc.reason}); cannot patch") from exc
 
-        line_ending = _detect_line_ending(text)
+        line_ending, mixed = _detect_line_ending(text)
         working = text.replace("\r\n", "\n")
         rungs: list[str] = []
+        notes: list[str] = []
+        if mixed:
+            # The whole file is normalized to LF to match hunks against, so the
+            # original per-line endings cannot be restored at write time. Saying
+            # so beats letting the user discover it as a whole-file diff.
+            notes.append(f"mixed line endings normalized to "
+                         f"{'CRLF' if line_ending == chr(13) + chr(10) else 'LF'}")
 
         for index, hunk in enumerate(file_op.hunks, start=1):
             search = hunk.search.replace("\r\n", "\n")
@@ -504,7 +557,7 @@ class ApplyPatch:
             rungs.append(result.rung)
 
         return _Planned(file_op, path, resolved.relative, working, line_ending, had_bom,
-                        rungs, move_target, move_relative)
+                        rungs, move_target, move_relative, notes)
 
     @staticmethod
     def _explain(index: int, near: list[str], relative: str) -> str:

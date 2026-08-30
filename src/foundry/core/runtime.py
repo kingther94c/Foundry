@@ -488,6 +488,15 @@ class AgentRuntime:
             return None
 
     def _terminate(self, status: TerminalStatus, reason: str, summary: str = "") -> TurnOutcome:
+        # A journal that could not be written means the evidence for this run is
+        # incomplete; the report must say so rather than reading as a clean
+        # record of what happened.
+        degraded = getattr(self.session, "degraded", "") if self.session else ""
+        if degraded:
+            summary += (f"\n\nThe session journal could not be written ({degraded}); "
+                        "this run's recorded evidence is incomplete.")
+            self._emit(Notice(f"session journal degraded: {degraded}", level="warning"))
+
         self._journal(EventType.TERMINATION, {"status": status.value, "reason": reason,
                                               "summary": summary})
         if self.session is not None:

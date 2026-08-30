@@ -147,10 +147,23 @@ class SessionStore:
         self._ordinal = 0
         self._fh = self.path.open("a", encoding="utf-8", newline="\n")
         self._terminated = False
+        # Set to the first write failure's description; the runtime surfaces it
+        # so a session whose evidence is incomplete says so.
+        self.degraded: str = ""
 
     # -- writing ----------------------------------------------------------
 
     def append(self, event_type: str, payload: dict[str, Any]) -> int:
+        """Record one event. A failing journal degrades the session, never
+        crashes it.
+
+        A full volume or a file held by a backup agent used to raise out of the
+        tool dispatch, through the CLI's ``finally`` (which raised again writing
+        the termination record), past ``main``'s FoundryError handler -- a raw
+        traceback and exit 1 instead of one of the documented exit codes, with
+        buffered records lost. The journal being unwritable is worth reporting;
+        it is not worth losing the session over.
+        """
         self._ordinal += 1
         record = {
             "ts": utc_now_iso(),
@@ -159,10 +172,14 @@ class SessionStore:
             "v": SCHEMA_VERSION,
             "payload": self._redactor.scrub_obj(payload),
         }
-        self._fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-        if event_type in _FLUSH_TYPES:
-            self._fh.flush()
-            os.fsync(self._fh.fileno())
+        try:
+            self._fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+            if event_type in _FLUSH_TYPES:
+                self._fh.flush()
+                os.fsync(self._fh.fileno())
+        except (OSError, ValueError) as exc:
+            if not self.degraded:
+                self.degraded = f"{type(exc).__name__}: {exc}"
         return self._ordinal
 
     def write_header(self, *, workspace: str, profile: str, model: str,
@@ -202,7 +219,10 @@ class SessionStore:
 
     def close(self) -> None:
         if not self._fh.closed:
-            self._fh.flush()
+            try:
+                self._fh.flush()
+            except (OSError, ValueError):
+                pass
             self._fh.close()
 
     def __enter__(self) -> SessionStore:

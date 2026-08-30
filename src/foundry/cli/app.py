@@ -242,8 +242,13 @@ def cmd_session(args: argparse.Namespace) -> int:
         wiring.runtime.cancel()
         console.print("\n[yellow]cancelled[/yellow]")
     finally:
-        if not wiring.session._terminated:
-            wiring.session.record_termination(status, "session ended")
+        # A journal write can fail (full volume, a backup agent holding the
+        # file); losing the exit code over it would be worse than the lost line.
+        try:
+            if not wiring.session._terminated:
+                wiring.session.record_termination(status, "session ended")
+        except OSError:
+            pass
         wiring.session.close()
 
     return EXIT_CODES.get(status, 0)
@@ -353,8 +358,11 @@ def cmd_exec(args: argparse.Namespace) -> int:
         wiring.runtime.cancel()
         status = TerminalStatus.CANCELLED
     finally:
-        if not wiring.session._terminated:
-            wiring.session.record_termination(status, "headless run ended")
+        try:
+            if not wiring.session._terminated:
+                wiring.session.record_termination(status, "headless run ended")
+        except OSError:
+            pass
         wiring.session.close()
     return EXIT_CODES.get(status, 0)
 
@@ -376,8 +384,11 @@ def cmd_record(args: argparse.Namespace) -> int:
     try:
         wiring.runtime.run_turn(args.task)
     finally:
-        if not wiring.session._terminated:
-            wiring.session.record_termination(TerminalStatus.CANCELLED, "recording ended")
+        try:
+            if not wiring.session._terminated:
+                wiring.session.record_termination(TerminalStatus.CANCELLED, "recording ended")
+        except OSError:
+            pass
         wiring.session.close()
         path = recorder.save()
         console.print(f"[green]recorded[/green] {len(recorder.captured)} turns to {path}")
