@@ -12,7 +12,12 @@ import platform
 from importlib import resources
 from pathlib import Path
 
-from foundry.core.policy.engine import Mode, PolicyEngine, Verdict
+from foundry.core.policy.engine import (
+    Mode,
+    PolicyEngine,
+    Verdict,
+    categorical_denials,
+)
 from foundry.core.tools.git import GitBaseline
 
 PROJECT_DOC_NAMES = ("FOUNDRY.md", "AGENTS.md")
@@ -61,11 +66,12 @@ def permissions_paragraph(policy: PolicyEngine) -> str:
         lines.append("Always refused:")
         lines.extend(deny)
 
-    lines.append(
-        "These are always refused and cannot be approved: writing to .git or Foundry's own "
-        "configuration; git checkout/restore/reset --hard/clean/stash drop/stash clear; "
-        "git commit, push, rebase, merge; recursive deletion of a system or home directory."
-    )
+    # Generated from the breaker's own constants. Hand-written, this paragraph
+    # drifted: it promised the model that `merge` was always refused while
+    # `git pull` -- the same merge -- passed, and omitted eight shapes the table
+    # does deny, which the model could only find by being refused.
+    lines.append("These are always refused and cannot be approved:")
+    lines.extend(f"- {item}" for item in categorical_denials())
     if policy.dirty_files:
         listed = ", ".join(sorted(policy.dirty_files)[:10])
         lines.append(

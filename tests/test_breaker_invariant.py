@@ -39,6 +39,15 @@ FORBIDDEN = [
     "git filter-branch --all",
     "git read-tree --reset -u HEAD",
     "git checkout-index -f -a",
+    "git merge feature",
+    # The system prompt promised the model that merge was always refused while
+    # these four -- pull being literally that merge -- walked straight past the
+    # table.
+    "git pull",
+    "git cherry-pick abc123",
+    "git revert abc123",
+    "git am patch.mbox",
+    "git apply patch.diff",
     "Remove-Item -Recurse -Force C:\\Windows",
     "rm -r ~",
 ]

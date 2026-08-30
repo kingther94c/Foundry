@@ -144,6 +144,13 @@ DESTRUCTIVE_GIT = (
     ("git", "stash", "clear"),
 )
 
+# Subcommands that publish or move HEAD. `pull` earns its place the hard way:
+# the system prompt told the model "merge is always refused" while `git pull`
+# -- which performs exactly that merge -- passed the table. cherry-pick, revert
+# and am rewrite the tree the same way and were named nowhere.
+HISTORY_MOVING_GIT = ("push", "commit", "rebase", "merge", "pull",
+                      "cherry-pick", "revert", "am")
+
 RECURSIVE_DELETE_HEADS = ("remove-item", "format-volume", "clear-disk")
 
 # Matched against each argument on its own. Anchoring against the joined string
@@ -159,6 +166,39 @@ _DANGEROUS_DELETE_TARGET = re.compile(
     r")['\"]?$",
     re.IGNORECASE,
 )
+
+
+def _is_dry_run(args: tuple[str, ...]) -> bool:
+    """True only for git's own dry-run spellings: ``--dry-run``, ``-n``, or a
+    short-flag cluster containing n (``-xdn``). Deliberately exact -- anything
+    looser would be a hole in the one table that is meant to be categorical."""
+    for arg in args:
+        if arg == "--dry-run" or arg == "-n":
+            return True
+        if len(arg) > 1 and arg[0] == "-" and arg[1] != "-" and arg[1:].isalpha():
+            if "n" in arg[1:]:
+                return True
+    return False
+
+
+def categorical_denials() -> tuple[str, ...]:
+    """The breaker's own account of what it refuses, for the system prompt.
+
+    Hand-writing this paragraph let it drift: it named `merge` as always
+    refused while `git pull` passed, and omitted eight shapes the table does
+    deny, which the model could only discover by being refused.
+    """
+    destructive = ", ".join(" ".join(form[1:]) for form in DESTRUCTIVE_GIT)
+    return (
+        "writing to .git, .foundry, or Foundry's own configuration",
+        f"git {destructive} (git clean -n is allowed -- it only lists)",
+        "git " + ", ".join(HISTORY_MOVING_GIT),
+        "git apply (use apply_patch, which checks anchors and read-before-edit)",
+        "git switch --force/--discard-changes, rm --force, filter-branch, "
+        "checkout-index, read-tree --reset, worktree remove, branch --delete, "
+        "update-ref/symbolic-ref -d, reflog expire",
+        "recursive deletion of a system or home directory",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,10 +242,19 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
         head = argv[0] if argv else ""
 
         for forbidden in DESTRUCTIVE_GIT:
-            if argv[:len(forbidden)] == forbidden:
-                return BreakerHit(
-                    f"'{' '.join(forbidden)}' destroys uncommitted work and is never permitted"
-                )
+            if argv[:len(forbidden)] != forbidden:
+                continue
+            # `git clean -n` only lists what would be removed. Refusing it with
+            # "destroys uncommitted work" was false, and it is the one form that
+            # lets the model check before asking. The exemption is per-reading,
+            # so the naive reading still denies if only the lexed one saw the
+            # flag -- an attacker has to get -n past both, and git then sees it
+            # too and does nothing.
+            if forbidden == ("git", "clean") and _is_dry_run(argv[2:]):
+                break
+            return BreakerHit(
+                f"'{' '.join(forbidden)}' destroys uncommitted work and is never permitted"
+            )
 
         # `git checkout <name>` is ambiguous by design -- git cannot tell a
         # branch from a pathspec either, which is why it added `switch` and
@@ -252,9 +301,17 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
             if recursive and any(_DANGEROUS_DELETE_TARGET.match(a) for a in argv[1:]):
                 return BreakerHit("recursive delete of a system or home directory is never permitted")
 
-        if head == "git" and len(argv) > 1 and argv[1] in ("push", "commit", "rebase", "merge"):
+        if head == "git" and len(argv) > 1 and argv[1] in HISTORY_MOVING_GIT:
             return BreakerHit(
                 f"'git {argv[1]}' is not permitted; Foundry never publishes or rewrites history"
+            )
+
+        # `git apply` edits the working tree without passing the read-before-edit
+        # check, the dirty-file guard, or the anchored-patch parser -- every
+        # protection apply_patch exists to apply.
+        if head == "git" and len(argv) > 1 and argv[1] == "apply":
+            return BreakerHit(
+                "'git apply' bypasses the patch tool's checks; use apply_patch instead"
             )
 
         joined_lower = " ".join(argv)
