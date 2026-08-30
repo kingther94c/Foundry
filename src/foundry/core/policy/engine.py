@@ -408,9 +408,27 @@ class PolicyEngine:
         # Step 5 -- ALLOW rules and session grants.
         if self._grant_key(op) in self.session_grants:
             return finish(Verdict.ALLOW, "approved earlier in this session", "session_grant", 5)
-        for rule in self.rules:
-            if rule.verdict is Verdict.ALLOW and rule.matches(op, targets):
-                return finish(Verdict.ALLOW, rule.reason or "allowed by rule", rule.identity(), 5)
+
+        # A single rule need not cover the whole command: every part must be
+        # covered by *some* allow rule. Requiring one rule to match all parts
+        # meant two rules each covering half a chain allowed nothing, and no
+        # number of rules could ever cover `git status; python -m pytest` --
+        # while the prompt tells the model to chain with `;` because
+        # PowerShell 5.1 has no `&&`. Safety is unchanged: a part with no allow
+        # rule still blocks the whole command, and DENY/ASK ran earlier.
+        allow_rules = [r for r in self.rules if r.verdict is Verdict.ALLOW]
+        matched_by: list[str] = []
+        for part in targets:
+            covering = next((r for r in allow_rules if r.matches(op, (part,))), None)
+            if covering is None:
+                matched_by = []
+                break
+            matched_by.append(covering.identity())
+        if matched_by:
+            unique = sorted(set(matched_by))
+            return finish(Verdict.ALLOW,
+                          "every part of this command is covered by an allow rule",
+                          unique[0] if len(unique) == 1 else "+".join(unique), 5)
 
         # Step 6 -- interactive approval, or fail closed.
         if self.mode is Mode.DONT_ASK or not self.interactive:

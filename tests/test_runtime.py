@@ -124,14 +124,19 @@ def test_approval_denied_is_reported_to_the_model(harness):
 
 
 def test_missing_approval_callback_fails_closed(harness):
-    """Headless: an ASK with nobody to answer is a DENY, never a pass."""
+    """Headless: an ASK with nobody to answer is a DENY, never a pass -- and it
+    must not claim a user decided, since none did. The real reason survives so
+    the model can act on it."""
     runtime, events = harness([
         turn("", call("run_command", {"command": "python -c \"print(1)\""})),
         turn("ok"),
     ], approval=None)
     runtime.run_turn("run it")
     results = [m for m in runtime.context.history if m.role is Role.TOOL]
-    assert "declined" in results[0].blocks[0].content
+    content = results[0].blocks[0].content
+    assert results[0].blocks[0].is_error
+    assert "unattended" in content
+    assert "user declined" not in content
 
 
 def test_abort_cancels_the_task(harness):

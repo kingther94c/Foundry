@@ -30,7 +30,13 @@ MAX_LIST_ENTRIES = 200
 MAX_READ_BYTES = 20_000_000
 MAX_SEARCH_FILE_BYTES = 5_000_000
 
-_SKIP_DIRS = frozenset({".git", "__pycache__", ".venv", "venv", "node_modules", ".pytest_cache"})
+_SKIP_DIRS = frozenset({
+    ".git", "__pycache__", ".venv", "venv", "node_modules", ".pytest_cache",
+    # Build outputs of the stacks this targets. list_files sorts by mtime, so
+    # without these the whole default listing right after a build is artifacts.
+    "bin", "obj", "dist", "build", "target", "out", ".next", ".nuxt",
+    ".gradle", ".idea", ".vs", ".mypy_cache", ".ruff_cache", ".tox", "coverage",
+})
 
 _REPARSE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 

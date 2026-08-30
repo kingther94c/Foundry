@@ -164,7 +164,11 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
             i += 1
 
         else:
-            raise PatchParseError(f"unexpected line in patch: {line!r}")
+            raise PatchParseError(
+                f"unexpected line in patch: {line!r}. A file operation must start "
+                f"with one of: {UPDATE.strip()}, {ADD.strip()}, {DELETE.strip()} "
+                f"(and {MOVE.strip()} may follow an Update)"
+            )
 
     if not ops:
         raise PatchParseError("patch contains no file operations")
@@ -187,6 +191,50 @@ class Located:
     start: int
     end: int
     rung: str
+
+
+def _leading_ws(line: str) -> str:
+    return line[:len(line) - len(line.lstrip())]
+
+
+def reindent(replacement: str, search: str, original_span: str) -> str | None:
+    """Re-express ``replacement`` in the indentation the file actually uses.
+
+    The indentation rung matches on stripped text, so the located span keeps the
+    file's own leading whitespace while the replacement carries the model's..
+    Splicing raw discarded the file's indentation: a tab-indented file quoted
+    back with spaces became a TabError, reported as a successful edit.
+
+    Returns None when the delta cannot be applied unambiguously -- notably when
+    the file and the model disagree about tabs versus spaces -- because guessing
+    is the mislocation this module refuses to do.
+    """
+    original_first = next((l for l in original_span.split("\n") if l.strip()), None)
+    search_first = next((l for l in search.split("\n") if l.strip()), None)
+    if original_first is None or search_first is None:
+        return replacement
+
+    original_prefix = _leading_ws(original_first)
+    search_prefix = _leading_ws(search_first)
+    if original_prefix == search_prefix:
+        return replacement
+
+    # Mixing tab- and space-indentation cannot be reconciled by a prefix swap.
+    if ("\t" in original_prefix) != ("\t" in search_prefix):
+        return None
+
+    out: list[str] = []
+    for line in replacement.split("\n"):
+        if not line.strip():
+            out.append(line)
+            continue
+        if line.startswith(search_prefix):
+            out.append(original_prefix + line[len(search_prefix):])
+        else:
+            # A line indented less than the SEARCH block's first line: the
+            # relationship is not a simple prefix swap.
+            return None
+    return "\n".join(out)
 
 
 def locate(haystack: str, needle: str) -> Located | list[str]:
@@ -318,9 +366,17 @@ class ApplyPatch:
                 "Apply an anchored patch to workspace files. The patch is one "
                 "string. SEARCH text must match the file exactly and appear "
                 "exactly once; read the file first. A file whose hunks do not "
-                "all apply is left untouched -- resend that whole file's hunks.\n"
-                f"{BEGIN}\n{UPDATE}src/app.py\n{SEARCH_OPEN}\nold line\n{DIVIDER}\n"
-                f"new line\n{REPLACE_CLOSE}\n{END}"
+                "all apply is left untouched -- resend that whole file's hunks. "
+                "Each file may appear only once per patch.\n"
+                "Four operations are available:\n"
+                f"{BEGIN}\n"
+                f"{UPDATE}src/app.py\n{SEARCH_OPEN}\nold line\n{DIVIDER}\n"
+                f"new line\n{REPLACE_CLOSE}\n"
+                f"{ADD}src/new.py\n+every line of a new file is prefixed with +\n"
+                f"{DELETE}src/gone.py\n"
+                f"{UPDATE}src/old_name.py\n{MOVE}src/new_name.py\n"
+                f"{SEARCH_OPEN}\nold\n{DIVIDER}\nnew\n{REPLACE_CLOSE}\n"
+                f"{END}"
             ),
             parameters={
                 "type": "object",
@@ -461,19 +517,28 @@ class ApplyPatch:
             applied.append(f"deleted {item.relative}")
             return
 
-        item.path.parent.mkdir(parents=True, exist_ok=True)
-        _write_atomic(item.path, item.new_text, "utf-8", item.line_ending, item.had_bom)
-        self.failures.pop(item.op.path, None)
-
         if item.move_target is not None:
+            # Move first, then write at the destination. Writing the source
+            # first meant any failure in the move -- a destination another
+            # operation in this same envelope had just turned into a directory,
+            # for instance -- left the source rewritten while the report said
+            # "left untouched", and the model's retry then failed to locate
+            # because its SEARCH text no longer matched.
             item.move_target.parent.mkdir(parents=True, exist_ok=True)
             os.replace(item.path, item.move_target)
+            _write_atomic(item.move_target, item.new_text, "utf-8",
+                          item.line_ending, item.had_bom)
+            self.failures.pop(item.op.path, None)
             ctx.read_tracker.forget(item.relative)
             ctx.read_tracker.record(
                 item.move_relative,
                 hashlib.sha256(item.move_target.read_bytes()).hexdigest())
             applied.append(f"updated and moved {item.relative} -> {item.move_relative}")
             return
+
+        item.path.parent.mkdir(parents=True, exist_ok=True)
+        _write_atomic(item.path, item.new_text, "utf-8", item.line_ending, item.had_bom)
+        self.failures.pop(item.op.path, None)
 
         ctx.read_tracker.record(
             item.relative, hashlib.sha256(item.path.read_bytes()).hexdigest())
@@ -553,7 +618,20 @@ class ApplyPatch:
             result = locate(working, search)
             if isinstance(result, list):
                 raise ToolError(self._explain(index, result, resolved.relative))
-            working = working[:result.start] + hunk.replace.replace("\r\n", "\n") + working[result.end:]
+
+            replacement = hunk.replace.replace("\r\n", "\n")
+            if result.rung == "indentation":
+                adjusted = reindent(replacement, search, working[result.start:result.end])
+                if adjusted is None:
+                    raise ToolError(
+                        f"hunk {index}: the SEARCH text matches {resolved.relative} only "
+                        "when indentation is ignored, and the file's indentation cannot be "
+                        "applied to your replacement unambiguously (tabs versus spaces). "
+                        "Read the file again and resend the hunk with its actual indentation."
+                    )
+                replacement = adjusted
+
+            working = working[:result.start] + replacement + working[result.end:]
             rungs.append(result.rung)
 
         return _Planned(file_op, path, resolved.relative, working, line_ending, had_bom,

@@ -33,6 +33,8 @@ from foundry.core.events import (
     TurnComplete,
 )
 
+PATCH_PREVIEW_LINES = 120
+
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 _OSC = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -125,9 +127,18 @@ class Renderer:
     def ask_approval(self, request: ApprovalRequest) -> ApprovalChoice:
         self.console.print()
         if request.approval_kind is ApprovalKind.PATCH and request.detail:
+            # The summary first: a large envelope used to scroll the file list
+            # off the screen, leaving the reader to approve a patch whose
+            # targets they could no longer see.
+            self.console.print(f"[bold]{safe(request.display)}[/bold]")
+            body = sanitize(request.detail)
+            lines = body.splitlines()
+            if len(lines) > PATCH_PREVIEW_LINES:
+                shown = "\n".join(lines[:PATCH_PREVIEW_LINES])
+                body = (f"{shown}\n\n[... {len(lines) - PATCH_PREVIEW_LINES} more lines; "
+                        "the full patch is in the session journal ...]")
             self.console.print(Panel(
-                Syntax(sanitize(request.detail), "diff", theme="ansi_dark",
-                       word_wrap=True),
+                Syntax(body, "diff", theme="ansi_dark", word_wrap=True),
                 title="[bold]proposed patch[/bold]", border_style="cyan",
             ))
         else:
@@ -140,13 +151,14 @@ class Renderer:
         prompts = {
             "y": ApprovalChoice.ONCE,
             "s": ApprovalChoice.SESSION,
+            "w": ApprovalChoice.ALWAYS,
             "n": ApprovalChoice.DENY,
             "a": ApprovalChoice.ABORT,
         }
         while True:
             try:
                 answer = self.console.input(
-                    "[bold]allow?[/bold] [y]es / [s]ession / [n]o / [a]bort: "
+                    "[bold]allow?[/bold] [y]es / [s]ession / al[w]ays / [n]o / [a]bort: "
                 ).strip().lower()
             except (EOFError, KeyboardInterrupt):
                 self.console.print("[yellow]no answer: denying[/yellow]")
@@ -155,4 +167,4 @@ class Renderer:
                 return prompts[answer]
             if answer[:1] in prompts:
                 return prompts[answer[:1]]
-            self.console.print("[dim]please answer y, s, n, or a[/dim]")
+            self.console.print("[dim]please answer y, s, w, n, or a[/dim]")

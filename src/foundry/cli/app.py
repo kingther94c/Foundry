@@ -109,6 +109,36 @@ def _confirm_trust(console: Console, home: Path, workspace: Path, *,
     return False
 
 
+def _rule_writer(home: Path, policy: PolicyEngine):
+    """Append an allow rule to the user's own config when they answer 'always'.
+
+    Written to the user layer, never into the workspace: a rule stored inside
+    the repository would be a repo granting itself permissions, which the
+    config layering explicitly refuses.
+    """
+
+    def persist(op) -> None:
+        from foundry.core.policy.engine import Layer, Rule, Verdict
+
+        pattern = op.target.replace("\\", "/")
+        config_path = home / "config.toml"
+        home.mkdir(parents=True, exist_ok=True)
+        existing = config_path.read_text(encoding="utf-8") if config_path.is_file() else ""
+        entry = (f'\n[[permissions]]\ntool = "{op.tool}"\n'
+                 f'pattern = "{pattern}"\ndecision = "allow"\n'
+                 f'reason = "approved with \'always\'"\n')
+        if entry.strip() in existing:
+            return
+        config_path.write_text(existing + entry, encoding="utf-8")
+        # Effective immediately, so the same command is not asked again in this
+        # session either.
+        policy.add_rule(Rule(tool=op.tool, pattern=pattern, verdict=Verdict.ALLOW,
+                             layer=Layer.USER, rule_id="user.always",
+                             reason="approved with 'always'"))
+
+    return persist
+
+
 def build(workspace_path: Path, *, home: Path | None = None,
           overrides: dict | None = None, console: Console | None = None,
           interactive: bool = True) -> Wiring:
@@ -197,6 +227,7 @@ def build(workspace_path: Path, *, home: Path | None = None,
         audit=AuditLog(home / "audit.jsonl", default_redactor()),
         git_baseline=baseline,
         credentials=source,
+        persist_rule=_rule_writer(home, policy),
     )
     return Wiring(workspace=workspace, config=config, runtime=runtime,
                   renderer=renderer, session=session)
@@ -453,6 +484,25 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     home = user_dir()
     console.print(f"home    {home}")
     console.print(f"auth    {'present' if (home / 'auth.json').is_file() else 'not signed in'}")
+
+    # The two things build() hard-fails on. Reporting green while every session
+    # dies immediately is worse than not having the command.
+    try:
+        config = load_config(home=home)
+        console.print(f"config  {config.backend.model} via {config.backend.base_url} "
+                      f"(mode {config.mode.value}, {len(config.rules)} permission rules)")
+    except FoundryError as exc:
+        console.print(f"[red]config  {exc}[/red]")
+        ok = False
+
+    from foundry.core.tools.git import is_git_repository
+
+    cwd = Path.cwd()
+    if is_git_repository(cwd):
+        console.print(f"repo    {cwd}")
+    else:
+        console.print(f"[yellow]repo    {cwd} is not a Git repository; "
+                      "a session here would refuse to start[/yellow]")
 
     proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
     console.print(f"proxy   {proxy or 'none'}")

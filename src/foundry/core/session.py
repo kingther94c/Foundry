@@ -279,11 +279,24 @@ class AuditLog:
 
     def __init__(self, path: Path, redactor: Redactor | None = None) -> None:
         self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.degraded: str = ""
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self.degraded = f"{type(exc).__name__}: {exc}"
         self._redactor = redactor or default_redactor()
 
     def record(self, *, workspace: str, tool: str, target: str, decision: str,
                outcome: str) -> None:
+        """Append one decision. Degrades rather than crashing.
+
+        Same contract as SessionStore.append: a file held by a backup agent or
+        a full volume used to raise out of the tool dispatch and kill the
+        process with a traceback instead of a documented exit code. Because the
+        audit log is the stated compensating control for having no sandbox, a
+        run whose trail is incomplete says so in its summary rather than
+        failing silently.
+        """
         line = json.dumps({
             "ts": utc_now_iso(),
             "workspace": workspace,
@@ -292,5 +305,9 @@ class AuditLog:
             "decision": decision,
             "outcome": outcome,
         }, ensure_ascii=False)
-        with self.path.open("a", encoding="utf-8", newline="\n") as fh:
-            fh.write(line + "\n")
+        try:
+            with self.path.open("a", encoding="utf-8", newline="\n") as fh:
+                fh.write(line + "\n")
+        except OSError as exc:
+            if not self.degraded:
+                self.degraded = f"{type(exc).__name__}: {exc}"

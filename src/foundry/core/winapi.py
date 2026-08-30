@@ -243,8 +243,20 @@ def child_environment(base: dict[str, str] | None = None) -> dict[str, str]:
         "TEMP", "TMP", "HOMEDRIVE", "HOMEPATH", "USERPROFILE", "APPDATA",
         "LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMDATA",
         "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS", "LANG", "LC_ALL",
+        "USERNAME", "COMPUTERNAME", "USERDOMAIN",
+        # How build tooling reaches the network on the machine this targets.
+        # Dropping these is what makes pip, npm, dotnet and docker fail or hang
+        # behind a corporate proxy -- exactly the environment Foundry is for.
+        # The credential-shaped denylist below still applies to all of them.
+        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+        "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+        "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+        "NODE_EXTRA_CA_CERTS", "GIT_SSL_CAINFO",
+        # Toolchain locations a build needs to find its own runtime.
+        "VIRTUAL_ENV", "CONDA_PREFIX", "JAVA_HOME", "GRADLE_HOME", "MAVEN_HOME",
+        "GOPATH", "GOROOT", "CARGO_HOME", "RUSTUP_HOME", "NVM_DIR",
     }
-    keep_prefix = ("PYTHON",)
+    keep_prefix = ("PYTHON", "PIP_", "NPM_CONFIG_", "NUGET_", "DOTNET_", "MSBUILD")
     deny_fragment = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL",
                      "AWS_", "AZURE_", "OPENAI", "ANTHROPIC")
 

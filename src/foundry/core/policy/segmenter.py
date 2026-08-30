@@ -162,6 +162,29 @@ def paranoid_segments(text: str) -> list[tuple[str, ...]]:
     return out
 
 
+def _outside_quotes(text: str) -> str:
+    """The text with quoted spans blanked out.
+
+    Used for the structural scan: a character inside a quoted argument is data,
+    not syntax. An unterminated quote leaves the rest blanked, which is safe --
+    the unbalanced-quote check refuses the command anyway.
+    """
+    out: list[str] = []
+    quote: str | None = None
+    for char in text:
+        if quote:
+            if char == quote:
+                quote = None
+            out.append(" ")
+            continue
+        if char in "'\"":
+            quote = char
+            out.append(" ")
+            continue
+        out.append(char)
+    return "".join(out)
+
+
 def strip_comments(text: str) -> str:
     """Remove PowerShell comments before anything else looks at the text.
 
@@ -337,22 +360,33 @@ def segment_command(command: str) -> SegmentedCommand:
 
     untrusted_reason = ""
 
+    # Comments change where statements end, so every later pass sees the text
+    # with them removed.
+    text = strip_comments(command)
+
     # A structural character means Foundry's reading of the command and
     # PowerShell's may differ, and every round of review found a spelling where
     # they did. Such a command can still be denied -- see paranoid_segments --
     # but it can never be auto-allowed.
-    structural = sorted(set(command) & _STRUCTURAL)
-    if _LONE_AMPERSAND.search(command):
+    #
+    # Scanned outside quotes only: `git log --grep='#123'` and
+    # `Select-String -Pattern '# TODO'` contain no structure, and forcing them
+    # to a prompt made a large slice of ordinary commands unallowable for no
+    # security gain.
+    #
+    # Scanned on the RAW command, not the comment-stripped text: the stripper is
+    # itself a lexer this module does not trust, and scanning its output would
+    # let it hide the very characters this check exists to catch -- `echo a<# ;
+    # git reset --hard #> b` strips to `echo a b`, which looks structure-free.
+    visible = _outside_quotes(command)
+    structural = sorted(set(visible) & _STRUCTURAL)
+    if _LONE_AMPERSAND.search(visible):
         structural.append("&")
     if structural:
         untrusted_reason = (
             f"command contains shell syntax that changes its structure "
             f"({' '.join(structural)})"
         )
-
-    # Comments change where statements end, so every later pass sees the text
-    # with them removed.
-    text = strip_comments(command)
 
     if not untrusted_reason:
         for pattern, reason in _UNTRUSTED_PATTERNS:

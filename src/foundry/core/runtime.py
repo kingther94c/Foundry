@@ -68,6 +68,11 @@ class Budget:
     rounds: int = 0
     calls: int = 0
 
+    def reset(self) -> None:
+        """Start a new task. The limits are per task, not per session."""
+        self.rounds = 0
+        self.calls = 0
+
     def check(self, usage_total: int) -> str | None:
         if self.rounds > self.max_tool_rounds:
             return f"tool-call rounds exceeded ({self.max_tool_rounds})"
@@ -123,6 +128,7 @@ class AgentRuntime:
 
     git_baseline: object | None = None   # tools.git.GitBaseline
     credentials: object | None = None    # auth.CredentialSource, for refresh
+    persist_rule: object | None = None   # callable(Operation) -> None, for "always"
     failures: FailureTracker = field(default_factory=FailureTracker)
     _cancelled: bool = False
     _finish: TurnOutcome | None = None
@@ -144,6 +150,10 @@ class AgentRuntime:
     def run_turn(self, user_input: str) -> TurnOutcome:
         self.context.append_user(user_input)
         self._finish = None
+        # Per-task limits, as the requirements specify. Left accumulating, an
+        # interactive session silently died: once the running total passed the
+        # limit, a later question produced no work at all and the REPL exited.
+        self.budget.reset()
 
         while True:
             if self._cancelled:
@@ -302,10 +312,33 @@ class AgentRuntime:
                 return
             if choice is ApprovalChoice.DENY:
                 self._audit(op, "DENY:user", "declined")
-                self._reply(call, "the user declined this operation", is_error=True)
+                if self.approval is None:
+                    # Nobody was asked, so saying the user declined is a false
+                    # statement about a decision that never happened -- and it
+                    # discards the real reason, which is often something the
+                    # model could act on (a stray '#', an unparseable form).
+                    self._reply(call, f"blocked: {decision.reason} (this run is "
+                                      "unattended, so nobody could be asked)",
+                                is_error=True)
+                else:
+                    self._reply(call, "the user declined this operation", is_error=True)
                 return
             if choice is ApprovalChoice.SESSION:
                 self.policy.grant_for_session(op)
+            elif choice is ApprovalChoice.ALWAYS:
+                # Persisted as a rule in the user's own config, keyed to this
+                # workspace. Answering "always" used to be strictly worse than
+                # "session": it granted nothing at all.
+                self.policy.grant_for_session(op)
+                if self.persist_rule is not None:
+                    try:
+                        self.persist_rule(op)
+                        self._emit(Notice(
+                            f"remembered: {op.tool} ({op.target}) will not be asked again"))
+                    except OSError as exc:
+                        self._emit(Notice(
+                            f"could not save the rule ({exc}); it applies to this "
+                            "session only", level="warning"))
             self._audit(op, f"ASK:{choice.value}", "approved")
         else:
             self._audit(op, f"ALLOW:{decision.rule_id}", "auto")
@@ -496,6 +529,12 @@ class AgentRuntime:
             summary += (f"\n\nThe session journal could not be written ({degraded}); "
                         "this run's recorded evidence is incomplete.")
             self._emit(Notice(f"session journal degraded: {degraded}", level="warning"))
+
+        audit_degraded = getattr(self.audit, "degraded", "") if self.audit else ""
+        if audit_degraded:
+            summary += (f"\n\nThe audit log could not be written ({audit_degraded}); "
+                        "the record of what was allowed and denied is incomplete.")
+            self._emit(Notice(f"audit log degraded: {audit_degraded}", level="warning"))
 
         self._journal(EventType.TERMINATION, {"status": status.value, "reason": reason,
                                               "summary": summary})

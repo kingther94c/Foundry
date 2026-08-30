@@ -20,6 +20,7 @@ from typing import Any
 
 from foundry.core.conversation import ToolSchema
 from foundry.core.errors import InvalidToolCall, ToolError
+from foundry.core.policy.segmenter import segment_command
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput, truncate_middle
 from foundry.core.winapi import (
     CREATE_NEW_PROCESS_GROUP,
@@ -251,6 +252,13 @@ class RunCommand:
         result = run_process(op.args["command"], cwd=str(workdir.absolute),
                              timeout_s=op.args["timeout_s"], env=env)
 
+        # `;` does not stop on failure and only the last statement's code
+        # survives, so a chain whose first half failed is recorded as exit 0 --
+        # and verify_claims would then accept it as evidence. The exit code of a
+        # multi-statement command is not trustworthy, so it is not offered as
+        # claimable evidence.
+        multi_statement = len(segment_command(op.args["command"]).segments) > 1
+
         ordinal = 0
         if self.recorder is not None:
             ordinal = self.recorder.record_command(
@@ -261,11 +269,14 @@ class RunCommand:
         self.last_event_ordinal = ordinal
         self.history.append({
             "command": op.args["command"],
-            # An incomplete capture cannot support a claim, so it is recorded as
-            # having no usable exit code rather than as a clean 0.
-            "exit_code": None if result.output_incomplete else result.exit_code,
+            # Neither an incomplete capture nor a multi-statement chain can
+            # support a claim, so both record no usable exit code rather than a
+            # clean 0 that verify_claims would honour.
+            "exit_code": (None if (result.output_incomplete or multi_statement)
+                          else result.exit_code),
             "event_ordinal": ordinal,
             "output_incomplete": result.output_incomplete,
+            "multi_statement": multi_statement,
         })
 
         stdout = decode_output(result.stdout).text
@@ -292,6 +303,11 @@ class RunCommand:
             header = ("OUTPUT INCOMPLETE: a process left running by this command kept the "
                       "output pipe open, so what it printed could not be fully captured. "
                       "Do not treat this run as evidence.\n" + header)
+        if multi_statement:
+            header += ("\nThis command ran several statements; ';' does not stop on "
+                       "failure and only the last statement's exit code survives, so "
+                       "this exit code cannot support a claim. Run one command per "
+                       "result you intend to cite.")
 
         return ToolOutput(
             content=f"$ {op.args['command']}\n{header}\n\n{body}".rstrip(),

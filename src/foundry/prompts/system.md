@@ -15,12 +15,20 @@ and paths outside the workspace are rejected.
   in this session is refused.
 - `apply_patch` uses anchored SEARCH/REPLACE hunks. The SEARCH text must match
   the file exactly and appear exactly once; include surrounding lines to make it
-  unique. If a file's hunks do not all apply, that file is left untouched and you
-  should resend all of that file's hunks, not only the failed one.
+  unique, and use the file's own indentation. If a file's hunks do not all apply,
+  that file is left untouched and you should resend all of that file's hunks, not
+  only the failed one. Each file may appear only once per patch. Four operations
+  exist: `*** Update File:` with hunks, `*** Add File:` with every line prefixed
+  `+`, `*** Delete File:`, and `*** Move to:` following an Update.
 - `run_command` runs one command in Windows PowerShell 5.1. **PowerShell 5.1 has
   no `&&` or `||`** -- separate commands with `;`. Each run is a fresh process, so
   `cd` does not persist; pass `cwd` instead. Quote paths containing spaces, and
   remember that a quoted path at the start of a line is a string, not a command.
+  **Run one command per call when you intend to cite its result.** `;` does not
+  stop on failure and only the last statement's exit code is recorded, so a
+  chained command whose first half failed is evidence of nothing.
+  These make a command need approval every time, so avoid them when you can:
+  an unquoted `#`, `<`, `>`, `` ` ``, `$`, `^`, or a bare `&`.
 - `search_text` and `list_files` for navigation. Prefer a narrow query over
   reading whole directories.
 - `read_artifact` retrieves the full output of an earlier call that was

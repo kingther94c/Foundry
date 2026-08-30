@@ -244,8 +244,24 @@ def test_everyday_commands_are_parseable(command):
     assert segment_command(command).trusted
 
 
-def test_a_hash_costs_an_approval_even_when_quoted():
-    """Deliberate: two review rounds found comment spellings that hid a
-    statement, so any '#' means Foundry's reading may not be PowerShell's. The
-    command still runs -- it just needs a yes."""
-    assert not segment_command("git commit -m 'fix #42'").trusted
+@pytest.mark.parametrize("command", [
+    "git log --grep='#123' --oneline",
+    "Select-String -Path src/app.py -Pattern '# TODO'",
+    'python -c "print(\'#\')"',
+])
+def test_a_quoted_hash_is_data_not_syntax(command):
+    """A '#' inside a quoted argument cannot end a statement, and forcing these
+    to a prompt made a large slice of ordinary commands unallowable for no
+    security gain."""
+    assert segment_command(command).trusted
+
+
+@pytest.mark.parametrize("command", [
+    "git status # a comment",
+    "echo a<# ; git reset --hard #> b",
+    "echo hi > out.txt",
+])
+def test_an_unquoted_structural_character_still_costs_an_approval(command):
+    """Scanned on the raw command, so the comment stripper -- itself a lexer
+    this module does not trust -- cannot hide the characters from the check."""
+    assert not segment_command(command).trusted
