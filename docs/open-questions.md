@@ -10,7 +10,7 @@
 | OQ-3 | 公司 Gateway 协议假设是否成立？ | answered(部分) | Gateway 多模型（含 Claude）→ provider-agnostic IR → [D-006](decision-log.md)；细节 → OQ-6 |
 | OQ-4 | 自研的真实动机？ | answered | 公司合规约束 + 学习目的 → [D-007](decision-log.md) |
 | OQ-5 | ChatGPT 第三方登录可行性 | answered | **blocked-with-evidence**（[research/auth.md](research/auth.md)）；个人路径改 API key → [D-009](decision-log.md) |
-| OQ-6 | 公司 Gateway **剩余未知**：内网 auth 的具体机制（HTTP 交换 / 内部可执行 / 浏览器 SSO）、endpoint 形态、模型清单 | **open（M3 前须定）** | 协议部分已关闭：OpenAI 系走 Responses、token 来自内网 auth → [D-022](decision-log.md)。M3 入场门 = 先取 tool-call 流式脱敏夹具 |
+| OQ-6 | 公司 Gateway **剩余未知**：内网 auth 的具体机制（HTTP 交换 / 内部可执行 / 浏览器 SSO）、endpoint 形态、模型清单 | **open（M3 前须定）** | 协议部分已关闭：OpenAI 系走 Responses、token 来自内网 auth → [D-022](decision-log.md)。M3 入场门 = 先取 tool-call 流式脱敏夹具。**2026-09-01**：本机 OpenClaw 网关已验证两个 adapter 的传输层（[research/live-endpoint.md](research/live-endpoint.md)），但其模型从不产出 tool_calls（`tool_choice=required` 回 502），**入场门仍未过** |
 | OQ-7 | 编辑工具格式选型 | answered | 模型中性锚定 search/replace 信封 → [D-010](decision-log.md) |
 | OQ-8 | 本地 OpenAI 兼容端点作 dev-only backend？ | answered | 接受（用户第二轮，随 D-009 一并确认）；仅开发冒烟，非产品路径 |
 | OQ-9 | session resume 进不进 V1？ | answered | schema 可重放、功能 V2 → [D-012](decision-log.md) |

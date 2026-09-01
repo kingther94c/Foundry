@@ -11,10 +11,10 @@
 | M1a 文件工具 + policy | **完成** | 攻击表、决策表全绿 |
 | M1b run_command + 分段器 | **完成** | Job Object 进程树清理实测无孤儿 |
 | M2 个人路径 E2E + 验收集 | **完成** | golden 场景 8 个；`finish` 证据链；`foundry report` |
-| M3 公司 Gateway | **部分** | `responses` adapter + 合同测试已就绪；**入场门未过**——真实 Gateway 夹具待取（[OQ-6](open-questions.md)） |
+| M3 公司 Gateway | **部分** | `responses` adapter 已对**真实** Responses endpoint 跑通（流式 + usage，[research/live-endpoint.md](research/live-endpoint.md)）；**入场门仍未过**——该网关的模型不产出 tool_calls，tool-call 流式夹具待取（[OQ-6](open-questions.md)） |
 | M4 打包加固 + 披露 | **完成** | 净 venv `--no-index` 安装实测通过；威胁模型文档；`foundry exec` 已进 V1 |
 
-1111 个测试在无网络、无凭证机器上通过。真实 E2E（个人 API key / 公司 Gateway）仍待用户在有凭证的环境执行。
+1125 个测试在无网络、无凭证机器上通过。**2026-09-01 首次真实 endpoint 验证**：两个 adapter 都对着本机 OpenClaw 网关跑通完整一轮（含流式、usage、真 token 不泄漏），并暴露出 4 个脚本化 backend 够不着的缺陷——其中「loopback 被送进公司代理」只在真实拓扑下才会发生。详见 [research/live-endpoint.md](research/live-endpoint.md)。个人 API key 路径与公司 Gateway 的 tool-call 行为仍待验证。
 
 第六轮评审收口于一次**净室端到端**（重建 wheelhouse → `--no-index` 装进全新 venv → 用装好的包跑一个真实任务：跑挂测试、打补丁、重跑转绿、引用自己工具输出里的 event id 完成），14 项检查全过。该轮找到的缺陷形状与前五轮不同：不在某一层内部，而在两层的接缝上——详见 [threat-model.md](threat-model.md) §3(b2)。
 
