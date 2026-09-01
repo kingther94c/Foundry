@@ -132,10 +132,29 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
             f"{layer} config may not set connection settings "
             f"({', '.join(sorted(set(backend) & _CONNECTION_KEYS))})"
         )
+    # runtime.* was type-checked while backend.* was applied blind, so
+    # `request_max_retries = 0` -- the natural way to ask for no retries --
+    # reached range(0), left the retry loop with nothing to re-raise, and died
+    # at `raise None`: a TypeError outside the taxonomy, so the CLI printed a
+    # traceback rather than making the request once.
+    _BACKEND_INT_FLOORS = {"request_max_retries": 1, "stream_idle_timeout_ms": 1000}
     for key, value in backend.items():
-        if hasattr(config.backend, key):
-            setattr(config.backend, key, value)
-            config.record(f"backend.{key}", value, layer)
+        if not hasattr(config.backend, key):
+            continue
+        floor = _BACKEND_INT_FLOORS.get(key)
+        if floor is not None:
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ConfigError(
+                    f"backend.{key} must be an integer, got {type(value).__name__} ({value!r})"
+                )
+            if value < floor:
+                raise ConfigError(
+                    f"backend.{key} must be at least {floor}, got {value}"
+                    + (" (one attempt is the minimum; there is no way to make zero requests)"
+                       if key == "request_max_retries" else "")
+                )
+        setattr(config.backend, key, value)
+        config.record(f"backend.{key}", value, layer)
 
     # A repository may only tighten. Without this, a cloned repo could set
     # mode = "accept_edits" and grant itself step-4 auto-approval for every

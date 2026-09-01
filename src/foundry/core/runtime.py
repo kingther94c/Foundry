@@ -59,6 +59,20 @@ from foundry.core.tools.registry import ToolRegistry
 ApprovalCallback = Callable[[ApprovalRequest], ApprovalChoice]
 
 
+def _explain(exc: Exception) -> str:
+    """The error, plus the provider's own words about it.
+
+    raise_for_status carefully keeps 500 bytes of the response body on
+    ``payload`` and nothing ever read it, so every HTTP failure reached the user
+    as a bare status line -- "request rejected (HTTP 400)" -- while the body
+    sitting unused said exactly which field was wrong.
+    """
+    detail = (getattr(exc, "payload", "") or "").strip()
+    if not detail:
+        return str(exc)
+    return f"{exc}: {detail[:300]}"
+
+
 @dataclass(slots=True)
 class Budget:
     max_tool_rounds: int = 40
@@ -182,19 +196,21 @@ class AgentRuntime:
                     try:
                         turn = self._sample()
                     except AuthError as retry_exc:
-                        self._emit(ErrorEvent(str(retry_exc), category=retry_exc.category,
-                                              fatal=True))
+                        self._emit(ErrorEvent(_explain(retry_exc),
+                                              category=retry_exc.category, fatal=True))
                         return self._terminate(TerminalStatus.BLOCKED,
-                                               f"authentication: {retry_exc}")
+                                               f"authentication: {_explain(retry_exc)}")
                 else:
-                    self._emit(ErrorEvent(str(exc), category=exc.category, fatal=True))
-                    return self._terminate(TerminalStatus.BLOCKED, f"authentication: {exc}")
+                    self._emit(ErrorEvent(_explain(exc), category=exc.category, fatal=True))
+                    return self._terminate(TerminalStatus.BLOCKED,
+                                           f"authentication: {_explain(exc)}")
             except TransientError as exc:
-                self._emit(ErrorEvent(str(exc), category=exc.category, fatal=True))
-                return self._terminate(TerminalStatus.BLOCKED, f"provider unavailable: {exc}")
+                self._emit(ErrorEvent(_explain(exc), category=exc.category, fatal=True))
+                return self._terminate(TerminalStatus.BLOCKED,
+                                       f"provider unavailable: {_explain(exc)}")
             except FatalError as exc:
-                self._emit(ErrorEvent(str(exc), category=exc.category, fatal=True))
-                return self._terminate(TerminalStatus.FAILED, str(exc))
+                self._emit(ErrorEvent(_explain(exc), category=exc.category, fatal=True))
+                return self._terminate(TerminalStatus.FAILED, _explain(exc))
             except Cancelled:
                 return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
 

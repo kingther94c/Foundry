@@ -14,6 +14,8 @@ raise the error taxonomy. No redirects, no connection pooling.
 from __future__ import annotations
 
 import base64
+import datetime
+import email.utils
 import http.client
 import ipaddress
 import itertools
@@ -65,12 +67,21 @@ class Response:
 
 
 def _build_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
-    if ca_bundle:
-        context = ssl.create_default_context(cafile=ca_bundle)
-    else:
+    if not ca_bundle:
         # Loads the Windows CA/ROOT stores: corporate MITM CAs work unconfigured.
-        context = ssl.create_default_context()
-    return context
+        return ssl.create_default_context()
+    try:
+        return ssl.create_default_context(cafile=ca_bundle)
+    except OSError as exc:
+        # ca_bundle silently adopts SSL_CERT_FILE, an environment variable set
+        # for other tooling entirely and often stale after a cert rotation. A
+        # missing file surfaced as a bare FileNotFoundError with no filename --
+        # outside the taxonomy, so the CLI died with a traceback.
+        raise ConfigError(
+            f"cannot read the CA bundle {ca_bundle!r} ({exc.strerror or exc}). It comes "
+            "from FOUNDRY_CA_BUNDLE or SSL_CERT_FILE; point it at a readable PEM file "
+            "or unset it to use the Windows certificate store."
+        ) from exc
 
 
 def _is_loopback(host: str) -> bool:
@@ -247,7 +258,13 @@ class HttpClient:
             # A chunked body that ends without its terminating chunk reads as a
             # clean EOF, so a connection dropped mid-turn was indistinguishable
             # from a model that finished speaking: a truncated half-sentence was
-            # presented as the complete answer. Transient, so it is retried.
+            # presented as the complete answer.
+            #
+            # Transient, but NOT retried: open_retrying_stream only covers the
+            # first event, and a turn whose deltas are already on screen cannot
+            # be replayed. This comment used to claim a retry that no layer
+            # performs. What it buys is an honest error instead of a silent
+            # truncation; the CLI keeps the session open so the user can re-ask.
             #
             # Only Chat Completions sends [DONE]; the Responses protocol signals
             # completion with its own event, so that adapter checks for itself.
@@ -274,14 +291,8 @@ def raise_for_status(response: Response) -> None:
     if response.status in (401, 403):
         raise AuthError(f"authentication rejected (HTTP {response.status})", payload=detail)
     if response.status == 429:
-        retry_after = response.headers.get("retry-after")
-        seconds = None
-        if retry_after:
-            try:
-                seconds = float(retry_after)
-            except ValueError:
-                seconds = None
-        raise TransientError("rate limited (HTTP 429)", payload=detail, retry_after=seconds)
+        raise TransientError("rate limited (HTTP 429)", payload=detail,
+                             retry_after=_retry_after_seconds(response))
     if response.status == 407:
         raise AuthError(
             "the proxy requires authentication. If it uses NTLM or Kerberos "
@@ -290,8 +301,35 @@ def raise_for_status(response: Response) -> None:
             payload=detail,
         )
     if response.status >= 500:
-        raise TransientError(f"server error (HTTP {response.status})", payload=detail)
+        # A gateway shedding load answers 503 with Retry-After too. Reading it
+        # only on 429 meant Foundry re-sent at 1s, 3s, 7s -- three more requests
+        # inside the window the server had just asked it to wait out -- and then
+        # gave up at 7 seconds on a server that said "come back in 30".
+        raise TransientError(f"server error (HTTP {response.status})", payload=detail,
+                             retry_after=_retry_after_seconds(response))
     raise FatalError(f"request rejected (HTTP {response.status})", payload=detail)
+
+
+def _retry_after_seconds(response: Response) -> float | None:
+    """RFC 9110 allows delta-seconds *or* an HTTP-date; only the first was read,
+    so a date-form header was silently discarded."""
+    raw = (response.headers.get("retry-after") or "").strip()
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        pass
+    try:
+        when = email.utils.parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=datetime.timezone.utc)
+    delay = (when - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+    return max(0.0, delay)
 
 
 def open_retrying_stream(make_stream, *, attempts: int = 4, sleep=time.sleep):
@@ -322,7 +360,19 @@ def open_retrying_stream(make_stream, *, attempts: int = 4, sleep=time.sleep):
 
 def retry_with_backoff(operation, *, attempts: int = 4, base_delay: float = 1.0,
                        sleep=time.sleep):
-    """Retry only what the taxonomy marks transient, honouring Retry-After."""
+    """Retry only what the taxonomy marks transient, honouring Retry-After.
+
+    ``attempts`` is clamped to at least one try. It used to be used raw, so the
+    natural way to disable retries -- ``request_max_retries = 0`` -- ran the loop
+    zero times, left ``last`` as None, and ended at ``raise None``: a TypeError,
+    which is not a FoundryError, so the CLI died with a traceback instead of
+    making the request once.
+    """
+    try:
+        attempts = max(1, int(attempts))
+    except (TypeError, ValueError):
+        attempts = 1
+
     last: Exception | None = None
     for attempt in range(attempts):
         try:

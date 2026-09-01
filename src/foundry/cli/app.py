@@ -27,7 +27,13 @@ from foundry.core.backends.responses import ResponsesBackend
 from foundry.core.config import Config, load_config, user_dir
 from foundry.core.context import ContextManager
 from foundry.core.errors import AuthError, ConfigError, FoundryError
-from foundry.core.events import EXIT_CODES, EventSink, TerminalStatus, Termination
+from foundry.core.events import (
+    EXIT_CODES,
+    EventSink,
+    Notice,
+    TerminalStatus,
+    Termination,
+)
 from foundry.core.httpc import HttpClient
 from foundry.core.policy.engine import Mode, PolicyEngine, builtin_rules
 from foundry.core.prompts import (
@@ -186,10 +192,16 @@ def build(workspace_path: Path, *, home: Path | None = None,
     source = (StaticTokenSource(vault) if config.backend.credential_source == "gateway_token"
               else ApiKeySource(vault))
     api_key = ""
+    missing_credential = ""
     try:
         api_key = source.acquire().reveal()
-    except AuthError:
-        pass  # reported at first use, so `doctor` and `sessions` still work
+    except AuthError as exc:
+        # Still deferred so `doctor` and `sessions` work without a credential --
+        # but the message is kept. Discarding it meant Foundry sent an
+        # Authorization-less request, waited out a full round trip, and reported
+        # the server "rejecting authentication", which pointed the user at their
+        # token instead of at the fact that they had never set one.
+        missing_credential = str(exc)
 
     backend_class = {
         "openai_compat": OpenAICompatBackend,
@@ -233,6 +245,9 @@ def build(workspace_path: Path, *, home: Path | None = None,
         credentials=source,
         persist_rule=_rule_writer(home, policy),
     )
+    if missing_credential:
+        # Say it before spending a round trip on a request that cannot succeed.
+        sink.emit(Notice(missing_credential, level="warning"))
     return Wiring(workspace=workspace, config=config, runtime=runtime,
                   renderer=renderer, session=session)
 
@@ -270,9 +285,20 @@ def cmd_session(args: argparse.Namespace) -> int:
                 if task in ("/exit", "/quit"):
                     break
                 outcome = wiring.runtime.run_turn(task)
-                if outcome.status is not None:
-                    status = outcome.status
-                    break
+                if outcome.status is None:
+                    continue
+                status = outcome.status
+                # A dropped stream or an unreachable provider ends the *turn*,
+                # not the session. Breaking here threw away the whole
+                # conversation over a network blip -- and the code that raises
+                # it says "transient, so it is retried", which no layer does
+                # once deltas have been shown. The user keeps their context and
+                # can simply ask again.
+                if status is TerminalStatus.BLOCKED:
+                    console.print("[yellow]that turn could not be completed; "
+                                  "the session is still open.[/yellow]")
+                    continue
+                break
     except KeyboardInterrupt:
         wiring.runtime.cancel()
         console.print("\n[yellow]cancelled[/yellow]")

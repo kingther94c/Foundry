@@ -33,7 +33,7 @@ from foundry.core.conversation import (
     TurnRequest,
     Usage,
 )
-from foundry.core.errors import ProtocolError
+from foundry.core.errors import ProtocolError, TransientError
 from foundry.core.httpc import (HttpClient, NotStreaming, open_retrying_stream,
                                 retry_with_backoff)
 
@@ -158,10 +158,15 @@ class OpenAICompatBackend:
         message = choices[0].get("message", {})
 
         text = message.get("content") or ""
+        # `or "{}"`, not a dict default: a present-but-null `arguments` -- the
+        # shape a gateway produces for a no-argument call when an upstream
+        # proto3 field is unset -- put None into ToolUseBlock.arguments, and
+        # json.loads(None) raises TypeError, which parse_arguments does not
+        # catch. The streaming path already normalized it; this one crashed.
         calls = tuple(
-            ToolUseBlock(call_id=c.get("id", f"call_{i}"),
-                         name=c.get("function", {}).get("name", ""),
-                         arguments=c.get("function", {}).get("arguments", "{}"))
+            ToolUseBlock(call_id=c.get("id") or f"call_{i}",
+                         name=(c.get("function") or {}).get("name") or "",
+                         arguments=(c.get("function") or {}).get("arguments") or "{}")
             for i, c in enumerate(message.get("tool_calls") or [])
         )
         turn = ModelTurn(
@@ -187,6 +192,7 @@ class OpenAICompatBackend:
         usage = Usage()
         finish_reason = "stop"
         model = body["model"]
+        saw_chunk = False
 
         try:
             # Retried like any other request. Applying retry_with_backoff only
@@ -204,10 +210,16 @@ class OpenAICompatBackend:
             # first turn only, which is the price of discovering the capability
             # from behaviour instead of from a separate probe call.
             self.stream = False
-            yield from self._single({**body, "stream": False})
+            # stream_options must go with it. Spreading only `stream` left
+            # `stream_options: {include_usage: true}` in a non-streaming body,
+            # which OpenAI and strict gateways reject with 400 -- so the degrade
+            # path built to rescue the turn failed it instead.
+            degraded = {k: v for k, v in body.items() if k != "stream_options"}
+            yield from self._single({**degraded, "stream": False})
             return
 
         for chunk in chunks:
+            saw_chunk = True
             if chunk.get("usage"):
                 usage = _usage_from(chunk["usage"])
             model = chunk.get("model", model)
@@ -238,6 +250,17 @@ class OpenAICompatBackend:
                          arguments=slot["arguments"] or "{}")
             for index, slot in sorted(partial.items())
         )
+
+        # The truncation guard catches "ended with no terminator" but not
+        # "terminator arrived with no content". A gateway that opens the stream,
+        # faults internally and closes with just `data: [DONE]` produced a
+        # successful, empty turn: the run reported partial with an empty answer
+        # and zero tokens, and nothing said the provider had failed.
+        if not saw_chunk:
+            raise TransientError(
+                "the response stream carried no content before its terminator; "
+                "the provider closed the turn without answering"
+            )
         for c in calls:
             yield ToolCallComplete(c)
 
