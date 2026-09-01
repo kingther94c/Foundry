@@ -1,0 +1,5 @@
+# Captured wire bytes. These are the real SSE frames a live gateway sent, and
+# their value is that they are byte-exact -- SSE framing is "\n\n", so letting
+# git normalize line endings on checkout would silently rewrite the thing under
+# test into something no server ever sends.
+tests/fixtures/live_gateway/*.raw -text
