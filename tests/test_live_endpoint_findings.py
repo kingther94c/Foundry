@@ -101,7 +101,7 @@ def test_a_corporate_proxy_does_not_swallow_loopback(url, monkeypatch):
     monkeypatch.setenv("HTTPS_PROXY", "http://corp-proxy.example.com:8080")
 
     assert _proxy_for(url) is None
-    conn, _ = HttpClient()._connect(url)
+    conn, _, _ = HttpClient()._connect(url)
     assert "corp-proxy" not in conn.host
 
 
@@ -112,8 +112,110 @@ def test_a_real_host_still_goes_through_the_proxy(monkeypatch):
     url = "https://gateway.corp.example.com/v1/chat/completions"
 
     assert _proxy_for(url) == "http://corp-proxy.example.com:8080"
-    conn, _ = HttpClient()._connect(url)
+    conn, _, _ = HttpClient()._connect(url)
     assert conn.host == "corp-proxy.example.com"
+
+
+def test_an_https_target_behind_a_proxy_is_a_tls_connection(monkeypatch):
+    """The connection class must follow the TARGET's scheme, not the proxy's.
+    Choosing it from the proxy meant an ordinary HTTP_PROXY=http://proxy:8080
+    built a plain HTTPConnection, whose connect() issues CONNECT and then stops
+    -- only HTTPSConnection wraps the socket afterwards -- so Foundry wrote
+    `Authorization: Bearer <key>` into the tunnel in the clear."""
+    import http.client
+
+    from foundry.core.httpc import HttpClient
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://corp-proxy.example.com:8080")
+    conn, path, extra = HttpClient()._connect("https://api.openai.com/v1/chat/completions")
+
+    assert isinstance(conn, http.client.HTTPSConnection), \
+        "a plain HTTPConnection never wraps the tunnel in TLS"
+    assert conn.host == "corp-proxy.example.com"
+    assert conn._tunnel_host == "api.openai.com"
+    assert path == "/v1/chat/completions"
+
+
+def test_the_credential_enters_the_tunnel_as_tls(monkeypatch):
+    """End to end against a real socket: the first byte into the tunnel must be
+    0x16 (TLS ClientHello), not 'P' from a plaintext POST."""
+    import socket
+    import threading
+
+    from foundry.core.errors import FoundryError
+    from foundry.core.httpc import HttpClient
+
+    secret = "sk-CANARY-TOKEN-abcdefghijklmnop"
+    captured: dict[str, bytes] = {}
+    ready: list[int] = []
+
+    def proxy():
+        srv = socket.socket()
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        ready.append(srv.getsockname()[1])
+        try:
+            sock, _ = srv.accept()
+            sock.settimeout(10)
+            request = b""
+            while b"\r\n\r\n" not in request:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                request += chunk
+            captured["connect"] = request
+            sock.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            captured["tunnel"] = sock.recv(4096)
+            sock.close()
+        except OSError:
+            captured.setdefault("tunnel", b"")
+        finally:
+            srv.close()
+
+    thread = threading.Thread(target=proxy, daemon=True)
+    thread.start()
+    while not ready:
+        pass
+    monkeypatch.setenv("HTTPS_PROXY", f"http://user:pw@127.0.0.1:{ready[0]}")
+
+    with pytest.raises(FoundryError):        # the fake proxy is not an origin
+        HttpClient(connect_timeout=8, read_timeout=8).post_json(
+            "https://api.openai.com/v1/chat/completions",
+            {"model": "m", "messages": []},
+            {"Authorization": f"Bearer {secret}"})
+    thread.join(timeout=10)
+
+    tunnel = captured.get("tunnel", b"")
+    assert tunnel, "nothing reached the tunnel"
+    assert secret.encode() not in tunnel, "the API key went out in cleartext"
+    assert tunnel[:1] == b"\x16", f"expected a TLS ClientHello, got {tunnel[:16]!r}"
+    assert b"Proxy-Authorization: Basic" in captured["connect"]
+
+
+def test_a_tls_fronted_proxy_is_refused_rather_than_mishandled(monkeypatch):
+    """stdlib set_tunnel cannot express TLS-to-proxy plus a CONNECT tunnel. Say
+    so, instead of silently picking one of the two."""
+    from foundry.core.errors import ConfigError
+    from foundry.core.httpc import HttpClient
+
+    monkeypatch.setenv("HTTPS_PROXY", "https://corp-proxy.example.com:8443")
+    with pytest.raises(ConfigError, match="http://"):
+        HttpClient()._connect("https://api.openai.com/v1/chat/completions")
+
+
+def test_a_proxy_credential_reaches_a_plain_http_request(monkeypatch):
+    """For http-through-proxy the credential belongs on the request, not on a
+    CONNECT. It was dropped, so an authenticating proxy answered 407 and the run
+    failed with no hint why."""
+    from foundry.core.httpc import HttpClient
+
+    monkeypatch.setenv("HTTP_PROXY", "http://user:pw@corp-proxy.example.com:8080")
+    conn, target, extra = HttpClient()._connect("http://gateway.corp.example.com/v1/x")
+
+    assert conn.host == "corp-proxy.example.com"
+    assert target == "http://gateway.corp.example.com/v1/x", "absolute form required"
+    assert extra["Proxy-Authorization"].startswith("Basic ")
 
 
 def test_a_hostname_merely_containing_localhost_is_not_loopback():

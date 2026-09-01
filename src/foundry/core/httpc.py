@@ -27,7 +27,13 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Iterator
 
-from foundry.core.errors import AuthError, FatalError, ProtocolError, TransientError
+from foundry.core.errors import (
+    AuthError,
+    ConfigError,
+    FatalError,
+    ProtocolError,
+    TransientError,
+)
 
 DEFAULT_CONNECT_TIMEOUT = 30.0
 DEFAULT_READ_TIMEOUT = 300.0
@@ -103,7 +109,9 @@ class HttpClient:
     connect_timeout: float = DEFAULT_CONNECT_TIMEOUT
     read_timeout: float = DEFAULT_READ_TIMEOUT
 
-    def _connect(self, url: str) -> tuple[http.client.HTTPConnection, str]:
+    def _connect(self, url: str) -> tuple[http.client.HTTPConnection, str, dict[str, str]]:
+        """Returns the connection, the request target, and any headers the proxy
+        itself needs on the request (as opposed to on the CONNECT)."""
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme not in ("http", "https"):
             raise FatalError(f"unsupported URL scheme: {parsed.scheme!r}")
@@ -113,39 +121,61 @@ class HttpClient:
             path = f"{path}?{parsed.query}"
 
         proxy = _proxy_for(url)
-        if proxy:
-            proxy_parts = urllib.parse.urlsplit(proxy)
+        if not proxy:
             if parsed.scheme == "https":
-                conn = http.client.HTTPSConnection(
-                    proxy_parts.hostname, proxy_parts.port or 8080,
-                    timeout=self.connect_timeout,
+                return http.client.HTTPSConnection(
+                    host, port or 443, timeout=self.connect_timeout,
                     context=_build_ssl_context(self.ca_bundle),
-                ) if proxy_parts.scheme == "https" else http.client.HTTPConnection(
-                    proxy_parts.hostname, proxy_parts.port or 8080, timeout=self.connect_timeout)
-                headers = {}
-                if proxy_parts.username:
-                    token = base64.b64encode(
-                        f"{proxy_parts.username}:{proxy_parts.password or ''}".encode()
-                    ).decode()
-                    headers["Proxy-Authorization"] = f"Basic {token}"
-                conn.set_tunnel(host, port or 443, headers=headers)
-                return conn, path
-            conn = http.client.HTTPConnection(proxy_parts.hostname, proxy_parts.port or 8080,
-                                              timeout=self.connect_timeout)
-            return conn, url
+                ), path, {}
+            return (http.client.HTTPConnection(host, port or 80, timeout=self.connect_timeout),
+                    path, {})
+
+        proxy_parts = urllib.parse.urlsplit(proxy)
+        proxy_host = proxy_parts.hostname
+        proxy_port = proxy_parts.port or 8080
+        proxy_headers: dict[str, str] = {}
+        if proxy_parts.username:
+            token = base64.b64encode(
+                f"{proxy_parts.username}:{proxy_parts.password or ''}".encode()
+            ).decode()
+            proxy_headers["Proxy-Authorization"] = f"Basic {token}"
 
         if parsed.scheme == "https":
-            return http.client.HTTPSConnection(
-                host, port or 443, timeout=self.connect_timeout,
-                context=_build_ssl_context(self.ca_bundle),
-            ), path
-        return http.client.HTTPConnection(host, port or 80, timeout=self.connect_timeout), path
+            # The connection class must follow the TARGET's scheme, not the
+            # proxy's. Choosing it from the proxy meant an ordinary
+            # HTTP_PROXY=http://proxy:8080 built a plain HTTPConnection, whose
+            # connect() issues CONNECT and then stops -- only HTTPSConnection
+            # wraps the socket afterwards. Foundry then wrote plaintext into the
+            # tunnel: `POST /v1/chat/completions` with `Authorization: Bearer
+            # <key>` in the clear, readable by the proxy and every hop past it.
+            # Since base_url defaults to https://api.openai.com/v1, that was the
+            # default path on any machine with a proxy configured.
+            if proxy_parts.scheme == "https":
+                raise ConfigError(
+                    f"proxy {proxy_host} is declared https, and a TLS connection to the "
+                    "proxy itself cannot be combined with a CONNECT tunnel here. Point "
+                    "HTTPS_PROXY at the proxy's http:// endpoint."
+                )
+            conn = http.client.HTTPSConnection(
+                proxy_host, proxy_port, timeout=self.connect_timeout,
+                context=_build_ssl_context(self.ca_bundle))
+            # Cleartext CONNECT to the proxy, then wrap_socket against the
+            # origin -- the credential is in the request, which is inside TLS.
+            conn.set_tunnel(host, port or 443, headers=proxy_headers)
+            return conn, path, {}
+
+        # Plain http through a proxy uses absolute-form and carries the proxy's
+        # own credential on the request. It used to be dropped here, so an
+        # authenticating proxy answered 407 and the run failed with no hint why.
+        conn = http.client.HTTPConnection(proxy_host, proxy_port,
+                                          timeout=self.connect_timeout)
+        return conn, url, proxy_headers
 
     def post_json(self, url: str, payload: dict, headers: dict[str, str]) -> Response:
-        conn, path = self._connect(url)
+        conn, path, proxy_headers = self._connect(url)
         body = json.dumps(payload).encode("utf-8")
         send_headers = {"Content-Type": "application/json", "Accept": "application/json",
-                        **headers}
+                        **proxy_headers, **headers}
         try:
             conn.request("POST", path, body=body, headers=send_headers)
             conn.sock.settimeout(self.read_timeout)
@@ -176,10 +206,10 @@ class HttpClient:
         Staleness is enforced by the socket timeout, since http.client has no
         overall read deadline.
         """
-        conn, path = self._connect(url)
+        conn, path, proxy_headers = self._connect(url)
         body = json.dumps(payload).encode("utf-8")
         send_headers = {"Content-Type": "application/json", "Accept": "text/event-stream",
-                        **headers}
+                        **proxy_headers, **headers}
         try:
             conn.request("POST", path, body=body, headers=send_headers)
             conn.sock.settimeout(self.read_timeout)
