@@ -1,0 +1,10 @@
+data: {"id":"chatcmpl_0fb25e11-8e01-4d18-9934-09ab107dc46f","object":"chat.completion.chunk","created":1788252079,"model":"openclaw/trade-advisor-panel","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl_0fb25e11-8e01-4d18-9934-09ab107dc46f","object":"chat.completion.chunk","created":1788252095,"model":"openclaw/trade-advisor-panel","choices":[{"index":0,"delta":{"content":"OK"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl_0fb25e11-8e01-4d18-9934-09ab107dc46f","object":"chat.completion.chunk","created":1788252095,"model":"openclaw/trade-advisor-panel","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl_0fb25e11-8e01-4d18-9934-09ab107dc46f","object":"chat.completion.chunk","created":1788252095,"model":"openclaw/trade-advisor-panel","choices":[],"usage":{"prompt_tokens":16114,"completion_tokens":25,"total_tokens":16139}}
+
+data: [DONE]
+

@@ -1,0 +1,1 @@
+{"id":"chatcmpl_25fa07d2-d2a7-431f-8219-47671fee3b67","object":"chat.completion","created":1788252079,"model":"openclaw/trade-advisor-panel","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":16114,"completion_tokens":20,"total_tokens":16134,"prompt_tokens_details":{"cached_tokens":15872}}}

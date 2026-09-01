@@ -8,8 +8,11 @@ another frontend a matter of swapping this file.
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import json
 import os
 import sys
+from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,7 +27,7 @@ from foundry.core.backends.responses import ResponsesBackend
 from foundry.core.config import Config, load_config, user_dir
 from foundry.core.context import ContextManager
 from foundry.core.errors import AuthError, ConfigError, FoundryError
-from foundry.core.events import EXIT_CODES, EventSink, TerminalStatus
+from foundry.core.events import EXIT_CODES, EventSink, TerminalStatus, Termination
 from foundry.core.httpc import HttpClient
 from foundry.core.policy.engine import Mode, PolicyEngine, builtin_rules
 from foundry.core.prompts import (
@@ -371,6 +374,31 @@ def cmd_sessions(args: argparse.Namespace) -> int:
     return 0
 
 
+def _plain(value):
+    """Make one event field JSON-safe without inventing a schema for it."""
+    if isinstance(value, Enum):
+        return value.value
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _plain(v) for k, v in value.items()}
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _event_payload(event) -> dict:
+    """Everything the event carries, `kind` first."""
+    payload = {"kind": getattr(event, "kind", "event")}
+    if dataclasses.is_dataclass(event):
+        for field in dataclasses.fields(event):
+            if field.name != "kind":
+                payload[field.name] = _plain(getattr(event, field.name))
+    return payload
+
+
 def cmd_exec(args: argparse.Namespace) -> int:
     """Headless: one task, no prompts, ASK resolves to DENY.
 
@@ -390,37 +418,47 @@ def cmd_exec(args: argparse.Namespace) -> int:
     wiring.runtime.policy.interactive = False
 
     if args.json:
-        import json as _json
-
-        sink_events: list[str] = []
-
+        # Serialize whatever the event actually carries. A hand-maintained
+        # attribute list silently dropped every field nobody remembered to add:
+        # token_count arrived as `{"kind": "token_count"}` with no numbers, and
+        # tool_begin/tool_end had no call_id, so a consumer could not pair them.
         def as_json(event) -> None:
-            payload = {"kind": getattr(event, "kind", "event")}
-            for attribute in ("text", "display", "tool", "status", "reason", "summary",
-                              "message", "ok", "rule_id", "step"):
-                value = getattr(event, attribute, None)
-                if value is not None:
-                    payload[attribute] = value.value if hasattr(value, "value") else value
-            sink_events.append(_json.dumps(payload, ensure_ascii=False))
-            print(sink_events[-1], flush=True)
+            print(json.dumps(_event_payload(event), ensure_ascii=False), flush=True)
 
         wiring.runtime.events.subscribe(as_json)
 
     status = TerminalStatus.FAILED
+    reason = "headless run ended"
+    outcome = None
     try:
         outcome = wiring.runtime.run_turn(args.task)
         # Only the finish gate can produce 'completed'. A turn that simply
         # ended is unfinished work, not success.
         status = outcome.status or TerminalStatus.PARTIAL
+        if outcome.status is None:
+            # Saying "headless run ended" told the operator nothing about why a
+            # correct-looking answer exited 10. Against a model that cannot call
+            # tools at all, this is the *only* reachable outcome.
+            reason = ("the model ended its turn without calling finish; only finish "
+                      "reports completion, with the evidence for it")
         if not args.json and outcome.text:
             print(outcome.text)
     except KeyboardInterrupt:
         wiring.runtime.cancel()
         status = TerminalStatus.CANCELLED
+        reason = "interrupted"
     finally:
+        # The event protocol documents Termination as the terminal event, but a
+        # headless run that ended normally never reached runtime._terminate, so
+        # the --json stream just stopped: a CI consumer had no final status in
+        # the stream at all and had to infer it from the exit code.
+        if outcome is None or outcome.status is None:
+            wiring.runtime.events.emit(Termination(
+                status=status, reason=reason,
+                summary=(outcome.text if outcome else "")))
         try:
             if not wiring.session._terminated:
-                wiring.session.record_termination(status, "headless run ended")
+                wiring.session.record_termination(status, reason)
         except OSError:
             pass
         wiring.session.close()

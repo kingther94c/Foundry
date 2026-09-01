@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import http.client
+import ipaddress
 import itertools
 import json
 import os
@@ -66,10 +67,31 @@ def _build_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
     return context
 
 
+def _is_loopback(host: str) -> bool:
+    """Loopback is never reachable through a proxy, whatever the config says."""
+    if not host:
+        return False
+    host = host.strip("[]").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def _proxy_for(url: str) -> str | None:
-    proxies = urllib.request.getproxies()  # env vars and the Windows registry
     parsed = urllib.parse.urlsplit(url)
-    if urllib.request.proxy_bypass(parsed.hostname or ""):
+    host = parsed.hostname or ""
+    # A corporate machine has HTTP_PROXY set and its bypass list rarely names
+    # 127.0.0.1 -- urllib.proxy_bypass returns False for it -- so a local
+    # gateway or facade was sent to the proxy, which cannot route back to the
+    # caller's own loopback. It failed as a connect timeout, which reads like
+    # the local server being down.
+    if _is_loopback(host):
+        return None
+    proxies = urllib.request.getproxies()  # env vars and the Windows registry
+    if urllib.request.proxy_bypass(host):
         return None
     return proxies.get(parsed.scheme)
 

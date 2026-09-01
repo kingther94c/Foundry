@@ -1,0 +1,6 @@
+{
+  "error": {
+    "message": "upstream error: {\"error\":{\"message\":\"Missing user message in `messages`.\",\"type\":\"invalid_request_error\"}}",
+    "type": "upstream_error"
+  }
+}

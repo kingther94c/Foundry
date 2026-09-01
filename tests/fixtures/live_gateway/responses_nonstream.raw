@@ -1,0 +1,28 @@
+{
+  "id": "resp_ea35082338954179af6ac867e9bacf69",
+  "object": "response",
+  "created_at": 1788252111,
+  "status": "completed",
+  "model": "openclaw/trade-advisor-panel",
+  "output": [
+    {
+      "type": "message",
+      "id": "msg_cff6c25032f44c24952aef139c56f14e",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "OK",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "output_text": "OK",
+  "usage": {
+    "input_tokens": 16117,
+    "output_tokens": 25,
+    "total_tokens": 16142
+  }
+}

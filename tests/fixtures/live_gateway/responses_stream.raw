@@ -1,0 +1,11 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_51ae18bb20b44691b1562f43d9644602","object":"response","created_at":1788252111,"status":"in_progress","model":"openclaw/trade-advisor-panel","output":[{"type":"message","id":"msg_d62fe9dd948e4d70a0008374c0edc2a0","status":"completed","role":"assistant","content":[{"type":"output_text","text":"","annotations":[]}]}],"output_text":"","usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","response_id":"resp_51ae18bb20b44691b1562f43d9644602","delta":"OK"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_51ae18bb20b44691b1562f43d9644602","object":"response","created_at":1788252126,"status":"completed","model":"openclaw/trade-advisor-panel","output":[{"type":"message","id":"msg_02c5ca0db3364413ad767a2f93077baa","status":"completed","role":"assistant","content":[{"type":"output_text","text":"OK","annotations":[]}]}],"output_text":"OK","usage":{"input_tokens":16114,"output_tokens":24,"total_tokens":16138}}}
+
+data: [DONE]
+
