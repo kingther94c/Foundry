@@ -130,8 +130,16 @@ class VerificationResult:
 
 
 def verify_claims(claims: list[ValidationClaim], command_history: list[dict[str, Any]],
-                  requested: str) -> VerificationResult:
-    """Downgrade a ``completed`` whose claims the journal does not support."""
+                  requested: str, last_mutation_ordinal: int = 0) -> VerificationResult:
+    """Downgrade a ``completed`` whose claims the journal does not support.
+
+    ``last_mutation_ordinal`` is the journal ordinal of the most recent change
+    to the workspace. A claim must cite a command that ran *after* it: asking
+    only "did this command exit 0" let a green run from before the edit vouch
+    for the edit. The model runs the suite, then changes the code and never
+    re-runs it, cites the earlier ordinal, and the exit code matches -- so a
+    session that never verified anything reported ``completed``.
+    """
     by_ordinal = {entry["event_ordinal"]: entry for entry in command_history}
     rejected: list[str] = []
 
@@ -148,6 +156,13 @@ def verify_claims(claims: list[ValidationClaim], command_history: list[dict[str,
             rejected.append(
                 f"{claim.claim_text!r} expects exit {claim.expected_exit_code} from "
                 f"{entry['command']!r} but it exited {actual}"
+            )
+            continue
+        if claim.command_event_id < last_mutation_ordinal:
+            rejected.append(
+                f"{claim.claim_text!r} cites {entry['command']!r} (event "
+                f"{claim.command_event_id}), which ran before the last change to the "
+                f"workspace (event {last_mutation_ordinal}); it cannot vouch for it"
             )
 
     if requested == TerminalStatus.COMPLETED.value and rejected:

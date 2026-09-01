@@ -2,7 +2,7 @@
 
 从零自研的本地 coding-agent runtime：Python 3.12、Windows、离线 wheel 安装。自己拥有 agent loop、tools、policy、provider、session 的全部代码与接口；不 fork、不调用、不冒充任何现有 coding agent。
 
-**当前状态：M0–M4 已实现并可运行**，1155 个测试在无网络、无凭证的机器上通过（含 6 轮对抗评审后的安全回归，与 540 个自动生成的熔断表不变量组合）。第 6 轮之后另做了一次净室验证：重建 wheelhouse、`--no-index` 装进全新 venv，再跑一次真实任务（跑挂测试 → 打补丁 → 重跑转绿 → 引用自己工具输出里的 event id 完成），14 项检查全过。
+**当前状态：M0–M4 已实现并可运行**，1184 个测试在无网络、无凭证的机器上通过（含 6 轮对抗评审后的安全回归，与 540 个自动生成的熔断表不变量组合）。第 6 轮之后另做了一次净室验证：重建 wheelhouse、`--no-index` 装进全新 venv，再跑一次真实任务（跑挂测试 → 打补丁 → 重跑转绿 → 引用自己工具输出里的 event id 完成），14 项检查全过。
 
 ## 想先搞懂它怎么转？
 
@@ -65,7 +65,7 @@ python scripts/build_wheelhouse.py
 src/foundry/core/     runtime（唯一的 loop）、policy、tools、backends、session、workspace、winapi
 src/foundry/cli/      终端 UI：事件订阅者 + 审批 UI + report
 src/foundry/prompts/  版本化的 system prompt
-tests/                1155 个测试：golden 场景、攻击表、熔断表不变量
+tests/                1184 个测试：golden 场景、攻击表、熔断表不变量
 ```
 
 `foundry.core` 不 import `foundry.cli`，也不 import 任何第三方包——两条都有测试强制（[tests/test_architecture_config.py](tests/test_architecture_config.py)）。

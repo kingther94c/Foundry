@@ -203,10 +203,7 @@ def build(workspace_path: Path, *, home: Path | None = None,
         # token instead of at the fact that they had never set one.
         missing_credential = str(exc)
 
-    backend_class = {
-        "openai_compat": OpenAICompatBackend,
-        "responses": ResponsesBackend,
-    }.get(config.backend.protocol)
+    backend_class = _PROTOCOLS.get(config.backend.protocol)
     if backend_class is None:
         raise ConfigError(
             f"unknown protocol {config.backend.protocol!r}; "
@@ -382,8 +379,15 @@ def cmd_sessions(args: argparse.Namespace) -> int:
 
     entries = sorted((p for p in root.iterdir() if p.is_dir()), reverse=True)
     if args.session_id:
-        target = root / args.session_id / "events.jsonl"
-        if not target.is_file():
+        target = (root / args.session_id / "events.jsonl")
+        # A session id is a name, not a path. `foundry sessions ../notes` used to
+        # read whatever it landed on and print a traceback when the lines were
+        # not journal records.
+        try:
+            inside = target.resolve().is_relative_to(root.resolve())
+        except (OSError, ValueError):
+            inside = False
+        if not inside or not target.is_file():
             console.print(f"[red]no such session: {args.session_id}[/red]")
             return 1
         for record in SessionStore.read_records(target):
@@ -398,6 +402,13 @@ def cmd_sessions(args: argparse.Namespace) -> int:
         style = "green" if status is TerminalStatus.COMPLETED else "yellow"
         console.print(f"{entry.name}  [{style}]{status.value}[/{style}]")
     return 0
+
+
+# One table, so `doctor` validates exactly what `build` accepts.
+_PROTOCOLS = {
+    "openai_compat": OpenAICompatBackend,
+    "responses": ResponsesBackend,
+}
 
 
 def _plain(value):
@@ -578,12 +589,21 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     console.print(f"home    {home}")
     console.print(f"auth    {'present' if (home / 'auth.json').is_file() else 'not signed in'}")
 
-    # The two things build() hard-fails on. Reporting green while every session
-    # dies immediately is worse than not having the command.
+    # The things build() hard-fails on. Reporting green while every session dies
+    # immediately is worse than not having the command. There are three, not two:
+    # an unrecognised protocol also stops build() dead, and doctor used to print
+    # a healthy-looking config line for one.
     try:
         config = load_config(home=home)
         console.print(f"config  {config.backend.model} via {config.backend.base_url} "
                       f"(mode {config.mode.value}, {len(config.rules)} permission rules)")
+        if config.backend.protocol not in _PROTOCOLS:
+            console.print(f"[red]protocol  {config.backend.protocol!r} is not one of "
+                          f"{', '.join(sorted(_PROTOCOLS))}; every session would "
+                          "fail to start[/red]")
+            ok = False
+        else:
+            console.print(f"protocol  {config.backend.protocol}")
     except FoundryError as exc:
         console.print(f"[red]config  {exc}[/red]")
         ok = False

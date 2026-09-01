@@ -310,4 +310,14 @@ def child_environment(base: dict[str, str] | None = None) -> dict[str, str]:
     # Make Python children speak UTF-8 so their output needs no guessing.
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+
+    # Python validates a cached .pyc against the source's size and its mtime
+    # truncated to *seconds*. An agent's edit-then-test cycle is sub-second, and
+    # a one-character fix (`a - b` -> `a + b`) leaves the size identical -- so
+    # the interpreter cannot tell the file changed and re-runs the OLD code.
+    # The model then sees its own correct patch still failing and patches again,
+    # which is how a fixed bug turns into a loop that burns the round budget and
+    # can leave working code worse than it started. Reproduced through the real
+    # tools; writing no bytecode is the cheap end of the fix.
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     return env

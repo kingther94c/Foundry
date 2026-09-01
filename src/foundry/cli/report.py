@@ -52,6 +52,12 @@ def analyse(journal: Path) -> SessionReport:
             report.turns += 1
         elif record.type == EventType.TOOL_CALL:
             report.tool_calls += 1
+            # A patch the parser refused, or one policy denied, never reaches an
+            # executor and so journals no TOOL_RESULT. Counting only results made
+            # "patch first-try rate" blind to exactly the failure it measures:
+            # a model emitting unified diffs for half its edits scored 95%.
+            if payload.get("name") == "apply_patch" and payload.get("rejected"):
+                report.patches_rejected += 1
         elif record.type == EventType.TOOL_RESULT:
             if payload.get("tool") == "apply_patch":
                 if payload.get("is_error"):
@@ -60,7 +66,10 @@ def analyse(journal: Path) -> SessionReport:
                     report.patches_applied += 1
         elif record.type == EventType.COMMAND_EXEC:
             report.commands += 1
-            if payload.get("exit_code") not in (0, None):
+            # None is what run_command records for a killed-on-timeout process
+            # (and for a multi-statement chain whose code is untrustworthy).
+            # Folding it in with 0 counted every timed-out test run as a success.
+            if payload.get("exit_code") != 0:
                 report.commands_failed += 1
         elif record.type == EventType.POLICY_DECISION:
             if payload.get("verdict") == "deny":

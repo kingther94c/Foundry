@@ -148,6 +148,8 @@ class AgentRuntime:
     _cancelled: bool = False
     _finish: TurnOutcome | None = None
     _refreshed: bool = False
+    # Journal ordinal of the last successful change to the workspace.
+    _last_mutation: int = 0
 
     # -- helpers ----------------------------------------------------------
 
@@ -427,10 +429,14 @@ class AgentRuntime:
         if output.metadata.get("event_ordinal"):
             content += f"\n[event_id={output.metadata['event_ordinal']}]"
 
-        self._journal(EventType.TOOL_RESULT, {
+        ordinal = self._journal(EventType.TOOL_RESULT, {
             "call_id": call.call_id, "tool": op.tool, "is_error": output.is_error,
             "artifact_id": output.artifact_id, "truncated": output.truncated,
         })
+        # When the workspace last changed. A claim citing a command older than
+        # this cannot vouch for the change -- see verify_claims.
+        if op.kind is ToolKind.MUTATOR and op.tool != "run_command" and not output.is_error:
+            self._last_mutation = max(self._last_mutation, ordinal)
         self._reply(call, content, is_error=output.is_error)
         self._emit(ToolEnd(call.call_id, op.tool, not output.is_error,
                            content.splitlines()[0] if content else ""))
@@ -505,7 +511,8 @@ class AgentRuntime:
         """The gate: a claimed ``completed`` must survive the journal and Git."""
         run_command = self.registry.tools.get("run_command")
         history = getattr(run_command, "history", [])
-        result = verify_claims(list(outcome.claims), history, outcome.status.value)
+        result = verify_claims(list(outcome.claims), history, outcome.status.value,
+                               last_mutation_ordinal=self._last_mutation)
 
         for claim in outcome.claims:
             self._journal(EventType.VALIDATION_CLAIM, claim.as_payload())

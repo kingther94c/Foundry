@@ -226,6 +226,47 @@ def test_a_stream_with_content_is_still_fine():
     assert finished.turn.text == "hi"
 
 
+# --- a correct patch must actually take effect ----------------------------
+
+
+def test_a_same_second_rewrite_is_not_masked_by_a_stale_pyc(tmp_path):
+    """Python validates a cached .pyc against the source's size and its mtime
+    truncated to SECONDS. An agent's edit-then-test cycle is sub-second and a
+    one-character fix keeps the size identical, so the interpreter re-ran the
+    OLD code -- and the model, seeing its correct patch still fail, patches
+    again. Found while writing demo/mini_foundry.py, which hit it for real."""
+    import os
+    import subprocess
+    import sys
+
+    from foundry.core.winapi import child_environment
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    source = repo / "calc.py"
+    source.write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+    (repo / "check.py").write_text(
+        "from calc import add\nimport sys\nsys.exit(0 if add(2, 3) == 5 else 1)\n",
+        encoding="utf-8")
+
+    env = child_environment()
+    assert env.get("PYTHONDONTWRITEBYTECODE") == "1"
+
+    def check() -> int:
+        return subprocess.run([sys.executable, "check.py"], cwd=repo,
+                              capture_output=True, env=env).returncode
+
+    assert check() == 1, "the bug should be present at the start"
+
+    stamp = source.stat()
+    source.write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    # Same size already; put the mtime back into the same second, which is what
+    # a fast edit-then-test cycle produces on its own.
+    os.utime(source, (stamp.st_atime, stamp.st_mtime))
+
+    assert check() == 0, "a correct patch did not take effect"
+
+
 class _Json:
     def __init__(self, payload):
         self._payload = payload

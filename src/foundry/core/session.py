@@ -253,12 +253,19 @@ class SessionStore:
                     obj = json.loads(line)
                 except json.JSONDecodeError:
                     continue  # truncated tail
+                # A line that is valid JSON but not an object -- an array, a
+                # bare string, null -- parses fine and then crashed the reader
+                # on .get with an AttributeError, which is not a FoundryError,
+                # so `foundry sessions` died with a traceback and listed nothing.
+                if not isinstance(obj, dict):
+                    continue
+                payload = obj.get("payload", {})
                 yield JournalRecord(
                     ts=obj.get("ts", ""),
                     ordinal=obj.get("ordinal", 0),
                     type=obj.get("type", ""),
                     v=obj.get("v", 0),
-                    payload=obj.get("payload", {}),
+                    payload=payload if isinstance(payload, dict) else {},
                 )
 
     @staticmethod

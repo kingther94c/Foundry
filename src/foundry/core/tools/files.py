@@ -12,6 +12,7 @@ import hashlib
 import os
 import re
 import stat
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,53 @@ MAX_LIST_ENTRIES = 200
 # advertises them.
 MAX_READ_BYTES = 20_000_000
 MAX_SEARCH_FILE_BYTES = 5_000_000
+
+# A wall-clock bound on one search, checked between lines. It bounds a slow
+# search over many lines -- but NOT a single line that backtracks forever, since
+# `re` offers no checkpoint inside one match and holds the GIL throughout. That
+# case is refused up front instead; see _nested_quantifier.
+SEARCH_TIME_BUDGET_S = 10.0
+
+# Quantifier applied to a group that already contains an unbounded quantifier:
+# (a+)+, (\s*\w+)+, (a*)*. These backtrack exponentially, and the second one is
+# an easy accident when searching indented code.
+_UNBOUNDED = ("+", "*")
+
+
+def _nested_quantifier(pattern: str) -> str | None:
+    """Name a nested unbounded quantifier, or None.
+
+    Deliberately conservative and purely syntactic -- deciding this in general is
+    undecidable. It catches the shapes a model actually writes by accident. A
+    pathological pattern that slips past still cannot hang the agent forever on a
+    large tree, because the per-line deadline bounds everything after line one.
+    """
+    depth_stack: list[int] = []
+    in_class = False
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "\\":
+            index += 2
+            continue
+        if in_class:
+            in_class = char != "]"
+            index += 1
+            continue
+        if char == "[":
+            in_class = True
+        elif char == "(":
+            depth_stack.append(index)
+        elif char == ")" and depth_stack:
+            start = depth_stack.pop()
+            body = pattern[start + 1:index]
+            following = pattern[index + 1:index + 2]
+            unbounded_after = following in _UNBOUNDED or (
+                following == "{" and "," in pattern[index + 1:index + 6])
+            if unbounded_after and any(q in body for q in _UNBOUNDED):
+                return pattern[start:index + 2]
+        index += 1
+    return None
 
 _SKIP_DIRS = frozenset({
     ".git", "__pycache__", ".venv", "venv", "node_modules", ".pytest_cache",
@@ -149,7 +197,13 @@ class ListFiles:
         if len(entries) > limit:
             lines.append(f"[{len(entries) - limit} more entries not shown; narrow the pattern]")
         body = "\n".join(lines) if lines else "(no matching files)"
-        return ToolOutput(content=body, metadata={"count": len(entries)})
+        # Every other tool routes its output through the cap; this one returned
+        # whatever the model asked for. `max_entries: 100000` on a monorepo
+        # produced a multi-megabyte tool result, appended verbatim to the
+        # conversation and reported truncated=False.
+        body, truncated = truncate_middle(body, ctx.max_output_bytes)
+        return ToolOutput(content=body, truncated=truncated,
+                          metadata={"count": len(entries)})
 
 
 @dataclass(slots=True)
@@ -190,6 +244,18 @@ class SearchText:
             re.compile(query)
         except re.error as exc:
             raise InvalidToolCall(f"invalid regular expression: {exc}") from exc
+        nested = _nested_quantifier(query)
+        if nested is not None:
+            # Refused rather than run: `re` has no step limit and holds the GIL
+            # while backtracking, so one line of ~40 repeated characters against
+            # (a+)+ never returns and cannot even be interrupted -- the agent is
+            # gone for good. Rejecting is recoverable; hanging is not.
+            raise InvalidToolCall(
+                f"{nested!r} nests an unbounded quantifier inside a repeated group, "
+                "which can backtrack exponentially and hang the search. Rewrite it "
+                "without the nesting -- e.g. 'a+b' rather than '(a+)+b', or "
+                r"'^\s*\w+' rather than '(\s*\w+)+'."
+            )
         return Operation(
             tool=self.name, kind=self.kind,
             args={"query": query, "path": path, "glob": glob, "ignore_case": ignore_case},
@@ -207,47 +273,93 @@ class SearchText:
         glob = op.args["glob"]
         matches: list[str] = []
         skipped: list[str] = []
+        undecodable: list[str] = []
         total = 0
+        deadline = time.monotonic() + SEARCH_TIME_BUDGET_S
+        timed_out = False
 
-        for dirpath, dirnames, filenames in os.walk(root.absolute):
+        # os.walk over a file yields nothing at all, so narrowing a search to one
+        # file answered "(no matches)" with count 0 and no error -- the model
+        # then concludes the symbol is gone. Search the file the caller named.
+        if root.absolute.is_file():
+            walk = [(str(root.absolute.parent), [], [root.absolute.name])]
+        elif root.absolute.is_dir():
+            walk = os.walk(root.absolute)
+        else:
+            raise ToolError(f"no such path: {op.args['path']}")
+
+        for dirpath, dirnames, filenames in walk:
             _prune(dirpath, dirnames)
             for filename in filenames:
                 if not fnmatch.fnmatch(filename, glob):
                     continue
                 full = Path(dirpath) / filename
+                rel = os.path.relpath(full, ctx.workspace.root).replace("\\", "/")
                 try:
                     if full.stat().st_size > MAX_SEARCH_FILE_BYTES:
                         # Named in the output: "(no matches)" must never cover a
                         # file that was not actually searched.
-                        skipped.append(
-                            os.path.relpath(full, ctx.workspace.root).replace("\\", "/"))
+                        skipped.append(rel)
                         continue
-                    text = full.read_text(encoding="utf-8", errors="strict")
+                    raw = full.read_bytes()
+                    # A NUL byte means this is not UTF-8 text -- the same test
+                    # git uses. It matters because UTF-16LE ASCII *does* decode
+                    # as UTF-8: "SECRET_KEY" arrives as "S\x00E\x00C\x00...",
+                    # so the file was searched, matched nothing, and the model
+                    # was told the string appears nowhere in the workspace.
+                    # PowerShell redirection writes UTF-16 by default.
+                    if b"\x00" in raw:
+                        raise UnicodeDecodeError("utf-8", raw, 0, 1, "not text")
+                    text = raw.decode("utf-8", errors="strict")
                 except (UnicodeDecodeError, OSError):
-                    continue  # binary or unreadable: skip quietly
-                rel = os.path.relpath(full, ctx.workspace.root).replace("\\", "/")
+                    # Was `continue  # skip quietly`, and quietly is the problem:
+                    # "(no matches)" with skipped=0 read as "this string is
+                    # nowhere in the workspace".
+                    undecodable.append(rel)
+                    continue
                 for lineno, line in enumerate(text.splitlines(), start=1):
+                    # Python's `re` has no step limit and holds the GIL while
+                    # backtracking, so a nested quantifier -- `(\s*\w+)+$` is an
+                    # easy accident when searching indented code -- ran forever
+                    # and could not even be interrupted. Checked per line, which
+                    # bounds the damage to one line's worth of backtracking.
+                    if time.monotonic() > deadline or (ctx.cancelled and ctx.cancelled()):
+                        timed_out = True
+                        break
                     if regex.search(line):
                         total += 1
                         if len(matches) < MAX_SEARCH_MATCHES:
                             matches.append(f"{rel}:{lineno}: {line.strip()[:200]}")
+                if timed_out:
+                    break
+            if timed_out:
+                break
 
         note = ""
         if skipped:
             listed = ", ".join(skipped[:5]) + (" ..." if len(skipped) > 5 else "")
-            note = (f"\n\n[{len(skipped)} file(s) over "
-                    f"{MAX_SEARCH_FILE_BYTES // 1_000_000} MB were not searched: {listed}. "
-                    "Use run_command with Select-String to search those.]")
+            note += (f"\n\n[{len(skipped)} file(s) over "
+                     f"{MAX_SEARCH_FILE_BYTES // 1_000_000} MB were not searched: {listed}. "
+                     "Use run_command with Select-String to search those.]")
+        if undecodable:
+            listed = ", ".join(undecodable[:5]) + (" ..." if len(undecodable) > 5 else "")
+            note += (f"\n\n[{len(undecodable)} file(s) are not UTF-8 text and were not "
+                     f"searched: {listed}. This result does not cover them.]")
+        if timed_out:
+            note += (f"\n\n[the search stopped after {SEARCH_TIME_BUDGET_S}s; the pattern "
+                     "is expensive to match. Results so far are shown, and they are "
+                     "incomplete. Simplify the pattern -- nested quantifiers such as "
+                     "(a+)+ backtrack exponentially.]")
 
+        meta = {"count": total, "skipped": len(skipped) + len(undecodable),
+                "undecodable": len(undecodable), "incomplete": timed_out}
         if not matches:
-            return ToolOutput(content="(no matches)" + note,
-                              metadata={"count": 0, "skipped": len(skipped)})
+            return ToolOutput(content="(no matches)" + note, metadata={**meta, "count": 0})
         body = "\n".join(matches)
         if total > MAX_SEARCH_MATCHES:
             body += (f"\n\n[{total} total matches, showing {MAX_SEARCH_MATCHES}. "
                      "Narrow the query or restrict path/glob.]")
-        return ToolOutput(content=body + note,
-                          metadata={"count": total, "skipped": len(skipped)})
+        return ToolOutput(content=body + note, metadata=meta)
 
 
 @dataclass(slots=True)
