@@ -38,6 +38,8 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -425,6 +427,90 @@ class ScriptedBackend:
             f'"claim_event_id": {LAST_EVENT_ID}', f'"claim_event_id": {latest}'))
 
 
+SYSTEM_PROMPT = """你是一个在本地 Git 仓库里工作的编码 agent。
+
+先看清楚，再动手，最后验证。改文件之前先读它。做完之后调用 finish 报告——
+如果你跑了命令来验证，把那条命令结果里的 [event_id=N] 填进 claim_event_id，
+我们会去核对它的 exit code。没有验证过就别填，谎报会被查出来。
+"""
+
+
+class HttpBackend:
+    """真的跟模型说话。stdlib only，非流式，够看懂就行。
+
+    这是 core/backends/openai_compat.py 的三十行版本。真的那个还要处理
+    SSE 流式、usage 记账、错误分类、重试与 Retry-After、以及一个只支持
+    非流式的网关该怎么降级。
+
+    它只做**翻译**：IR 进去、厂商 JSON 出来；厂商 JSON 进来、IR 出去。
+    注意它不知道 loop、policy、tools 的存在——换模型不影响那三样。
+    """
+
+    def __init__(self, base_url: str, model: str, api_key: str = "any-value",
+                 timeout: float = 300.0):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.api_key = api_key
+        self.timeout = timeout
+        self.last_response: dict | None = None      # 方便在 notebook 里翻看
+
+    def sample(self, messages: list[Message], tools: list[dict]) -> ModelTurn:
+        body = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": SYSTEM_PROMPT}]
+                        + [self._to_wire(m) for m in messages],
+            "tools": [{"type": "function", "function": t} for t in tools],
+            "stream": False,
+        }
+        request = urllib.request.Request(
+            f"{self.base_url}/chat/completions",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"content-type": "application/json",
+                     "authorization": f"Bearer {self.api_key}"},
+            method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            # 服务器答了，但不是 200。把它自己的话带出来——真 Foundry 在这里栽过：
+            # 响应体被存下来却从没人读，用户只看到 "request rejected (HTTP 400)"，
+            # 而 body 里明写着哪个字段不对。
+            detail = exc.read().decode("utf-8", "replace")[:400]
+            raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
+        except (urllib.error.URLError, OSError) as exc:
+            # 根本没连上。这是指错端口最常见的下场，得说人话而不是吐 traceback。
+            raise RuntimeError(
+                f"连不上 {self.base_url}（{getattr(exc, 'reason', exc)}）。"
+                "检查 endpoint 和端口，或者去掉 --endpoint 用剧本模式。"
+            ) from exc
+
+        self.last_response = payload
+        message = (payload.get("choices") or [{}])[0].get("message", {}) or {}
+        calls = [
+            ToolCall(c.get("id") or f"call_{i}",
+                     (c.get("function") or {}).get("name") or "",
+                     # `or "{}"`：一个存在但为 null 的 arguments 会让
+                     # json.loads(None) 抛 TypeError。真 Foundry 在这里栽过。
+                     (c.get("function") or {}).get("arguments") or "{}")
+            for i, c in enumerate(message.get("tool_calls") or [])
+        ]
+        return ModelTurn(message.get("content") or "", calls)
+
+    @staticmethod
+    def _to_wire(message: Message) -> dict:
+        if message.role == "tool":
+            return {"role": "tool", "tool_call_id": message.tool_call_id,
+                    "content": message.text}
+        wire: dict = {"role": message.role, "content": message.text}
+        if message.tool_calls:
+            wire["tool_calls"] = [
+                {"id": c.id, "type": "function",
+                 "function": {"name": c.name, "arguments": c.arguments}}
+                for c in message.tool_calls
+            ]
+        return wire
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # 6. Loop：把上面五个缝起来
 #
@@ -570,6 +656,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--yes", action="store_true", help="所有审批自动同意")
     parser.add_argument("--no", action="store_true", help="所有审批自动拒绝（等于 headless）")
     parser.add_argument("--workdir", default=str(Path(__file__).parent / ".run"))
+    parser.add_argument("--endpoint", help="用真模型而不是剧本，例如 "
+                                           "http://127.0.0.1:18790/v1")
+    parser.add_argument("--model", default="openclaw/trade-advisor-panel")
+    parser.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY", "any-value"))
+    parser.add_argument("--task", default="calc.py 里的 add 有 bug，修好它并确认测试通过。")
     args = parser.parse_args(argv)
 
     root = Path(args.workdir)
@@ -577,22 +668,32 @@ def main(argv: list[str] | None = None) -> int:
     session = Session(root / "session.jsonl")
     auto = "y" if args.yes else ("n" if args.no else None)
 
+    if args.endpoint:
+        backend = HttpBackend(args.endpoint, args.model, args.api_key)
+        source = f"{args.model} @ {args.endpoint}"
+    else:
+        backend = ScriptedBackend(SCRIPTS[args.script])
+        source = f"剧本 {args.script}"
+
     print("─" * 68)
     print(f"workspace : {workspace}")
-    print(f"剧本      : {args.script}      模式：{args.mode}")
+    print(f"模型      : {source}      模式：{args.mode}")
     print(f"账本      : {session.path}")
     print("─" * 68)
 
     started = time.monotonic()
     try:
         code = run(
-            task="calc.py 里的 add 有 bug，修好它并确认测试通过。",
-            backend=ScriptedBackend(SCRIPTS[args.script]),
+            task=args.task,
+            backend=backend,
             tools=Tools(workspace),
             policy=Policy(mode=args.mode, allow_rules=["python -m pytest"]),
             session=session,
             auto=auto,
         )
+    except RuntimeError as exc:
+        print(f"\n后端出错：{exc}")
+        code = 12
     finally:
         session.close()
 

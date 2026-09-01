@@ -2,15 +2,20 @@
 
 从零自研的本地 coding-agent runtime：Python 3.12、Windows、离线 wheel 安装。自己拥有 agent loop、tools、policy、provider、session 的全部代码与接口；不 fork、不调用、不冒充任何现有 coding agent。
 
-**当前状态：M0–M4 已实现并可运行**，1184 个测试在无网络、无凭证的机器上通过（含 6 轮对抗评审后的安全回归，与 540 个自动生成的熔断表不变量组合）。第 6 轮之后另做了一次净室验证：重建 wheelhouse、`--no-index` 装进全新 venv，再跑一次真实任务（跑挂测试 → 打补丁 → 重跑转绿 → 引用自己工具输出里的 event id 完成），14 项检查全过。
+**当前状态：M0–M4 已实现并可运行**，1193 个测试在无网络、无凭证的机器上通过（含 6 轮对抗评审后的安全回归，与 540 个自动生成的熔断表不变量组合）。第 6 轮之后另做了一次净室验证：重建 wheelhouse、`--no-index` 装进全新 venv，再跑一次真实任务（跑挂测试 → 打补丁 → 重跑转绿 → 引用自己工具输出里的 event id 完成），14 项检查全过。
 
 ## 想先搞懂它怎么转？
 
-`demo/mini_foundry.py` 是这套系统的骨架，600 行、一半是注释、结构和真的完全一样。
-不需要网络、不需要 API key：
+`demo/` 是这套系统的骨架，结构和真的完全一样、每层砍到最薄。不需要网络、不需要 API key：
 
 ```bash
 python demo/mini_foundry.py --yes
+```
+
+想逐格跑、看中间状态、改了再跑，用 notebook 版（从 `.py` import，不复制代码）：
+
+```bash
+jupyter lab demo/mini_foundry.ipynb
 ```
 
 看 policy 把不该做的事拦下来，以及收工闸门识破一个假的"测试都过了"：
@@ -20,7 +25,8 @@ python demo/mini_foundry.py --script destructive --yes
 python demo/mini_foundry.py --script liar --yes
 ```
 
-对照阅读见 [demo/README.md](demo/README.md)。
+[demo/README.md](demo/README.md) 把每一节映射到真实模块，并说明怎么接真模型
+（任何 OpenAI 兼容的 `/v1/chat/completions` 都行）。
 
 ## 快速开始
 
@@ -65,7 +71,7 @@ python scripts/build_wheelhouse.py
 src/foundry/core/     runtime（唯一的 loop）、policy、tools、backends、session、workspace、winapi
 src/foundry/cli/      终端 UI：事件订阅者 + 审批 UI + report
 src/foundry/prompts/  版本化的 system prompt
-tests/                1184 个测试：golden 场景、攻击表、熔断表不变量
+tests/                1193 个测试：golden 场景、攻击表、熔断表不变量
 ```
 
 `foundry.core` 不 import `foundry.cli`，也不 import 任何第三方包——两条都有测试强制（[tests/test_architecture_config.py](tests/test_architecture_config.py)）。
@@ -78,9 +84,10 @@ tests/                1184 个测试：golden 场景、攻击表、熔断表不�
 | [docs/design.md](docs/design.md) | 设计方案：包结构、核心接口、关键机制 |
 | [docs/threat-model.md](docs/threat-model.md) | 保护什么、不保护什么、执行点在哪 |
 | [docs/roadmap.md](docs/roadmap.md) | 里程碑与状态 |
-| [docs/decision-log.md](docs/decision-log.md) | 24 条编号决定（含被推翻的） |
+| [docs/decision-log.md](docs/decision-log.md) | 30 条编号决定（含被推翻的） |
 | [docs/open-questions.md](docs/open-questions.md) | 未决问题 |
-| [docs/research/](docs/research/) | 10 份调研笔记 |
+| [docs/research/](docs/research/) | 调研笔记，含[首次真实 endpoint 验证](docs/research/live-endpoint.md) |
+| [demo/](demo/) | 一个文件跑通的骨架版 + notebook |
 
 ## 未决
 

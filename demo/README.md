@@ -1,12 +1,44 @@
 # demo —— 用一个文件看懂 Foundry
 
-`mini_foundry.py` 是 Foundry 的**骨架**：600 行，一半是注释，结构和真的完全一样，
-只是每一层都砍到最薄。
+`mini_foundry.py` 是 Foundry 的**骨架**：结构和真的完全一样，只是每一层都砍到最薄。
 不需要网络、不需要 API key，直接跑。
 
 ```bash
 python demo/mini_foundry.py --yes
 ```
+
+两个入口，看你想怎么读：
+
+| | 适合 |
+|---|---|
+| **`mini_foundry.py`** | 一口气跑完看全貌；从上往下读代码 |
+| **`mini_foundry.ipynb`** | 逐格跑、看中间状态、改了再跑。notebook 从 `.py` **import**，不复制代码，所以两边永远一致 |
+
+```bash
+jupyter lab demo/mini_foundry.ipynb      # 或 VS Code 直接打开
+```
+
+## 用真模型（可选）
+
+两个入口都支持接一个 **OpenAI 兼容的 `/v1/chat/completions`**：
+
+```bash
+python demo/mini_foundry.py --endpoint http://127.0.0.1:1234/v1 --model your-model --yes
+```
+
+notebook 里把第 5 节的 `USE_API` 改成 `True` 即可。
+
+| 来源 | ENDPOINT | key |
+|---|---|---|
+| LM Studio | `http://127.0.0.1:1234/v1` | 随便填 |
+| Ollama | `http://127.0.0.1:11434/v1` | 随便填 |
+| 本机 OpenClaw 网关 | `http://127.0.0.1:18789/v1` | `~/.openclaw/openclaw.json` 的 `gateway.auth.token` |
+| OpenAI | `https://api.openai.com/v1` | 你的 key |
+
+**先知道两件事**：真 agent 一轮可能几十秒到几分钟；而且如果那个模型不产出
+`tool_calls`（本机 OpenClaw 网关背后的 trade-advisor 系就不产出），loop 会在第一轮
+就结束——你看得到真实的 HTTP 往返，看不到多轮工具调用。想看完整 loop，用剧本模式，
+或者换一个支持 function calling 的模型。
 
 ## 先记住这一句
 
