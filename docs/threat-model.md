@@ -162,7 +162,7 @@ canary 不在明文里。断言「连到了代理主机」是不够的——旧�
 - **真实 git 环境**：fixture 用**普通 git** 建仓（非 Foundry 硬化路径），覆盖 CRLF、含空格路径、重命名（`test_crlf_repo.py`、`test_security_round3.py`）。
 - **进程树清理**：取消一个派生了孙进程的命令，无残留且不阻塞；孙进程占管道时报告 incomplete 而非 exit 0（`test_tools_command_git.py`、`test_resource_bounds.py`）。
 - **资源上限**：命令输出 400MB 实测峰值 27MB；超限文件拒读并给出可用替代（`test_resource_bounds.py`）。
-- **证据链**：伪造的 claim 使 completed 降级为 partial；HEAD 移动同样降级（`test_runtime.py`、`test_golden_tasks.py`）。
+- **证据链**：伪造的 claim 使 completed 降级为 partial；HEAD 移动同样降级；**引用改动之前那次绿灯**同样降级——只查 exit code 不查顺序，会让一次什么都没验证过的会话报告 completed（`test_runtime.py`、`test_golden_tasks.py`、`test_subsystem_audit.py`）。
 - **崩溃恢复**：截尾 journal 判 interrupted（`test_session.py`）。
 
 ## 6. V2 方向
