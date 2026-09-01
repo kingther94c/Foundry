@@ -107,6 +107,71 @@ def test_no_chunk_size_lets_a_credential_through(chunk):
     assert reassembled.startswith("before ") and reassembled.endswith(" after")
 
 
+def test_a_pattern_matching_credential_does_not_leak_its_tail():
+    """The hold buffer must stay RAW.
+
+    Storing the scrubbed text back was a hole: the best-effort patterns are
+    unanchored with {20,} minimums, so on a still-growing buffer they matched
+    the shortest valid PREFIX of a registered value, replaced it with the
+    placeholder, and destroyed the exact-match state -- after which the rest of
+    that credential streamed out in the clear. Measured: 28 of a 50-character
+    `sk-` key reached every subscriber. It only bites when the registered value
+    also matches a pattern, which is the default personal path.
+    """
+    secret = "sk-" + "A" * 44 + "ZQ"
+    redactor = Redactor()
+    redactor.register(secret)
+    sink = EventSink(redactor=redactor)
+    seen = []
+    sink.subscribe(seen.append)
+
+    text = f"key: {secret} <- done. " + "filler " * 12
+    for i in range(0, len(text), 5):
+        sink.emit(MessageDelta(text=text[i:i + 5]))
+    sink.flush()
+
+    streamed = "".join(e.text for e in seen if isinstance(e, MessageDelta))
+    assert secret not in streamed
+    assert secret[-25:] not in streamed, "the tail of the key leaked"
+    assert "AAAAAAAAAA" not in streamed
+    assert streamed.startswith("key: [redacted]")
+
+
+def test_a_registered_value_is_never_cut_in_half_by_the_hold_boundary():
+    """A value that is already complete must not be scrubbed in one delta and
+    released untouched in the next."""
+    redactor = Redactor()
+    value = "hunter2-" + "B" * 90          # long enough to span the hold window
+    redactor.register(value)
+    sink = EventSink(redactor=redactor)
+    seen = []
+    sink.subscribe(seen.append)
+
+    for chunk in ("prefix " + value + " suffix",):
+        for i in range(0, len(chunk), 7):
+            sink.emit(MessageDelta(text=chunk[i:i + 7]))
+    sink.flush()
+
+    streamed = "".join(e.text for e in seen if isinstance(e, MessageDelta))
+    assert value not in streamed
+    assert "BBBBBBBBBB" not in streamed
+    assert streamed == "prefix [redacted] suffix"
+
+
+def test_one_bad_byte_does_not_switch_off_the_pattern_pass():
+    """scrub_bytes bailed out on UnicodeDecodeError, so a single cp1252 byte in
+    an otherwise clean capture left every credential-shaped string in the
+    journal -- on exactly the outputs most likely to be messy."""
+    redactor = Redactor()
+    raw = ("token sk-" + "C" * 30 + " done\n").encode("utf-8") + b"\x81"
+
+    scrubbed = redactor.scrub_bytes(raw)
+
+    assert b"sk-CCC" not in scrubbed
+    assert b"[redacted]" in scrubbed
+    assert scrubbed.endswith(b"\x81"), "the undecodable byte must survive intact"
+
+
 def test_held_text_is_released_in_order_before_the_next_event():
     sink, seen = _sink_with_canary()
     sink.emit(MessageDelta(text="thinking about it"))

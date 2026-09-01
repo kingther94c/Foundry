@@ -166,12 +166,19 @@ def paranoid_segments(text: str) -> list[tuple[str, ...]]:
     return out
 
 
-def _outside_quotes(text: str) -> str:
+def _outside_quotes(text: str, *, keep_expansion_in_double: bool = False) -> str:
     """The text with quoted spans blanked out.
 
     Used for the structural scan: a character inside a quoted argument is data,
     not syntax. An unterminated quote leaves the rest blanked, which is safe --
     the unbalanced-quote check refuses the command anyway.
+
+    That is true of `'single quotes'` in PowerShell. It is NOT true of
+    `"double quotes"`, which interpolate: `"${env:USERPROFILE}"` expands, and
+    blanking it hid the `$` from the structural scan while `"$env:..."` was
+    caught only by a separate literal regex. With ``keep_expansion_in_double``
+    the `$` and `` ` `` inside a double-quoted span survive, so the scan sees
+    the one thing about that span that really is syntax.
     """
     out: list[str] = []
     quote: str | None = None
@@ -179,7 +186,10 @@ def _outside_quotes(text: str) -> str:
         if quote:
             if char == quote:
                 quote = None
-            out.append(" ")
+                out.append(" ")
+                continue
+            keep = (keep_expansion_in_double and quote == '"' and char in "$`")
+            out.append(char if keep else " ")
             continue
         if char in "'\"":
             quote = char
@@ -313,6 +323,15 @@ def canonicalize(head: str) -> str:
 # `effective_argv` scans for the first of these rather than counting past global
 # options, so an option nobody enumerated cannot shift the subcommand out of the
 # slot every breaker entry inspects.
+# Git global options that take their value as a SEPARATE argument. This is a
+# closed set defined by git itself, not an open-ended enumeration of dangerous
+# forms -- an option missing here degrades to the old behaviour for that option
+# only, and `--opt=value` needs no entry at all.
+GIT_VALUE_OPTIONS = frozenset({
+    "-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path",
+    "--attr-source", "--config-env", "--super-prefix",
+})
+
 GIT_SUBCOMMANDS = frozenset({
     # destructive or history-rewriting: the ones the breaker names
     "reset", "clean", "checkout", "restore", "switch", "stash", "rm", "mv",
@@ -342,15 +361,63 @@ def effective_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
     if head != "git":
         return (head,) + argv[1:]
 
-    # Skip leading options *and* anything that is not a git subcommand. Deciding
-    # which options take a separate value is the same enumeration trap in
-    # reverse: `--attr-source HEAD reset --hard` left "HEAD" at index 1 and the
-    # whole breaker table read the wrong slot. Scanning for the first token that
-    # is actually a subcommand cannot be shifted by an option nobody listed.
-    rest = list(argv[1:])
-    while rest and (rest[0].startswith("-") or rest[0].lower() not in GIT_SUBCOMMANDS):
-        del rest[:1]
-    return (head, *rest)
+    # Skip leading options *and* anything that is not a git subcommand.
+    # `--attr-source HEAD reset --hard` left "HEAD" at index 1 and the whole
+    # breaker table read the wrong slot, so the scan looks for a real
+    # subcommand rather than counting options.
+    #
+    # But a scan alone is not enough, and the comment that used to sit here --
+    # "cannot be shifted by an option nobody listed" -- was wrong. An option's
+    # VALUE can itself be a subcommand name, and then the scan stops on it:
+    #
+    #     git -C log reset --hard   ->   ('git', 'log', 'reset', '--hard')
+    #
+    # `reset --hard` slid out of the compared prefix and the breaker passed it,
+    # with trusted=True so an ALLOW rule could auto-approve it. It needs only a
+    # directory named log/, config/, tag/, notes/... So the values of the small
+    # closed set of git options that take one are consumed, and a subcommand
+    # candidate sitting in that position is not treated as the subcommand.
+    return effective_argv_candidates(argv)[0]
+
+
+def effective_argv_candidates(argv: tuple[str, ...]) -> tuple[tuple[str, ...], ...]:
+    """Every reading of ``argv`` the breaker should compare against.
+
+    There are two, and the breaker denies on either, because neither is safe
+    alone:
+
+    * consuming option values catches `git -C log reset --hard`, where the
+      value of ``-C`` is itself a subcommand name and the scan would otherwise
+      stop on it, sliding `reset --hard` out of the compared prefix;
+    * NOT consuming them is what the naive reading needs. It drops tokens it
+      cannot read, so `. git -C . clean -fdx` reaches here as
+      ``git -C clean -fdx`` -- and a value-consuming scan would swallow the
+      real subcommand and lose the denial.
+
+    Returning both keeps the rule this module lives by: an extra reading may
+    only ever add denials.
+    """
+    if not argv:
+        return (argv,)
+    head = canonicalize(argv[0])
+    if head != "git":
+        return ((head,) + argv[1:],)
+
+    def scan(consume_values: bool) -> tuple[str, ...]:
+        rest = list(argv[1:])
+        while rest:
+            token = rest[0]
+            if consume_values and token.lower().lstrip(",") in GIT_VALUE_OPTIONS:
+                del rest[:2]
+                continue
+            if token.startswith("-") or token.lower() not in GIT_SUBCOMMANDS:
+                del rest[:1]
+                continue
+            break
+        return (head, *rest)
+
+    consuming, plain = scan(True), scan(False)
+    return (consuming,) if consuming == plain else (consuming, plain)
 
 
 def segment_command(command: str) -> SegmentedCommand:
@@ -377,7 +444,10 @@ def segment_command(command: str) -> SegmentedCommand:
     # itself a lexer this module does not trust, and scanning its output would
     # let it hide the very characters this check exists to catch -- `echo a<# ;
     # git reset --hard #> b` strips to `echo a b`, which looks structure-free.
-    visible = _outside_quotes(command)
+    # `$` and backtick survive a double-quoted span because PowerShell expands
+    # inside one. Blanking them made `Remove-Item -Recurse "${HOME}"` look
+    # structure-free and auto-allowable, while the unquoted spelling was caught.
+    visible = _outside_quotes(command, keep_expansion_in_double=True)
     structural = sorted(set(visible) & _STRUCTURAL)
     if _LONE_AMPERSAND.search(visible):
         structural.append("&")

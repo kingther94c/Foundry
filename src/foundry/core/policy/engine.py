@@ -26,6 +26,7 @@ from enum import Enum
 from typing import Callable, Iterable
 
 from foundry.core.policy.segmenter import (
+    effective_argv_candidates,
     SegmentedCommand,
     canonicalize,
     effective_argv,
@@ -158,26 +159,50 @@ RECURSIVE_DELETE_HEADS = ("remove-item", "format-volume", "clear-disk")
 # `Remove-Item -Recurse -Force C:\` was caught, `Remove-Item -Force C:\ -Recurse`
 # was not, and PowerShell binds parameters in any order.
 _DANGEROUS_DELETE_TARGET = re.compile(
-    r"^['\"]?("
+    r"^['\"]?"
+    r"(\\\\[?.]\\)?"                               # \\?\ and \\.\ prefixes
+    r"("
     r"[a-z]:[\\/]?|"                              # a drive root
     r"[a-z]:[\\/](windows|users|program files).*|"  # a system tree
     r"~[\\/]?|/|"                                  # home or root
-    r"\$home[\\/]?|\$profile|\$pwd|\$env:userprofile[\\/]?"  # unexpanded variables
+    # Unexpanded variables, in both spellings PowerShell accepts. Only the bare
+    # `$name` form was listed, so `"${HOME}"` -- which expands identically --
+    # walked past a table whose whole purpose is to be categorical.
+    r"\$\{?(home|profile|pwd)\}?[\\/]?|"
+    r"\$\{?env:userprofile\}?[\\/]?"
     r")['\"]?$",
     re.IGNORECASE,
 )
 
 
+#: ``git clean`` options that consume the next argument. Without this, that
+#: argument is read as a flag -- and `git clean -fd -e -n` looked like a dry run
+#: while deleting untracked files.
+_CLEAN_VALUE_OPTIONS = frozenset({"-e", "--exclude"})
+
+
 def _is_dry_run(args: tuple[str, ...]) -> bool:
     """True only for git's own dry-run spellings: ``--dry-run``, ``-n``, or a
     short-flag cluster containing n (``-xdn``). Deliberately exact -- anything
-    looser would be a hole in the one table that is meant to be categorical."""
-    for arg in args:
+    looser would be a hole in the one table that is meant to be categorical.
+
+    Option values are skipped. `-e`'s pattern argument is arbitrary text, and
+    when it happened to be ``-n`` this read the deletion as a dry run: the
+    exemption added to make `git clean -n` usable opened a hole in the entry it
+    was carved out of.
+    """
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg.lower() in _CLEAN_VALUE_OPTIONS:
+            index += 2                      # the option and the value it takes
+            continue
         if arg == "--dry-run" or arg == "-n":
             return True
         if len(arg) > 1 and arg[0] == "-" and arg[1] != "-" and arg[1:].isalpha():
             if "n" in arg[1:]:
                 return True
+        index += 1
     return False
 
 
@@ -224,10 +249,18 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
     # refused. The naive reading exists because four review rounds each found a
     # construct Foundry mis-lexed, and it cannot be fooled by a fifth: it makes
     # no assumptions to be wrong about. It can only add denials.
-    readings: list[tuple[str, ...]] = [segment.argv for segment in parsed.segments]
-    readings.extend(paranoid_segments(op.target))
+    raw_readings: list[tuple[str, ...]] = [segment.argv for segment in parsed.segments]
+    raw_readings.extend(paranoid_segments(op.target))
 
-    for raw_argv in readings:
+    # A git argv has more than one defensible reading of where the subcommand
+    # sits, depending on whether an option's value is consumed. Both are
+    # compared, because either alone loses a denial the other catches.
+    readings: list[tuple[str, ...]] = []
+    for raw in raw_readings:
+        readings.extend(effective_argv_candidates(raw) if raw else ())
+
+    for argv_candidate in readings:
+        raw_argv = argv_candidate
         if not raw_argv:
             continue
         # Canonicalize the head and drop git's global options, so `git -C .
@@ -238,7 +271,7 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
         # any non-first argument be written `,--hard`: git receives `--hard`,
         # but the token this table compares against was `,--hard`. Every
         # flag-keyed entry below was bypassable that way.
-        argv = tuple(a.lower().lstrip(",") for a in effective_argv(raw_argv))
+        argv = tuple(a.lower().lstrip(",") for a in raw_argv)
         head = argv[0] if argv else ""
 
         for forbidden in DESTRUCTIVE_GIT:

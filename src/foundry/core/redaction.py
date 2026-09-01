@@ -54,6 +54,11 @@ class Redactor:
         with self._lock:
             return len(self._values)
 
+    def registered_values(self) -> tuple[str, ...]:
+        """The exact values, so a streaming sink can avoid cutting through one."""
+        with self._lock:
+            return tuple(self._values)
+
     @property
     def longest_registered(self) -> int:
         """How far a streaming sink must look back to be sure a registered value
@@ -98,13 +103,16 @@ class Redactor:
         # journal's command record -- the one sink holding full, untruncated
         # output on disk -- kept credential-shaped strings that the model's own
         # ephemeral context had already had removed.
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError:
-            return data
+        # surrogateescape round-trips arbitrary bytes, so a single byte of
+        # cp1252 in an otherwise clean capture no longer switches the pattern
+        # pass off for the whole record -- which it did, on exactly the outputs
+        # most likely to be messy. (UTF-16LE text still evades the patterns:
+        # `sk-` arrives as `s\x00k\x00-\x00`. Registered values are matched in
+        # UTF-16LE above; the patterns are best-effort and stay that way.)
+        text = data.decode("utf-8", errors="surrogateescape")
         for pattern in _PATTERNS:
             text = pattern.sub(PLACEHOLDER, text)
-        return text.encode("utf-8")
+        return text.encode("utf-8", errors="surrogateescape")
 
     def scrub_obj(self, obj):
         """Recursively scrub strings inside a JSON-shaped structure."""

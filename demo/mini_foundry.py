@@ -338,7 +338,7 @@ class Session:
 # 它绝对不能自己跑循环——否则就有两个地方在决定"下一步做什么"了。
 #
 # 这里用一个写死的脚本代替真模型，好处是：不用 API key、结果确定、
-# 每次跑都一样。真 Foundry 的测试套件（1147 个）全靠同样的东西才能在
+# 每次跑都一样。真 Foundry 的测试套件（1436 个）全靠同样的东西才能在
 # 没网没凭证的机器上跑。
 #
 # 真 Foundry: core/backends/。openai_compat（Chat Completions）和 responses

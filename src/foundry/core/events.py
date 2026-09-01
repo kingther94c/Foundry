@@ -274,12 +274,19 @@ class EventSink:
             return [event]
 
         if isinstance(event, MessageDelta):
-            self._held = self.redactor.scrub(self._held + event.text)
-            keep = self._hold_size()
-            if len(self._held) <= keep:
+            # The buffer is kept RAW. Storing the scrubbed text back was a hole:
+            # the best-effort patterns are unanchored with {20,} minimums, so on
+            # a still-growing buffer they matched the shortest valid PREFIX of a
+            # registered value, replaced it, and destroyed the exact-match state
+            # -- after which the rest of that credential streamed out in the
+            # clear. Measured: 28 of a 50-character `sk-` key reached every
+            # subscriber, the renderer and `exec --json` alike.
+            self._held += event.text
+            cut = self._safe_cut(self._held)
+            if cut <= 0:
                 return []
-            emit, self._held = self._held[:-keep], self._held[-keep:]
-            return [dataclasses.replace(event, text=emit)]
+            emit, self._held = self._held[:cut], self._held[cut:]
+            return [dataclasses.replace(event, text=self.redactor.scrub(emit))]
 
         # Anything else ends the run of text: release what was held, in order.
         pending: list[Event] = []
@@ -295,6 +302,25 @@ class EventSink:
         can still straddle -- pattern scanning is best-effort by design."""
         longest = getattr(self.redactor, "longest_registered", 0)
         return max(int(longest or 0), 64)
+
+    def _safe_cut(self, buffer: str) -> int:
+        """How much of the raw buffer can be released now.
+
+        Two conditions. Keep a tail long enough that a value still arriving is
+        not emitted piecemeal, and never cut *through* a registered value that
+        is already complete -- otherwise its head would be scrubbed in one delta
+        and its tail released untouched in the next.
+        """
+        cut = len(buffer) - self._hold_size()
+        if cut <= 0:
+            return 0
+        for value in getattr(self.redactor, "registered_values", lambda: ())():
+            start = buffer.find(value)
+            while start != -1:
+                if start < cut < start + len(value):
+                    cut = start
+                start = buffer.find(value, start + 1)
+        return max(cut, 0)
 
     def flush(self) -> None:
         """Release any held text. Called when a stream ends without a following
