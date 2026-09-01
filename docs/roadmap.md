@@ -3,7 +3,7 @@
 > 排序原则（批判-架构 #1 采纳）：最大不确定项不上关键路径；每个里程碑以"可运行 + 可验收"收口。
 > v0.1 的排序错误已修正：原"ChatGPT 登录最优先"随 blocked 结论（[D-009](decision-log.md)）自然解除；个人路径 API key 与公司 Gateway 同协议族，骨架先行不再有认证阻塞。
 
-## 状态（2026-08-30，第六轮评审后）
+## 状态（2026-09-01，首次真实 endpoint 验证后）
 
 | 里程碑 | 状态 | 备注 |
 |---|---|---|
@@ -14,7 +14,7 @@
 | M3 公司 Gateway | **部分** | `responses` adapter 已对**真实** Responses endpoint 跑通（流式 + usage，[research/live-endpoint.md](research/live-endpoint.md)）；**入场门仍未过**——该网关的模型不产出 tool_calls，tool-call 流式夹具待取（[OQ-6](open-questions.md)） |
 | M4 打包加固 + 披露 | **完成** | 净 venv `--no-index` 安装实测通过；威胁模型文档；`foundry exec` 已进 V1 |
 
-1125 个测试在无网络、无凭证机器上通过。**2026-09-01 首次真实 endpoint 验证**：两个 adapter 都对着本机 OpenClaw 网关跑通完整一轮（含流式、usage、真 token 不泄漏），并暴露出 4 个脚本化 backend 够不着的缺陷——其中「loopback 被送进公司代理」只在真实拓扑下才会发生。详见 [research/live-endpoint.md](research/live-endpoint.md)。个人 API key 路径与公司 Gateway 的 tool-call 行为仍待验证。
+1147 个测试在无网络、无凭证机器上通过。**2026-09-01 首次真实 endpoint 验证**：两个 adapter 都对着本机 OpenClaw 网关跑通完整一轮（含流式、usage、真 token 不泄漏），并暴露出 4 个脚本化 backend 够不着的缺陷。随后对代理路径的审计找出**整个项目最严重的一个缺陷**：设了公司代理时，API key 以**明文**穿过 CONNECT 隧道（[threat-model.md](threat-model.md) §3(b3)）——那是 `base_url` 默认值下的默认路径，而六轮对抗评审都没碰到它，因为 `tests/` 里从没有测试在跑 `HttpClient` 时设过代理环境变量。详见 [research/live-endpoint.md](research/live-endpoint.md)。个人 API key 路径与公司 Gateway 的 tool-call 行为仍待验证。
 
 第六轮评审收口于一次**净室端到端**（重建 wheelhouse → `--no-index` 装进全新 venv → 用装好的包跑一个真实任务：跑挂测试、打补丁、重跑转绿、引用自己工具输出里的 event id 完成），14 项检查全过。该轮找到的缺陷形状与前五轮不同：不在某一层内部，而在两层的接缝上——详见 [threat-model.md](threat-model.md) §3(b2)。
 

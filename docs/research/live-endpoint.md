@@ -75,6 +75,30 @@ tool-call 流式脱敏夹具」，这台机器给不出来——把 facade 改�
 第 4 条是这次最有价值的：它只在「有本地 endpoint + 有公司代理」时才会发生，而这
 恰好就是用户的真实拓扑。没有这台本机网关，它会一直躲着。
 
+## 顺藤摸瓜：代理路径审计
+
+第 4 条逼出一个问题——「代理这条路还有什么没人看过？」于是拿真实抓包做了一次五视角
+审计（SSE 分帧 / chat adapter / responses adapter / 错误与重试 / loopback 与代理），
+每条发现再交给一个「任务是驳倒它」的验证者。33 条被驳回 23 条，剩 10 条。
+
+**其中一条是整个项目最严重的缺陷**：设了公司代理时，API key 以**明文**穿过 CONNECT
+隧道。详见 [threat-model.md](../threat-model.md) §3(b3)——那里也记了为什么六轮对抗评审
+都没碰到它。
+
+其余九条（均已修复，见 `tests/test_transport_audit.py`）：
+
+| | 缺陷 |
+|---|---|
+| high | 断流的注释承诺「会重试」，但没有任何一层真的重试；且它会终结整个 REPL 会话，用户丢掉全部上下文 |
+| medium | `Retry-After` 只在 429 上读、只认秒数形式；503 说「30 秒后再来」被无视，改成 1/3/7 秒连打三次 |
+| medium | `request_max_retries = 0`（关掉重试最自然的写法）走到 `raise None` → TypeError，CLI 直接吐 traceback |
+| medium | 错误响应体被存进 `payload` 后从没人读，于是 400 只显示 "request rejected (HTTP 400)"，而 body 里明写着哪个字段不对 |
+| medium | `SSL_CERT_FILE` 指向不存在的文件时，抛裸 `FileNotFoundError`（连文件名都没有），在错误分类学之外 |
+| medium | `arguments: null` 的 tool call 让非流式路径崩溃（`json.loads(None)` 抛 TypeError，`parse_arguments` 不接） |
+| medium | NotStreaming 降级时 `stream_options` 没跟着摘掉，严格网关回 400——救场的路径反而把这轮弄挂 |
+| medium | 只有一行 `data: [DONE]` 的流被当成「成功的空回答」 |
+| low | 非隧道分支丢掉代理凭证，407 的提示还叫用户去做他已经做过的事 |
+
 ## 复现
 
 ```bash

@@ -96,6 +96,40 @@
 
 教训写下来：**"每一处都正确"不蕴含"合起来正确"**。所以现在有 [tests/test_prompt_matches_breaker.py](../tests/test_prompt_matches_breaker.py)（承诺与表双向对齐）、`categorical_denials()`（提示词由熔断表的常量生成而非手写）、以及一次真实的净室端到端（重建 wheelhouse → `--no-index` 装进全新 venv → 跑真实任务 → 检查 canary 不在事件、渲染、stdout 与日志里）。**跨层的性质要跨层地验。**
 
+### (b3) 第七轮：整个项目最严重的缺陷，在唯一没有测试碰过的那条路径上
+
+用户提供了一个本机 endpoint（[research/live-endpoint.md](research/live-endpoint.md)）。它本身不能验证 tool call，但它逼着我去读**代理**那条路径——然后发现：
+
+**API key 以明文离开这台机器。**
+
+`_connect` 为 `https://` 目标选连接类**看的是代理的 scheme，不是目标的**。一个普通的
+`HTTP_PROXY=http://proxy.corp:8080` 于是走 `else` 分支，建了个纯 `HTTPConnection`，再对它
+`set_tunnel(host, 443)`。而 `HTTPConnection.connect()` 发完 CONNECT 就停了——只有
+`HTTPSConnection.connect()` 才会做隧道之后必须做的 `wrap_socket`。
+
+对着真 socket 复现：代理答完 `200 Connection established` 之后，进入隧道的第一个字节是
+`'P'`，不是 `0x16`：
+
+```
+POST /v1/chat/completions HTTP/1.1
+Host: api.openai.com:443
+Authorization: Bearer sk-SECRET-TOKEN-...
+```
+
+代理和它之后的每一跳都能读到 key、prompt 和整段对话。`base_url` 默认就是
+`https://api.openai.com/v1`，所以这是**任何配了代理的机器上的默认路径**——而在本项目瞄准的
+环境里，那是每一台机器。更讽刺的是：`_build_ssl_context` 只在罕见的 https-proxy 分支上可达，
+于是模块 docstring 里那段「信任 Windows 证书库、公司 MITM 代理免配置可用」的理由，在它专门
+为之而写的那个配置下是死代码。
+
+**为什么六轮对抗评审没抓到**：`tests/` 里从来没有任何一个测试在跑 `HttpClient` 的同时设过代理
+环境变量。六轮评审都在读代码和构造输入，而这条分支要**同时**具备「设了代理」和「https 目标」
+才会走到；单元测试的默认环境两个都没有。
+
+写下来的规矩：**凭证经过的每一条路径，都必须有一个测试真的把字节抓下来看**。现在
+`test_live_endpoint_findings.py` 会起一个假代理，断言进入隧道的第一个字节是 `0x16`，并断言
+canary 不在明文里。断言「连到了代理主机」是不够的——旧代码同样满足那个断言。
+
 ### (c) 明说解决不了什么
 
 `python -c "subprocess.run(['git','reset','--hard'])"` 一样有破坏性，任何解析都抓不到。所以解释器（python/node/…）**故意保持可放行**——拒绝 `python -m pytest` 代价极大而收益为零。"被批准的命令能做该程序能做的任何事"是 trusted-host 模型的属性（见 §4），分段器不假装解决它。
@@ -120,6 +154,8 @@
 - **canary 泄漏套件**：以金丝雀凭证跑全流程，断言它不出现在 journal、artifact、audit、事件流与控制台；**并按 1/2/3/5/13/64 字节分块**发送，验证跨 delta 的凭证同样被删（`test_cli_e2e.py`、`test_session.py`、`test_round6_fixes.py`）。
 - **提示词与熔断表双向对齐**：表拒绝的每一族都必须在提示词里被点名，提示词声称"永远拒绝"的每个 git 子命令都必须真的被拒（`test_prompt_matches_breaker.py`）。手写那段话时它承诺 merge 被拒，而 `git pull` 走了过去。
 - **跨层拼写一致**：8.3 短名、CRLF、大小写等在工具层解析过的路径，policy 必须看到同一个拼写（`test_drift_fixes.py`）。
+- **凭证在代理隧道里是密文**：起一个假代理，断言进入隧道的第一个字节是 `0x16`（TLS ClientHello）而非明文 `POST`，且 canary 不在字节里（`test_live_endpoint_findings.py`）。只断言「连到了代理主机」不算数——出事的那版代码同样满足。
+- **真实线格式夹具**：字节级保存的真实网关响应，含「usage 与空 `choices` 同帧」和 Responses SSE 的 `event:` 行（`tests/fixtures/live_gateway/`，`.gitattributes` 标 `-text` 保证不被换行归一化）。
 - **路径逃逸表**：junction、ADS、`..`、设备名、UNC、盘符相对全部被拒（`test_workspace.py`）。
 - **分段器攻击表**：链式命令、命令替换、重定向、调用操作符、别名、CR 分隔、PowerShell 注释、包装形式（`test_segmenter.py`、`test_security_regressions.py`、`test_security_round3.py`）。
 - **policy 决策表**：deny-wins、熔断表不可覆盖、accept_edits 下脏文件仍 ASK（含各种路径拼法）、dont_ask fail-closed、hook 改写重入熔断（`test_policy.py`）。

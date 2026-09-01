@@ -147,3 +147,25 @@
 - **背景**：redaction.py 声明三个 sink，事件那个从未实现——journal 写 `[redacted]`，`foundry exec --json` 把同一个凭证原样打到 stdout。补上逐字段脱敏后，净室端到端仍抓到泄漏：模型文本是**分块流式**到达的，凭证跨两个 `MessageDelta` 落下，两个片段都不匹配，渲染器再拼回屏幕。
 - **内容**：`EventSink` 保留一段尾巴，长度取"Foundry 实际持有的最长凭证"——那正是本模块承诺的删除范围——下一块到达或流结束时释放。比该尾巴更长的**模式**匹配仍可能跨块漏掉；模式扫描本就标注 best-effort，不改这个定位。
 - **教训**：跨层的性质要跨层地验。单元测试看到的是干净的事件流，终端上是明文。
+
+## D-028 代理隧道必须按**目标**的 scheme 选连接类；TLS-fronted 代理明确拒绝
+- **日期**：2026-09-01　**状态**：已确认（真实 endpoint 引出的代理路径审计）
+- **背景**：`_connect` 为 https 目标选连接类时看的是**代理**的 scheme。普通
+  `HTTP_PROXY=http://proxy:8080` 于是建纯 `HTTPConnection` 再 `set_tunnel`，而
+  `HTTPConnection.connect()` 发完 CONNECT 就停——不做 `wrap_socket`。结果 **API key、
+  prompt、整段对话以明文穿过隧道**，代理及其后每一跳可读。对着真 socket 复现：隧道第一个
+  字节是 `'P'` 而非 `0x16`。`base_url` 默认 `https://api.openai.com/v1`，所以这是**配了代理
+  的机器上的默认路径**。
+- **内容**：连接类跟随目标 scheme——https 目标一律 `HTTPSConnection(proxy, context=...)` +
+  `set_tunnel(origin)`，即明文 CONNECT 到代理、再对 origin 做 TLS。stdlib 的 `set_tunnel`
+  表达不了「到代理也用 TLS」，故 `https://` 代理直接抛 `ConfigError` 说明限制，而不是悄悄
+  按其中一种处理。非隧道分支（http 目标过代理）改为把 `Proxy-Authorization` 返还给请求。
+- **防再犯**：测试必须**把字节抓下来看**——断言隧道第一个字节是 `0x16`、canary 不在明文里。
+  只断言「连到了代理主机」不算数：出事的那版代码同样满足那个断言。
+
+## D-029 REPL 不因一次 BLOCKED 结束会话
+- **日期**：2026-09-01　**状态**：已确认
+- **内容**：断流/网关不可达终结的是**这一轮**，不是这次会话。原先 `outcome.status is not None`
+  一律 break，于是一次网络抖动让用户丢掉整段对话上下文——而抛出它的代码注释还写着「transient,
+  所以会重试」，实际上没有任何一层会重试（deltas 已经上屏，这一轮无法重放）。注释已改成说实话，
+  BLOCKED 改为提示后继续。
