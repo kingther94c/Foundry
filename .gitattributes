@@ -3,3 +3,7 @@
 # git normalize line endings on checkout would silently rewrite the thing under
 # test into something no server ever sends.
 tests/fixtures/live_gateway/*.raw -text
+
+# Shell scripts run under bash in Linux cloud sessions; a CRLF checkout on a
+# Windows clone would break them, so they always stay LF.
+*.sh text eol=lf
