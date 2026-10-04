@@ -1,24 +1,28 @@
-# 首次真实 endpoint 验证（2026-09-01）
+# The first live endpoint check (2026-09-01)
 
-在此之前，Foundry 的每一次「端到端」都跑在 `ScriptedBackend` 或测试内起的
-`HTTPServer` 上。用户提供了一个本机 OpenClaw 网关，第一次让这套代码对着**真的
-HTTP 服务**说话。
+Until now, every "end to end" run of Foundry had been against a
+`ScriptedBackend` or an `HTTPServer` started inside a test. The user provided a
+local OpenClaw gateway, which let this code talk to a **real HTTP service** for
+the first time.
 
-## 环境
+## The environment
 
-| | 地址 | 协议 | 认证 |
+| | Address | Protocol | Auth |
 |---|---|---|---|
-| 网关 | `http://127.0.0.1:18789/v1` | Chat Completions | `gateway.auth.token`（真 token） |
-| Responses facade | `http://127.0.0.1:18790/v1` | Responses | **任意** bearer 值 |
+| gateway | `http://127.0.0.1:18789/v1` | Chat Completions | `gateway.auth.token` (a real token) |
+| Responses facade | `http://127.0.0.1:18790/v1` | Responses | **any** bearer value |
 
-facade 把 Responses 请求翻译成网关的 `/v1/chat/completions`，再把回答重新包装成
-Responses 对象——形状是模拟的，答案是真的。
+The facade translates Responses requests into the gateway's
+`/v1/chat/completions`, then repackages the answer as a Responses object -- the
+shape is simulated, the answer is real.
 
-## 关键结论：这个 endpoint 不能验证 tool call
+## The key conclusion: this endpoint cannot verify tool calls
 
-网关**接受** `tools` / `tool_choice`，甚至会校验：`tool_choice="required"` 得不到
-工具调用时返回 `HTTP 502 "tool_choice=required was not satisfied by the agent
-response"`。但它背后的 7 个模型（都是 trade-advisor 系）**从不产出 tool_calls**：
+The gateway **accepts** `tools` / `tool_choice`, and even validates them:
+when `tool_choice="required"` produces no tool call, it answers
+`HTTP 502 "tool_choice=required was not satisfied by the agent response"`. But
+the 7 models behind it (all of the trade-advisor family) **never emit
+tool_calls**:
 
 ```
 openclaw/default             tool_choice=auto     -> finish=stop, tool_calls=none
@@ -26,82 +30,103 @@ openclaw/default             tool_choice=required -> HTTP 502
 openclaw/trade-advisor-panel tool_choice=required -> HTTP 502
 ```
 
-所以 **[OQ-6](../open-questions.md) 依然开着**。M3 的入场门要的是「真实 Gateway 的
-tool-call 流式脱敏夹具」，这台机器给不出来——把 facade 改成转发 `tools` 也没用，
-因为不产出工具调用的是模型，不是 facade。不要因为「跑通了」就把 M3 标成完成。
+So **[OQ-6](../open-questions.md) is still open**. The M3 entry gate wants
+"tool-call streaming redaction fixtures from the real Gateway", and this
+machine cannot produce them -- making the facade forward `tools` would not help
+either, because what does not emit tool calls is the model, not the facade. Do
+not mark M3 done just because something ran.
 
-补充一点让人稍微安心的：tool-call 的 SSE 分片重组**本来就**在真 socket 上测过
-（`test_backend_openai.py::test_streaming_reassembles_text_and_tool_calls` 与
-`test_streaming_handles_parallel_tool_calls` 起的是真的 `HTTPServer`），只是服务端
-是合成的。缺的那块是「没人见过真实公司 Gateway 吐 tool call 长什么样」。
+One thing that is slightly reassuring: SSE fragment reassembly for tool calls
+**was already** tested over a real socket
+(`test_backend_openai.py::test_streaming_reassembles_text_and_tool_calls` and
+`test_streaming_handles_parallel_tool_calls` both start a real `HTTPServer`),
+just with a synthetic server on the other end. The missing piece is that nobody
+has seen what a real corporate Gateway's tool call looks like.
 
-## 验证到了什么
+## What did get verified
 
-两个 adapter 都对着真服务跑通了完整一轮，含流式：
+Both adapters completed a full round against a real service, streaming
+included:
 
-| | 协议 | 结果 |
+| | Protocol | Result |
 |---|---|---|
-| `openai_compat` → 18789 | Chat Completions | `OK`，usage 17095/20，真 token 未泄漏 |
-| `responses` → 18790 | Responses | `OK`，usage 17090/23，真 token 未泄漏 |
+| `openai_compat` -> 18789 | Chat Completions | `OK`, usage 17095/20, the real token did not leak |
+| `responses` -> 18790 | Responses | `OK`, usage 17090/23, the real token did not leak |
 
-`responses` adapter 此前**从未对任何真实服务器跑过**（D-022 把它升为 M3 必选时就
-标注了「真实协议行为待验证」）。现在它对着一个真的 Responses 形状的 endpoint 跑通了
-流式、usage 与终止事件。
+The `responses` adapter had **never run against any real server** before (when
+D-022 promoted it to mandatory for M3, it was annotated "real protocol
+behaviour unverified"). It has now completed streaming, usage and termination
+events against a genuinely Responses-shaped endpoint.
 
-真实线格式里两处值得记的形状，已作为字节级夹具收进
-`tests/fixtures/live_gateway/`：
+Two shapes in the real wire format are worth recording, and are now byte-level
+fixtures under `tests/fixtures/live_gateway/`:
 
-- Chat Completions 的**最后一个 chunk 带 usage 但 `choices` 是空数组**。先取
-  `choices[0]` 再找 usage 的 adapter 会把每一轮流式的 token 数报成 0。
-- facade 的 Responses SSE 每帧前面有 `event: <name>` 行，且仍以 `data: [DONE]` 收尾。
+- Chat Completions' **final chunk carries usage but an empty `choices`
+  array**. An adapter that takes `choices[0]` before looking for usage reports
+  zero tokens for every streaming round.
+- Each frame of the facade's Responses SSE is preceded by an `event: <name>`
+  line, and the stream still ends with `data: [DONE]`.
 
-## 找到并修掉的四个缺陷
+## Four defects found and fixed
 
-真服务立刻暴露了脚本化 backend 够不着的东西：
+A real service immediately exposed things a scripted backend cannot reach:
 
-1. **`--json` 事件流有损**。序列化走的是一张手工维护的属性白名单，没人想起来加的
-   字段就被静默丢掉：`token_count` 输出成 `{"kind": "token_count"}`，一个数字都没有
-   ——而旁边的 journal 记着真实计数；`tool_begin`/`tool_end` 没有 `call_id`，消费者
-   无法配对。改为序列化事件实际携带的内容。
-2. **流里没有终止事件**。正常结束的 headless run 不会走到 `runtime._terminate`，
-   于是 `--json` 就那么停了：CI 消费者在流里拿不到最终状态，只能从退出码反推。
-3. **exit 10 没有解释**。`"headless run ended"` 说不清一个看起来完全正确的回答为什么
-   是 PARTIAL。对一个**根本不会调工具**的模型来说，这是唯一可达的结局。
-4. **loopback 会被送进公司代理**。urllib 的 bypass 列表基本不会写 `127.0.0.1`
-   （`proxy_bypass('127.0.0.1')` 返回 `False`），所以在设了 `HTTP_PROXY` 的机器上
-   ——也就是 Foundry 的目标环境，永远如此——本机网关的请求被发给代理，而代理路由不回
-   调用方自己的 loopback。表现为连接超时，和「本地服务没起来」完全一样。
+1. **The `--json` event stream was lossy.** Serialisation went through a
+   hand-maintained attribute allowlist, and any field nobody remembered to add
+   was silently dropped: `token_count` came out as `{"kind": "token_count"}`
+   with not a single number in it -- while the journal right next to it
+   recorded the real counts; `tool_begin`/`tool_end` had no `call_id`, so a
+   consumer could not pair them. Changed to serialise what the event actually
+   carries.
+2. **No termination event in the stream.** A headless run that ends normally
+   never reaches `runtime._terminate`, so `--json` simply stopped: a CI
+   consumer could not get the final status from the stream, only infer it from
+   the exit code.
+3. **exit 10 came with no explanation.** `"headless run ended"` does not
+   explain why a perfectly reasonable-looking answer is PARTIAL. For a model
+   that **never calls tools at all**, that is the only reachable outcome.
+4. **Loopback was being sent through the corporate proxy.** A urllib bypass
+   list essentially never contains `127.0.0.1` (`proxy_bypass('127.0.0.1')`
+   returns `False`), so on a machine with `HTTP_PROXY` set -- which is to say
+   Foundry's target environment, always -- requests to the local gateway went
+   to the proxy, and the proxy does not route back to the caller's own
+   loopback. It looks like a connection timeout, identical to "the local
+   service is not running".
 
-第 4 条是这次最有价值的：它只在「有本地 endpoint + 有公司代理」时才会发生，而这
-恰好就是用户的真实拓扑。没有这台本机网关，它会一直躲着。
+The fourth is the most valuable of the four: it only happens when there is both
+a local endpoint and a corporate proxy, which is exactly the user's real
+topology. Without this local gateway it would have stayed hidden.
 
-## 顺藤摸瓜：代理路径审计
+## Pulling the thread: a proxy path audit
 
-第 4 条逼出一个问题——「代理这条路还有什么没人看过？」于是拿真实抓包做了一次五视角
-审计（SSE 分帧 / chat adapter / responses adapter / 错误与重试 / loopback 与代理），
-每条发现再交给一个「任务是驳倒它」的验证者。33 条被驳回 23 条，剩 10 条。
+The fourth defect forced the question "what else on the proxy path has nobody
+looked at?", so a five-viewpoint audit was run against real captured traffic
+(SSE framing / the chat adapter / the responses adapter / errors and retries /
+loopback and proxies), with every finding then handed to a verifier whose job
+was to refute it. Of 33 findings, 23 were refuted, leaving 10.
 
-**其中一条是整个项目最严重的缺陷**：设了公司代理时，API key 以**明文**穿过 CONNECT
-隧道。详见 [threat-model.md](../threat-model.md) §3(b3)——那里也记了为什么六轮对抗评审
-都没碰到它。
+**One of them is the worst defect in the entire project**: with a corporate
+proxy configured, the API key crosses the CONNECT tunnel **in plaintext**. See
+[threat-model.md](../threat-model.md) §3(b3), which also records why six rounds
+of adversarial review never touched it.
 
-其余九条（均已修复，见 `tests/test_transport_audit.py`）：
+The other nine (all fixed; see `tests/test_transport_audit.py`):
 
-| | 缺陷 |
+| | Defect |
 |---|---|
-| high | 断流的注释承诺「会重试」，但没有任何一层真的重试；且它会终结整个 REPL 会话，用户丢掉全部上下文 |
-| medium | `Retry-After` 只在 429 上读、只认秒数形式；503 说「30 秒后再来」被无视，改成 1/3/7 秒连打三次 |
-| medium | `request_max_retries = 0`（关掉重试最自然的写法）走到 `raise None` → TypeError，CLI 直接吐 traceback |
-| medium | 错误响应体被存进 `payload` 后从没人读，于是 400 只显示 "request rejected (HTTP 400)"，而 body 里明写着哪个字段不对 |
-| medium | `SSL_CERT_FILE` 指向不存在的文件时，抛裸 `FileNotFoundError`（连文件名都没有），在错误分类学之外 |
-| medium | `arguments: null` 的 tool call 让非流式路径崩溃（`json.loads(None)` 抛 TypeError，`parse_arguments` 不接） |
-| medium | NotStreaming 降级时 `stream_options` 没跟着摘掉，严格网关回 400——救场的路径反而把这轮弄挂 |
-| medium | 只有一行 `data: [DONE]` 的流被当成「成功的空回答」 |
-| low | 非隧道分支丢掉代理凭证，407 的提示还叫用户去做他已经做过的事 |
+| high | the comment on a dropped stream promises "it will retry", but no layer actually retries; and it kills the whole REPL session, losing all of the user's context |
+| medium | `Retry-After` was read only on 429 and only in its seconds form; a 503 saying "come back in 30 seconds" was ignored in favour of three attempts at 1/3/7 seconds |
+| medium | `request_max_retries = 0` (the most natural way to turn retries off) reached `raise None` -> TypeError, and the CLI printed a traceback |
+| medium | the error response body was stored in `payload` and then never read, so a 400 showed only "request rejected (HTTP 400)" while the body said plainly which field was wrong |
+| medium | when `SSL_CERT_FILE` pointed at a nonexistent file it raised a bare `FileNotFoundError` (without even the filename), outside the error taxonomy |
+| medium | a tool call with `arguments: null` crashed the non-streaming path (`json.loads(None)` raises TypeError, which `parse_arguments` does not catch) |
+| medium | on a NotStreaming downgrade, `stream_options` was not removed with it, so a strict gateway answered 400 -- the rescue path was what broke the round |
+| medium | a stream consisting only of `data: [DONE]` was treated as a successful empty answer |
+| low | the non-tunnel branch dropped the proxy credentials, and the 407 message told the user to do something they had already done |
 
-## 复现
+## Reproducing
 
 ```bash
 curl http://127.0.0.1:18790/healthz
-python -m pytest tests/test_live_endpoint_findings.py -q   # 离线，用字节级夹具
+python -m pytest tests/test_live_endpoint_findings.py -q   # offline, byte-level fixtures
 ```

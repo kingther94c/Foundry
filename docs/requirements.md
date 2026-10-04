@@ -1,272 +1,675 @@
 # Foundry — Runtime Requirements v0.2
 
-> 本文档取代另一 AI 草拟的 v0.1。所有与 v0.1 的实质性差异都有编号决定（[decision-log.md](decision-log.md)）或调研证据（[research/](research/)）支撑。
-> **状态标记**：无标记 = 已确认（用户拍板或由已确认决定推导）；`[暂定 D-0xx]` / `[暂定 OQ-xx]` = Claude 建议、待用户确认，登记在 [decision-log.md](decision-log.md)（状态=暂定）或 [open-questions.md](open-questions.md)。
+> This document supersedes the v0.1 draft written by another AI. Every
+> substantive difference from v0.1 is backed by a numbered decision
+> ([decision-log.md](decision-log.md)) or by research evidence
+> ([research/](research/)).
+> **Status markers**: unmarked = confirmed (either ruled by the user, or
+> derived from a confirmed decision); `[provisional D-0xx]` /
+> `[provisional OQ-xx]` = proposed by Claude, awaiting the user, and registered
+> in [decision-log.md](decision-log.md) (status = provisional) or
+> [open-questions.md](open-questions.md).
 
-**平台**：Windows　**语言**：Python 3.12　**安装**：wheel，`pip --no-index --find-links` 离线安装
+**Platform**: Windows · **Language**: Python 3.12 · **Installation**: a wheel,
+installed offline with `pip --no-index --find-links`
 
 ---
 
-## 0. Why Foundry（动机与设计优先级）
+## 0. Why Foundry (motivation and design priorities)
 
-v0.1 从头到尾没有回答"为什么要做这件事"。动机决定优先级，现在明确（[D-007](decision-log.md)）：
+v0.1 never answered "why are we doing this at all". The motivation decides the
+priorities, and it is now explicit ([D-007](decision-log.md)):
 
-1. **公司环境硬约束**：公司电脑不允许安装 Codex CLI / Claude Code 等外部 agent 产品，模型访问只能走公司 Gateway 的 API；软件分发走内部源（JFrog Artifactory），Node/Rust 工具链可用性不确定，Python + 内部 wheel 目录是最确定的通道。
-2. **学习目的**：吃透 coding-agent runtime 的设计。此前用 Claude Agent SDK 攒过 mini-codex，体验一般——Foundry 要赢在完全掌控与设计质量。
+1. **Hard corporate constraints**: corporate machines may not install external
+   agent products such as Codex CLI or Claude Code, and model access must go
+   through the corporate Gateway's API; software distribution goes through an
+   internal source (JFrog Artifactory), the availability of Node/Rust
+   toolchains is uncertain, and Python plus an internal wheel directory is the
+   most certain channel.
+2. **Learning**: to understand coding-agent runtime design thoroughly. A
+   mini-codex had previously been assembled with the Claude Agent SDK and the
+   experience was mediocre -- Foundry has to win on complete control and design
+   quality.
 
-**由此推导的设计优先级**（冲突时按此排序裁决）：
-可审计 > 少依赖/离线可装 > 实现清晰可维护 > 功能数量。
+**The design priorities that follow** (used to resolve conflicts, in this
+order): auditability > few dependencies / offline installability > a clear,
+maintainable implementation > feature count.
 
-**章程（不变）**：Foundry 自己拥有 agent loop、tools、policy、provider、session 的全部代码与接口。可研读 Codex、Claude Code、gemini-cli、aider、OpenHands、luban 等公开源码借鉴设计，但不 fork、不 vendored、不在运行时调用它们、**不在协议层冒充它们**。
-
-```text
-个人电脑：Foundry -> OpenAI API key -> OpenAI 模型          （变更：原 ChatGPT 登录已确认 blocked，见 §3.1）
-公司电脑：Foundry -> 公司 Gateway    -> 多家批准模型（含 Claude）
-开发环境：Foundry -> ReplayBackend / 本地 OpenAI 兼容端点   （新增：无凭证可测）
-```
-
-三边共用同一套 agent loop 和 tools，只切换认证与协议 adapter 层。
-
-## 1. 产品形态（v0.1 缺失，[D-004](decision-log.md)）
-
-- **V1 核心形态 = 交互式终端会话**：用户在终端与 agent 对话，流式输出，副作用动作当场审批（ASK）。
-- **架构强制**：UI 与 AgentRuntime 第一天解耦。runtime 对外只暴露**类型化事件流 + 异步审批请求/响应**；终端 UI 只是第一个订阅者。headless 模式（`foundry exec`，ASK 一律按 DENY 处理、fail-closed）因此近乎免费：M4 按余量进 V1，否则 V2（[OQ-16](open-questions.md)）。
-- **CLI surface（V1 最小集）**：
-  - `foundry` — 在当前目录开交互会话
-  - `foundry login / logout` — 个人路径凭证管理
-  - `foundry sessions [list|show|export <id>]` — 会话查看与导出
-  - `foundry doctor` — 环境自检（Python 版本、git、长路径、代理/TLS 连通性）
-- **输出契约**：五种终止状态映射到进程 exit code：`completed=0, partial=10, blocked=11, failed=12, cancelled=13`；最终报告含证据（验证命令 + exit code + diff 摘要）。
-- **配置**：TOML，`~/.foundry/config.toml`；命名 profile（如 `personal` / `corporate`），profile 含 backend + model + policy 预设。全部分层与优先级唯一定义于 §4.3。
-
-## 2. 架构组件
+**The charter (unchanged)**: Foundry owns all of the code and interfaces for
+its agent loop, tools, policy, providers and sessions. It may study the public
+source of Codex, Claude Code, gemini-cli, aider, OpenHands, luban and others
+for design ideas, but it does not fork them, vendor them, call them at runtime,
+or **impersonate them at the protocol level**.
 
 ```text
-Foundry CLI（终端 UI，事件流订阅者）
-    │  Submission(op) ▼ / Event ▲       ← 双队列，审批 = 异步事件对
-AgentRuntime（唯一的 loop）
-    ├── ContextManager     （新增：transcript→模型上下文投影、截断、token 记账）
-    ├── ModelBackend       （协议 adapter：OpenAI 兼容 / Responses / Replay / 本地端点）
-    │     └── AuthProvider （凭证获取/存储/刷新，token 只在 HTTP 注入层可见）
-    ├── PolicyEngine       （六步流水线，见 §4.1）
-    ├── SessionStore       （versioned JSONL，单一事实源，可确定性重放）
-    └── ToolExecutor       （文件/命令/Git 工具；Windows trusted host）
+personal machine : Foundry -> an OpenAI API key -> OpenAI models          (changed: the original ChatGPT login is confirmed blocked, see §3.1)
+corporate machine: Foundry -> the corporate Gateway -> several approved models (Claude included)
+development      : Foundry -> ReplayBackend / a local OpenAI-compatible endpoint (new: testable without credentials)
 ```
 
-相对 v0.1 的新增组件及理由：
-- **ContextManager**（批判-架构 #5）：v0.1 只限制了"工具输出大小"，没人拥有上下文预算。职责：per-tool 输出截断（显式 `[truncated]` 标记，完整输出落盘为 artifact）、旧工具输出的 observation masking、每轮 token 记账（读真实 usage 字段）、上下文逼近上限时的干净终止（V1 不做 LLM 摘要压缩，证据：arXiv 2508.21433 表明 masking 与 LLM 摘要等效）。
-- **事件流协议**（批判-架构 #4）：类型化事件（`turn_started / message_delta / tool_begin / tool_output_delta / tool_end / approval_request / token_count / turn_complete / error / termination`）+ 版本号；**枚举的单一权威是 design.md 的 `events.py`**，本清单为引用。审批建模为 `approval_request` 事件与后续 `approval_decision` 提交，loop 挂起等待——不是工具内部的阻塞 `input()`。
-- **ReplayBackend**（批判-架构 #3）：ModelBackend 的第三个实现，读取录制的 request/response 夹具。**验收标准：全部 loop/policy/tool 测试必须在无网络、无凭证的机器上通过。**
+All three share the same agent loop and tools; only the authentication and
+protocol adapter layers change.
 
-## 3. 模型路径
+## 1. Product shape (absent in v0.1, [D-004](decision-log.md))
 
-### 3.1 个人路径：OpenAI API key（v0.1 的 ChatGPT 登录已确认 blocked）
+- **V1's core form is an interactive terminal session**: the user converses
+  with the agent in the terminal, output streams, and side-effecting actions
+  are approved on the spot (ASK).
+- **Architectural mandate**: the UI and AgentRuntime are decoupled from day
+  one. The runtime exposes only a **typed event stream + asynchronous approval
+  requests and responses**; the terminal UI is merely the first subscriber.
+  Headless mode (`foundry exec`, where every ASK is treated as DENY,
+  fail-closed) is therefore nearly free: it lands in V1 in M4 if there is
+  budget, and otherwise in V2 ([OQ-16](open-questions.md)).
+- **CLI surface (the V1 minimum)**:
+  - `foundry` — open an interactive session in the current directory
+  - `foundry login / logout` — credential management for the personal path
+  - `foundry sessions [list|show|export <id>]` — viewing and exporting sessions
+  - `foundry doctor` — environment self-check (Python version, git, long
+    paths, proxy/TLS connectivity)
+- **The output contract**: the five termination states map to process exit
+  codes: `completed=0, partial=10, blocked=11, failed=12, cancelled=13`; the
+  final report carries evidence (the verification command + its exit code + a
+  diff summary).
+- **Configuration**: TOML at `~/.foundry/config.toml`; named profiles (such as
+  `personal` / `corporate`), each bundling backend + model + policy presets.
+  All layering and precedence is defined solely in §4.3.
 
-按 v0.1 §3.1 自己的规则（"限定研究后无受支持方案 → 标记 blocked，记录证据并询问"），2026-08-29 调研结论（证据：[research/auth.md](research/auth.md)）：
-- 官方 "Sign in with ChatGPT" 只授予身份（姓名/邮箱/头像），不给推理与订阅额度，且需申请审核；
-- Codex 订阅推理端点 `chatgpt.com/backend-api/codex` 有 originator 白名单，非 Codex 客户端 403；使用它必须冒充 Codex，违反 OpenAI ToS（绕过保护措施）与本章程，有真实封号案例；
-- OpenAI 认可的程序化路径只有平台 API key。
-
-**决定（[D-009](decision-log.md)，用户 2026-08-29 确认）**：个人路径 = OpenAI 平台 API key（Chat Completions / Responses，`api.openai.com`）。ChatGPT 登录标记 **blocked-with-evidence**，不实现、不冒充。
-
-硬性需求：
-- `foundry login` 引导录入 API key（或从环境变量读取）；凭证经 **DPAPI（ctypes CryptProtectData）** 加密存储于 `~/.foundry/auth.json`，原子写入；解密失败视为"未登录"引导重新 login，而非致命错误。
-- token/key 不得进入日志、错误信息、事件流或模型上下文；enforcement 见 §6.1（同一脱敏函数应用于三个点：session 写入、事件发出、上下文组装）。
-- **开发验证不依赖 key**：ReplayBackend 覆盖全部单测/回归；本地 OpenAI 兼容端点（LM Studio / Ollama，走同一个 Chat Completions adapter）做免费真实模型冒烟；真实云端 E2E 才消耗 key。
-
-### 3.2 公司 Gateway（多模型，含 Claude）
-
-已知事实（[D-006](decision-log.md) / [D-022](decision-log.md)）：Gateway 挂多家模型；**OpenAI 系走 Responses API**；token 由**内网 auth 流程**获取后配合 Gateway URL 使用；Claude 模型存在但线协议未验证。
-
-硬性需求：
-- **内部表示 provider-agnostic**：conversation / tool-call / tool-result / 流式事件采用 Foundry 自有中间表示（内容块结构对齐 MCP 形态，为未来桥接留门）；各线协议（Chat Completions / Responses / Anthropic Messages / Gateway 自有）各写窄 adapter，adapter 只做互转，不拥有 loop。
-- backend 配置表（借鉴 codex `ModelProviderInfo`）：`{name, base_url, protocol, credential_source, http_headers, query_params, request_max_retries, stream_idle_timeout_ms, capabilities_override}`；每个生效配置值记录 provenance（来自哪一层）。
-- **capability probing + 优雅降级**（luban 教训）：企业 Gateway 必然偏离标准（流式模式、并行 tool call、缓存、usage 字段）；每个可选特性都要有降级路径并在 session 中记录探测结果。**不静默模拟不支持的语义**。
-- **CredentialSource 合同**（吸收 Codex 版）：`acquire / expiry / refresh / logout`，机制可插拔（HTTP 交换 / 内部可执行 / 浏览器 SSO 待发现）；凭证以不可打印的 handle 流转，仅 HTTP 传输层解析——认证与协议 adapter 分离。
-- **M3 入场门**：先取得 Gateway 的 **tool-call 流式脱敏夹具**（普通响应 / 工具调用与续传 / usage / 限流 / 断流 / 畸形事件）再动手实现——"Responses-compatible"可能只覆盖对话而不覆盖 agentic 工具续传，这是最贵的返工风险。
-- TLS/proxy：默认用 `ssl.create_default_context()`（自动信任 Windows 系统证书库——公司 MITM 代理场景零配置）；支持 `FOUNDRY_CA_BUNDLE`/`SSL_CERT_FILE` 覆盖；代理读 `HTTPS_PROXY`/`NO_PROXY`；proxy/自定义 CA/mTLS **非 V1 验收项**（能力保留），407 Negotiate 明确报错。
-- 待确认（[OQ-6](open-questions.md)）：内网 auth 的具体机制、endpoint 形态、模型清单。
-
-### 3.3 开发/测试路径（新增）
-
-- **ReplayBackend**：SessionStore 记录的请求/响应可逐字节重建每次模型调用（这也是 [D-012] resume-ready schema 的基础）；golden transcripts 进 repo 作回归夹具。
-- **本地端点**：任何 OpenAI Chat Completions 兼容的 `base_url` 即可用（LM Studio/Ollama）；仅用于开发冒烟，不是产品路径。
-
-## 4. Policy 与审批（trusted-host）
-
-### 4.1 PolicyEngine：六步流水线（[D-013](decision-log.md)，采纳 Claude Code Agent SDK 公开规范）
+## 2. Architectural components
 
 ```text
-0 circuit breaker（硬编码表，先于一切；见下）
-1 pre_tool 回调（可选扩展点，可 ALLOW/DENY/ASK/改写输入）
-2 DENY 规则   ← 任意层的 DENY 不可被任何层的 ALLOW 覆盖
-3 ASK 规则   （内置 ASK 规则也在此：如 D-011 脏文件写操作）
-4 permission mode 基线
-5 ALLOW 规则 （内置只读工具 ALLOW 规则在此）
-6 交互审批（headless / dont_ask 下此步 = DENY，fail-closed）
+the Foundry CLI (terminal UI, a subscriber to the event stream)
+    │  Submission(op) ▼ / Event ▲       <- two queues; approval is an asynchronous event pair
+AgentRuntime (the one loop)
+    ├── ContextManager     (new: the transcript->model-context projection, truncation, token accounting)
+    ├── ModelBackend       (protocol adapters: OpenAI-compatible / Responses / Replay / a local endpoint)
+    │     └── AuthProvider (credential acquisition/storage/refresh; the token is visible only at the HTTP injection layer)
+    ├── PolicyEngine       (the six-step pipeline, see §4.1)
+    ├── SessionStore       (versioned JSONL, the single source of truth, deterministically replayable)
+    └── ToolExecutor       (file/command/Git tools; a Windows trusted host)
 ```
 
-**各机制在流水线中的确切位置**（评审修正：v0.2 初稿把"工具默认 ASK"写成了会杀死 accept_edits 与审批持久化的形态）：
-- 只读工具（`list_files/search_text/read_file/read_artifact/git_status/git_diff`）的默认放行 = **内置 ALLOW 规则（第 5 步）**。
-- mutator（`apply_patch/run_command`）的"默认 ASK" = **不是 ASK 规则**，而是什么都没命中时落入第 6 步交互审批。
-- `accept_edits` 模式 = 第 4 步基线对 workspace 内 apply_patch 给 ALLOW（因为第 3 步无内置 ASK 规则拦它，故能生效）。
-- D-011 脏文件强制 ASK = **内置 ASK 规则（第 3 步）**——正因位于 mode 之前，它能压过 accept_edits。
-- 用户"永久批准"生成的 ALLOW 规则位于第 5 步，因此能对 mutator 生效（第 3 步没有兜底 ASK 规则挡路）。
+The components added relative to v0.1, and why:
+- **ContextManager** (architecture critique #5): v0.1 capped "tool output size"
+  and left nobody owning the context budget. Its responsibilities: per-tool
+  output truncation (an explicit `[truncated]` marker, with the full output
+  written to disk as an artifact), observation masking of older tool output,
+  per-round token accounting (reading the real usage fields), and a clean
+  termination as the context approaches its ceiling (V1 does no LLM
+  summarisation compaction; the evidence is arXiv 2508.21433, which shows
+  masking and LLM summarisation to be equivalent).
+- **The event stream protocol** (architecture critique #4): typed events
+  (`turn_started / message_delta / tool_begin / tool_output_delta / tool_end /
+  approval_request / token_count / turn_complete / error / termination`) plus a
+  version number; **the single authority for the enumeration is `events.py` in
+  design.md**, and this list is a reference to it. Approval is modelled as an
+  `approval_request` event and a subsequent `approval_decision` submission,
+  with the loop suspended while it waits -- not a blocking `input()` inside a
+  tool.
+- **ReplayBackend** (architecture critique #3): ModelBackend's third
+  implementation, reading recorded request/response fixtures. **The acceptance
+  criterion: every loop/policy/tool test must pass on a machine with no network
+  and no credentials.**
 
-**mode 基线定义**（每种一行，任何 mode 都不越过第 0/2 步）：
-- `default`：未命中 → 第 6 步交互审批。
-- `accept_edits`：workspace 内 apply_patch → ALLOW；其余同 default。
-- `plan`：apply_patch 与非只读 run_command → DENY（带 reason 返回模型）；计划批准后切换 mode。
-- `dont_ask`：未命中 → **DENY**（fail-closed；headless 复用此语义）。不存在"未命中即放行"的 mode。
+## 3. Model paths
 
-不变量（写测试表验证）：回调的 ALLOW 不跳过 DENY/ASK 规则；DENY 逐层不可放松；**pre_tool 改写输入后从第 0 步重新进入流水线，breaker/规则/审批展示/执行全部绑定改写后的最终输入**；规则匹配前必须先做**命令分段**（见 §4.2）。测试表至少含：accept_edits 放行干净文件 patch；accept_edits 下脏文件 patch 仍 ASK；持久化 ALLOW 规则对 run_command 生效；dont_ask 未命中即 DENY。
+### 3.1 The personal path: an OpenAI API key (v0.1's ChatGPT login is confirmed blocked)
 
-- 决策词汇固定 `ALLOW / ASK / DENY`，规则形如 `tool` 或 `tool(pattern)`（fnmatch），固定优先序 deny > ask > allow，**拒绝数字优先级**（gemini-cli 教训）。
-- DENY 返回给模型一个机器可读 reason 作为 tool result（loop 存活，模型可调整）；用户 Abort 才终止 turn。
-- 审批粒度：`一次 / 本会话（仅内存）/ 永久`。**永久规则写入 `~/.foundry/` 用户层配置（按 workspace 键控），不写 workspace 内文件**——否则 accept_edits 下模型可自我提权（评审发现）；生成规则为**精确串匹配**（无模式泛化），下次 policy 评估时生效。审批 UI 展示的命令/diff 与实际执行对象必须是同一字符串（what-you-approve-is-what-runs）；ASK 超时默认 DENY。模型输出永远不能触发规则持久化。
-- **审批绑定与失效**（吸收 Codex 版）：一次审批绑定「归一化操作 + cwd + env 策略 + 有效期」，任一字段变化即失效需重新审批；执行前重新校验时效性不变量（防审批与执行之间状态漂移）。
-- policy 决定落盘时记录：rule ID、策略版本/摘要、操作摘要、reason、时间——事后可复核"当时为什么放行"。
-- **内置 circuit breaker（第 0 步，硬编码表，任何 ALLOW 规则/mode/回调不可覆盖）**：
+Following v0.1 §3.1's own rule ("if bounded research finds no supported route
+-> mark it blocked, record the evidence and ask"), the research conclusion of
+2026-08-29 (evidence: [research/auth.md](research/auth.md)):
+- the official "Sign in with ChatGPT" grants identity only (name/email/avatar),
+  not inference or subscription quota, and requires an application review;
+- the Codex subscription inference endpoint
+  `chatgpt.com/backend-api/codex` has an originator allowlist and answers 403
+  to a non-Codex client; using it requires impersonating Codex, which violates
+  OpenAI's ToS (circumventing protective measures) and this charter, and there
+  are real cases of accounts being banned;
+- the only programmatic route OpenAI endorses is a platform API key.
 
-  | 类别 | 条目（canonical 形式，分段器先做别名归一：`rm/ri/del/erase → Remove-Item` 等） |
+**Decision ([D-009](decision-log.md), confirmed by the user on 2026-08-29)**:
+the personal path is an OpenAI platform API key (Chat Completions /
+Responses, `api.openai.com`). ChatGPT login is marked
+**blocked-with-evidence**: not implemented, not impersonated.
+
+Hard requirements:
+- `foundry login` guides entry of an API key (or reads one from an environment
+  variable); the credential is encrypted with **DPAPI (ctypes
+  CryptProtectData)** and stored at `~/.foundry/auth.json`, written
+  atomically; a failed decrypt counts as "not logged in" and leads back to
+  login, rather than being a fatal error.
+- The token/key must not enter logs, error messages, the event stream or the
+  model context; enforcement is in §6.1 (the same redaction function applied at
+  three points: the session write, the event emission, and context assembly).
+- **Development verification does not depend on a key**: ReplayBackend covers
+  every unit and regression test; a local OpenAI-compatible endpoint (LM Studio
+  / Ollama, through the same Chat Completions adapter) gives a free real-model
+  smoke test; only real cloud E2E consumes the key.
+
+### 3.2 The corporate Gateway (multi-model, Claude included)
+
+Known facts ([D-006](decision-log.md) / [D-022](decision-log.md)): the Gateway
+hosts models from several vendors; **the OpenAI family goes through the
+Responses API**; the token is obtained through an **intranet auth flow** and
+used with the Gateway URL; Claude models exist but their wire protocol is
+unverified.
+
+Hard requirements:
+- **The internal representation is provider-agnostic**: conversation /
+  tool-call / tool-result / streaming events use Foundry's own intermediate
+  representation (with the content block structure aligned to the MCP shapes,
+  leaving the door open for a future bridge); each wire protocol (Chat
+  Completions / Responses / Anthropic Messages / a Gateway-specific one) gets
+  its own narrow adapter, and an adapter only converts -- it never owns the
+  loop.
+- The backend configuration table (borrowing from codex's
+  `ModelProviderInfo`): `{name, base_url, protocol, credential_source,
+  http_headers, query_params, request_max_retries, stream_idle_timeout_ms,
+  capabilities_override}`; every effective configuration value records its
+  provenance (which layer it came from).
+- **Capability probing + graceful degradation** (the luban lesson): an
+  enterprise Gateway will inevitably deviate from the standard (streaming
+  modes, parallel tool calls, caching, usage fields); every optional feature
+  needs a degradation path, and the probe results are recorded in the session.
+  **Unsupported semantics are never silently simulated.**
+- **The CredentialSource contract** (absorbed from the Codex version):
+  `acquire / expiry / refresh / logout`, with a pluggable mechanism (an HTTP
+  exchange / an internal executable / browser SSO, still to be discovered);
+  the credential circulates as a non-printable handle that only the HTTP
+  transport layer resolves -- authentication is separate from the protocol
+  adapter.
+- **The M3 entry gate**: obtain the Gateway's **tool-call streaming redaction
+  fixtures** first (an ordinary response / a tool call and its continuation /
+  usage / rate limiting / a dropped stream / a malformed event), and only then
+  implement -- "Responses-compatible" may cover conversation without covering
+  agentic tool continuation, and that is the most expensive rework risk.
+- TLS/proxy: `ssl.create_default_context()` by default (which automatically
+  trusts the Windows system certificate store -- zero configuration in the
+  corporate MITM proxy case); `FOUNDRY_CA_BUNDLE`/`SSL_CERT_FILE` overrides are
+  supported; proxies are read from `HTTPS_PROXY`/`NO_PROXY`; proxy / custom CA
+  / mTLS are **not V1 acceptance items** (the capability is kept), and a 407
+  Negotiate is reported as an explicit error.
+- To be confirmed ([OQ-6](open-questions.md)): the specific intranet auth
+  mechanism, the endpoint's shape, and the model list.
+
+### 3.3 The development/test path (new)
+
+- **ReplayBackend**: the requests and responses recorded by SessionStore can
+  rebuild every model call byte for byte (which is also the basis of
+  [D-012]'s resume-ready schema); golden transcripts are committed as
+  regression fixtures.
+- **A local endpoint**: any `base_url` compatible with OpenAI Chat Completions
+  will do (LM Studio/Ollama); for development smoke tests only, not a product
+  path.
+
+## 4. Policy and approval (trusted host)
+
+### 4.1 PolicyEngine: the six-step pipeline ([D-013](decision-log.md), adopting the Claude Code Agent SDK's published specification)
+
+```text
+0 the circuit breaker (a hard-coded table, before everything; see below)
+1 the pre_tool callback (an optional extension point; may ALLOW/DENY/ASK/rewrite the input)
+2 DENY rules   <- a DENY at any layer cannot be overridden by an ALLOW at any layer
+3 ASK rules    (built-in ASK rules live here too: e.g. D-011's writes to dirty files)
+4 the permission mode baseline
+5 ALLOW rules  (the built-in read-only tool ALLOW rules live here)
+6 interactive approval (under headless / dont_ask this step = DENY, fail-closed)
+```
+
+**Exactly where each mechanism sits in the pipeline** (a review correction: the
+first v0.2 draft wrote "tools default to ASK" in a form that would have killed
+both accept_edits and approval persistence):
+- The default allowance for read-only tools
+  (`list_files/search_text/read_file/read_artifact/git_status/git_diff`) is a
+  **built-in ALLOW rule (step 5)**.
+- The "default ASK" for mutators (`apply_patch/run_command`) is **not an ASK
+  rule**; it is what happens when nothing matches and the call falls through to
+  step 6's interactive approval.
+- `accept_edits` mode is the step 4 baseline granting ALLOW to apply_patch
+  inside the workspace (which works precisely because step 3 has no built-in
+  ASK rule in the way).
+- D-011's forced ASK on dirty files is a **built-in ASK rule (step 3)** -- and
+  because it sits before the mode, it overrides accept_edits.
+- The ALLOW rule generated by a user's "approve permanently" sits at step 5,
+  which is why it takes effect for mutators (no catch-all ASK rule at step 3
+  blocks it).
+
+**Mode baseline definitions** (one line each; no mode ever skips steps 0 or
+2):
+- `default`: nothing matched -> step 6 interactive approval.
+- `accept_edits`: apply_patch inside the workspace -> ALLOW; otherwise as
+  default.
+- `plan`: apply_patch and non-read-only run_command -> DENY (with the reason
+  returned to the model); switch modes once the plan is approved.
+- `dont_ask`: nothing matched -> **DENY** (fail-closed; headless reuses these
+  semantics). There is no mode in which "nothing matched" means allowed.
+
+Invariants (verified by a test table): an ALLOW from the callback does not skip
+the DENY/ASK rules; a DENY cannot be relaxed layer by layer; **after a pre_tool
+rewrite, the input re-enters the pipeline from step 0, and the breaker, the
+rules, the approval display and the execution are all bound to the final,
+rewritten input**; **command segmentation** must happen before rule matching
+(see §4.2). The test table contains at least: accept_edits allowing a patch to
+a clean file; a patch to a dirty file still ASKing under accept_edits; a
+persisted ALLOW rule taking effect for run_command; dont_ask DENYing when
+nothing matched.
+
+- The decision vocabulary is fixed as `ALLOW / ASK / DENY`, rules take the form
+  `tool` or `tool(pattern)` (fnmatch), the precedence order is fixed as
+  deny > ask > allow, and **numeric priorities are rejected** (the gemini-cli
+  lesson).
+- A DENY returns a machine-readable reason to the model as the tool result (the
+  loop survives and the model can adjust); only a user Abort terminates the
+  turn.
+- Approval granularity: `once / this session (memory only) / permanently`. **A
+  permanent rule is written into the user-layer configuration under
+  `~/.foundry/` (keyed by workspace), never into a file inside the
+  workspace** -- otherwise the model could escalate its own privileges under
+  accept_edits (found in review); the generated rule is an **exact string
+  match** (no pattern generalisation) and takes effect at the next policy
+  evaluation. The command/diff shown in the approval UI and the object actually
+  executed must be the same string (what-you-approve-is-what-runs); an ASK
+  timeout defaults to DENY. Model output can never trigger rule persistence.
+- **Approval binding and expiry** (absorbed from the Codex version): one
+  approval binds "the normalised operation + cwd + the env policy + a validity
+  window", and a change to any field invalidates it and requires a new
+  approval; the timeliness invariant is re-checked before execution (against
+  state drift between approval and execution).
+- A persisted policy decision records: the rule ID, the policy version/digest,
+  an operation digest, the reason, and the time -- so "why was this allowed at
+  the time" can be reviewed afterwards.
+- **The built-in circuit breaker (step 0, a hard-coded table that no ALLOW
+  rule, mode or callback can override)**:
+
+  | Category | Entries (in canonical form; the segmenter normalises aliases first: `rm/ri/del/erase -> Remove-Item` and so on) |
   |---|---|
-  | 保护写路径 | `.git/`、`~/.foundry/`（凭证/policy/audit）、session 目录、`<workspace>/.foundry/`（若存在） |
-  | 销毁性 git | `checkout -- <path>`、`restore`（覆盖工作区形式）、`reset --hard`、`clean`、`stash drop`、`stash clear` |
-  | 递归删除 | 仓库根/用户主目录/盘根为目标的 `Remove-Item -Recurse`、`rmdir /s`、`del /f /s`、`rm -rf` 等价形式 |
+  | protected write paths | `.git/`, `~/.foundry/` (credentials/policy/audit), the session directory, `<workspace>/.foundry/` (if present) |
+  | destructive git | `checkout -- <path>`, `restore` (in its working-tree-overwriting form), `reset --hard`, `clean`, `stash drop`, `stash clear` |
+  | recursive deletion | `Remove-Item -Recurse`, `rmdir /s`, `del /f /s`, `rm -rf` and equivalent forms targeting the repository root, the user's home directory, or a drive root |
 
-- **plan mode**：只读探索，见 mode 基线；成本极低、价值高。
-- 内置只读安全命令白名单（不提示），**带参数约束**（评审修正）：路径参数必须通过与文件工具相同的 workspace containment 检查（拒绝盘符绝对/UNC 参数）；**裸 `git` 不入白名单**——模型应使用硬化的 git_status/git_diff 内置工具，经 run_command 的 git 走正常 policy（否则白名单绕过 §5.2 的硬化）。
-- 启动时校验规则：匹配不到任何工具或永远不可能命中的规则要警告（silent-dead-rule 是 Claude Code 踩过的坑）。
+- **plan mode**: read-only exploration, per the mode baselines; very cheap and
+  very valuable.
+- A built-in allowlist of read-only safe commands (no prompt), **with argument
+  constraints** (a review correction): path arguments must pass the same
+  workspace containment check as the file tools (drive-absolute and UNC
+  arguments are refused); **bare `git` is not on the allowlist** -- the model
+  should use the hardened built-in git_status/git_diff tools, and git through
+  run_command goes through normal policy (otherwise the allowlist bypasses
+  §5.2's hardening).
+- Rule validation at startup: a rule that matches no tool, or that can never
+  fire, produces a warning (the silent-dead-rule trap Claude Code fell into).
 
-### 4.2 run_command 的诚实设计
+### 4.2 An honest design for run_command
 
-命令行为安全判定的前提是解析命令，而 Windows 有 cmd/PowerShell/git-bash 三种语法，字符串前缀匹配已被反复证明可绕过（Claude Code CVE-2025-66032 等）。V1 规则：
-- 固定**唯一 shell = Windows PowerShell 5.1**（`powershell.exe -NoProfile -Command`，[D-018](decision-log.md)）：预装零依赖；分段器按 5.1 语法（`;`、管道 `|`；**5.1 无 `&&`/`||`**）；system prompt 明确告知模型"无 `&&`，用 `;` 代替"。
-- 自动 ALLOW 只匹配保守分段后的每一段；命令含替换/链式/重定向等元字符而无法可信分段时，**一律 ASK**（"can't parse → ASK" 安全阀）。
-- DENY 字符串匹配仅作纵深防御，文档明确其非边界属性。
-- 执行：`cwd` 强制显式、超时、输出上限；**Job Object（ctypes，KILL_ON_JOB_CLOSE）托管进程树**，cancel/timeout 一次性击杀全部子孙，`taskkill /T /F` 兜底；无持久 shell 会话（stateless per call，mini-swe-agent 教训）。
-- **env 过滤**：子进程默认得到最小核心集（PATH/SYSTEMROOT/TEMP/PYTHON* 等），默认剔除 `*KEY*/*TOKEN*/*SECRET*/*PASSWORD*/AWS_*`；用户可显式 passthrough；Foundry 自身凭证永不进入子进程 env。
-- 输出捕获 bytes-first：UTF-8 优先解码、OEM(cp936) 回退、`errors='replace'`；子进程注入 `PYTHONUTF8=1`；session 保留原始 bytes（base64）以便事后重解码。
+Deciding whether a command is safe presupposes parsing it, and Windows has
+three syntaxes (cmd / PowerShell / git-bash), while string prefix matching has
+been shown bypassable over and over (Claude Code CVE-2025-66032 and others).
+The V1 rules:
+- Fix a **single shell: Windows PowerShell 5.1**
+  (`powershell.exe -NoProfile -Command`, [D-018](decision-log.md)):
+  preinstalled, zero dependencies; the segmenter follows 5.1 syntax (`;`, the
+  pipe `|`; **5.1 has no `&&`/`||`**); the system prompt tells the model
+  explicitly that "there is no `&&`, use `;` instead".
+- Automatic ALLOW only matches when every segment of the conservative
+  segmentation matches; when a command contains substitution, chaining,
+  redirection or other metacharacters and cannot be segmented with confidence,
+  it is **always ASK** (the "can't parse -> ASK" safety valve).
+- DENY string matching is defence in depth only, and the document states
+  explicitly that it is not a boundary.
+- Execution: an explicit `cwd`, a timeout, an output ceiling; **a Job Object
+  (ctypes, KILL_ON_JOB_CLOSE) owns the process tree**, so cancel/timeout kills
+  every descendant at once, with `taskkill /T /F` as a backstop; no persistent
+  shell session (stateless per call, the mini-swe-agent lesson).
+- **Env filtering**: the subprocess gets a minimal core set by default
+  (PATH/SYSTEMROOT/TEMP/PYTHON* and so on), with
+  `*KEY*/*TOKEN*/*SECRET*/*PASSWORD*/AWS_*` removed by default; the user may
+  pass specific variables through explicitly; Foundry's own credentials never
+  enter a subprocess env.
+- Output is captured bytes-first: decoded as UTF-8 first, falling back to the
+  OEM code page (cp936), with `errors='replace'`; `PYTHONUTF8=1` is injected
+  into the subprocess; the session keeps the raw bytes (base64) so they can be
+  re-decoded later.
 
-### 4.3 配置分层与仓库信任（本节为分层的唯一权威定义，§1 与 design.md 引用此处）
+### 4.3 Configuration layering and repository trust (this section is the sole authority on layering; §1 and design.md refer to it)
 
-- **设置类（标量，如 model、shell、超时）**：CLI flag > 环境变量（`FOUNDRY_*`）> 项目本地（.gitignored）> profile（用户配置内选定）> 用户 `~/.foundry/config.toml` > 内置默认。**secrets 只能来自环境变量或凭证存储，禁止出现在仓库配置与普通 CLI 参数中**。
-- **policy 规则类**：各层规则列表**拼接**后统一按 deny > ask > allow 评估（层间先后不影响结果，deny-from-anywhere-wins）；例外：**managed 层**（管理员 ACL 目录如 `C:\ProgramData\Foundry\policy.toml`）的 DENY 为地板，且仓库签入层只接受 deny/ask。
-- **仓库内配置只能收紧**（新增 DENY/ASK），永远不能新增 ALLOW；endpoint、credential、headers、proxy 等连接类配置只能来自机器本地层。首次在新目录使用仓库提供的任何配置/说明文件前，一次性信任提示，记录于 `~/.foundry/trusted.json`。
-- **仓库说明文件（[D-019](decision-log.md)，M2 交付）**：V1 支持读取项目根 `FOUNDRY.md`（兼容 `AGENTS.md`），声明构建/测试命令与仓库注意事项，注入上下文（信任门控 + 字节上限）；验证命令优先级：任务指定 > 仓库文件声明 > 模型自选。
-- **"公司固定 DENY 不可覆盖"的诚实定位**（批判-安全 #4）：在未被篡改的安装内，运行时任何途径（任务、审批、CLI flag）都不能放松 managed DENY——这可以做到；对抗本机管理员故意改源码/配置——做不到，真正的边界在 Gateway 服务端（模型白名单、请求日志）。此定位必须写进披露文档，不做过度承诺。
+- **Settings (scalars such as model, shell, timeouts)**: CLI flag >
+  environment variable (`FOUNDRY_*`) > project-local (gitignored) > profile
+  (selected inside the user configuration) > the user's
+  `~/.foundry/config.toml` > built-in defaults. **Secrets may come only from
+  environment variables or the credential store, and must never appear in
+  repository configuration or ordinary CLI arguments.**
+- **Policy rules**: the rule lists from every layer are **concatenated** and
+  then evaluated uniformly as deny > ask > allow (layer order does not affect
+  the result; deny-from-anywhere wins); the exception is the **managed layer**
+  (an administrator-ACL'd directory such as `C:\ProgramData\Foundry\policy.toml`),
+  whose DENYs are a floor, and the repository-checked-in layer accepts only
+  deny/ask.
+- **In-repository configuration can only tighten** (adding DENY/ASK), and can
+  never add an ALLOW; connection-class configuration such as endpoint,
+  credentials, headers and proxy may come only from machine-local layers. The
+  first time any repository-provided configuration or instruction file is used
+  in a new directory, a one-time trust prompt appears and is recorded in
+  `~/.foundry/trusted.json`.
+- **The repository instruction file ([D-019](decision-log.md), delivered in
+  M2)**: V1 reads a `FOUNDRY.md` at the project root (with `AGENTS.md` read for
+  compatibility), declaring the build/test commands and repository caveats, and
+  injects it into the context (trust-gated, with a byte ceiling); verification
+  command precedence: specified in the task > declared in the repository file >
+  chosen by the model.
+- **The honest position on "a corporate fixed DENY cannot be overridden"**
+  (security critique #4): within an untampered installation, no runtime route
+  (a task, an approval, a CLI flag) can relax a managed DENY -- that is
+  achievable; resisting a local administrator deliberately editing the source
+  or configuration is not, and the real boundary is on the Gateway server
+  (model allowlisting, request logging). This position must be written into the
+  disclosure documentation, with no over-promising.
 
-### 4.4 威胁模型与披露（新增章节，v0.1 完全缺失 prompt injection）
+### 4.4 Threat model and disclosure (a new section; v0.1 omitted prompt injection entirely)
 
-- **威胁模型声明**：所有 tool result（文件内容、命令输出、git diff）都是不可信输入，可能携带指向模型的注入指令。无 sandbox 时唯一真实防线是 PolicyEngine 独立于模型意图对每个副作用把关。
-- "可信仓库"的定义写实：= 你愿意让其中任意文件内容既被执行、也被当作指令读取的仓库。
-- 首次运行 + 每会话开始打印固定披露：无 sandbox；每个被批准的命令以完整用户权限运行（可读写所有文件含凭证、访问网络、读环境变量）；仅在可信仓库使用。
-- V1 明确非目标：不防御恶意仓库内容；不防本机管理员绕过 managed policy。V2 方向（restricted token / 容器）写进 roadmap 以示阶段性选择。
-- 终端渲染安全：模型输出与工具 stdout 渲染前剥离 ANSI/OSC 序列（OSC 52 剪贴板注入是真实攻击面），rich markup 一律转义。
-- 不自动 commit、push、PR、publish 或 deploy（继承 v0.1）。
+- **The threat model statement**: every tool result (file contents, command
+  output, git diff) is untrusted input and may carry injected instructions
+  aimed at the model. With no sandbox, the only real defence is PolicyEngine
+  gating every side effect independently of the model's intent.
+- The realistic definition of a "trusted repository": one whose every file you
+  are willing to have both executed and read as instructions.
+- Fixed disclosure printed on first run and at the start of every session: no
+  sandbox; every approved command runs with full user privileges (it can read
+  and write all files including credentials, access the network, and read
+  environment variables); use only in trusted repositories.
+- Explicit V1 non-goals: no defence against malicious repository content; no
+  defence against a local administrator bypassing managed policy. The V2
+  directions (a restricted token / a container) go on the roadmap, to show this
+  is a staged choice.
+- Terminal rendering safety: strip ANSI/OSC sequences from model output and
+  tool stdout before rendering (OSC 52 clipboard injection is a real attack
+  surface), and always escape rich markup.
+- No automatic commit, push, PR, publish or deploy (inherited from v0.1).
 
-## 5. Agent loop 与 tools
+## 5. The agent loop and tools
 
-### 5.1 Loop
+### 5.1 The loop
 
-- 形态：`while 模型返回 tool calls：policy → 执行 → 回填 results → 重采样`；模型给出无 tool call 的最终消息即 turn 结束。中途用户输入进入队列，下一次采样时合并（codex mid-turn steering）。
-- 每轮请求为无状态全量历史（stateless full-history），便于 replay 与不持久化状态的 Gateway。
-- 限制：软性连续工具轮数上限（可配置）、单命令超时、每任务 token 上限（可选配置）；同一文件连续编辑失败 2-3 次后强制 read_file（SWE-agent 错误复合曲线教训）。
-- **失败指纹**（吸收 Codex 版）：重复失败按「归一化操作 + 错误类」计数，**错误文本变化不重置计数器**；超过小阈值即终止或转人工，避免模型换个措辞无限重试。
-- **协议层必须接受一轮 N 个 tool call**（Responses/Claude 都会并行发）；V1 执行层按顺序串行，每个独立过 policy，全部回填后进入下一轮。
-- malformed / 未知 / 越权 tool call 不执行，返回结构化错误给模型。
-- 错误分类学：`TransientError（429/5xx/网络，指数退避重试，尊重 Retry-After）/ AuthError（refresh 后重试一次）/ FatalError（context 超限、内容拒绝）/ PolicyDenied`；retry 逻辑归 AgentRuntime，不散落各 backend；持续限流以 `blocked(rate_limited)` 终止而非无限等待。
-- 并发模型：**asyncio 核心**（[D-016](decision-log.md)；streaming、取消、超时的自然表达；Windows ProactorEventLoop 支持子进程）；同步工具用 `asyncio.to_thread` 包装。
+- The shape: `while the model returns tool calls: policy -> execute -> feed
+  results back -> resample`; a final message from the model with no tool calls
+  ends the turn. User input arriving mid-turn is queued and merged at the next
+  sampling (codex mid-turn steering).
+- Each request is the stateless full history, which suits both replay and a
+  Gateway that persists no state.
+- Limits: a soft ceiling on consecutive tool rounds (configurable), a per
+  command timeout, and an optional per-task token ceiling; after 2-3
+  consecutive failed edits to the same file, a read_file is forced (the
+  SWE-agent error-compounding curve).
+- **Failure fingerprints** (absorbed from the Codex version): repeated failures
+  are counted by "normalised operation + error class", and **a change in the
+  error text does not reset the counter**; past a small threshold, terminate or
+  hand over to a human, so the model cannot retry forever by rewording.
+- **The protocol layer must accept N tool calls in one round** (both Responses
+  and Claude issue them in parallel); V1's execution layer runs them serially
+  in order, each passing policy independently, and moves to the next round only
+  once all have been fed back.
+- A malformed, unknown, or out-of-bounds tool call is not executed, and a
+  structured error is returned to the model.
+- The error taxonomy: `TransientError (429/5xx/network, retried with
+  exponential backoff, respecting Retry-After) / AuthError (refresh and retry
+  once) / FatalError (context exceeded, a content refusal) / PolicyDenied`;
+  retry logic belongs to AgentRuntime rather than being scattered across
+  backends; sustained throttling terminates as `blocked(rate_limited)` rather
+  than waiting indefinitely.
+- The concurrency model: an **asyncio core** ([D-016](decision-log.md);
+  streaming, cancellation and timeouts express naturally; the Windows
+  ProactorEventLoop supports subprocesses); synchronous tools are wrapped in
+  `asyncio.to_thread`.
 
-### 5.2 V1 工具面（9 个，各自带输出上限与截断标记）
+### 5.2 The V1 tool surface (9 tools, each with an output ceiling and a truncation marker)
 
-| 工具 | 说明 | 默认 policy |
+| Tool | Description | Default policy |
 |---|---|---|
-| `list_files` | mtime 排序，条目/深度上限 | ALLOW |
-| `search_text` | 命中上限（~50），过多时提示收窄而非静默截断 | ALLOW |
-| `read_file` | 窗口式（~250 行）带行号与省略计数；登记 read-before-edit 状态 | ALLOW |
-| `apply_patch` | 见 §5.3 | 落第 6 步交互审批；accept_edits 基线下 workspace 内 ALLOW（机制见 §4.1） |
-| `run_command` | 见 §4.2 | 落第 6 步交互审批 |
-| `read_artifact` | 读取本会话因超限落盘的完整工具输出。artifact_id 为**不透明 token**，只经当前会话内存索引解析（不接受任何路径语义），仅限本会话产物；输出与其他工具输出走同一截断+脱敏路径回入上下文（v0.1 未定义，现定义 [D-015](decision-log.md)） | ALLOW |
-| `git_status` / `git_diff` | 硬化调用：`git --no-pager -c core.fsmonitor= -c core.hooksPath=`，剥离 `GIT_*` env，`GIT_TERMINAL_PROMPT=0` | ALLOW |
-| `finish` | 模型显式提交任务收口：`{status, summary, claims:[{claim_text, command_event_id}]}`；runtime 据 §6.3 核验后发 Termination 事件（[D-017](decision-log.md)，ValidationClaim 的唯一产生通道） | ALLOW |
+| `list_files` | sorted by mtime, with entry and depth ceilings | ALLOW |
+| `search_text` | a hit ceiling (~50); beyond it, prompt to narrow rather than truncate silently | ALLOW |
+| `read_file` | windowed (~250 lines) with line numbers and an elision count; registers read-before-edit state | ALLOW |
+| `apply_patch` | see §5.3 | falls to step 6 interactive approval; ALLOW inside the workspace under the accept_edits baseline (mechanism in §4.1) |
+| `run_command` | see §4.2 | falls to step 6 interactive approval |
+| `read_artifact` | reads the complete tool output this session wrote to disk after exceeding a limit. artifact_id is an **opaque token** resolved only through the current session's in-memory index (no path semantics are accepted), limited to this session's products; the output re-enters the context through the same truncation and redaction path as any other tool (undefined in v0.1, now defined by [D-015](decision-log.md)) | ALLOW |
+| `git_status` / `git_diff` | hardened invocation: `git --no-pager -c core.fsmonitor= -c core.hooksPath=`, stripping `GIT_*` from the env, with `GIT_TERMINAL_PROMPT=0` | ALLOW |
+| `finish` | the model explicitly closing out the task: `{status, summary, claims:[{claim_text, command_event_id}]}`; the runtime verifies per §6.3 and then emits a Termination event ([D-017](decision-log.md); the only channel that produces a ValidationClaim) | ALLOW |
 
-工具描述文字 = 短段落 + 一个示例（SWE-agent ACI 证据：简洁、合并、带护栏的工具面实测提分）。V1 冻结为此 9 个，不再增补；`update_plan`（可见计划）列为 V2 候选。
+Tool description text is a short paragraph plus one example (the SWE-agent ACI
+evidence: a concise, consolidated, guard-railed tool surface measurably scores
+higher). V1 freezes at these 9 with no additions; `update_plan` (a visible
+plan) is a V2 candidate.
 
-### 5.3 apply_patch（[D-010](decision-log.md)：模型中性锚定格式）
+### 5.3 apply_patch ([D-010](decision-log.md): a model-neutral anchored format)
 
-- 格式：**信封 + 锚定文本 search/replace hunks**——信封支持 Add/Delete/Update File（借鉴 V4A 的文件操作结构），Update hunk 为不依赖行号的精确锚定文本替换（借鉴 Claude Code str_replace 与 aider SEARCH/REPLACE 的收敛结论）；补丁作为**单个不透明字符串参数**传输（code-in-json 教训）。理由：Gateway 多模型（含 Claude），V4A 是 GPT 私有训练格式，Claude 用之格式崩坏。
-- 格式说明显式写进 system prompt，不依赖"模型天生会"；grammar 文档与解析器同源生成（codex #2578 教训）。
-- 应用语义（评审修正，原文混用了 codex 原子性与 aider 部分应用两种互斥结论）：**逐文件原子**——先解析并定位**全部**文件的全部 hunk；任一 hunk 定位失败的文件整个不触盘，其余全部 hunk 通过的文件以 temp + `os.replace` 原子写入；返回 per-文件/per-hunk 状态报告，指示模型**只重发失败文件的全部 hunks**。此语义同步写进 prompts/ 的模型侧格式说明（错误文案与行为不得分叉）。宽容梯度：精确匹配 → CRLF/BOM 归一 → 行尾空白容差 → **失败带提示**（引用最近似的真实行）；>80% 模糊匹配默认关闭（静默错位比失败更糟）。
-- 唯一性：锚文本命中 0 或 >1 处时结构化报错（含出现次数）。
-- read-before-edit：编辑未读文件拒绝；文件自上次读取后变化时校验锚文本仍唯一命中。
-- 保持目标文件原有编码与行尾风格写回；非 UTF-8 文件显式报错。
-- 可选 post-edit 语法检查（Python: `compile()`/pyflakes 级别）结果附在 tool result（SWE-agent +3pt 证据）。
-- 逃生通道：小文件 whole-file 重写模式；弱模型 backend 可在 profile 级降级为 whole-file。
-- 补丁体绝不经 argv 或子进程传输（Windows ~32KB argv 上限，codex #15003）。
+- The format: **an envelope + anchored-text search/replace hunks** -- the
+  envelope supports Add/Delete/Update File (borrowing V4A's file operation
+  structure), and an Update hunk is an exact anchored-text replacement that
+  does not depend on line numbers (borrowing the converged conclusion of Claude
+  Code's str_replace and aider's SEARCH/REPLACE); the patch is transmitted as a
+  **single opaque string argument** (the code-in-json lesson). The rationale:
+  the Gateway is multi-model (Claude included), V4A is a GPT-private trained
+  format, and Claude mangles it.
+- The format description goes explicitly into the system prompt rather than
+  relying on "the model just knows"; the grammar documentation and the parser
+  are generated from one source (the codex #2578 lesson).
+- Application semantics (a review correction; the original text mixed codex's
+  atomicity with aider's partial application, which are mutually exclusive):
+  **per-file atomic** -- first parse and locate every hunk in **every** file;
+  a file with any hunk that fails to locate is not touched on disk at all,
+  while a file whose hunks all pass is written atomically with temp +
+  `os.replace`; the return value is a per-file/per-hunk status report telling
+  the model to **resend all hunks of the failed files only**. These semantics
+  are written into the model-facing format description in prompts/ in the same
+  breath (the error copy and the behaviour must not fork). The leniency
+  gradient: an exact match -> CRLF/BOM normalisation -> trailing-whitespace
+  tolerance -> **a failure with a hint** (quoting the nearest real line); >80%
+  fuzzy matching is off by default (a silent misplacement is worse than a
+  failure).
+- Uniqueness: 0 or more than 1 anchor match produces a structured error
+  (including the number of occurrences).
+- read-before-edit: editing an unread file is refused; if the file has changed
+  since it was last read, the anchor text is re-checked for a unique match.
+- The target file's original encoding and line-ending style are preserved on
+  write; a non-UTF-8 file produces an explicit error.
+- An optional post-edit syntax check (for Python, at the `compile()`/pyflakes
+  level) with the result attached to the tool result (the SWE-agent +3pt
+  evidence).
+- An escape hatch: a whole-file rewrite mode for small files; a weaker model's
+  backend can be downgraded to whole-file at the profile level.
+- The patch body never travels through argv or a subprocess (the ~32KB Windows
+  argv ceiling, codex #15003).
 
-### 5.4 Workspace 边界
+### 5.4 The workspace boundary
 
-- workspace = 显式传入或默认 cwd 的单一目录，**必须位于 git 仓库内**（否则启动拒绝并给出明确错误）；monorepo 允许以子目录为 workspace；多仓库任务 = 非目标。
-- **文件工具的路径参数 = workspace 相对逻辑路径**（吸收 Codex 版）：绝对路径、设备路径、UNC 一律拒绝——越界在接口层就不可表达。
-- 路径 containment：`realpath(strict)` 双侧解析 + `normcase` + `commonpath`，逐组件检查 reparse point（junction/symlink，`st_reparse_tag`）；显式拒绝 ADS（`file:stream`）、设备名（CON/NUL/COM1…含带扩展名形式）、UNC/`\\?\` 前缀、盘符相对路径（`C:foo`）、尾部点/空格。目标环境**无法创建 symlink 且无 Developer Mode**，故 V1 一律拒绝 reparse point 而不做"安全目标"分类。hardlink 与 TOCTOU 列为已知接受风险写进威胁模型。
-- 诚实披露：workspace 限制只约束文件工具；run_command 天然不受其约束，真正的闸门是 policy。
-- **脏工作区（[D-011](decision-log.md)）**：警告后继续；会话开始记录 baseline（HEAD SHA + `git status --porcelain=v2` + 相关未跟踪文件的元数据/摘要——单次 `git diff` 不足以覆盖未跟踪文件）；对 baseline 中已脏文件的 apply_patch **强制 ASK**；销毁性 git 命令内置 DENY（见 §4.1 circuit breaker）。
-- **乐观并发写保护**（吸收 Codex 版）：每次写入前校验目标文件自上次读取以来未变（内容摘要），变化则以 `stale` 失败并回传最新上下文，绝不覆盖；结果记录新旧摘要。分支名醒目显示但**不承载安全语义**（不硬编码 main 特殊行为）。
+- The workspace is a single directory, either passed explicitly or defaulting
+  to cwd, which **must lie inside a git repository** (otherwise startup refuses
+  with a clear error); a monorepo may use a subdirectory as the workspace;
+  multi-repository tasks are a non-goal.
+- **A file tool's path argument is a workspace-relative logical path**
+  (absorbed from the Codex version): absolute paths, device paths and UNC
+  paths are always refused -- an escape is not expressible at the interface
+  layer.
+- Path containment: `realpath(strict)` resolution on both sides + `normcase` +
+  `commonpath`, with a per-component reparse point check (junction/symlink,
+  `st_reparse_tag`); explicitly refuse ADS (`file:stream`), device names
+  (CON/NUL/COM1... including forms with an extension), the UNC/`\\?\`
+  prefixes, drive-relative paths (`C:foo`), and trailing dots or spaces. The
+  target environment **cannot create symlinks and has no Developer Mode**, so
+  V1 refuses reparse points outright rather than classifying "safe targets".
+  Hard links and TOCTOU are listed as known accepted risks in the threat model.
+- Honest disclosure: the workspace limit constrains only the file tools;
+  run_command is inherently unconstrained, and the real gate is policy.
+- **The dirty working tree ([D-011](decision-log.md))**: warn and continue;
+  record a baseline at session start (the HEAD SHA + `git status
+  --porcelain=v2` + metadata/digests for the relevant untracked files -- a
+  single `git diff` does not cover untracked files); apply_patch on a file
+  already dirty in the baseline **forces an ASK**; destructive git commands are
+  a built-in DENY (see §4.1's circuit breaker).
+- **Optimistic concurrency protection on writes** (absorbed from the Codex
+  version): before each write, verify the target file has not changed since it
+  was last read (a content digest); if it has, fail with `stale`, return the
+  latest context, and never overwrite; the result records the old and new
+  digests. The branch name is displayed prominently but **carries no security
+  meaning** (no hard-coded special behaviour for main).
 
-## 6. Session 与完成条件
+## 6. Sessions and the completion condition
 
 ### 6.1 SessionStore
 
-- 位置：`~/.foundry/sessions/<session-id>/events.jsonl` + 同目录 `artifacts/<sha256>`（**内容寻址**，吸收 Codex 版：事件只引用 digest/大小/媒体类型/截断态，artifact 不可按任意路径取回）；永不放在 workspace 内，文件工具对该目录内置 DENY；原子追加；保留期用户可配置。
-- 行信封从第一天冻结：`{ts, ordinal, type, v, payload}`；首行 header 记录 `{schema_version, foundry_version, session_id, workspace, profile, model}`。演进规则：只增不改不删，reader 跳过未知类型。**事件类型集的单一权威是 design.md §9**（git baseline 记为 `git_baseline` 事件而非 header 字段，与"ref 移动记为事件"的 §6.3 语义一致）。
-- 记录事件类别：model request/response（完整到可重建请求——**resume-ready，[D-012]**；**auth/Authorization 头除外**，重放时由 HTTP 层重新注入，绝不落盘）、tool call/result（含 policy 决定与 reason）、approval（展示串 + 用户决定）、command（argv、exit code、时长、原始输出 bytes）、token usage、validation、termination、capability probe、git_baseline。
-- **Resume 功能本身推 V2**；V1 只承诺 schema 可重放（这同时是 ReplayBackend 测试的基础，一石二鸟）。
-- **崩溃恢复语义**（吸收 Codex 版）：读取时容忍截尾的最后一条记录；**没有终止事件的 session 一律判为 `interrupted`，绝不可被误认为 completed**；终止/审批/命令完成事件写入后立即 flush。
-- 秘密处理（可验收表述，范围经评审修正）：
-  - (a) **字节级 exact-match**：对 Foundry 自持凭证的 UTF-8 与 UTF-16LE 字节编码，在唯一写入 choke point 上、**在 base64 编码原始输出之前**做替换——保证范围 = "已知自持凭证的字面字节序列"，不做更大承诺；
-  - (b) **artifact 落盘与 read_artifact 回读经过同一 choke point**（否则超限输出成为旁路）；
-  - (c) 同一脱敏函数应用于三点：session/artifact 写入、事件发出（ToolOutputDelta/Error 离开 runtime 之前）、上下文组装；
-  - (d) 常见 token 格式/高熵串模式扫描标注 best-effort；
-  - (e) session log 本身按敏感数据对待（用户 profile 下、文档声明）。
-- telemetry：无。本地 JSONL 即全部记录。
+- Location: `~/.foundry/sessions/<session-id>/events.jsonl` plus
+  `artifacts/<sha256>` in the same directory (**content-addressed**, absorbed
+  from the Codex version: events reference only the digest, size, media type
+  and truncation state, and an artifact cannot be fetched by an arbitrary
+  path); never inside the workspace, and the file tools have a built-in DENY
+  for that directory; appends are atomic; the retention period is
+  user-configurable.
+- The line envelope is frozen from day one: `{ts, ordinal, type, v, payload}`;
+  a first-line header records `{schema_version, foundry_version, session_id,
+  workspace, profile, model}`. The evolution rule: add only, never change or
+  delete, and readers skip unknown types. **The single authority for the event
+  type set is design.md §9** (the git baseline is recorded as a `git_baseline`
+  event rather than a header field, consistent with §6.3's "a ref movement is
+  recorded as an event").
+- Recorded event categories: model request/response (complete enough to rebuild
+  the request -- **resume-ready, [D-012]**; **except the auth/Authorization
+  header**, which is re-injected by the HTTP layer on replay and never
+  persisted), tool call/result (including the policy decision and its reason),
+  approval (the displayed string + the user's decision), command (argv, exit
+  code, duration, the raw output bytes), token usage, validation, termination,
+  capability probe, and git_baseline.
+- **The resume feature itself is deferred to V2**; V1 promises only that the
+  schema is replayable (which doubles as the basis of ReplayBackend testing --
+  two birds, one stone).
+- **Crash recovery semantics** (absorbed from the Codex version): a truncated
+  final record is tolerated on read; **a session with no termination event is
+  always judged `interrupted` and can never be mistaken for completed**;
+  termination, approval and command-completion events flush immediately after
+  being written.
+- Secret handling (phrased so it can be accepted against; the scope was
+  corrected in review):
+  - (a) **byte-level exact match**: the UTF-8 and UTF-16LE byte encodings of
+    credentials Foundry itself holds are replaced at the single write choke
+    point, **before the raw output is base64-encoded** -- the guaranteed scope
+    is "the literal byte sequences of known self-held credentials", and nothing
+    larger is promised;
+  - (b) **artifact writes and read_artifact reads go through the same choke
+    point** (otherwise over-limit output becomes a bypass);
+  - (c) the same redaction function is applied at three points: the
+    session/artifact write, the event emission (before a ToolOutputDelta/Error
+    leaves the runtime), and context assembly;
+  - (d) pattern scanning for common token formats and high-entropy strings is
+    labelled best-effort;
+  - (e) the session log is itself treated as sensitive data (under the user
+    profile, and stated in the documentation).
+- Telemetry: none. The local JSONL is the entire record.
 
-### 6.2 审计日志
+### 6.2 The audit log
 
-独立于 session 的 `~/.foundry/audit.jsonl`（luban 模式）：每个工具调用（含 DENY）追加 `{ts, workspace, tool, target, decision, outcome}`；文件工具硬编码不可修改它。这是 no-sandbox V1 的诚实补偿控制。
+`~/.foundry/audit.jsonl`, separate from the sessions (the luban pattern): every
+tool call (DENYs included) appends `{ts, workspace, tool, target, decision,
+outcome}`; the file tools are hard-coded not to modify it. This is the honest
+compensating control for a no-sandbox V1.
 
-### 6.3 完成条件（机器可执行）
+### 6.3 The completion condition (machine-enforceable)
 
-- **产生通道（评审修正：原文缺失）**：验证声明经 `finish` 工具提交（§5.2，[D-017](decision-log.md)）——模型调用 `finish{status, summary, claims}`，runtime 核验后才发 Termination；交互会话中不调用 finish 的普通 turn 正常结束（对话继续），会话最终状态在 finish 或会话关闭时落定（无 finish 而关闭 → 按上下文记 `cancelled`/`partial`）。
-- `completed` 门禁：finish 时 runtime 自动执行 git_status/git_diff 核对；每条 `ValidationClaim{claim_text, command_event_id}` 与事件流交叉核验（事件存在、为 command_exec 类型、exit code 与声明一致）——任一不符则拒绝 `completed`（降级 `partial` 并说明）。
-- baseline 完整性：完成检查时校验 HEAD 未被移动（模型经 run_command commit/reset 会污染证据链）；任何 ref 移动记为事件并降级 `partial`。
-- 只读任务（答疑/评审）走 `completed(no_changes)` 路径：git status 与 baseline 一致即满足。
-- **claims 可以为空**：显式声明"本任务未执行验证"是有效披露；编造或推断的成功不是（吸收 Codex 版）。
-- **变更归属分离报告**：最终报告区分「本次会话触碰的文件」与「baseline 已脏 / 会话期间被并发改动的文件」；只声称能证明的文件版本，不声称行级归属。
-- 其他状态：`partial / blocked / failed / cancelled`（外加恢复时判定的 `interrupted`），每种都必须带 termination reason 事件；一个 session **有且仅有一次**终止事件。
+- **The production channel** (a review correction: the original text omitted
+  it): a validation claim is submitted through the `finish` tool (§5.2,
+  [D-017](decision-log.md)) -- the model calls `finish{status, summary,
+  claims}`, and the runtime emits a Termination only after verifying it; in an
+  interactive session an ordinary turn that does not call finish simply ends
+  (the conversation continues), and the session's final status is settled at
+  finish or when the session closes (closing with no finish -> recorded as
+  `cancelled`/`partial` depending on context).
+- The `completed` gate: at finish, the runtime automatically runs
+  git_status/git_diff and checks them; every
+  `ValidationClaim{claim_text, command_event_id}` is cross-verified against the
+  event stream (the event exists, is of type command_exec, and its exit code
+  matches the claim) -- any mismatch refuses `completed` (downgrading to
+  `partial` with an explanation).
+- Baseline integrity: the completion check verifies HEAD has not been moved (a
+  model that commits or resets through run_command pollutes the evidence
+  chain); any ref movement is recorded as an event and downgrades to `partial`.
+- Read-only tasks (Q&A, reviews) take the `completed(no_changes)` path: a git
+  status matching the baseline satisfies it.
+- **Claims may be empty**: explicitly declaring "no verification was performed
+  for this task" is valid disclosure; a fabricated or inferred success is not
+  (absorbed from the Codex version).
+- **A report that separates attribution**: the final report distinguishes
+  "files this session touched" from "files already dirty in the baseline, or
+  modified concurrently during the session"; it claims only the file versions
+  it can prove, and never claims line-level attribution.
+- Other states: `partial / blocked / failed / cancelled` (plus `interrupted`,
+  determined at recovery), each of which must carry a termination reason event;
+  a session has **exactly one** termination event.
 
-## 7. 打包与依赖
+## 7. Packaging and dependencies
 
-- Python 3.12；纯 Python wheel（`py3-none-any`）；build backend hatchling（锁版本）。
-- **依赖预算（[D-014](decision-log.md)，枚举制，新增依赖需过决策记录）**：
-  - 运行时必选：`rich`（终端渲染，4 个纯 py wheel）
-  - 运行时可选：`prompt_toolkit`（审批/输入增强，+wcwidth 共 2 wheel）
-  - **明确不用**：httpx/requests（stdlib http.client + ssl 自研 ~300 行，换取 Windows 系统证书库零配置与 0 wheel）、keyring（DPAPI ctypes 直连，且其后端有 2560 字节上限）、psutil（Job Object ctypes）、pydantic（dataclasses + 手写校验）、textual、tree-sitter。
-- 锁定：`requirements.in → pip-compile --generate-hashes → wheelhouse（pip download --only-binary :all:）`；安装 `pip install --no-index --find-links wheelhouse --require-hashes foundry`；CI 检查 wheelhouse 对 cp312/win_amd64（或纯 py3）完备。
-- 代码分层：单 wheel，但 `foundry.core` 不得 import `foundry.cli`（CI 强制），未来拆包零成本。
-- 全部 `open()` 显式 `encoding='utf-8'`；CI 开 `-X warn_default_encoding`。
+- Python 3.12; a pure-Python wheel (`py3-none-any`); hatchling as the build
+  backend (version-pinned).
+- **The dependency budget ([D-014](decision-log.md); enumerated, and a new
+  dependency needs a decision record)**:
+  - Required at runtime: `rich` (terminal rendering, 4 pure-py wheels)
+  - Optional at runtime: `prompt_toolkit` (enhanced approval/input, 2 wheels
+    with wcwidth)
+  - **Explicitly not used**: httpx/requests (~300 lines of our own on stdlib
+    http.client + ssl, bought in exchange for zero-configuration use of the
+    Windows system certificate store and 0 wheels), keyring (DPAPI through
+    ctypes directly, and its backend has a 2560-byte ceiling), psutil (Job
+    Objects through ctypes), pydantic (dataclasses + handwritten validation),
+    textual, tree-sitter.
+- Pinning: `requirements.in -> pip-compile --generate-hashes -> the wheelhouse
+  (pip download --only-binary :all:)`; installation is `pip install --no-index
+  --find-links wheelhouse --require-hashes foundry`; CI checks the wheelhouse
+  is complete for cp312/win_amd64 (or pure py3).
+- Code layering: a single wheel, but `foundry.core` must not import
+  `foundry.cli` (CI-enforced), so a future split costs nothing.
+- Every `open()` passes `encoding='utf-8'` explicitly; CI runs with
+  `-X warn_default_encoding`.
 
-## 8. V1 验收标准（v0.1 完全缺失）
+## 8. V1 acceptance criteria (entirely absent in v0.1)
 
-1. **安装验收**：干净 Windows 11 + Python 3.12，无外网，`pip --no-index` 从 wheelhouse 安装成功并跑通 `foundry doctor`。
-2. **golden 任务集**（自建小型样例仓库 fixture 进 repo，[D-020](decision-log.md)；5–10 个）：修失败测试、加测试、小重构、只读答疑各类至少一个；每个规定预期终止状态与证据形态。回归方式（评审修正）：ReplayBackend 按序号回放 + 对请求做**结构断言**（工具调用序列/关键字段），请求全文 diff 输出为测试产物供人工审查；"逐字节重建"单独作为 resume-ready 测试。prompt/loop 改动须过全套结构断言；夹具重录工作流（`foundry record`，对本地端点重录）为 M0 交付物。
-3. **负面用例**：越权/未知/malformed tool call 被拒且 loop 存活；DENY 不可被 ALLOW 覆盖（含 managed 层）；路径逃逸样例（junction、ADS、`..`、设备名、盘符相对、UNC）全部被拒；取消运行中的多级子进程树无孤儿残留；ASK 超时 = DENY；`completed` 在验证声明造假（引用不存在事件）时被拒。
-4. **canary 泄漏套件**（吸收 Codex 版）：以金丝雀凭证跑通全流程，断言其**不出现在**控制台、prompt、session journal、artifact、异常字符串与诊断导出中——这是"凭证不泄漏"从声明变为可验收的唯一方式。
-5. **脏工作区矩阵**：staged / unstaged / untracked / 重命名 / 删除 / 非 UTF-8 与二进制 / 并发修改 / 编辑 baseline 已脏文件——证明既有工作不被丢弃也不被错误归属；**测试夹具复原不得使用破坏性 git 命令**。
-6. **崩溃恢复**：截尾 journal 不可被判为 completed；每种终止状态都能从脱敏日志重建。
-7. **离线测试验收**：全部单元/集成测试在无网络、无凭证机器上绿。
-8. **真实 E2E**：个人 API key 与（可用时）公司 Gateway 各跑通至少一个 golden 任务。
+1. **Install acceptance**: a clean Windows 11 + Python 3.12 with no external
+   network installs successfully from the wheelhouse with `pip --no-index` and
+   completes `foundry doctor`.
+2. **The golden task set** (a small sample repository built as a fixture and
+   committed, [D-020](decision-log.md); 5-10 tasks): at least one each of
+   fixing a failing test, adding a test, a small refactor, and a read-only
+   question; each specifies the expected termination state and the shape of the
+   evidence. The regression method (a review correction): ReplayBackend replays
+   by ordinal with **structural assertions** on the request (the tool call
+   sequence, key fields), with the full request diff emitted as a test artifact
+   for human review; "byte-for-byte rebuild" is a separate resume-ready test.
+   Prompt or loop changes must pass the whole set of structural assertions; the
+   fixture re-recording workflow (`foundry record`, re-recorded against a local
+   endpoint) is an M0 deliverable.
+3. **Negative cases**: an out-of-bounds, unknown or malformed tool call is
+   refused and the loop survives; a DENY cannot be overridden by an ALLOW
+   (including at the managed layer); every path escape sample (junction, ADS,
+   `..`, device names, drive-relative, UNC) is refused; cancelling a running
+   multi-level child process tree leaves no orphans; an ASK timeout = DENY;
+   `completed` is refused when a validation claim is forged (citing a
+   nonexistent event).
+4. **The canary leak suite** (absorbed from the Codex version): run the whole
+   flow with a canary credential and assert it appears in **none** of the
+   console, the prompt, the session journal, artifacts, exception strings, or
+   diagnostic exports -- the only way "credentials do not leak" moves from a
+   claim to something acceptable against.
+5. **The dirty working-tree matrix**: staged / unstaged / untracked / renamed /
+   deleted / non-UTF-8 and binary / concurrently modified / editing a file
+   already dirty in the baseline -- proving existing work is neither discarded
+   nor misattributed; **test fixture restoration must not use destructive git
+   commands**.
+6. **Crash recovery**: a truncated journal can never be judged completed; every
+   termination state can be reconstructed from the redacted log.
+7. **Offline test acceptance**: every unit and integration test is green on a
+   machine with no network and no credentials.
+8. **Real E2E**: at least one golden task completes on the personal API key
+   and (when available) on the corporate Gateway.
 
-## 9. 非目标（V1 明确不做）
+## 9. Non-goals (explicitly not in V1)
 
-sandbox（诚实 trusted-host）；session resume（schema 就绪，功能 V2）；LLM 摘要压缩（V1 用 masking + 干净终止）；MCP（内部表示对齐其形态即可）；subagents（留 seam）；多仓库任务；浏览器/网络工具；embeddings/RAG；自动 commit；skills/斜杠命令（V2）；Claude consumer OAuth；NTLM/Kerberos 代理。
+A sandbox (an honest trusted host); session resume (the schema is ready, the
+feature is V2); LLM summarisation compaction (V1 uses masking + a clean
+termination); MCP (aligning the internal representation with its shapes is
+enough); subagents (a seam is left); multi-repository tasks; browser/network
+tools; embeddings/RAG; automatic commits; skills and slash commands (V2);
+Claude consumer OAuth; NTLM/Kerberos proxies.

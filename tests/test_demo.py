@@ -25,29 +25,29 @@ def test_the_happy_path_completes_with_verified_evidence(tmp_path):
     done = _run(tmp_path, "--yes")
     assert done.returncode == 0, done.stdout + done.stderr
     assert "completed" in done.stdout
-    assert "证据核对通过" in done.stdout
+    assert "evidence checks out" in done.stdout
     # It really did fix the bug, not merely claim to.
     assert "return a + b" in (tmp_path / "sample_repo" / "calc.py").read_text(encoding="utf-8")
 
 
 def test_the_breaker_denies_at_step_zero_even_with_yes(tmp_path):
     done = _run(tmp_path, "--script", "destructive", "--yes")
-    assert "第 0 步" in done.stdout
+    assert "step 0" in done.stdout
     assert "git reset --hard" in done.stdout
     # --yes approves everything approvable; the breaker is not approvable.
-    assert done.stdout.count("拒绝（第 0 步）") == 2
+    assert done.stdout.count("denied (step 0)") == 2
 
 
 def test_a_false_claim_is_caught_and_downgraded(tmp_path):
     done = _run(tmp_path, "--script", "liar", "--yes")
     assert done.returncode == 10, done.stdout
     assert "partial" in done.stdout
-    assert "exit code 是 1" in done.stdout
+    assert "actually exited 1" in done.stdout
 
 
 def test_plan_mode_refuses_every_mutation(tmp_path):
     done = _run(tmp_path, "--mode", "plan", "--no")
-    assert "plan 模式下不做任何改动" in done.stdout
+    assert "plan mode makes no changes" in done.stdout
     assert (tmp_path / "sample_repo" / "calc.py").read_text(encoding="utf-8").endswith(
         "return a - b\n"), "plan mode let a write through"
 
@@ -86,7 +86,7 @@ def fake_openai():
 
     seen: list[dict] = []
     replies = [
-        {"content": "读一下再说。",
+        {"content": "Let me read it first.",
          "tool_calls": [{"id": "c1", "type": "function",
                          "function": {"name": "read_file",
                                       "arguments": '{"path": "calc.py"}'}}]},
@@ -146,5 +146,5 @@ def test_api_mode_survives_a_tool_call_with_null_arguments(tmp_path, fake_openai
 def test_api_mode_reports_a_bad_endpoint_instead_of_crashing(tmp_path):
     done = _run(tmp_path, "--endpoint", "http://127.0.0.1:1/v1", "--yes")
     assert done.returncode == 12
-    assert "后端出错" in done.stdout
+    assert "backend error" in done.stdout
     assert "Traceback" not in done.stderr

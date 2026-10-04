@@ -1,114 +1,203 @@
-# Foundry 威胁模型（V1）
+# Foundry threat model (V1)
 
-> 这份文档说明 Foundry **保护什么**、**不保护什么**，以及每条保证的执行点在哪里。
-> 原则：宁可写清楚做不到，也不做无法验收的承诺。
+> This document states what Foundry **protects**, what it **does not**, and
+> where each guarantee is enforced.
+> The principle: better to write down plainly what cannot be done than to make
+> a promise that cannot be accepted against.
 
-## 1. 一句话定位
+## 1. The position in one sentence
 
-**V1 是 trusted-host，没有沙箱。** 审批（policy）减少的是*失误*，不是*恶意*。
-每个被批准的命令以你的完整用户权限运行：可读写你的所有文件（包括凭证）、访问网络、读取环境变量。
+**V1 is a trusted host with no sandbox.** What approval (policy) reduces is
+*mistakes*, not *malice*. Every command you approve runs with your full user
+privileges: it can read and write all of your files (credentials included),
+access the network, and read environment variables.
 
-首次运行与每次会话开始都会打印这段披露（[cli/render.py](../src/foundry/cli/render.py) 的 `DISCLOSURE`）。
+That disclosure is printed on first run and at the start of every session (the
+`DISCLOSURE` in [cli/render.py](../src/foundry/cli/render.py)).
 
-## 2. 信任边界
+## 2. Trust boundaries
 
-| 来源 | 信任级别 | 说明 |
+| Source | Trust level | Notes |
 |---|---|---|
-| 用户在终端输入的任务 | 可信 | 唯一的指令来源 |
-| `~/.foundry/` 下的用户配置 | 可信 | 机器本地，用户自己写 |
-| managed policy（ProgramData，ACL 保护） | 可信且优先 | 只能收紧 |
-| **仓库文件内容** | **不可信** | 可能含指向模型的注入指令 |
-| **工具输出**（命令 stdout、git diff、read_file 结果） | **不可信** | 同上 |
-| **仓库内 `.foundry/config.toml`、`FOUNDRY.md`** | **不可信** | 需一次性信任确认；只能收紧 policy |
-| **模型输出** | **不可信** | 是待审的请求，不是授权 |
+| the task the user types in the terminal | trusted | the only source of instructions |
+| user configuration under `~/.foundry/` | trusted | machine-local, written by the user themselves |
+| managed policy (ProgramData, ACL-protected) | trusted and takes precedence | can only tighten |
+| **repository file contents** | **untrusted** | may contain injected instructions aimed at the model |
+| **tool output** (command stdout, git diff, read_file results) | **untrusted** | same as above |
+| **in-repository `.foundry/config.toml` and `FOUNDRY.md`** | **untrusted** | require a one-time trust confirmation; can only tighten policy |
+| **model output** | **untrusted** | it is a request awaiting judgement, not an authorisation |
 
-"可信仓库"的写实定义：**你愿意让其中任意文件内容既被执行、也被当作指令读取的仓库。**
+The realistic definition of a "trusted repository": **one whose every file you
+are willing to have both executed and read as instructions.**
 
-## 3. 防护的威胁与执行点
+## 3. Threats that are defended, and where
 
-| 威胁 | 防护 | 执行点 |
+| Threat | Defence | Enforcement point |
 |---|---|---|
-| 模型误改 workspace 外文件 | 路径必须是 workspace 相对；realpath+normcase+commonpath 双侧比对；逐组件拒绝 reparse point；拒绝 ADS/设备名/UNC/盘符相对 | [workspace.py](../src/foundry/core/workspace.py) |
-| 前缀白名单被链式命令绕过 | 命令按 `;` `\|` `&&` `\|\|` CR/LF 分段；**ALLOW 必须覆盖每一段才成立**，DENY/ASK 命中任一段或整条即生效；别名归一（rm/del→Remove-Item）；含结构性字符（`#` `<` `>` `$` 反引号 `^` 或孤立 `&`）或命令头不像普通可执行名者，一律不可自动放行 | [policy/segmenter.py](../src/foundry/core/policy/segmenter.py)、[policy/engine.py](../src/foundry/core/policy/engine.py) `Rule.matches` |
-| **词法陷阱使危险命令对熔断表隐形** | 熔断表额外扫描一个**故意错误的读法**（`paranoid_segments`）：无视引号/注释/分组按分隔符切开，剥掉边缘的引号、括号、`&`、`.`。只增拒绝不增放行，因而不会被任何未预料的写法骗过（注释吞换行、`<#` 中缀、分组、script block 皆已覆盖） | segmenter.py `paranoid_segments` |
-| 熔断表被参数形态绕过 | 命令头归一化（`git.exe`→`git`、别名展开）；`effective_argv` **扫描到第一个真正的 git 子命令**而非跳过枚举出的全局选项（`--attr-source HEAD` 曾把子命令挤出检查位）；`git checkout` 整体拒绝并引导 `git switch`，`git switch --discard-changes` 同样拒绝 | policy/engine.py `check_breaker`、segmenter.py `effective_argv` |
-| 仓库 .git/config 让 git 变成程序启动器 | 显式关闭 `diff.external`、`--no-ext-diff --no-textconv`、`core.pager/editor/sshCommand`、`protocol.ext`；`safe.directory` 只限当前 workspace（不用 `*`）；git 子进程也走 `child_environment()` 过滤 | [tools/git.py](../src/foundry/core/tools/git.py) |
-| 只读工具穿过 junction 读到外部文件 | `os.walk` 会跟随 junction（`islink` 对其返回 False），故 `list_files`/`search_text` 下降时逐目录检查 reparse point | [tools/files.py](../src/foundry/core/tools/files.py) `_prune` |
-| 仓库自我提权 | 仓库配置只接受 deny/ask；**`[runtime]` 也只能收紧**（mode 只允许 plan/dont_ask，预算只能调低）；连接类配置（endpoint/凭证/headers/proxy）只读机器本地层；写 `<workspace>/.foundry/` 被熔断表拒绝 | [config.py](../src/foundry/core/config.py)、[policy/engine.py](../src/foundry/core/policy/engine.py) |
-| 补丁经 `Move to:` 覆盖未申报的文件 | 移动目标计入 `paths`，因而对熔断表、脏文件 ASK 规则和审批展示可见；目标已存在即拒绝；目标在**规划阶段**解析，非法路径不会在源文件已改写后才失败 | [tools/patch.py](../src/foundry/core/tools/patch.py) |
-| 补丁静默改错位置 | 宽容梯度的行级映射要求匹配落在行边界上，否则判失败并给提示——绝不把行内命中扩成整行替换 | tools/patch.py `_map_span` |
-| 补丁解析器把 SEARCH 内容当成分隔符 | 一个 hunk 内出现多个 `=======` 时判**歧义并拒绝**（并提示改用整文件重写）——修改含冲突标记的文件是最可能触发它的任务，而按第一个分隔符切分会静默写出错误内容并报告成功 | tools/patch.py `parse_patch` |
-| 同一文件在一个补丁里被写两次 | 文本归一化（大小写/`./`/`..`/分隔符）在 validate 阶段拦一道，执行阶段再按 `realpath` 归一化拦第二道（8.3 短名只有后者能识别） | tools/patch.py |
-| 仓库规则文本注入 system prompt | 规则的 tool/pattern/reason 渲染前压成单行并截断——否则 deny 规则的 reason 可以往权限段里写出一段以假乱真的"以下命令无需批准" | [prompts.py](../src/foundry/core/prompts.py) |
-| 单轮返回海量 tool call 耗尽预算 | 预算在**每次调用前**检查，而非每轮开头一次（后者曾让一轮执行 5000 次调用） | runtime.py |
-| 模型经包装器移动 HEAD 使 diff 看起来干净 | 收口时重新采集 git 证据，HEAD 与 baseline 不一致即降级 `partial` 并记事件；报告区分本次会话改动与既有改动 | [runtime.py](../src/foundry/core/runtime.py) `_finalize` |
-| 销毁用户未提交的工作 | 熔断表拒绝 `git checkout -- / restore / reset --hard / clean / stash drop / stash clear`；baseline 记录脏文件，改脏文件强制 ASK | policy/engine.py |
-| 模型伪造"已验证" | `finish` 的每条 claim 必须引用真实 command 事件且 exit code 相符，否则降级 partial；HEAD 移动也降级 | [runtime.py](../src/foundry/core/runtime.py)、[tools/finish.py](../src/foundry/core/tools/finish.py) |
-| 凭证进入日志/上下文/事件流 | `SecretHandle` 不可打印；凭证只在 HTTP header 注入点解析；单一 choke point 做字节级 exact-match（UTF-8 与 UTF-16LE，先于 base64） | [auth.py](../src/foundry/core/auth.py)、[redaction.py](../src/foundry/core/redaction.py) |
-| 测试代码窃取环境里的密钥 | 子进程 env 只保留最小集，剔除含 KEY/TOKEN/SECRET/PASSWORD/AWS_ 等片段的变量 | [winapi.py](../src/foundry/core/winapi.py) `child_environment` |
-| 超时后孤儿进程占住文件锁 | Job Object（KILL_ON_JOB_CLOSE）托管进程树，一次杀光并释放继承的管道句柄 | winapi.py `ProcessJob` |
-| 终端转义序列注入（OSC 52 剪贴板外传等） | 渲染前剥离 ANSI/OSC/控制字符，rich markup 转义 | [cli/render.py](../src/foundry/cli/render.py) |
-| 非 ASCII 文件名绕过脏文件保护 | git 默认把非 ASCII 路径转义为 `\303\251…`，于是带重音或中文名的文件永远匹配不上脏集合；硬化参数加 `core.quotepath=false` | tools/git.py `_HARDENING` |
-| 崩溃的会话被误认为成功 | 无 termination 事件的 journal 一律判 `interrupted`；截尾末行可容忍 | [session.py](../src/foundry/core/session.py) |
-| 模型换措辞无限重试 | 失败指纹按「归一化操作 + 错误类」计数，文本变化不重置 | runtime.py `FailureTracker` |
+| the model edits files outside the workspace by mistake | paths must be workspace-relative; realpath+normcase+commonpath compared on both sides; reparse points refused component by component; ADS / device names / UNC / drive-relative paths refused | [workspace.py](../src/foundry/core/workspace.py) |
+| a prefix allowlist bypassed by a chained command | commands are segmented on `;` `\|` `&&` `\|\|` and CR/LF; **an ALLOW only holds if it covers every segment**, while a DENY/ASK takes effect on any segment or on the whole line; aliases are normalised (rm/del -> Remove-Item); anything containing structural characters (`#` `<` `>` `$`, a backtick, `^`, or a bare `&`) or whose command head does not look like an ordinary executable name can never be auto-approved | [policy/segmenter.py](../src/foundry/core/policy/segmenter.py), [policy/engine.py](../src/foundry/core/policy/engine.py) `Rule.matches` |
+| **lexical traps making a dangerous command invisible to the breaker table** | the breaker table additionally scans a **deliberately wrong reading** (`paranoid_segments`): it ignores quotes, comments and grouping, splits on separators, and strips quotes, brackets, `&` and `.` from the edges. It can only add denials, never allowances, so it cannot be fooled by any unanticipated spelling (a comment swallowing a newline, an infix `<#`, grouping and script blocks are all covered) | segmenter.py `paranoid_segments` |
+| the breaker table bypassed by argument shapes | the command head is normalised (`git.exe` -> `git`, aliases expanded); `effective_argv` **scans to the first real git subcommand** rather than skipping an enumerated list of global options (`--attr-source HEAD` once pushed the subcommand out of the inspected position); `git checkout` is refused outright with a pointer to `git switch`, and `git switch --discard-changes` is refused too | policy/engine.py `check_breaker`, segmenter.py `effective_argv` |
+| a repository's .git/config turning git into a program launcher | `diff.external` is explicitly disabled, along with `--no-ext-diff --no-textconv`, `core.pager/editor/sshCommand` and `protocol.ext`; `safe.directory` is limited to the current workspace (never `*`); git subprocesses also go through `child_environment()` filtering | [tools/git.py](../src/foundry/core/tools/git.py) |
+| a read-only tool reading external files through a junction | `os.walk` follows junctions (`islink` returns False for them), so `list_files`/`search_text` check the reparse point of each directory as they descend | [tools/files.py](../src/foundry/core/tools/files.py) `_prune` |
+| a repository escalating its own privileges | repository configuration accepts only deny/ask; **`[runtime]` can also only tighten** (mode may only be plan/dont_ask, and budgets may only go down); connection-class configuration (endpoint / credentials / headers / proxy) is read from machine-local layers only; writing to `<workspace>/.foundry/` is refused by the breaker table | [config.py](../src/foundry/core/config.py), [policy/engine.py](../src/foundry/core/policy/engine.py) |
+| a patch overwriting an undeclared file through `Move to:` | the move target counts toward `paths`, so it is visible to the breaker table, the dirty-file ASK rule and the approval display; an existing target is refused; the target is resolved during **planning**, so an illegal path does not fail only after the source file has already been rewritten | [tools/patch.py](../src/foundry/core/tools/patch.py) |
+| a patch silently changing the wrong place | the line-level mapping in the leniency gradient requires the match to land on line boundaries, and otherwise fails with a hint -- an in-line hit is never expanded into a whole-line replacement | tools/patch.py `_map_span` |
+| the patch parser treating SEARCH content as a separator | more than one `=======` inside a hunk is judged **ambiguous and refused** (with a suggestion to rewrite the whole file) -- editing a file that contains conflict markers is the likeliest task to hit this, and splitting on the first separator would silently write the wrong content and report success | tools/patch.py `parse_patch` |
+| the same file written twice in one patch | textual normalisation (case / `./` / `..` / separators) catches it at validate time, and execution normalises again by `realpath` as a second catch (only the latter recognises 8.3 short names) | tools/patch.py |
+| repository rule text injected into the system prompt | a rule's tool/pattern/reason is flattened to one line and truncated before rendering -- otherwise a deny rule's reason could write a convincing "the following commands need no approval" into the permissions section | [prompts.py](../src/foundry/core/prompts.py) |
+| a single round returning a flood of tool calls that exhausts the budget | the budget is checked **before every call**, not once at the start of a round (the latter once let a single round execute 5000 calls) | runtime.py |
+| the model moving HEAD through a wrapper to make the diff look clean | git evidence is re-collected at close-out, and a HEAD that differs from the baseline downgrades to `partial` and records an event; the report distinguishes this session's changes from pre-existing ones | [runtime.py](../src/foundry/core/runtime.py) `_finalize` |
+| destroying the user's uncommitted work | the breaker table refuses `git checkout -- / restore / reset --hard / clean / stash drop / stash clear`; the baseline records dirty files, and editing one forces an ASK | policy/engine.py |
+| the model forging "verified" | every claim in `finish` must cite a real command event with a matching exit code, or it is downgraded to partial; a moved HEAD downgrades too | [runtime.py](../src/foundry/core/runtime.py), [tools/finish.py](../src/foundry/core/tools/finish.py) |
+| credentials entering logs, the context or the event stream | `SecretHandle` is not printable; a credential is resolved only at the HTTP header injection point; a single choke point does byte-level exact matching (UTF-8 and UTF-16LE, before base64) | [auth.py](../src/foundry/core/auth.py), [redaction.py](../src/foundry/core/redaction.py) |
+| test code stealing keys from the environment | the subprocess env keeps only a minimal set, removing variables containing fragments such as KEY/TOKEN/SECRET/PASSWORD/AWS_ | [winapi.py](../src/foundry/core/winapi.py) `child_environment` |
+| orphan processes holding file locks after a timeout | a Job Object (KILL_ON_JOB_CLOSE) owns the process tree, killing it all at once and releasing the inherited pipe handles | winapi.py `ProcessJob` |
+| terminal escape sequence injection (OSC 52 clipboard exfiltration and friends) | ANSI/OSC/control characters are stripped and rich markup escaped before rendering | [cli/render.py](../src/foundry/cli/render.py) |
+| a non-ASCII filename bypassing the dirty-file guard | git escapes non-ASCII paths as `\303\251...` by default, so a file with an accented or CJK name never matches the dirty set; the hardened arguments add `core.quotepath=false` | tools/git.py `_HARDENING` |
+| a crashed session mistaken for a successful one | a journal with no termination event is always judged `interrupted`; a truncated final line is tolerated | [session.py](../src/foundry/core/session.py) |
+| the model retrying forever by rewording | failure fingerprints count by "normalised operation + error class", so a change of wording does not reset the counter | runtime.py `FailureTracker` |
 
-## 3.5 三条从实战中学到的原则
+## 3.5 Three principles learned the hard way
 
+**Four rounds of adversarial review, and every one of them broke the command
+segmenter** -- that fact matters more than any individual hole.
 
-**四轮对抗评审，每一轮都攻破了命令分段器**——这个事实本身比任何单个漏洞都重要。
+### (a) When denying, do not trust your own lexer
 
-### (a) 拒绝时不要相信自己的词法分析
+Round one patched `&'foo'`; round two brought `(git reset --hard)`,
+`&{git ...}` and `cmd /c git ...`; round three wrote comment stripping, and
+round four found it **wrong in both directions** -- the comment after `'x'#`
+was not recognised (stripped too little), while the `<#` inside
+`a<# ; git reset --hard #>` was taken for a block comment (stripped too much,
+erasing a statement PowerShell really would execute). Four rounds, four
+breaks, each with a spelling the previous round had not imagined. Continuing
+to patch would only buy a fifth.
 
-第一轮补了 `&'foo'`，第二轮来了 `(git reset --hard)`、`&{git ...}`、`cmd /c git ...`；第三轮写了注释剥离，第四轮就发现它**两头都错**——`'x'#` 后面的注释没识别（漏剥），`a<# ; git reset --hard #>` 中间的 `<#` 又被当成块注释（多剥，把 PowerShell 真会执行的语句直接抹掉）。四轮四破，每次都是上一轮没想到的写法。继续打补丁只会买到第五次。
+**The approach: the breaker table scans two independent readings, and either
+one hitting means refusal.**
 
-**做法：熔断表同时扫描两个独立读法，任一命中即拒绝。**
+`paranoid_segments()` rescans the command with a **deliberately crude**
+reading -- ignoring quotes, comments and grouping, splitting only on
+separators and brackets, and stripping quotes, brackets, `&`, `.` and commas
+from token edges. It is used only by the breaker table: **it can only add
+denials, never allow anything**. Every breaker rule anchors on `argv[0]`, so a
+string mention like `echo "git reset --hard"` is not a false positive.
 
-`paranoid_segments()` 用一个**故意粗糙**的读法重扫命令——无视引号、注释、分组，只按分隔符与括号切开，并把引号/括号/`&`/`.`/逗号从 token 边缘剥掉。它只被熔断表使用：**只能增加拒绝，永远不能放行**。每条熔断规则都锚定 `argv[0]`，所以 `echo "git reset --hard"` 这种字符串提及不会误判。
+**⚠️ An overclaim that used to stand here, and round five's correction**: this
+section once said "denial no longer depends on parsing PowerShell correctly".
+**That was wrong**, and round five falsified it directly: `paranoid_segments`
+is not "no lexer", it is **a second lexer**, with blind spots of its own.
+`git reset ,--hard` fooled both at once (PowerShell's comma array operator
+hands `--hard` to git, while both readings see only the literal token
+`,--hard`), and in practice it was allowed and destroyed uncommitted work.
 
-**⚠️ 曾经的过度声称，以及第五轮的纠正**：这里一度写着"拒绝不再依赖正确解析 PowerShell"。**那是错的**——第五轮直接证伪：`paranoid_segments` 不是"没有词法分析"，它是**第二个词法分析器**，有自己的盲区。`git reset ,--hard` 就同时骗过了两者（PowerShell 的逗号数组操作符把 `--hard` 交给 git，而两个读法都只看到字面 token `,--hard`），实测放行并销毁未提交的工作。
+The honest statement is: **defence in depth, not a guarantee**. Two
+independent readings mean an attack has to fool both, which is stronger than
+one parser and weaker than a guarantee. Commas are now normalised and infix
+brackets are now split, but the next PowerShell syntax feature may fool both
+again. The real boundary is still the sentence in §1: there is no sandbox.
 
-诚实的表述是：**纵深防御，不是保证**。两个独立读法意味着攻击必须同时骗过两者，这比一个解析器强，但比"保证"弱。逗号已归一化，中缀括号已切分，但下一个 PowerShell 语法特性可能还会同时骗过它们。真正的边界仍然是 §1 那句话：没有沙箱。
+On the auto-approval side, the syntax was tightened to a small verifiable one:
+**a command containing any character that can move a statement boundary or
+hide text (`#`, `<`, `>`, `$`, a backtick, `^`, or a bare `&`) can never be
+auto-approved**. Parentheses and braces are deliberately not on that list --
+they can group but cannot hide a boundary, and `python -c "print(1)"` is far
+too common; grouped forms are handled by the command-head check and the
+paranoid reading.
 
-自动放行这一侧则收紧到可验证的小语法：**含有能移动语句边界或隐藏文本的字符（`# < > $ ` ^` 或孤立 `&`）的命令，一律不可自动放行**。括号花括号故意不在其中——它们能分组但不能隐藏边界，而 `python -c "print(1)"` 太常见了；分组形式由命令头检查和 paranoid 读法负责。
+`effective_argv` follows the same logic: instead of counting "how many global
+options to skip", it **scans to the first real git subcommand** --
+`--attr-source HEAD` once pushed the subcommand out of the position every
+breaker rule inspects (demonstrably destructive).
 
-`effective_argv` 同理：不再数"跳过几个全局选项"，而是**扫描到第一个真正的 git 子命令**——`--attr-source HEAD` 曾把子命令挤出所有熔断规则检查的位置（实测可破坏数据）。
+**The cost**: a command containing `#` (even inside quotes) now needs one
+approval. Two rounds went wrong on comment syntax, so we accept that cost. The
+command still runs; it just takes a yes.
 
-**代价**：含 `#` 的命令（哪怕在引号里）现在需要一次批准。两轮都在注释语法上出事，这个代价我们认。命令照样能跑，只是要点个 yes。
+### (b) The fix is itself a source of new holes, and tends to trade a hard guarantee for a soft one
 
-### (b) 修复本身就是新漏洞的来源，且倾向于把硬保证换成软保证
+All 5 new defects in round two were caused by round one's fixes; round three
+caught 2 caused by round two; **both of round four's criticals were inside the
+comment stripper round three wrote**; round five falsified round four's claim
+of convergence. **The same class of mistake was made twice**: returning early
+to mark something "unparseable" threw away the segments already parsed, so
+`git reset --hard; (foo)` fell from the breaker table's **unapprovable DENY**
+to an **approvable ASK** -- while the system prompt was still telling the model
+that such an operation "cannot possibly be approved".
 
-第二轮的 5 个新缺陷全部由第一轮修复造成；第三轮抓到 2 个由第二轮造成；第四轮的**两个 critical 都在第三轮写的注释剥离器里**；第五轮证伪了第四轮的收敛声称。**同一类错误犯了两次**：为了标记"不可解析"而提前返回，丢掉了已解析的分段，于是 `git reset --hard; (foo)` 从熔断表的**不可批准 DENY** 掉成了**可批准 ASK**——而 system prompt 还在告诉模型这类操作"不可能被批准"。
+So there is now a structural invariant test
+([tests/test_breaker_invariant.py](../tests/test_breaker_invariant.py)): **no
+decoration, mode, session grant or hook rewrite can make a command the breaker
+table forbids approvable** -- 28 forbidden commands x 17 decorations = 476
+combinations, plus each command once on its own, each mode, session grants and
+hook rewrites, plus two new axes, **argument position** and **variable
+spelling**, for **780 generated cases** in total. It defends against a whole
+class of mistake rather than the few spellings someone thought of; adding
+round four's two criticals to the decoration table afterwards reproduced them
+in a second.
 
-所以现在有一条结构性不变量测试（[tests/test_breaker_invariant.py](../tests/test_breaker_invariant.py)）：**任何装饰、模式、会话授权或 hook 改写，都不能让一条本身被熔断表禁止的命令变得可批准**——28 条被禁命令 × 17 种装饰 = 476 个组合，连同各命令单独一次、各模式、会话授权与 hook 改写，再加上**参数位置**与**变量拼写**两根新轴，共 **780 个自动生成用例**。它防的是整类错误，不是想到的那几个写法；第四轮那两个 critical 事后加进装饰表，一秒就能复现。
+The `GIT_CONFIG_NOSYSTEM` critical taught the same lesson from the other side:
+**hardening must ask "what legitimate behaviour did this turn off along the
+way?"**, and verification has to run in the environment the user actually has
+(fixtures build repositories with ordinary git, not Foundry's own hardened
+path).
 
-同理，`GIT_CONFIG_NOSYSTEM` 那个 critical 教训：**加固要问"它顺带关掉了什么合法行为"**，且验证必须跑在用户实际拥有的环境上（fixture 用普通 git 建仓，不用 Foundry 自己的硬化路径）。
+### (b2) Round six: the hole was not inside a layer, it was on the seam between two
 
-### (b2) 第六轮：漏洞不在某一层里，而在两层的接缝上
+The first five rounds all attacked the segmenter. What round six found has a
+completely different shape: **every layer is right on its own, and the
+combination is wrong**.
 
-前五轮都在打分段器。第六轮找到的东西形状完全不同：**每一层单看都对，合起来不对**。
+- The patch tool knows `AVERYL~1.PY` and the long name are the same file; the
+  policy layer does a string comparison, so an 8.3 alias walked past the
+  dirty-file guard -- the one rule whose entire reason to exist is overriding
+  `accept_edits`.
+- `decode_output` picks an encoding by "which produced fewer replacement
+  characters", and the fallback encoding is a single-byte code page mapping all
+  256 bytes, which **can never produce a replacement character**. So one bad
+  byte turned the whole output into mojibake; and `_drain` cuts at the capacity
+  ceiling by byte, which naturally splits multi-byte characters.
+- The system prompt told the model "a merge is always refused", `git pull` does
+  exactly that merge, and it walked straight past the breaker table.
+- `command_timeout_s` had type checking, provenance, and "the repository can
+  only tighten" protection -- and **no code read it at all**.
 
-- 补丁工具知道 `AVERYL~1.PY` 和长名是同一个文件；policy 层做的是字符串比较，于是 8.3 别名绕过了脏文件守卫——那条规则存在的唯一理由就是压过 `accept_edits`。
-- `decode_output` 用"谁产生的替换字符少"来选编码，可回退编码是把 256 个字节全映射的单字节码页，**永远产生不了替换字符**。于是一个坏字节就把整段输出翻成乱码；而 `_drain` 在容量上限处按字节切，天然会切断多字节字符。
-- 系统提示词告诉模型"merge 永远被拒"，`git pull` 干的就是那个 merge，却直接走过熔断表。
-- `command_timeout_s` 有类型检查、有 provenance、有"仓库只能收紧"保护——**没有任何代码读它**。
+The sharpest one was caught by the clean-room check rather than by the test
+suite: redacting events field by field is correct, but the model's text
+arrives **streamed in chunks**, a credential fell across two deltas, neither
+fragment matched anything, and the renderer reassembled it onto the screen.
+The event stream was clean and the terminal leaked.
 
-最尖锐的一个是净室验证抓到的，而不是测试套件：事件按字段脱敏是对的，但模型的文本是**分块流式**到达的，凭证跨两个 delta 落下，两个片段都不匹配任何东西，渲染器再把它拼回屏幕上。事件流干净、终端泄漏。
+The lesson, written down: **"correct everywhere" does not imply "correct
+together"**. Hence
+[tests/test_prompt_matches_breaker.py](../tests/test_prompt_matches_breaker.py)
+(the promise and the table aligned in both directions),
+`categorical_denials()` (the prompt is generated from the breaker table's
+constants rather than written by hand), and a real clean-room end-to-end
+(rebuild the wheelhouse -> install into a fresh venv with `--no-index` -> run a
+real task -> check the canary is in neither the events, the rendering, stdout,
+nor the logs). **A cross-layer property has to be verified across layers.**
 
-教训写下来：**"每一处都正确"不蕴含"合起来正确"**。所以现在有 [tests/test_prompt_matches_breaker.py](../tests/test_prompt_matches_breaker.py)（承诺与表双向对齐）、`categorical_denials()`（提示词由熔断表的常量生成而非手写）、以及一次真实的净室端到端（重建 wheelhouse → `--no-index` 装进全新 venv → 跑真实任务 → 检查 canary 不在事件、渲染、stdout 与日志里）。**跨层的性质要跨层地验。**
+### (b3) Round seven: the worst defect in the project, on the one path no test ever touched
 
-### (b3) 第七轮：整个项目最严重的缺陷，在唯一没有测试碰过的那条路径上
+The user provided a local endpoint
+([research/live-endpoint.md](research/live-endpoint.md)). It cannot verify tool
+calls itself, but it forced me to read the **proxy** path -- and then:
 
-用户提供了一个本机 endpoint（[research/live-endpoint.md](research/live-endpoint.md)）。它本身不能验证 tool call，但它逼着我去读**代理**那条路径——然后发现：
+**The API key leaves this machine in plaintext.**
 
-**API key 以明文离开这台机器。**
+When choosing a connection class for an `https://` target, `_connect` **looks
+at the proxy's scheme, not the target's**. An ordinary
+`HTTP_PROXY=http://proxy.corp:8080` therefore takes the `else` branch, builds a
+plain `HTTPConnection`, and calls `set_tunnel(host, 443)` on it. But
+`HTTPConnection.connect()` stops once it has sent CONNECT -- only
+`HTTPSConnection.connect()` performs the `wrap_socket` that must follow a
+tunnel.
 
-`_connect` 为 `https://` 目标选连接类**看的是代理的 scheme，不是目标的**。一个普通的
-`HTTP_PROXY=http://proxy.corp:8080` 于是走 `else` 分支，建了个纯 `HTTPConnection`，再对它
-`set_tunnel(host, 443)`。而 `HTTPConnection.connect()` 发完 CONNECT 就停了——只有
-`HTTPSConnection.connect()` 才会做隧道之后必须做的 `wrap_socket`。
-
-对着真 socket 复现：代理答完 `200 Connection established` 之后，进入隧道的第一个字节是
-`'P'`，不是 `0x16`：
+Reproduced against a real socket: after the proxy answers
+`200 Connection established`, the first byte into the tunnel is `'P'`, not
+`0x16`:
 
 ```
 POST /v1/chat/completions HTTP/1.1
@@ -116,56 +205,137 @@ Host: api.openai.com:443
 Authorization: Bearer sk-SECRET-TOKEN-...
 ```
 
-代理和它之后的每一跳都能读到 key、prompt 和整段对话。`base_url` 默认就是
-`https://api.openai.com/v1`，所以这是**任何配了代理的机器上的默认路径**——而在本项目瞄准的
-环境里，那是每一台机器。更讽刺的是：`_build_ssl_context` 只在罕见的 https-proxy 分支上可达，
-于是模块 docstring 里那段「信任 Windows 证书库、公司 MITM 代理免配置可用」的理由，在它专门
-为之而写的那个配置下是死代码。
+The proxy, and every hop after it, can read the key, the prompt and the entire
+conversation. The default `base_url` is `https://api.openai.com/v1`, so this is
+**the default path on any machine with a proxy configured** -- and in the
+environment this project targets, that is every machine. More ironically,
+`_build_ssl_context` is reachable only on the rare https-proxy branch, so the
+module docstring's rationale about "trusting the Windows certificate store, so
+a corporate MITM proxy needs no configuration" was dead code under exactly the
+configuration it was written for.
 
-**为什么六轮对抗评审没抓到**：`tests/` 里从来没有任何一个测试在跑 `HttpClient` 的同时设过代理
-环境变量。六轮评审都在读代码和构造输入，而这条分支要**同时**具备「设了代理」和「https 目标」
-才会走到；单元测试的默认环境两个都没有。
+**Why six rounds of adversarial review missed it**: no test in `tests/` had
+ever set a proxy environment variable while exercising `HttpClient`. All six
+rounds read code and constructed inputs, and this branch is only reached when
+"a proxy is set" and "the target is https" hold **at the same time**; a unit
+test's default environment has neither.
 
-写下来的规矩：**凭证经过的每一条路径，都必须有一个测试真的把字节抓下来看**。现在
-`test_live_endpoint_findings.py` 会起一个假代理，断言进入隧道的第一个字节是 `0x16`，并断言
-canary 不在明文里。断言「连到了代理主机」是不够的——旧代码同样满足那个断言。
+The rule written down: **every path a credential travels needs a test that
+actually captures the bytes and looks at them**. Now
+`test_live_endpoint_findings.py` starts a fake proxy, asserts the first byte
+into the tunnel is `0x16`, and asserts the canary is not in the plaintext.
+Asserting "it connected to the proxy host" is not enough -- the old code
+satisfied that assertion too.
 
-### (c) 明说解决不了什么
+### (c) Say plainly what it cannot solve
 
-`python -c "subprocess.run(['git','reset','--hard'])"` 一样有破坏性，任何解析都抓不到。所以解释器（python/node/…）**故意保持可放行**——拒绝 `python -m pytest` 代价极大而收益为零。"被批准的命令能做该程序能做的任何事"是 trusted-host 模型的属性（见 §4），分段器不假装解决它。
+`python -c "subprocess.run(['git','reset','--hard'])"` is just as destructive,
+and no parsing catches it. So interpreters (python/node/...) are
+**deliberately kept approvable** -- refusing `python -m pytest` costs enormously
+and buys nothing. "An approved command can do anything that program can do" is
+a property of the trusted-host model (see §4), and the segmenter does not
+pretend to solve it.
 
-分段器只保证一件事：**文本里直接写出来的危险命令，不会因为换个写法就绕过审批。**
+The segmenter guarantees exactly one thing: **a dangerous command written out
+directly in the text will not bypass approval by being spelled differently.**
 
-## 4. 明确不防护的（V1 非目标）
+## 4. Explicitly not defended (V1 non-goals)
 
-1. **恶意仓库内容 / prompt injection 的后果**。文件和工具输出可以试图指挥模型。唯一真实防线是 PolicyEngine 独立于模型意图对每个副作用把关——但一旦你批准了某条命令，注入就已经赢了那一步。
-2. **本机管理员绕过 managed policy**。用户能改 site-packages、删配置、换环境。managed DENY 的诚实定位是：*在未被篡改的安装内*，运行时任何途径都不能放松它。真正的边界在 Gateway 服务端（模型白名单、请求日志、DLP）。
-3. **`run_command` 的 workspace 约束**。workspace 边界只约束文件工具。子进程天然不受约束——闸门是 policy，不是路径检查。
-4. **TOCTOU 与 hardlink**。检查后、打开前被替换为 junction 的竞态无法在无沙箱下根除；hardlink 无法用路径检查发现。
-5. **通用 secret 检测**。只保证删除 Foundry 自己持有的凭证的字面字节序列。未知格式的公司 token、连接串、cookie 会漏——模式扫描标注为 best-effort。
-6. **NTLM/Kerberos 代理**。stdlib 不支持；检测到 407 Negotiate 时明确报错而非静默失败。
-7. **Job assign 的毫秒窗口**。`Popen` 返回后才能 assign，理论上存在极短窗口让子进程先派生孙进程逃出 job。stdlib 无法关闭该窗口。
+1. **Malicious repository content / the consequences of prompt injection.**
+   Files and tool output can try to instruct the model. The only real defence
+   is PolicyEngine gating every side effect independently of the model's
+   intent -- but once you approve a command, the injection has already won that
+   step.
+2. **A local administrator bypassing managed policy.** The user can edit
+   site-packages, delete the configuration, or switch environments. The honest
+   position for a managed DENY is: *within an untampered installation*, no
+   runtime route can relax it. The real boundary is on the Gateway server
+   (model allowlisting, request logging, DLP).
+3. **The workspace constraint on `run_command`.** The workspace boundary
+   constrains only the file tools. A subprocess is inherently unconstrained --
+   the gate is policy, not a path check.
+4. **TOCTOU and hard links.** The race where a path is replaced with a junction
+   after the check and before the open cannot be eliminated without a sandbox;
+   hard links cannot be detected by a path check.
+5. **General secret detection.** Only the literal byte sequences of credentials
+   Foundry itself holds are guaranteed to be removed. Corporate tokens in
+   unknown formats, connection strings and cookies will slip through -- pattern
+   scanning is labelled best-effort.
+6. **NTLM/Kerberos proxies.** The stdlib does not support them; a 407 Negotiate
+   is reported as an explicit error rather than failing silently.
+7. **The millisecond window on the Job assignment.** The assignment can only
+   happen after `Popen` returns, so in theory there is a very brief window in
+   which the child could spawn a grandchild that escapes the job. The stdlib
+   cannot close that window.
 
-## 5. 验收方式
+## 5. How this is accepted against
 
-这些不是声明，是测试：
+These are not statements, they are tests:
 
-- **熔断表不变量**：28 条被禁命令 × 17 种装饰（链接、注释、CR 分隔、不可解析邻段、shell 包装、分组、script block、dot-source）= 476 个组合；加上单命令基线 28、各模式 24、会话授权 6、hook 改写 6，以及第七轮补的两根轴——**参数位置**（全局选项的值本身是子命令名；选项的值长得像 flag）与**变量拼写**（`$X` / `${X}` / 双引号内的两者）——共 780 个自动生成用例，全部必须 DENY 在第 0 步（`test_breaker_invariant.py`）。
-- **canary 泄漏套件**：以金丝雀凭证跑全流程，断言它不出现在 journal、artifact、audit、事件流与控制台；**并按 1/2/3/5/13/64 字节分块**发送，验证跨 delta 的凭证同样被删（`test_cli_e2e.py`、`test_session.py`、`test_round6_fixes.py`）。
-- **提示词与熔断表双向对齐**：表拒绝的每一族都必须在提示词里被点名，提示词声称"永远拒绝"的每个 git 子命令都必须真的被拒（`test_prompt_matches_breaker.py`）。手写那段话时它承诺 merge 被拒，而 `git pull` 走了过去。
-- **跨层拼写一致**：8.3 短名、CRLF、大小写等在工具层解析过的路径，policy 必须看到同一个拼写（`test_drift_fixes.py`）。
-- **凭证在代理隧道里是密文**：起一个假代理，断言进入隧道的第一个字节是 `0x16`（TLS ClientHello）而非明文 `POST`，且 canary 不在字节里（`test_live_endpoint_findings.py`）。只断言「连到了代理主机」不算数——出事的那版代码同样满足。
-- **真实线格式夹具**：字节级保存的真实网关响应，含「usage 与空 `choices` 同帧」和 Responses SSE 的 `event:` 行（`tests/fixtures/live_gateway/`，`.gitattributes` 标 `-text` 保证不被换行归一化）。
-- **路径逃逸表**：junction、ADS、`..`、设备名、UNC、盘符相对全部被拒（`test_workspace.py`）。
-- **分段器攻击表**：链式命令、命令替换、重定向、调用操作符、别名、CR 分隔、PowerShell 注释、包装形式（`test_segmenter.py`、`test_security_regressions.py`、`test_security_round3.py`）。
-- **policy 决策表**：deny-wins、熔断表不可覆盖、accept_edits 下脏文件仍 ASK（含各种路径拼法）、dont_ask fail-closed、hook 改写重入熔断（`test_policy.py`）。
-- **真实 git 环境**：fixture 用**普通 git** 建仓（非 Foundry 硬化路径），覆盖 CRLF、含空格路径、重命名（`test_crlf_repo.py`、`test_security_round3.py`）。
-- **进程树清理**：取消一个派生了孙进程的命令，无残留且不阻塞；孙进程占管道时报告 incomplete 而非 exit 0（`test_tools_command_git.py`、`test_resource_bounds.py`）。
-- **资源上限**：命令输出 400MB 实测峰值 27MB；超限文件拒读并给出可用替代（`test_resource_bounds.py`）。
-- **证据链**：伪造的 claim 使 completed 降级为 partial；HEAD 移动同样降级；**引用改动之前那次绿灯**同样降级——只查 exit code 不查顺序，会让一次什么都没验证过的会话报告 completed（`test_runtime.py`、`test_golden_tasks.py`、`test_subsystem_audit.py`）。
-- **崩溃恢复**：截尾 journal 判 interrupted（`test_session.py`）。
+- **The breaker table invariant**: 28 forbidden commands x 17 decorations
+  (chaining, comments, CR separation, an unparseable neighbouring segment,
+  shell wrappers, grouping, script blocks, dot-sourcing) = 476 combinations;
+  plus the 28 single-command baselines, 24 mode cases, 6 session grants and 6
+  hook rewrites, plus the two axes added in round seven -- **argument position**
+  (a global option's value is itself a subcommand name; an option's value looks
+  like a flag) and **variable spelling** (`$X` / `${X}` / both inside double
+  quotes) -- for 780 generated cases in total, every one of which must DENY at
+  step 0 (`test_breaker_invariant.py`).
+- **The canary leak suite**: run the whole flow with a canary credential and
+  assert it appears in neither the journal, artifacts, the audit log, the event
+  stream, nor the console; **and send it chunked at 1/2/3/5/13/64 bytes** to
+  verify a credential split across deltas is removed too (`test_cli_e2e.py`,
+  `test_session.py`, `test_round6_fixes.py`).
+- **The prompt and the breaker table aligned in both directions**: every family
+  the table refuses must be named in the prompt, and every git subcommand the
+  prompt claims is "always refused" must really be refused
+  (`test_prompt_matches_breaker.py`). When that paragraph was written by hand it
+  promised that merges were refused, and `git pull` walked past.
+- **Consistent spelling across layers**: a path the tool layer has resolved
+  (8.3 short names, CRLF, case) must reach policy in the same spelling
+  (`test_drift_fixes.py`).
+- **The credential is ciphertext inside the proxy tunnel**: start a fake proxy
+  and assert the first byte into the tunnel is `0x16` (a TLS ClientHello)
+  rather than a plaintext `POST`, and that the canary is not in the bytes
+  (`test_live_endpoint_findings.py`). Asserting "it connected to the proxy
+  host" does not count -- the version that leaked satisfied that too.
+- **Real wire-format fixtures**: byte-level captures of real gateway responses,
+  including "usage in the same frame as an empty `choices`" and the `event:`
+  lines of Responses SSE (`tests/fixtures/live_gateway/`, marked `-text` in
+  `.gitattributes` so line endings are never normalised).
+- **The path escape table**: junctions, ADS, `..`, device names, UNC and
+  drive-relative paths are all refused (`test_workspace.py`).
+- **The segmenter attack table**: chained commands, command substitution,
+  redirection, the call operator, aliases, CR separation, PowerShell comments,
+  and wrapper forms (`test_segmenter.py`, `test_security_regressions.py`,
+  `test_security_round3.py`).
+- **The policy decision table**: deny-wins, the breaker table is not
+  overridable, a dirty file still ASKs under accept_edits (across every path
+  spelling), dont_ask is fail-closed, a hook rewrite re-enters the breaker
+  (`test_policy.py`).
+- **A real git environment**: fixtures build repositories with **ordinary git**
+  (not Foundry's hardened path), covering CRLF, paths with spaces, and renames
+  (`test_crlf_repo.py`, `test_security_round3.py`).
+- **Process tree cleanup**: cancelling a command that spawned a grandchild
+  leaves nothing behind and does not hang; when a grandchild holds the pipe it
+  is reported as incomplete rather than exit 0 (`test_tools_command_git.py`,
+  `test_resource_bounds.py`).
+- **Resource ceilings**: 400MB of command output peaks at a measured 27MB; an
+  over-limit file is refused with a usable alternative offered
+  (`test_resource_bounds.py`).
+- **The evidence chain**: a forged claim downgrades completed to partial; a
+  moved HEAD downgrades it too; and **citing a green run from before the
+  change** downgrades it as well -- checking the exit code without checking the
+  order would let a session that verified nothing report completed
+  (`test_runtime.py`, `test_golden_tasks.py`, `test_subsystem_audit.py`).
+- **Crash recovery**: a truncated journal is judged interrupted
+  (`test_session.py`).
 
-## 6. V2 方向
+## 6. V2 directions
 
-restricted-token 沙箱（Codex 的 Windows sandbox 用了受限令牌 + 专用本地账户 + WFP 防火墙 + 提权辅助服务，是数个季度的工程量）、shadow-git checkpoint/undo、managed policy 的实际分发机制。
-在那之前，诚实披露 + 强 ASK + 完整审计是 V1 的立场，不是疏漏。
+A restricted-token sandbox (Codex's Windows sandbox uses a restricted token + a
+dedicated local account + a WFP firewall + an elevation helper service, which
+is several quarters of engineering), shadow-git checkpoint/undo, and an actual
+distribution mechanism for managed policy.
+Until then, honest disclosure + strong ASK + a complete audit trail is V1's
+position, not an oversight.

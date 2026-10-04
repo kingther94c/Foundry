@@ -1,6 +1,6 @@
 # Claude Code runtime design (research note)
 
-> 来源：后台调研 agent（2026-08-29），基于 code.claude.com 官方文档、Anthropic 工程博客（SWE-bench post、Agent SDK post）与社区逆向分析（minusx 等）。
+> Source: a background research agent (2026-08-29), working from the official code.claude.com documentation, the Anthropic engineering blog (the SWE-bench post and the Agent SDK post), and community reverse-engineering (minusx and others).
 
 ## Summary
 

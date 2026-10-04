@@ -1,130 +1,155 @@
-# demo —— 用一个文件看懂 Foundry
+# demo -- understand Foundry from one file
 
-`mini_foundry.py` 是 Foundry 的**骨架**：结构和真的完全一样，只是每一层都砍到最薄。
-不需要网络、不需要 API key，直接跑。
+`mini_foundry.py` is Foundry's **skeleton**: exactly the same structure as the
+real thing, with every layer shaved down to its thinnest form. No network, no
+API key -- just run it.
 
 ```bash
 python demo/mini_foundry.py --yes
 ```
 
-两个入口，看你想怎么读：
+Two ways in, depending on how you like to read:
 
-| | 适合 |
+| | Good for |
 |---|---|
-| **`mini_foundry.py`** | 一口气跑完看全貌；从上往下读代码 |
-| **`mini_foundry.ipynb`** | 逐格跑、看中间状态、改了再跑。notebook 从 `.py` **import**，不复制代码，所以两边永远一致 |
+| **`mini_foundry.py`** | running it start to finish for the whole picture; reading the code top to bottom |
+| **`mini_foundry.ipynb`** | running a cell at a time, seeing the state in between, changing something and re-running. The notebook **imports** from the `.py` rather than copying code, so the two can never disagree |
 
 ```bash
-jupyter lab demo/mini_foundry.ipynb      # 或 VS Code 直接打开
+jupyter lab demo/mini_foundry.ipynb      # or just open it in VS Code
 ```
 
-## 用真模型（可选）
+## Using a real model (optional)
 
-两个入口都支持接一个 **OpenAI 兼容的 `/v1/chat/completions`**：
+Both entry points can talk to an **OpenAI-compatible
+`/v1/chat/completions`**:
 
 ```bash
 python demo/mini_foundry.py --endpoint http://127.0.0.1:1234/v1 --model your-model --yes
 ```
 
-notebook 里把第 5 节的 `USE_API` 改成 `True` 即可。
+In the notebook, set `USE_API` to `True` in section 5.
 
-| 来源 | ENDPOINT | key |
+| Source | ENDPOINT | key |
 |---|---|---|
-| LM Studio | `http://127.0.0.1:1234/v1` | 随便填 |
-| Ollama | `http://127.0.0.1:11434/v1` | 随便填 |
-| 本机 OpenClaw 网关 | `http://127.0.0.1:18789/v1` | `~/.openclaw/openclaw.json` 的 `gateway.auth.token` |
-| OpenAI | `https://api.openai.com/v1` | 你的 key |
+| LM Studio | `http://127.0.0.1:1234/v1` | anything |
+| Ollama | `http://127.0.0.1:11434/v1` | anything |
+| local OpenClaw gateway | `http://127.0.0.1:18789/v1` | `gateway.auth.token` in `~/.openclaw/openclaw.json` |
+| OpenAI | `https://api.openai.com/v1` | your key |
 
-**先知道两件事**：真 agent 一轮可能几十秒到几分钟；而且如果那个模型不产出
-`tool_calls`（本机 OpenClaw 网关背后的 trade-advisor 系就不产出），loop 会在第一轮
-就结束——你看得到真实的 HTTP 往返，看不到多轮工具调用。想看完整 loop，用剧本模式，
-或者换一个支持 function calling 的模型。
+**Two things to know first**: a real agent round can take tens of seconds to
+several minutes; and if that model does not emit `tool_calls` (the
+trade-advisor family behind the local OpenClaw gateway does not), the loop ends
+on the first round -- you see a real HTTP round trip, but no multi-round tool
+calling. For the full loop, use script mode, or switch to a model that supports
+function calling.
 
-## 先记住这一句
+## Hold on to this one sentence
 
-整个系统只有一句话：
+The entire system is one sentence:
 
 ```
-while 模型还在要求调用工具:
-    policy 判决 -> 执行 -> 把结果塞回对话 -> 再问一次模型
+while the model keeps asking for tools:
+    policy decides -> execute -> feed the result back -> ask again
 ```
 
-**其余全部代码，都是在给这句话里的某个词加保护。** 读 `src/foundry/` 时如果迷路了，
-回到这句话，问「我现在读的这段，是在保护哪个词」。
+**Every other line of code exists to put a guard around one word in that
+sentence.** If you get lost reading `src/foundry/`, come back to it and ask
+"which word is the part I'm reading protecting?"
 
-## 四个剧本，四件事
+## Four scripts, four things
 
-模型被写死成剧本（真 backend 在那个位置发 HTTP 请求）。这样结果确定、不花钱，
-而且**这正是 Foundry 那 1436 个测试能在没网没凭证的机器上跑的原因**。
+The model is hard-coded into a script (a real backend sends HTTP at that spot).
+That makes the results deterministic and free -- and **it is exactly why
+Foundry's 1436 tests can run on a machine with no network and no credentials**.
 
-| 命令 | 看什么 |
+| Command | What it shows |
 |---|---|
-| `--yes` | 完整一轮：跑测试 → 读代码 → 改 → 重跑 → 带证据收工。退出码 0 |
-| `--script destructive --yes` | 熔断表在第 0 步拒绝，`--yes` 也批不动 |
-| `--script liar --yes` | 模型声称"全部测试通过"，闸门查出它引用的命令 exit code 是 1，降级 partial |
-| `--mode plan --no` | 模式基线：plan 模式下所有改动被拒 |
+| `--yes` | a full run: run the tests -> read the code -> fix -> re-run -> finish with evidence. Exit code 0 |
+| `--script destructive --yes` | the breaker table denies at step 0, and `--yes` cannot approve it |
+| `--script liar --yes` | the model claims "all tests pass"; the gate finds the command it cited exited 1, and downgrades to partial |
+| `--mode plan --no` | mode baseline: in plan mode every change is denied |
 
-`liar` 那个值得多看一眼：模型没有伪造引用，它引用的命令**真的跑过**——只是失败了。
-拦住它的不是「检测撒谎」，是**要求它指出证据，然后我们自己去查那条证据**。
+`liar` is worth a second look: the model did not forge the citation -- the
+command it cited **really ran**, it just failed. What stops it is not "lie
+detection"; it is **requiring it to point at evidence, and then going and
+checking that evidence ourselves**.
 
-## 六个部分对应到哪
+## Where the six parts map to
 
-| demo 里的段落 | 真 Foundry | 真的那个多做了什么 |
+| Section in the demo | Real Foundry | What the real one adds |
 |---|---|---|
-| 1. IR | `core/conversation.py` | Usage 记账、能力协商。`arguments` 同样**故意不提前解析**——模型会吐坏 JSON，提前解析会让"报告这个调用坏了"变得不可能 |
-| 2. 工具 | `core/tools/` | 9 个工具。`read_file` 记内容摘要以强制"改前先读"；`apply_patch` 锚定 search/replace 且**逐文件原子**；`run_command` 用 Job Object 保证子进程树整棵可杀、环境变量白名单过滤 |
-| 3. Policy | `core/policy/` | 六步流水线 + 命令分段器。熔断表要对付同一条命令的各种写法 |
-| 4. Session | `core/session.py` | 内容寻址 artifact（大输出不塞进对话）、凭证脱敏、写不进去也不能让整轮崩掉 |
-| 5. Backend | `core/backends/` | Chat Completions 与 Responses 两个 adapter + stdlib 写的 HTTP/SSE |
-| 6. Loop | `core/runtime.py` | 预算上限、取消、凭证过期重取、错误分类学、上下文窗口管理。**形状一模一样** |
+| 1. IR | `core/conversation.py` | Usage accounting, capability negotiation. `arguments` is likewise **deliberately not parsed early** -- models emit broken JSON, and parsing early would make "report that this call was malformed" impossible |
+| 2. Tools | `core/tools/` | Nine tools. `read_file` keeps a digest so "read before you edit" can be enforced; `apply_patch` uses anchored search/replace and is **atomic per file**; `run_command` uses a Job Object so the whole child process tree can be killed, and filters the environment through an allowlist |
+| 3. Policy | `core/policy/` | The six-step pipeline plus the command segmenter. The breaker table has to cope with every spelling of the same command |
+| 4. Session | `core/session.py` | Content-addressed artifacts (large output never enters the conversation), credential redaction, and a degraded path so a failed ledger write cannot take the turn down |
+| 5. Backend | `core/backends/` | Two adapters, Chat Completions and Responses, over a stdlib HTTP/SSE client |
+| 6. Loop | `core/runtime.py` | Budget ceilings, cancellation, re-fetching expired credentials, an error taxonomy, context window management. The **shape is identical** |
 
-## 三个设计选择，值得单独理解
+## Three design choices worth understanding on their own
 
-### 为什么 validate 必须在 policy 之前
+### Why validate must run before policy
 
-一个畸形调用如果先弹审批框，用户批准了才发现参数根本不对——白问一次。
-所以顺序是：先验证、再判决、再执行。
+If a malformed call pops the approval prompt first, the user approves and only
+then does anyone discover the arguments were wrong -- one wasted question. So
+the order is: validate, then decide, then execute.
 
-### 为什么「显示的」和「执行的」必须是同一个对象
+### Why "what is shown" and "what is run" must be the same object
 
-`Operation` 被 policy 判、被审批框显示、被执行器执行。三者拿到同一个对象。
-如果显示的和执行的可能不同，那用户批准的就不是实际发生的事——审批就成了摆设。
+`Operation` is what policy judges, what the approval prompt displays, and what
+the executor runs. All three hold the same object. If what is shown and what is
+run could differ, the user did not approve what actually happened -- and the
+approval was theatre.
 
-### 为什么熔断表是第 0 步，而不是「一条优先级很高的规则」
+### Why the breaker table is step 0 rather than "a rule with very high priority"
 
-规则表是可配置的。仓库里的 `.foundry/config.toml`、用户配置、hook，都能往里加东西。
-熔断表不能是其中一条，因为**能被配置的东西就能被绕过**。它必须在流水线之外，
-先于一切。
+The rule table is configurable. The repository's `.foundry/config.toml`, the
+user's own config, and hooks can all add to it. The breaker cannot be one of
+those entries, because **anything configurable is something that can be
+configured around**. It has to sit outside the pipeline, before everything
+else.
 
-真 Foundry 为此有一条结构性不变量测试：780 个自动生成的组合，断言任何装饰、模式、
-会话授权或 hook 改写，都不能让一条被禁命令变得可批准。这条测试的由来是：
-**四轮对抗评审每一轮都攻破过命令分段器**，其中两次是把「不可批准的 DENY」
-悄悄降级成了「可批准的 ASK」。
+The real Foundry has a structural-invariant test for exactly this: 780
+generated combinations, asserting that no decoration, mode, session grant or
+hook rewrite can make a forbidden command approvable. That test exists because
+**four rounds of adversarial review each broke the command segmenter**, and
+twice the break quietly downgraded an unapprovable DENY into an approvable ASK.
 
-## demo 里故意留下的两个真实坑
+## Two real potholes left in the demo on purpose
 
-读代码时会看到两处注释解释「为什么要多写这几行」，都是真事：
+Reading the code you will find two comments explaining "why the extra lines".
+Both are real:
 
-1. **`sys.stdout.reconfigure(encoding="utf-8")`** —— Windows 控制台默认不是 UTF-8，
-   print 一个方框字符就 `UnicodeEncodeError`。平台细节不是杂活，是这类工具的正主。
+1. **`sys.stdout.reconfigure(encoding="utf-8")`** -- the Windows console is not
+   UTF-8 by default, so printing one box character raises
+   `UnicodeEncodeError`. Platform detail is not busywork for a tool like this
+   -- it is the job.
 
-2. **`PYTHONDONTWRITEBYTECODE=1`** —— 改完文件马上重跑测试时，如果新旧文件字节数
-   相同、mtime 又落在同一个时钟刻度里，Python 会认定 `__pycache__` 里的 `.pyc`
-   仍然有效，于是**跑的还是改之前的代码**。补丁明明打对了，测试却还是红的——
-   agent 会陷入"改了又改"的死循环。这个坑是写这个 demo 时真撞上的。
+2. **`PYTHONDONTWRITEBYTECODE=1`** -- when tests are re-run right after a file
+   is edited, if the new and old file have the same size and their mtimes land
+   in the same clock tick, Python decides the `.pyc` in `__pycache__` is still
+   valid and **runs the pre-edit code**. The patch was right, the tests are
+   still red -- and the agent falls into an edit-and-edit-again loop. This one
+   was hit for real while writing this demo.
 
-## demo **没有**的东西
+## What the demo does **not** have
 
-这些是 Foundry 真正花力气的地方，砍掉是为了让骨架看得清：
+These are where Foundry actually spends its effort; they were cut so the
+skeleton stays visible:
 
-- 流式输出（demo 等模型说完；真的是逐字上屏，还要处理凭证跨两个分片的脱敏）
-- 路径安全（demo 只做前缀比较；真的要处理 8.3 短名、reparse point、设备名、UNC、大小写）
-- 命令分段（demo 用 `in` 做子串匹配，**这在真实环境下完全不够**）
-- 上下文窗口管理、预算上限、取消、凭证过期重取
-- 错误分类学（哪些重试、哪些停、`Retry-After` 怎么读）
-- 补丁的锚定匹配与原子性（demo 直接整文件覆盖写）
+- streaming output (the demo waits for the model to finish; the real one prints
+  token by token, and has to redact a credential split across two chunks)
+- path safety (the demo only compares prefixes; the real one handles 8.3 short
+  names, reparse points, device names, UNC, case)
+- command segmentation (the demo uses `in` for a substring match, which is
+  **nowhere near enough in the real world**)
+- context window management, budget ceilings, cancellation, re-fetching expired
+  credentials
+- an error taxonomy (what to retry, what to stop on, how to read `Retry-After`)
+- anchored patch matching and atomicity (the demo overwrites whole files)
 
-最后一句：`--script destructive` 里那个 `git reset --hard` 之所以被拦住，靠的是
-`"git reset --hard" in target` 这个子串匹配。真实世界里它可以写成 `git reset ,--hard`、
-藏进 `<# ... #>` 注释、用 `&` 调用操作符包起来——每一种都绕开子串匹配。
-**这就是那 443 行分段器存在的全部理由。**
+One last note: the `git reset --hard` in `--script destructive` is stopped by
+the substring match `"git reset --hard" in target`. In the real world it can be
+written `git reset ,--hard`, hidden inside a `<# ... #>` comment, or wrapped in
+the `&` call operator -- each of which walks straight past a substring match.
+**That is the entire reason those 443 lines of segmenter exist.**

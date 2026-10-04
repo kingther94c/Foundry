@@ -78,7 +78,9 @@ def test_decode_prefers_utf8():
 
 @pytest.mark.skipif(sys.platform != "win32", reason="oem codec is Windows-only")
 def test_decode_falls_back_for_legacy_codepage():
-    data = "中文".encode("cp936")
+    # Non-ASCII on purpose, as an escape to keep this file ASCII: the test
+    # needs bytes that cp936 and UTF-8 disagree about.
+    data = "\u4e2d\u6587".encode("cp936")
     result = decode_output(data)
     assert "\ufffd" not in result.text or result.encoding != "utf-8"
 

@@ -62,11 +62,11 @@ def test_run_all_succeeds(tmp_path, monkeypatch, capsys):
     # It has to demonstrate what it claims, not print a plausible transcript.
     out = capsys.readouterr().out
     for expected, why in [
-        ("证据核对通过", "the loop never reached a verified completion"),
-        ("拒绝（第 0 步）", "the breaker section showed no step-0 denial"),
-        ("实际 exit code 是 1", "the liar section did not catch the false claim"),
-        ("plan 模式下不做任何改动", "plan mode allowed a mutation"),
-        ("溜过去了", "the evasion cell no longer shows the gap it teaches"),
+        ("evidence checks out", "the loop never reached a verified completion"),
+        ("denied (step 0)", "the breaker section showed no step-0 denial"),
+        ("actually exited 1", "the liar section did not catch the false claim"),
+        ("plan mode makes no changes", "plan mode allowed a mutation"),
+        ("slipped past", "the evasion cell no longer shows the gap it teaches"),
     ]:
         assert expected in out, why
 

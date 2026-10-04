@@ -1,181 +1,167 @@
-# Foundry 决策日志
+# Foundry decision log
 
-> 格式：每条决定一个编号。**状态**：`已确认`（用户拍板）/ `暂定`（Claude 建议、待用户确认）/ `已推翻`。
-> 推翻一条决定时不删除，改状态并链接到新决定。
+> Format: one number per decision. **Status**: `confirmed` (the user ruled) /
+> `provisional` (proposed by Claude, awaiting the user) / `overturned`.
+> An overturned decision is never deleted; its status changes and it links to
+> the decision that replaced it.
 
 ---
 
-## D-001 全新独立 runtime，不 fork / 不调用现有 coding agent
-- **日期**：2026-08-29　**状态**：已确认
-- **内容**：Foundry 自己拥有 agent loop、tools、policy、provider、session 的全部代码和接口。可以研读 Codex、Claude Code、gemini-cli 等公开源码借鉴设计，但不 fork、不 vendored、不在运行时调用它们。
-- **理由**：公司环境不允许安装官方 agent 产品（只能走公司 Gateway 的 API）；同时项目本身有学习目的（吃透 agent runtime 设计）。
+## D-001 A wholly independent runtime: no forking, no calling into an existing coding agent
+- **Date**: 2026-08-29 · **Status**: confirmed
+- **Decision**: Foundry owns all of the code and interfaces for its agent loop, tools, policy, providers and sessions. It may study the public source of Codex, Claude Code, gemini-cli and others for design ideas, but it does not fork them, vendor them, or call them at runtime.
+- **Rationale**: the corporate environment does not permit installing official agent products (only the corporate Gateway's API is available); and the project has a learning purpose of its own (understanding agent runtime design thoroughly).
 
-## D-002 Python 3.12 + wheel 离线安装
-- **日期**：2026-08-29　**状态**：已确认
-- **内容**：固定 Python 3.12；构建标准 wheel；目标安装方式 `python -m pip install --no-index --find-links <internal-wheel-dir> foundry`；依赖锁版本、带 hashes；不要求 Node.js / Rust toolchain。
-- **理由**：公司电脑软件源受限（JFrog Artifactory，Node/Rust 能否用视具体情况）；Python + 内部 wheel 目录是最确定可行的分发通道。
+## D-002 Python 3.12 + an offline wheel install
+- **Date**: 2026-08-29 · **Status**: confirmed
+- **Decision**: pin Python 3.12; build a standard wheel; the target installation is `python -m pip install --no-index --find-links <internal-wheel-dir> foundry`; dependencies are version-pinned with hashes; no Node.js or Rust toolchain is required.
+- **Rationale**: software sources on corporate machines are restricted (JFrog Artifactory, with Node/Rust availability case by case); Python plus an internal wheel directory is the most certainly workable distribution channel.
 
-## D-003 V1 是 trusted-host，不宣称 sandbox
-- **日期**：2026-08-29　**状态**：已确认
-- **内容**：V1 只用于可信仓库。审批（policy）是行为约束，不是安全边界；文档和 CLI 首次运行时都要明确披露这一点。
-- **理由**：Windows 上做真 sandbox（如 AppContainer/Job Object 限制）成本高且容易给人虚假安全感；诚实披露优于半吊子沙箱。
+## D-003 V1 is a trusted host and claims no sandbox
+- **Date**: 2026-08-29 · **Status**: confirmed
+- **Decision**: V1 is for trusted repositories only. Approval (policy) is a behavioural constraint, not a security boundary, and both the documentation and the CLI's first run must disclose this plainly.
+- **Rationale**: a real sandbox on Windows (AppContainer / Job Object restrictions and the like) is expensive and easily gives a false sense of security; honest disclosure beats a half-built sandbox.
 
-## D-004 交互式终端会话优先，headless 后补
-- **日期**：2026-08-29　**状态**：已确认（用户第一轮回答）
-- **内容**：V1 核心形态是交互式终端会话：对话、流式输出、副作用动作当场审批（ASK）。headless 一次性模式（`foundry exec` 之类）后续版本再补。
-- **架构约束**：UI 与 AgentRuntime 从第一天解耦——runtime 对外只暴露事件流 + 审批回调接口，终端 UI 只是第一个消费者。这样 headless 模式只是换一个"自动回答审批"的消费者，不动 loop。
+## D-004 The interactive terminal session comes first; headless follows
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's first round of answers)
+- **Decision**: V1's core form is an interactive terminal session: conversation, streaming output, and side-effecting actions approved on the spot (ASK). A one-shot headless mode (something like `foundry exec`) comes in a later version.
+- **Architectural constraint**: the UI and AgentRuntime are decoupled from day one -- the runtime exposes only an event stream plus an approval callback interface, and the terminal UI is merely its first consumer. Headless mode is then just a different consumer that "answers approvals automatically", with no change to the loop.
 
-## D-005 ChatGPT 登录保持最高优先级
-- **日期**：2026-08-29　**状态**：**已推翻 → [D-009]**（可行性研究确认 blocked，用户改选 API key）
-- **内容**：个人路径的 ChatGPT 浏览器登录仍是第一优先硬性需求。
-- **理由（用户原话大意）**：开发环境没有 OpenAI API key，无法用 API 验证；ChatGPT 订阅是唯一可用的真实模型访问，登录打通了才能做真实 E2E 验证。
-- **风险与缓解**：这仍是全项目最不确定的一项（第三方使用 ChatGPT 订阅可能无受支持途径，见 [OQ-5](open-questions.md)）。缓解措施：
-  1. runtime 主体开发不依赖真实模型——必须先有 **mock / record-replay ModelBackend**，让 loop、tools、policy、session 全部可离线测试；
-  2. 评估用**本地 OpenAI 兼容端点**（LM Studio / Ollama 等）作为 dev-only backend 做冒烟验证（见 [OQ-8](open-questions.md)）；
-  3. 可行性研究给出证据后再定 fallback 阶梯，不偷偷降级。
+## D-005 ChatGPT login stays the highest priority
+- **Date**: 2026-08-29 · **Status**: **overturned -> [D-009]** (the feasibility study confirmed it was blocked, and the user switched to an API key)
+- **Decision**: browser-based ChatGPT login for the personal path remains the first hard requirement.
+- **Rationale (the gist of the user's own words)**: the development environment has no OpenAI API key, so nothing can be verified through the API; the ChatGPT subscription is the only real model access available, and real E2E verification depends on that login working.
+- **Risk and mitigation**: this remains the most uncertain item in the project (third-party use of a ChatGPT subscription may have no supported route, see [OQ-5](open-questions.md)). Mitigations:
+  1. the bulk of runtime development does not depend on a real model -- a **mock / record-replay ModelBackend** must come first, so the loop, tools, policy and session are all testable offline;
+  2. evaluate a **local OpenAI-compatible endpoint** (LM Studio / Ollama and the like) as a dev-only backend for smoke tests (see [OQ-8](open-questions.md));
+  3. decide the fallback ladder only once the feasibility study produces evidence, rather than quietly downgrading.
 
-## D-006 公司 Gateway 是多模型的（含 Claude 等非 OpenAI 模型）
-- **日期**：2026-08-29　**状态**：已确认（用户第一轮回答）
-- **内容**：公司 Gateway 上挂多家模型。草稿"优先支持 OpenAI Responses-compatible"的假设**不成立为唯一假设**。
-- **架构约束**：
-  1. 内部消息 / 工具调用 / 流式事件必须是 **provider-agnostic 的自有规范**，各协议（Chat Completions / Responses / Anthropic Messages / Gateway 自有协议）各写窄 adapter；
-  2. 工具面（尤其编辑工具的格式）不能绑死 OpenAI 特化格式（如 V4A apply_patch），需要按模型族可配置或选择中性格式（见 [OQ-7](open-questions.md)）；
-  3. Gateway 具体协议、认证、模型清单待用户确认（见 [OQ-6](open-questions.md)）。
+## D-006 The corporate Gateway is multi-model (including non-OpenAI models such as Claude)
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's first round of answers)
+- **Decision**: the Gateway hosts models from several vendors. The draft's assumption of "support OpenAI Responses-compatible first" **does not hold as the only assumption**.
+- **Architectural constraints**:
+  1. the internal message / tool call / streaming event types must be a **provider-agnostic specification of our own**, with a narrow adapter per protocol (Chat Completions / Responses / Anthropic Messages / a Gateway-specific protocol);
+  2. the tool surface (especially the edit tool's format) must not be nailed to an OpenAI-specific format (such as V4A apply_patch); it needs to be configurable per model family, or to use a neutral format (see [OQ-7](open-questions.md));
+  3. the Gateway's specific protocol, authentication and model list await the user's confirmation (see [OQ-6](open-questions.md)).
 
-## D-007 设计优先级排序：可审计 / 少依赖 / 清晰实现 > 功能堆砌
-- **日期**：2026-08-29　**状态**：已确认（由动机推导）
-- **内容**：动机 = 公司合规约束 + 学习目的。用户用 Claude Agent SDK 攒过 mini-codex，体验一般——Foundry 要赢在"完全掌控 + 设计质量"，而不是功能数量。
-- **推论**：宁可工具面窄而可靠；每个依赖都要过"值不值得进离线 wheel 目录"的审查；决策和取舍必须留痕（本文档）。
+## D-007 Design priority: auditability / few dependencies / a clear implementation > piling on features
+- **Date**: 2026-08-29 · **Status**: confirmed (derived from the motivation)
+- **Decision**: the motivation is corporate compliance constraints + learning. The user has assembled a mini-codex with the Claude Agent SDK and found the experience mediocre -- Foundry has to win on "complete control + design quality", not on feature count.
+- **Corollary**: a narrow but reliable tool surface is preferable; every dependency must pass the "is it worth a slot in the offline wheel directory" review; decisions and trade-offs must leave a trace (this document).
 
-## D-008 Claude consumer OAuth 不属于 V1
-- **日期**：2026-08-29　**状态**：已确认（草稿继承）
-- **内容**：个人路径 V1 只做 ChatGPT/OpenAI；Claude 订阅登录不做。公司路径里的 Claude 模型走 Gateway，与 consumer OAuth 无关。
+## D-008 Claude consumer OAuth is not part of V1
+- **Date**: 2026-08-29 · **Status**: confirmed (inherited from the draft)
+- **Decision**: the personal path in V1 covers ChatGPT/OpenAI only; Claude subscription login is not built. The Claude models on the corporate path go through the Gateway and have nothing to do with consumer OAuth.
 
-## D-009 个人路径 = OpenAI 平台 API key；ChatGPT 登录标记 blocked-with-evidence
-- **日期**：2026-08-29　**状态**：已确认（用户第二轮回答，基于可行性研究证据）
-- **内容**：调研（[research/auth.md](research/auth.md)）确认：非 Codex 第三方工具没有受支持方式用 ChatGPT 订阅做推理——官方 "Sign in with ChatGPT" 只给身份不给推理；Codex 订阅端点有 originator 白名单（非 Codex 客户端 403），使用即须冒充 Codex，违反 OpenAI ToS 与本项目章程，有封号先例。按 v0.1 §3.1 约定流程：标记 blocked、留证据、询问用户。用户选择个人路径改用 OpenAI 平台 API key。
-- **配套**：开发验证不依赖 key——ReplayBackend（离线全覆盖）+ 本地 OpenAI 兼容端点（LM Studio/Ollama 冒烟，用户已接受）；真实云端 E2E 才消耗 key。推翻 [D-005]。
+## D-009 The personal path is an OpenAI platform API key; ChatGPT login is marked blocked-with-evidence
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's second round of answers, on the feasibility evidence)
+- **Decision**: research ([research/auth.md](research/auth.md)) confirmed that a non-Codex third-party tool has no supported way to run inference on a ChatGPT subscription -- the official "Sign in with ChatGPT" grants identity, not inference; the Codex subscription endpoint has an originator allowlist (a non-Codex client gets 403), so using it requires impersonating Codex, which violates both OpenAI's ToS and this project's charter, and has led to bans before. Following the process agreed in v0.1 §3.1: mark it blocked, keep the evidence, ask the user. The user chose an OpenAI platform API key for the personal path.
+- **Accompanying**: development verification does not depend on a key -- ReplayBackend (full offline coverage) + a local OpenAI-compatible endpoint (LM Studio/Ollama smoke tests, which the user accepted); only real cloud E2E consumes the key. Overturns [D-005].
 
-## D-010 编辑格式 = 模型中性的锚定 search/replace 信封
-- **日期**：2026-08-29　**状态**：已确认（用户第二轮回答）
-- **内容**：apply_patch 采用"信封（Add/Delete/Update File）+ 锚定文本 search/replace hunks"（不依赖行号），补丁作为单个不透明字符串参数；小文件 whole-file 逃生通道；格式说明显式进 system prompt。
-- **理由**：Gateway 多模型（含 Claude），Codex V4A 是 GPT 私有训练格式（官方支持列表仅 GPT-5.x），Claude 用之崩坏；Claude Code/OpenHands/aider 独立收敛到锚定文本替换；aider 实测宽容应用梯度降 9 倍错误率。备选"按模型族双格式"被否（测试面翻倍），留 per-model profile 的 `edit_format` 降级字段。
+## D-010 The edit format is a model-neutral anchored search/replace envelope
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's second round of answers)
+- **Decision**: apply_patch uses an "envelope (Add/Delete/Update File) + anchored-text search/replace hunks" format (no line numbers), with the patch passed as a single opaque string argument; small files get a whole-file escape hatch; the format description goes explicitly into the system prompt.
+- **Rationale**: the Gateway is multi-model (Claude included), Codex's V4A is a GPT-private trained format (the official support list is GPT-5.x only) and Claude mangles it; Claude Code, OpenHands and aider all converged independently on anchored text replacement; aider measured a 9x reduction in error rate from a lenient application gradient. The alternative of "two formats by model family" was rejected (it doubles the test surface), leaving an `edit_format` downgrade field in the per-model profile.
 
-## D-011 脏工作区 = 警告继续 + 脏文件写操作强制 ASK
-- **日期**：2026-08-29　**状态**：已确认（用户第二轮回答）
-- **内容**：会话开始记录 baseline（HEAD SHA + 脏文件清单）；对 baseline 已脏文件的 apply_patch 强制 ASK；`git checkout -- / reset --hard / clean / stash drop` 等销毁性命令进内置不可放松 DENY（circuit breaker）。
+## D-011 Dirty working tree = warn and continue + a forced ASK on writes to dirty files
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's second round of answers)
+- **Decision**: record a baseline at session start (the HEAD SHA + the list of dirty files); force an ASK for apply_patch on any file already dirty in the baseline; destructive commands such as `git checkout -- / reset --hard / clean / stash drop` go into a built-in, non-relaxable DENY (the circuit breaker).
 
-## D-012 Session schema 第一天可重放；resume 功能推 V2
-- **日期**：2026-08-29　**状态**：已确认（用户第二轮回答）
-- **内容**：JSONL 记录完整到可逐字节重建每次模型请求（同时是 ReplayBackend 测试的基础）；`foundry resume` 的功能层（列表/选择/状态校验）推 V2。
+## D-012 The session schema is replayable from day one; the resume feature is deferred to V2
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's second round of answers)
+- **Decision**: the JSONL records enough to rebuild every model request byte for byte (which is also the basis of ReplayBackend testing); the feature layer of `foundry resume` (listing / selection / state validation) is deferred to V2.
 
-## D-013 PolicyEngine = 六步流水线 + deny-wins 合并律 + circuit breaker
-- **日期**：2026-08-29　**状态**：已确认（用户第三轮批量确认）
-- **内容**：`pre_tool 回调 → DENY → ASK → mode 基线 → ALLOW → 交互审批(headless=DENY)`；规则跨层拼接、deny-from-anywhere-wins；固定优先序拒绝数字优先级；"can't parse → ASK"安全阀；硬编码 circuit breaker（.git、~/.foundry、销毁性命令）。
+## D-013 PolicyEngine = a six-step pipeline + a deny-wins merge rule + a circuit breaker
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's third round, confirmed as a batch)
+- **Decision**: `pre_tool callback -> DENY -> ASK -> mode baseline -> ALLOW -> interactive approval (headless = DENY)`; rules concatenate across layers, and deny-from-anywhere wins; a fixed precedence order, rejecting numeric priorities; a "can't parse -> ASK" safety valve; a hard-coded circuit breaker (.git, ~/.foundry, destructive commands).
 
-## D-014 依赖预算：stdlib 优先，运行时仅 rich（+可选 prompt_toolkit）
-- **日期**：2026-08-29　**状态**：已确认（用户第三轮批量确认）
-- **内容**：HTTP/SSE 自研于 stdlib（换 Windows 系统证书库零配置，公司 MITM 代理免配置）；DPAPI/Job Object 走 ctypes；不用 httpx/requests/keyring/psutil/pydantic/textual。理由与落选对比见 [design.md](design.md) §11。
+## D-014 The dependency budget: stdlib first, with only rich at runtime (+ optional prompt_toolkit)
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's third round, confirmed as a batch)
+- **Decision**: HTTP/SSE written on the stdlib (switching to the Windows system certificate store means zero configuration, and a corporate MITM proxy needs none); DPAPI and Job Objects through ctypes; no httpx/requests/keyring/psutil/pydantic/textual. The rationale and the rejected comparison are in [design.md](design.md) §11.
 
-## D-015 read_artifact = 超限工具输出的落盘取回
-- **日期**：2026-08-29　**状态**：已确认（用户第三轮批量确认）
-- **内容**：artifact = 本会话内工具输出超出上下文预算而落盘的完整原文，按 artifact_id 寻址，只读，仅限 session 目录。与 ContextManager 截断策略配对。
+## D-015 read_artifact = retrieving over-limit tool output from disk
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's third round, confirmed as a batch)
+- **Decision**: an artifact is the complete original text of a tool output from this session that exceeded the context budget and was written to disk, addressed by artifact_id, read-only, confined to the session directory. It pairs with the ContextManager truncation policy.
 
-## D-016 并发模型 = asyncio 核心
-- **日期**：2026-08-29　**状态**：已确认（用户第三轮批量确认）
-- **内容**：streaming/取消/超时用 asyncio 表达（Windows ProactorEventLoop 支持子进程）；同步工具体 `asyncio.to_thread` 包装。接口签名以此冻结——事后从 sync 改 async 等于重写。
+## D-016 The concurrency model is an asyncio core
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's third round, confirmed as a batch)
+- **Decision**: streaming, cancellation and timeouts are expressed with asyncio (the Windows ProactorEventLoop supports subprocesses); synchronous tool bodies are wrapped in `asyncio.to_thread`. Interface signatures are frozen on that basis -- converting from sync to async afterwards is a rewrite.
 
-## D-017 finish 工具 = 终止状态与 ValidationClaim 的唯一产生通道
-- **日期**：2026-08-29　**状态**：已确认（用户第三轮批量确认；机制由对抗评审发现缺失后补）
-- **内容**：V1 工具面 8→9：`finish{status, summary, claims:[{claim_text, command_event_id}]}`；runtime 核验（事件存在、exit code 一致、git 核对、HEAD 未移动）后才发 Termination；不符降级 `partial`。交互会话普通 turn 不调 finish 正常结束；会话无 finish 关闭按上下文记 `cancelled`/`partial`。
-- **理由**："completed 门禁机器可执行"若无结构化产生通道，就退化为解析自由文本的君子协定——验收项"造假被拒"将无实现载体。
+## D-017 The finish tool is the only channel that produces a termination state and ValidationClaims
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's third round, confirmed as a batch; the mechanism was added after adversarial review found it missing)
+- **Decision**: the V1 tool surface goes from 8 to 9: `finish{status, summary, claims:[{claim_text, command_event_id}]}`; the runtime verifies (the event exists, the exit code matches, the git check, HEAD has not moved) before emitting a Termination; a mismatch downgrades to `partial`. An ordinary turn in an interactive session ends normally without calling finish; a session closed with no finish is recorded as `cancelled`/`partial` depending on context.
+- **Rationale**: a machine-enforceable completed gate with no structured production channel degrades into a gentlemen's agreement over free text -- and the acceptance item "forgery is refused" would have nothing to be implemented on.
 
-## D-018 run_command 唯一 shell = Windows PowerShell 5.1（powershell.exe -NoProfile）
-- **日期**：2026-08-29　**状态**：已确认（用户第三轮回答，OQ-13）
-- **内容**：零额外依赖、所有 Windows 预装。分段器按 5.1 语法写（`;`、管道 `|`；**无 `&&`/`||`**）；system prompt 明确告知模型"5.1 无 `&&`，用 `;` 代替"；模型误用得到清晰 parse error 可自行修正。落选：cmd（模型不熟）、Git Bash（安装形态不保证）、pwsh 7（需离线分发 ~100MB，抵触少依赖）。
+## D-018 The single shell for run_command is Windows PowerShell 5.1 (powershell.exe -NoProfile)
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's third round, OQ-13)
+- **Decision**: zero extra dependencies, preinstalled on all Windows. The segmenter is written for 5.1 syntax (`;`, the pipe `|`; **no `&&`/`||`**); the system prompt tells the model explicitly that "5.1 has no `&&`, use `;` instead"; a model that misuses them gets a clear parse error it can correct itself. Rejected: cmd (models are less fluent in it), Git Bash (its installation cannot be assumed), pwsh 7 (needs ~100MB of offline distribution, against the dependency budget).
 
-## D-019 仓库说明文件 FOUNDRY.md/AGENTS.md 进 V1（M2 交付）
-- **日期**：2026-08-29　**状态**：已确认（用户第三轮回答，OQ-17）
-- **内容**：项目根 `FOUNDRY.md`（兼容读 `AGENTS.md`）声明构建/测试命令与仓库注意事项，信任门控 + 字节上限注入上下文；验证命令优先级：任务指定 > 仓库声明 > 模型自选。
+## D-019 The repository instruction file FOUNDRY.md/AGENTS.md makes V1 (delivered in M2)
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's third round, OQ-17)
+- **Decision**: a `FOUNDRY.md` at the project root (with `AGENTS.md` read for compatibility) declares the build/test commands and repository caveats, injected into the context with trust gating and a byte ceiling; verification command precedence is: specified in the task > declared by the repository > chosen by the model.
 
-## D-020 golden 验收任务集 = 自建小型样例仓库（fixture 进 repo）
-- **日期**：2026-08-29　**状态**：已确认（用户第三轮回答，OQ-14）
-- **内容**：自建几十个文件的 Python 样例项目（含故意 bug 与测试）作为 fixture 进 Foundry repo；可移植、可分享、离线可用；公司仓库作 M3 补充验收。
+## D-020 The golden acceptance task set is a small sample repository we build ourselves (the fixture is committed)
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's third round, OQ-14)
+- **Decision**: build a Python sample project of a few dozen files (with deliberate bugs and tests) as a fixture committed into the Foundry repository; it is portable, shareable and usable offline; corporate repositories are an M3 supplement to acceptance.
 
-## D-021 V1 暂不开源，license 推迟
-- **日期**：2026-08-29　**状态**：已确认（用户第四轮回答；Codex 蓝图曾提议 Apache-2.0 开源）
-- **内容**：私有仓库推进，license 待定。文档可保留公司上下文不做脱敏。若日后开源，需补：provenance/license 审查约定、公司细节泛化。
+## D-021 V1 is not open source for now, and the license is deferred
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's fourth round; the Codex blueprint had proposed Apache-2.0 open source)
+- **Decision**: proceed in a private repository, license to be decided. The documents may keep corporate context without sanitising it. If it is ever open-sourced, the following must be added: a provenance/license review convention, and generalising the corporate details.
 
-## D-022 采信公司 Gateway 情报：OpenAI 系走 Responses，token 来自内网 auth
-- **日期**：2026-08-29　**状态**：已确认（用户第四轮回答，源自其给 Codex 的答复）
-- **内容**：Gateway 上 OpenAI 系模型支持 **Responses API**；token 由**内网 auth 流程**获取后配合 Gateway URL 使用（具体机制 HTTP 交换 / 内部可执行 / 浏览器 SSO 待确认）；Claude 模型存在但线协议未验证。
-- **影响**：`responses` adapter 从"按需新增"升为 **M3 必选**；OQ-6 收窄为"内网 auth 机制 + endpoint 形态 + 模型清单"；**M3 入场门 = 先拿到 Gateway 的 tool-call 流式脱敏夹具**再实现（"Responses-compatible 只覆盖对话不覆盖工具续传"是高代价返工风险）。
-- **同批采信**：目标 Windows 环境不能创建 symlink、无 Developer Mode（→ V1 一律拒绝 reparse point）；proxy / 自定义 CA / mTLS 非 V1 验收项（能力保留）。
+## D-022 Accept the corporate Gateway intelligence: the OpenAI family goes through Responses, and the token comes from intranet auth
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's fourth round, from their answers to Codex)
+- **Decision**: the OpenAI-family models on the Gateway support the **Responses API**; the token is obtained through an **intranet auth flow** and used with the Gateway URL (the exact mechanism -- an HTTP exchange / an internal executable / browser SSO -- is still to be confirmed); Claude models exist but their wire protocol is unverified.
+- **Impact**: the `responses` adapter is promoted from "added if needed" to **mandatory for M3**; OQ-6 narrows to "the intranet auth mechanism + the endpoint's shape + the model list"; **the M3 entry gate is obtaining the Gateway's tool-call streaming redaction fixtures** before implementing ("Responses-compatible covers conversation but not tool continuation" is an expensive rework risk).
+- **Accepted in the same batch**: the target Windows environment cannot create symlinks and has no Developer Mode (-> V1 refuses reparse points across the board); proxy / custom CA / mTLS are not V1 acceptance items (the capability is kept).
 
-## D-023 apply_patch 默认仍走交互审批（否决 Codex 版默认放行）
-- **日期**：2026-08-29　**状态**：已确认（用户第四轮回答）
-- **内容**：Codex 蓝图 FR-POL-04 主张默认放行 workspace 内精确补丁（对齐 Codex CLI 默认）。裁决：维持我方默认落交互审批，用户熟悉后切 `accept_edits` 即得同等体验；信任建立期更稳健。脏文件强制 ASK 与熔断表在两种模式下均生效。
+## D-023 apply_patch still goes through interactive approval by default (rejecting the Codex version's default allow)
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's fourth round)
+- **Decision**: the Codex blueprint's FR-POL-04 argues for allowing exact patches inside the workspace by default (matching the Codex CLI default). The ruling: keep our default of interactive approval; once the user is comfortable, switching to `accept_edits` gives the same experience. It is safer during the trust-building period. The forced ASK on dirty files and the breaker table apply in both modes.
 
-## D-024 吸收 Codex 蓝图的 13 项工程要点
-- **日期**：2026-08-29　**状态**：已确认（用户第四轮：以我方为主干、吸收值得的部分）
-- **内容**：canary 泄漏套件｜崩溃恢复语义（截尾容忍、无终止事件判 `interrupted`）｜内容寻址 artifacts｜失败指纹（按归一化操作+错误类计数，文本变化不重置）｜审批绑定 cwd/env/有效期｜policy 决定记 rule ID 与策略摘要｜env 配置层 + secrets 禁入仓库配置与 CLI 参数｜文件工具路径限 workspace 相对（绝对/设备路径不可表达）｜claims 可为空但须显式披露"未验证"｜变更归属分离报告｜假 HTTP server 的 adapter 合同测试 + 负向断言｜CredentialSource 合同与不可打印 SecretHandle｜脏工作区矩阵与"夹具复原禁用破坏性 git"。
-- **出处**：详见 [research/codex-blueprint-comparison.md](research/codex-blueprint-comparison.md)（Codex 分支 `codex/create-branch-codex-blueprint` / PR #1 保留存档，不合入）。
+## D-024 Absorb the 13 engineering points from the Codex blueprint
+- **Date**: 2026-08-29 · **Status**: confirmed (the user's fourth round: ours is the trunk, absorbing what is worth absorbing)
+- **Decision**: the canary leak suite | crash recovery semantics (tolerating truncation, no termination event means `interrupted`) | content-addressed artifacts | failure fingerprints (counted by normalised operation + error class, not reset by a change of wording) | approvals bound to cwd/env/validity | policy decisions recording the rule ID and a policy digest | an env configuration layer + secrets forbidden in repository config and CLI arguments | file tool paths limited to workspace-relative (absolute and device paths not expressible) | claims may be empty but must then disclose "not verified" explicitly | a report that separates attribution of changes | adapter contract tests against a fake HTTP server + negative assertions | the CredentialSource contract and a non-printable SecretHandle | the dirty working-tree matrix and "fixture restoration must not use destructive git".
+- **Source**: see [research/codex-blueprint-comparison.md](research/codex-blueprint-comparison.md) (the Codex branch `codex/create-branch-codex-blueprint` / PR #1 is kept as an archive and not merged).
 
-## 评审修正记录（2026-08-29 对抗评审，详见 git history 与评审归档）
-- §4.1 修机制矛盾：只读默认 = 内置 ALLOW 规则（步 5）；mutator 默认 = 落步 6 审批（非 ASK 规则，否则 accept_edits 与审批持久化永不生效）；脏文件 ASK = 内置 ASK 规则（步 3，压过 accept_edits）；补 mode 基线定义（dont_ask = fail-closed DENY）。
-- 审批"永久"规则改写入用户层（按 workspace 键控）而非 workspace 内文件；breaker 加 `<workspace>/.foundry/` 写保护——堵 accept_edits 下自我提权。
-- 只读白名单加参数约束（路径过 containment）；裸 git 移出白名单（防绕过硬化 git 工具）。
-- apply_patch 语义统一为**逐文件原子**（原文混用 codex 全原子与 aider 部分应用）。
-- 秘密 choke point 范围修正：字节级 exact-match、先于 base64、覆盖 artifact 写/读与事件发出；model_request 不落盘 auth 头。
-- breaker 表 canonical 化（别名归一前置；补 `git restore`/`stash clear` 与 PowerShell/cmd 删除形式）。
-- ReplayBackend 匹配契约：序号回放 + 结构断言（非逐字节，否则 prompt 微调红全套）；`foundry record` 重录工作流进 M0。
-- M1 拆 M1a（文件工具，不被 OQ-13 阻塞）/ M1b（run_command + 分段器）；`responses` adapter 降为按需新增。
+## Review revisions (the 2026-08-29 adversarial review; see the git history and the review archive)
+- §4.1, fixing a mechanical contradiction: the read-only default is a built-in ALLOW rule (step 5); the mutator default falls to step 6 approval (not an ASK rule, or accept_edits and approval persistence would never take effect); the dirty-file ASK is a built-in ASK rule (step 3, overriding accept_edits); the mode baseline definitions were added (dont_ask = fail-closed DENY).
+- The approval "always" rule is written into the user layer (keyed by workspace) rather than a file inside the workspace; the breaker gains write protection for `<workspace>/.foundry/` -- closing self-escalation under accept_edits.
+- The read-only allowlist gained argument constraints (paths go through containment); bare git was removed from the allowlist (to prevent bypassing the hardened git tools).
+- apply_patch semantics were unified as **per-file atomic** (the original text mixed codex's all-or-nothing with aider's partial application).
+- The secrets choke point scope was corrected: byte-level exact match, before base64, covering artifact writes and reads and event emission; model_request does not persist the auth header.
+- The breaker table was canonicalised (alias normalisation moved ahead of it; `git restore`/`stash clear` and the PowerShell/cmd delete forms were added).
+- The ReplayBackend matching contract: replay by ordinal + structural assertions (not byte-for-byte, or a prompt tweak turns the whole set red); the `foundry record` re-recording workflow moved into M0.
+- M1 was split into M1a (file tools, not blocked by OQ-13) and M1b (run_command + the segmenter); the `responses` adapter was demoted to "added if needed".
 
-## D-025 熔断表覆盖所有移动 HEAD 的 git 子命令；`git clean -n` 例外
-- **日期**：2026-08-30　**状态**：已确认（第六轮评审）
-- **背景**：系统提示词手写着"git commit/push/rebase/merge 永远被拒且不可批准"，但 `git pull`——它执行的正是那个 merge——直接走过熔断表。用户写一条 `run_command`/`git *` 的 allow 规则就会自动放行它；而它移动 HEAD，`_finalize` 随后把整轮降级为 `partial`，于是**跑了"被允许"的命令的会话永远无法报 completed**。`cherry-pick` / `revert` / `am` 同理，`git apply` 则绕开了 apply_patch 的读前置、脏文件守卫与锚点解析。
-- **内容**：`HISTORY_MOVING_GIT` 增补 pull / cherry-pick / revert / am；`git apply` 单列（理由指向 apply_patch）。反向地，`git clean -n|--dry-run` 只列不删，此前被以"destroys uncommitted work"拒绝——这句话对它是假的，且它正是模型"先看再问"的唯一手段，故按读法逐一豁免（naive 读法看不见的标志解锁不了任何东西）。
-- **防再犯**：提示词那段由 `categorical_denials()` 从熔断表常量生成；`test_prompt_matches_breaker.py` 双向断言。手写的清单会漂移，这次就漂了。
+## D-025 The breaker table covers every git subcommand that moves HEAD; `git clean -n` is an exception
+- **Date**: 2026-08-30 · **Status**: confirmed (review round six)
+- **Background**: the system prompt said by hand that "git commit/push/rebase/merge are always refused and cannot be approved", yet `git pull` -- which performs exactly that merge -- walked straight past the breaker table. A user writing one `run_command`/`git *` allow rule auto-approves it; and because it moves HEAD, `_finalize` then downgrades the whole run to `partial`, so **a session that ran an "allowed" command can never report completed**. The same holds for `cherry-pick` / `revert` / `am`, while `git apply` bypasses apply_patch's read-first requirement, dirty-file guard and anchor resolution.
+- **Decision**: `HISTORY_MOVING_GIT` gains pull / cherry-pick / revert / am; `git apply` is listed separately (with a reason pointing at apply_patch). In the other direction, `git clean -n|--dry-run` only lists and deletes nothing, and was previously refused as "destroys uncommitted work" -- which is false for it, and it is precisely the model's only way to "look before asking", so it is exempted per reading (a flag the naive reading cannot see unlocks nothing).
+- **Preventing a repeat**: that paragraph of the prompt is generated by `categorical_denials()` from the breaker table's constants; `test_prompt_matches_breaker.py` asserts alignment in both directions. A hand-written list drifts, and this one did.
 
-## D-026 `command_timeout_s` 定为上限而非默认值，出厂即工具自身上限
-- **日期**：2026-08-30　**状态**：已确认（第六轮评审）
-- **内容**：该键有类型检查、range 检查、provenance、以及"仓库只能收紧"保护——却没有任何代码读它。现经 `ToolContext.max_command_timeout_s` 下沉到工具层并在 `RunCommand.execute` 夹紧；工具保留自己较低的默认值（120s），配置项出厂值设为工具上限（600s），因此**出厂行为不变**，但运维/仓库调低它时真的生效，超时消息会说明被夹紧的原因。
-- **同批**：`session_retention_days` 仍无实现（[OQ-19](open-questions.md)），已在代码里标注为保留项——按一个用户从未选择过的默认值删除他的会话日志，不是可以顺手做的事。
+## D-026 `command_timeout_s` is a ceiling rather than a default, shipped equal to the tool's own ceiling
+- **Date**: 2026-08-30 · **Status**: confirmed (review round six)
+- **Decision**: the key had type checking, range checking, provenance, and "the repository can only tighten" protection -- and no code read it. It now reaches the tool layer through `ToolContext.max_command_timeout_s` and is clamped in `RunCommand.execute`; the tool keeps its own lower default (120s), and the configuration item ships at the tool's ceiling (600s), so **the out-of-the-box behaviour is unchanged** while operations or a repository lowering it really takes effect, with the timeout message explaining why it was clamped.
+- **In the same batch**: `session_retention_days` still has no implementation ([OQ-19](open-questions.md)) and is annotated in the code as reserved -- deleting a user's session logs on a default they never chose is not something to do casually.
 
-## D-027 事件流按流式脱敏（保留回看窗口），而非逐事件脱敏
-- **日期**：2026-08-30　**状态**：已确认（净室验证发现）
-- **背景**：redaction.py 声明三个 sink，事件那个从未实现——journal 写 `[redacted]`，`foundry exec --json` 把同一个凭证原样打到 stdout。补上逐字段脱敏后，净室端到端仍抓到泄漏：模型文本是**分块流式**到达的，凭证跨两个 `MessageDelta` 落下，两个片段都不匹配，渲染器再拼回屏幕。
-- **内容**：`EventSink` 保留一段尾巴，长度取"Foundry 实际持有的最长凭证"——那正是本模块承诺的删除范围——下一块到达或流结束时释放。比该尾巴更长的**模式**匹配仍可能跨块漏掉；模式扫描本就标注 best-effort，不改这个定位。
-- **教训**：跨层的性质要跨层地验。单元测试看到的是干净的事件流，终端上是明文。
+## D-027 The event stream is redacted as a stream (keeping a lookback window), not event by event
+- **Date**: 2026-08-30 · **Status**: confirmed (found by the clean-room check)
+- **Background**: redaction.py declares three sinks, and the event one was never implemented -- the journal wrote `[redacted]` while `foundry exec --json` printed the same credential verbatim to stdout. After field-by-field redaction was added, the clean-room end-to-end still caught a leak: the model's text arrives **streamed in chunks**, the credential fell across two `MessageDelta`s, neither fragment matched, and the renderer reassembled it on screen.
+- **Decision**: `EventSink` retains a tail whose length is "the longest credential Foundry actually holds" -- which is exactly the removal scope this module promises -- and releases it when the next chunk arrives or the stream ends. A **pattern** match longer than that tail can still be missed across chunks; pattern scanning is already labelled best-effort, and that positioning does not change.
+- **Lesson**: a cross-layer property has to be verified across layers. The unit tests saw a clean event stream; the terminal showed plaintext.
 
-## D-028 代理隧道必须按**目标**的 scheme 选连接类；TLS-fronted 代理明确拒绝
-- **日期**：2026-09-01　**状态**：已确认（真实 endpoint 引出的代理路径审计）
-- **背景**：`_connect` 为 https 目标选连接类时看的是**代理**的 scheme。普通
-  `HTTP_PROXY=http://proxy:8080` 于是建纯 `HTTPConnection` 再 `set_tunnel`，而
-  `HTTPConnection.connect()` 发完 CONNECT 就停——不做 `wrap_socket`。结果 **API key、
-  prompt、整段对话以明文穿过隧道**，代理及其后每一跳可读。对着真 socket 复现：隧道第一个
-  字节是 `'P'` 而非 `0x16`。`base_url` 默认 `https://api.openai.com/v1`，所以这是**配了代理
-  的机器上的默认路径**。
-- **内容**：连接类跟随目标 scheme——https 目标一律 `HTTPSConnection(proxy, context=...)` +
-  `set_tunnel(origin)`，即明文 CONNECT 到代理、再对 origin 做 TLS。stdlib 的 `set_tunnel`
-  表达不了「到代理也用 TLS」，故 `https://` 代理直接抛 `ConfigError` 说明限制，而不是悄悄
-  按其中一种处理。非隧道分支（http 目标过代理）改为把 `Proxy-Authorization` 返还给请求。
-- **防再犯**：测试必须**把字节抓下来看**——断言隧道第一个字节是 `0x16`、canary 不在明文里。
-  只断言「连到了代理主机」不算数：出事的那版代码同样满足那个断言。
+## D-028 The connection class for a proxy tunnel must follow the **target's** scheme; a TLS-fronted proxy is refused explicitly
+- **Date**: 2026-09-01 · **Status**: confirmed (the proxy path audit that the live endpoint prompted)
+- **Background**: when choosing a connection class for an https target, `_connect` looked at the **proxy's** scheme. An ordinary `HTTP_PROXY=http://proxy:8080` therefore built a plain `HTTPConnection` and called `set_tunnel`, and `HTTPConnection.connect()` stops once CONNECT is sent -- it never calls `wrap_socket`. The result: **the API key, the prompt and the entire conversation crossed the tunnel in plaintext**, readable by the proxy and every hop after it. Reproduced against a real socket: the first byte into the tunnel is `'P'`, not `0x16`. The default `base_url` is `https://api.openai.com/v1`, so this is **the default path on any machine with a proxy configured**.
+- **Decision**: the connection class follows the target's scheme -- an https target always uses `HTTPSConnection(proxy, context=...)` + `set_tunnel(origin)`, i.e. a plaintext CONNECT to the proxy and then TLS to the origin. The stdlib's `set_tunnel` cannot express "TLS to the proxy as well", so an `https://` proxy raises a `ConfigError` explaining the limitation rather than being quietly treated as one of the two. The non-tunnel branch (an http target through a proxy) now returns `Proxy-Authorization` to the request.
+- **Preventing a repeat**: the test must **capture the bytes and look at them** -- assert the first byte into the tunnel is `0x16`, and that the canary is not in the plaintext. Asserting "it connected to the proxy host" does not count: the version that leaked satisfied that assertion too.
 
-## D-030 证据必须**晚于**它所声称验证的那次改动
-- **日期**：2026-09-01　**状态**：已确认（子系统审计）
-- **背景**：`verify_claims` 只问「这条命令 exit code 对不对」，从不问「它跑在被验证的
-  改动之后吗」。于是：模型先跑测试全绿 → 改代码 → 不再跑 → finish 引用**改之前**那次绿灯。
-  exit code 完全对得上，于是一次**什么都没验证过**的会话报告了 `completed`。
-- **内容**：runtime 记录最后一次成功改动工作区的 journal ordinal，闸门拒绝任何编号早于它的
-  claim。改动指 mutator 工具（`apply_patch` 等），`run_command` 不算——命令本身就是证据来源。
-- **注**：这是六轮对抗评审之后仍然存在的、**项目核心承诺上的一个洞**。前几轮全在攻分段器和
-  补丁；证据链的「顺序」这一维没人查过。已有端到端回归。
+## D-030 Evidence must come **after** the change it claims to verify
+- **Date**: 2026-09-01 · **Status**: confirmed (subsystem audit)
+- **Background**: `verify_claims` only asked "is this command's exit code right", never "did it run after the change being verified". So: the model runs the tests green -> edits the code -> does not run them again -> finish cites the green run from **before** the edit. The exit code matches perfectly, and so a session that **verified nothing** reported `completed`.
+- **Decision**: the runtime records the journal ordinal of the last change that successfully modified the workspace, and the gate refuses any claim numbered earlier than it. A change means a mutator tool (`apply_patch` and the like); `run_command` does not count -- the command is the source of the evidence itself.
+- **Note**: this is a hole **in the project's core promise** that survived six rounds of adversarial review. Those rounds all attacked the segmenter and patching; the "ordering" dimension of the evidence chain had never been examined. There is now an end-to-end regression.
 
-## D-029 REPL 不因一次 BLOCKED 结束会话
-- **日期**：2026-09-01　**状态**：已确认
-- **内容**：断流/网关不可达终结的是**这一轮**，不是这次会话。原先 `outcome.status is not None`
-  一律 break，于是一次网络抖动让用户丢掉整段对话上下文——而抛出它的代码注释还写着「transient,
-  所以会重试」，实际上没有任何一层会重试（deltas 已经上屏，这一轮无法重放）。注释已改成说实话，
-  BLOCKED 改为提示后继续。
+## D-029 A single BLOCKED does not end the REPL session
+- **Date**: 2026-09-01 · **Status**: confirmed
+- **Decision**: a dropped stream or an unreachable gateway ends **this round**, not the session. Previously any `outcome.status is not None` broke out, so one bit of network flakiness cost the user the whole conversation context -- while the comment on the code that raised it said "transient, so it will retry", and in fact no layer retries (the deltas are already on screen, and the round cannot be replayed). The comment now tells the truth, and BLOCKED prints a message and continues.

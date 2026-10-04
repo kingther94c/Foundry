@@ -193,6 +193,10 @@ def dpapi_unprotect(data: bytes) -> bytes:
 
 # --- console output decoding ---------------------------------------------
 
+# What errors="replace" substitutes for a byte it cannot decode. Written as
+# an escape so this file stays ASCII.
+_REPLACEMENT = "\ufffd"
+
 
 @dataclass(frozen=True, slots=True)
 class DecodedOutput:
@@ -237,7 +241,7 @@ def decode_output(data: bytes) -> DecodedOutput:
             pass
 
     primary = data.decode("utf-8", errors="replace")
-    primary_bad = primary.count("�")
+    primary_bad = primary.count(_REPLACEMENT)
 
     # Genuine legacy output fails on essentially every high byte; damaged UTF-8
     # fails on a handful. Only the first case justifies changing codec. A short
@@ -250,7 +254,7 @@ def decode_output(data: bytes) -> DecodedOutput:
                 alternate = data.decode(codec, errors="replace")
             except LookupError:
                 continue
-            return DecodedOutput(alternate, codec, alternate.count("�"))
+            return DecodedOutput(alternate, codec, alternate.count(_REPLACEMENT))
 
     return DecodedOutput(primary, "utf-8", primary_bad)
 

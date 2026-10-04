@@ -230,36 +230,45 @@ def test_the_wiring_actually_connects_the_redactor(tmp_path, monkeypatch):
 
 # --- one bad byte does not rewrite the whole stream -----------------------
 
+# The decoding tests need bytes that UTF-8 and the legacy code page disagree
+# about, so the payloads have to be non-ASCII; they are written as escapes to
+# keep this file ASCII. The Chinese means "assertion failed", "result: all
+# passed" and "world" -- nothing in the tests depends on the meaning.
+CJK_ASSERTION_FAILED = "\u65ad\u8a00\u5931\u8d25"
+CJK_ALL_TESTS_PASSED = "\u7ed3\u679c: \u5168\u90e8\u901a\u8fc7"
+CJK_WORLD = "\u4e16\u754c"
+
 
 def test_damaged_utf8_stays_utf8():
     """The fallbacks are code pages that map all 256 byte values and can never
     produce a U+FFFD, so the old "fewer replacements wins" comparison handed the
     whole output to the model as mojibake over a single stray byte."""
-    raw = "FAILED tests/test_café.py -- 断言失败\n".encode("utf-8")
+    raw = f"FAILED tests/test_café.py -- {CJK_ASSERTION_FAILED}\n".encode("utf-8")
     decoded = decode_output(raw + b"\x81")
     assert decoded.encoding == "utf-8"
     assert "café" in decoded.text
-    assert "断言失败" in decoded.text
+    assert CJK_ASSERTION_FAILED in decoded.text
 
 
 @pytest.mark.parametrize("cut", [1, 2, 3])
 def test_a_capture_cut_mid_character_keeps_the_text(cut):
     """_drain slices at the byte cap with chunk[:room], so a multi-byte
     character is split by construction on every large non-ASCII output."""
-    raw = "结果: 全部通过 ✅".encode("utf-8")
+    raw = f"{CJK_ALL_TESTS_PASSED} ✅".encode("utf-8")
     decoded = decode_output(raw[:-cut])
     assert decoded.encoding == "utf-8"
-    assert decoded.text.startswith("结果: 全部通过")
+    assert decoded.text.startswith(CJK_ALL_TESTS_PASSED)
 
 
 def test_a_genuine_legacy_stream_still_switches_codec():
-    decoded = decode_output("断言失败\n".encode("cp936"))
+    decoded = decode_output(f"{CJK_ASSERTION_FAILED}\n".encode("cp936"))
     assert decoded.encoding != "utf-8"
 
 
 def test_clean_utf8_and_ascii_are_untouched():
     assert decode_output(b"hello\n") == decode_output(b"hello\n")
-    assert decode_output("héllo 世界\n".encode("utf-8")).text == "héllo 世界\n"
+    expected = f"héllo {CJK_WORLD}\n"
+    assert decode_output(expected.encode("utf-8")).text == expected
     assert decode_output(b"").text == ""
 
 

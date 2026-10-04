@@ -1,42 +1,57 @@
 # Foundry
 
-从零自研的本地 coding-agent runtime：Python 3.12、Windows、离线 wheel 安装。自己拥有 agent loop、tools、policy、provider、session 的全部代码与接口；不 fork、不调用、不冒充任何现有 coding agent。
+A local coding-agent runtime built from scratch: Python 3.12, Windows, offline
+wheel install. It owns all of the code and interfaces for its agent loop,
+tools, policy, providers and sessions; it does not fork, call into, or
+impersonate any existing coding agent.
 
-**当前状态：M0–M4 已实现并可运行**，1436 个测试在无网络、无凭证的机器上通过（含 6 轮对抗评审后的安全回归，与 780 个自动生成的熔断表不变量组合）。第 6 轮之后另做了一次净室验证：重建 wheelhouse、`--no-index` 装进全新 venv，再跑一次真实任务（跑挂测试 → 打补丁 → 重跑转绿 → 引用自己工具输出里的 event id 完成），14 项检查全过。
+**Current status: M0-M4 implemented and running**, with 1436 tests passing on a
+machine with no network and no credentials (including the security regressions
+from six rounds of adversarial review, and 780 generated breaker-table
+invariant combinations). After round 6 there was a separate clean-room check:
+rebuild the wheelhouse, install into a fresh venv with `--no-index`, and run a
+real task again (failing tests -> patch -> re-run green -> finish citing the
+event id from its own tool output). All 14 checks passed.
 
-## 想先搞懂它怎么转？
+## Want to understand how it works first?
 
-`demo/` 是这套系统的骨架，结构和真的完全一样、每层砍到最薄。不需要网络、不需要 API key：
+`demo/` is this system's skeleton: exactly the same structure as the real
+thing, with every layer shaved down to its thinnest form. No network, no API
+key:
 
 ```bash
 python demo/mini_foundry.py --yes
 ```
 
-想逐格跑、看中间状态、改了再跑，用 notebook 版（从 `.py` import，不复制代码）：
+To run it a cell at a time, see the state in between, and change something and
+re-run, use the notebook version (it imports from the `.py` rather than copying
+code):
 
 ```bash
 jupyter lab demo/mini_foundry.ipynb
 ```
 
-看 policy 把不该做的事拦下来，以及收工闸门识破一个假的"测试都过了"：
+To watch policy stop something that should not happen, and the finish gate see
+through a false "all the tests pass":
 
 ```bash
 python demo/mini_foundry.py --script destructive --yes
 python demo/mini_foundry.py --script liar --yes
 ```
 
-[demo/README.md](demo/README.md) 把每一节映射到真实模块，并说明怎么接真模型
-（任何 OpenAI 兼容的 `/v1/chat/completions` 都行）。
+[demo/README.md](demo/README.md) maps every section onto the real module, and
+explains how to point it at a real model (any OpenAI-compatible
+`/v1/chat/completions` will do).
 
-## 快速开始
+## Quick start
 
-`wheelhouse/` 不进版本库，所以先构建它：
+`wheelhouse/` is not in version control, so build it first:
 
 ```bash
 python scripts/build_wheelhouse.py
 ```
 
-然后离线安装：
+Then install offline:
 
 ```bash
 python -m pip install --no-index --find-links wheelhouse foundry
@@ -45,52 +60,70 @@ foundry login
 foundry
 ```
 
-## 命令
+## Commands
 
-| 命令 | 说明 |
+| Command | What it does |
 |---|---|
-| `foundry` / `foundry run [任务]` | 交互式会话（默认） |
-| `foundry exec <任务> [--json]` | 无人值守执行；ASK 一律 DENY（fail-closed） |
-| `foundry record <任务> --output f.json` | 把会话录成 replay 夹具 |
-| `foundry sessions [id]` | 列出或查看会话 |
-| `foundry report [--json]` | 补丁首次成功率、命令失败、拒绝次数、token 统计 |
-| `foundry login` / `logout` | 凭证管理（DPAPI 加密） |
-| `foundry doctor` | 环境自检 |
+| `foundry` / `foundry run [task]` | interactive session (the default) |
+| `foundry exec <task> [--json]` | unattended execution; every ASK becomes DENY (fail-closed) |
+| `foundry record <task> --output f.json` | record a session as a replay fixture |
+| `foundry sessions [id]` | list sessions, or show one |
+| `foundry report [--json]` | patch first-try success rate, command failures, denials, token stats |
+| `foundry login` / `logout` | credential management (DPAPI encrypted) |
+| `foundry doctor` | environment self-check |
 
-退出码：`completed=0 partial=10 blocked=11 failed=12 cancelled=13 interrupted=14`
+Exit codes: `completed=0 partial=10 blocked=11 failed=12 cancelled=13
+interrupted=14`
 
-## 设计要点
+## Design points
 
-- **一个 loop**：`while 模型返回 tool calls：policy → 执行 → 回填 → 重采样`。provider adapter 只做协议互转，不拥有 loop、不碰 policy、不调工具。
-- **六步 policy 流水线**：熔断表 → pre_tool 回调 → DENY → ASK → mode 基线 → ALLOW → 交互审批（无人应答即 DENY）。任意层的 DENY 不可被任何 ALLOW 翻转。
-- **证据链**：`finish` 的每条验证声明必须引用真实命令事件且 exit code 相符，否则 `completed` 降级 `partial`。空 claims 是有效披露，编造的不是。
-- **无沙箱、诚实披露**：审批减少失误而非恶意。边界与非目标见 [docs/threat-model.md](docs/threat-model.md)。
-- **依赖预算**：运行时只有 `rich`（共 5 个纯 Python wheel）。HTTP/SSE、DPAPI、Job Object 全部走 stdlib 与 ctypes——`ssl.create_default_context()` 信任 Windows 系统证书库，公司 MITM 代理零配置。
+- **One loop**: `while the model returns tool calls: policy -> execute -> feed
+  back -> resample`. A provider adapter only translates between protocols; it
+  does not own the loop, touch policy, or call tools.
+- **A six-step policy pipeline**: breaker table -> pre_tool callback -> DENY ->
+  ASK -> mode baseline -> ALLOW -> interactive approval (no answer means DENY).
+  A DENY at any layer cannot be flipped by any ALLOW.
+- **The evidence chain**: every verification claim in `finish` must cite a real
+  command event whose exit code matches, or `completed` is downgraded to
+  `partial`. An empty claim is valid disclosure; an invented one is not.
+- **No sandbox, honest disclosure**: approval reduces mistakes, not malice. The
+  boundaries and non-goals are in [docs/threat-model.md](docs/threat-model.md).
+- **A dependency budget**: the runtime has only `rich` (5 pure-Python wheels in
+  total). HTTP/SSE, DPAPI and Job Objects all go through the stdlib and ctypes
+  -- `ssl.create_default_context()` trusts the Windows system certificate
+  store, so a corporate MITM proxy needs no configuration.
 
-## 代码地图
+## Code map
 
 ```text
-src/foundry/core/     runtime（唯一的 loop）、policy、tools、backends、session、workspace、winapi
-src/foundry/cli/      终端 UI：事件订阅者 + 审批 UI + report
-src/foundry/prompts/  版本化的 system prompt
-tests/                1436 个测试：golden 场景、攻击表、熔断表不变量
+src/foundry/core/     runtime (the one loop), policy, tools, backends, session, workspace, winapi
+src/foundry/cli/      the terminal UI: event subscriber + approval UI + report
+src/foundry/prompts/  versioned system prompts
+tests/                1436 tests: golden scenarios, attack tables, breaker-table invariants
 ```
 
-`foundry.core` 不 import `foundry.cli`，也不 import 任何第三方包——两条都有测试强制（[tests/test_architecture_config.py](tests/test_architecture_config.py)）。
+`foundry.core` imports neither `foundry.cli` nor any third-party package --
+both are enforced by tests
+([tests/test_architecture_config.py](tests/test_architecture_config.py)).
 
-## 文档
+## Documentation
 
-| 文档 | 内容 |
+| Document | Contents |
 |---|---|
-| [docs/requirements.md](docs/requirements.md) | 需求 v0.2 |
-| [docs/design.md](docs/design.md) | 设计方案：包结构、核心接口、关键机制 |
-| [docs/threat-model.md](docs/threat-model.md) | 保护什么、不保护什么、执行点在哪 |
-| [docs/roadmap.md](docs/roadmap.md) | 里程碑与状态 |
-| [docs/decision-log.md](docs/decision-log.md) | 30 条编号决定（含被推翻的） |
-| [docs/open-questions.md](docs/open-questions.md) | 未决问题 |
-| [docs/research/](docs/research/) | 调研笔记，含[首次真实 endpoint 验证](docs/research/live-endpoint.md) |
-| [demo/](demo/) | 一个文件跑通的骨架版 + notebook |
+| [docs/requirements.md](docs/requirements.md) | requirements v0.2 |
+| [docs/design.md](docs/design.md) | the design: package structure, core interfaces, key mechanisms |
+| [docs/threat-model.md](docs/threat-model.md) | what is protected, what is not, and where enforcement happens |
+| [docs/roadmap.md](docs/roadmap.md) | milestones and status |
+| [docs/decision-log.md](docs/decision-log.md) | 30 numbered decisions (including the overturned ones) |
+| [docs/open-questions.md](docs/open-questions.md) | open questions |
+| [docs/research/](docs/research/) | research notes, including the [first live endpoint check](docs/research/live-endpoint.md) |
+| [demo/](demo/) | the skeleton in one runnable file, plus a notebook |
 
-## 未决
+## Open
 
-个人路径 = OpenAI API key（ChatGPT 登录已确认 blocked，证据在 [docs/research/auth.md](docs/research/auth.md)）。公司 Gateway 的 `responses` adapter 已实现并有合同测试，但**真实协议行为待验证**——M3 入场门是先取得 Gateway 的 tool-call 流式脱敏夹具（[OQ-6](docs/open-questions.md)）。
+The personal path is an OpenAI API key (ChatGPT login is confirmed blocked; the
+evidence is in [docs/research/auth.md](docs/research/auth.md)). The corporate
+Gateway's `responses` adapter is implemented and has contract tests, but **its
+real protocol behaviour is unverified** -- the entry gate for M3 is obtaining a
+tool-call streaming redaction fixture from the Gateway
+([OQ-6](docs/open-questions.md)).

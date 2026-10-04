@@ -1,5 +1,5 @@
-<title>Foundry 设计蓝图</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700;900&family=Oswald:wght@500;600&display=swap">
+<title>Foundry Blueprint</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;700;900&family=Oswald:wght@500;600&display=swap">
 <style>
   :root {
     --bg: #ECEEF0;
@@ -47,7 +47,7 @@
   body {
     background: var(--bg);
     color: var(--ink);
-    font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    font-family: "Inter", "Segoe UI", system-ui, sans-serif;
     font-size: 15px;
     line-height: 1.75;
     margin: 0;
@@ -182,7 +182,7 @@
     background: var(--surface);
   }
   .tool.mut { border-color: var(--accent); background: var(--accent-soft); }
-  .tool small { font-family: "Noto Sans SC", sans-serif; color: var(--muted); font-size: 11.5px; margin-left: 6px; }
+  .tool small { font-family: "Inter", "Segoe UI", system-ui, sans-serif; color: var(--muted); font-size: 11.5px; margin-left: 6px; }
   .tools-legend { font-size: 12.5px; color: var(--muted); margin-top: 10px; }
   .tools-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; border: 1px solid var(--line); background: var(--surface); vertical-align: -1px; margin-right: 4px; }
   .tools-legend .sw.m { border-color: var(--accent); background: var(--accent-soft); }
@@ -227,51 +227,50 @@
     .oq-row { grid-template-columns: 1fr; gap: 2px; }
   }
 </style>
-
 <div class="page">
 
   <header class="masthead">
     <h1 class="wordmark">Foundry<span class="spark">.</span></h1>
-    <p class="tagline">从零自研的本地 coding-agent runtime——自己拥有 <b>loop、tools、policy、provider、session</b> 的全部代码与接口。</p>
-    <p class="subline">不 fork、不调用、不冒充任何现有 coding agent；研读 Codex / Claude Code / gemini-cli / aider / OpenHands 的公开设计，借鉴百家之长后独立实现。</p>
+    <p class="tagline">A local coding-agent runtime built from scratch — owning all of the code and interfaces for its <b>loop, tools, policy, providers and sessions</b>.</p>
+    <p class="subline">It does not fork, call into, or impersonate any existing coding agent; it studies the published designs of Codex / Claude Code / gemini-cli / aider / OpenHands, borrows the best of them, and then implements its own.</p>
     <div class="meta-chips">
-      <span class="chip hot">M0–M4 已实现 · 6 轮对抗评审 · 净室验证通过</span>
+      <span class="chip hot">M0–M4 implemented · 6 rounds of adversarial review · clean-room check passed</span>
       <span class="chip">Windows</span>
       <span class="chip">Python 3.12</span>
-      <span class="chip">离线 wheel 安装</span>
-      <span class="chip">trusted-host（无沙箱，诚实披露）</span>
+      <span class="chip">offline wheel install</span>
+      <span class="chip">trusted host (no sandbox, honestly disclosed)</span>
       <span class="chip">2026-08-30</span>
     </div>
     <div class="stats">
-      <div class="stat"><div class="n">27</div><div class="l">编号决定（含 1 条被推翻）</div></div>
-      <div class="stat"><div class="n">1111</div><div class="l">测试（离线、无凭证）</div></div>
-      <div class="stat"><div class="n"><em>9</em></div><div class="l">工具面（V1 冻结）</div></div>
-      <div class="stat"><div class="n">5</div><div class="l">依赖 wheel（纯 Python）</div></div>
+      <div class="stat"><div class="n">27</div><div class="l">numbered decisions (1 overturned)</div></div>
+      <div class="stat"><div class="n">1111</div><div class="l">tests (offline, no credentials)</div></div>
+      <div class="stat"><div class="n"><em>9</em></div><div class="l">tools (frozen for V1)</div></div>
+      <div class="stat"><div class="n">5</div><div class="l">dependency wheels (pure Python)</div></div>
     </div>
   </header>
 
   <section>
     <div class="eyebrow">Why Foundry</div>
-    <h2>动机决定优先级</h2>
+    <h2>The motivation decides the priorities</h2>
     <div class="why">
       <div class="why-card">
-        <h3>公司环境硬约束</h3>
-        <p>公司电脑不允许安装 Codex CLI / Claude Code，模型访问只能走公司 Gateway 的 API；软件分发走内部源（JFrog），Python + 内部 wheel 目录是最确定的通道。</p>
+        <h3>Hard corporate constraints</h3>
+        <p>Corporate machines may not install Codex CLI or Claude Code, and model access must go through the corporate Gateway's API; software distribution goes through an internal source (JFrog), and Python plus an internal wheel directory is the most certain channel.</p>
       </div>
       <div class="why-card">
-        <h3>学习目的</h3>
-        <p>吃透 coding-agent runtime 的设计。此前用 Agent SDK 攒过 mini-codex 体验一般——Foundry 要赢在完全掌控与设计质量，宁窄而精。</p>
+        <h3>Learning</h3>
+        <p>To understand coding-agent runtime design thoroughly. A mini-codex assembled earlier with the Agent SDK was a mediocre experience — Foundry has to win on complete control and design quality: narrow, but good.</p>
       </div>
     </div>
-    <div class="priority">设计优先级（冲突时按此裁决）：<code>可审计 &gt; 少依赖/离线可装 &gt; 清晰实现 &gt; 功能数量</code></div>
+    <div class="priority">Design priorities (used to resolve conflicts): <code>auditability &gt; few dependencies / offline installable &gt; a clear implementation &gt; feature count</code></div>
   </section>
 
   <section>
     <div class="eyebrow">Model Paths</div>
-    <h2>三个环境，同一套 runtime</h2>
-    <p class="lede">个人、公司、开发三条路径只切换<b>认证与协议 adapter 层</b>；loop 与 tools 完全共用。原计划的 ChatGPT 订阅登录经限定调研确认 <b>blocked</b>——图中虚线即被否决的路径。</p>
+    <h2>Three environments, one runtime</h2>
+    <p class="lede">The personal, corporate and development paths differ only in the <b>authentication and protocol adapter layers</b>; the loop and the tools are entirely shared. The originally planned ChatGPT subscription login was confirmed <b>blocked</b> by bounded research — the dashed line below is that rejected path.</p>
     <figure>
-      <svg viewBox="0 0 860 330" role="img" aria-label="三条模型路径（个人 API key、公司 Gateway、开发 Replay/本地端点）汇入同一套 AgentRuntime；ChatGPT 订阅路径被标记为 blocked">
+      <svg viewBox="0 0 860 330" role="img" aria-label="Three model paths (a personal API key, the corporate Gateway, and development Replay / a local endpoint) feeding one AgentRuntime; the ChatGPT subscription path is marked blocked">
         <defs>
           <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
@@ -304,45 +303,45 @@
 
         <!-- text -->
         <g fill="currentColor" font-size="14" font-weight="700">
-          <text x="36" y="118">个人电脑</text>
-          <text x="36" y="194">公司电脑</text>
-          <text x="36" y="270">开发 / 测试</text>
-          <text x="36" y="42" opacity="0.6">ChatGPT 订阅登录</text>
+          <text x="36" y="118">personal machine</text>
+          <text x="36" y="194">corporate machine</text>
+          <text x="36" y="270">development / test</text>
+          <text x="36" y="42" opacity="0.6">ChatGPT subscription login</text>
         </g>
         <g fill="currentColor" font-size="11.5" opacity="0.72">
-          <text x="36" y="136">OpenAI 平台 API key</text>
-          <text x="36" y="212">Gateway · OpenAI 系走 Responses · 内网 auth token</text>
-          <text x="36" y="288">ReplayBackend + 本地 OpenAI 兼容端点</text>
-          <text x="36" y="59" opacity="0.85">官方无第三方推理途径 → blocked</text>
+          <text x="36" y="136">an OpenAI platform API key</text>
+          <text x="36" y="212">Gateway · OpenAI family via Responses · intranet auth token</text>
+          <text x="36" y="288">ReplayBackend + a local OpenAI-compatible endpoint</text>
+          <text x="36" y="59" opacity="0.85">no official third-party inference route → blocked</text>
         </g>
         <!-- arrow labels -->
         <g fill="currentColor" font-size="11" opacity="0.72">
-          <text x="270" y="122">api.openai.com（Responses / Chat Completions）</text>
-          <text x="270" y="190">协议可配置 adapter · capability probing</text>
-          <text x="270" y="278">无凭证、离线可测 · 免费冒烟</text>
-          <text x="430" y="49" fill="var(--accent)" opacity="1" font-weight="700">D-009 · 证据存档</text>
+          <text x="270" y="122">api.openai.com (Responses / Chat Completions)</text>
+          <text x="270" y="190">configurable protocol adapters · capability probing</text>
+          <text x="270" y="278">no credentials, testable offline · free smoke tests</text>
+          <text x="430" y="49" fill="var(--accent)" opacity="1" font-weight="700">D-009 · evidence archived</text>
         </g>
         <!-- runtime content -->
         <g fill="currentColor">
-          <text x="700" y="130" font-size="15" font-weight="900" text-anchor="middle">同一套 AgentRuntime</text>
-          <text x="700" y="152" font-size="12" opacity="0.72" text-anchor="middle">9 个工具 · PolicyEngine · SessionStore</text>
+          <text x="700" y="130" font-size="15" font-weight="900" text-anchor="middle">one AgentRuntime</text>
+          <text x="700" y="152" font-size="12" opacity="0.72" text-anchor="middle">9 tools · PolicyEngine · SessionStore</text>
           <line x1="580" y1="170" x2="820" y2="170" stroke="currentColor" stroke-width="1" opacity="0.25"/>
-          <text x="700" y="196" font-size="12" opacity="0.85" text-anchor="middle">内部表示 provider-agnostic（IR）</text>
-          <text x="700" y="218" font-size="12" opacity="0.85" text-anchor="middle">adapter 只做 IR ↔ 线协议互转</text>
-          <text x="700" y="240" font-size="12" opacity="0.85" text-anchor="middle">不拥有 loop，不得另起第二套</text>
-          <text x="700" y="276" font-size="11.5" fill="var(--accent)" font-weight="700" text-anchor="middle">Gateway 挂多家模型 ⇒ 不绑死任何私有格式</text>
+          <text x="700" y="196" font-size="12" opacity="0.85" text-anchor="middle">a provider-agnostic internal representation (IR)</text>
+          <text x="700" y="218" font-size="12" opacity="0.85" text-anchor="middle">adapters only convert IR ↔ the wire protocol</text>
+          <text x="700" y="240" font-size="12" opacity="0.85" text-anchor="middle">they never own the loop, nor start a second one</text>
+          <text x="700" y="276" font-size="11.5" fill="var(--accent)" font-weight="700" text-anchor="middle">a multi-vendor Gateway ⇒ no private format is baked in</text>
         </g>
       </svg>
-      <figcaption><b>路径图。</b>虚线为被否决的 ChatGPT 订阅路径：官方 "Sign in with ChatGPT" 只授予身份不给推理；Codex 订阅端点有 originator 白名单，非 Codex 客户端 403，使用即须冒充（违 ToS，有封号先例）。个人路径改用平台 API key（D-009）。</figcaption>
+      <figcaption><b>The path diagram.</b> The dashed line is the rejected ChatGPT subscription path: the official "Sign in with ChatGPT" grants identity but not inference; the Codex subscription endpoint has an originator allowlist and answers 403 to a non-Codex client, so using it requires impersonation (a ToS violation, with real bans on record). The personal path uses a platform API key instead (D-009).</figcaption>
     </figure>
   </section>
 
   <section>
     <div class="eyebrow">Architecture</div>
-    <h2>事件流驱动的核心</h2>
-    <p class="lede">UI 与 runtime 第一天解耦：CLI 只是<b>类型化事件流</b>的第一个订阅者，审批是异步事件对而非阻塞输入——headless 模式、未来 IDE 前端因此近乎免费。SessionStore 是单一事实源，逐字节可重放。</p>
+    <h2>An event-stream-driven core</h2>
+    <p class="lede">The UI and the runtime are decoupled from day one: the CLI is merely the first subscriber to a <b>typed event stream</b>, and approval is an asynchronous event pair rather than a blocking input — which makes headless mode, and a future IDE front end, nearly free. SessionStore is the single source of truth, replayable byte for byte.</p>
     <figure>
-      <svg viewBox="0 0 860 434" role="img" aria-label="Foundry 架构：CLI 与 AgentRuntime 之间双向事件流；runtime 内含 ContextManager、PolicyEngine、ToolExecutor、SessionStore；ModelBackend 适配器与 workspace、session 文件的关系">
+      <svg viewBox="0 0 860 434" role="img" aria-label="Foundry's architecture: a bidirectional event stream between the CLI and AgentRuntime; inside the runtime are ContextManager, PolicyEngine, ToolExecutor and SessionStore; and the relationship of the ModelBackend adapters to the workspace and the session files">
         <defs>
           <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
@@ -350,8 +349,8 @@
         </defs>
         <!-- CLI -->
         <rect x="250" y="16" width="360" height="46" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
-        <text x="430" y="36" font-size="14" font-weight="700" fill="currentColor" text-anchor="middle">Foundry CLI（rich 终端）</text>
-        <text x="430" y="53" font-size="11.5" fill="currentColor" opacity="0.72" text-anchor="middle">事件订阅者 · 审批 UI · 渲染前剥 ANSI/OSC</text>
+        <text x="430" y="36" font-size="14" font-weight="700" fill="currentColor" text-anchor="middle">the Foundry CLI (a rich terminal)</text>
+        <text x="430" y="53" font-size="11.5" fill="currentColor" opacity="0.72" text-anchor="middle">event subscriber · approval UI · strips ANSI/OSC before rendering</text>
 
         <!-- two queues -->
         <g stroke="currentColor" stroke-width="1.3" fill="none">
@@ -359,15 +358,15 @@
           <line x1="520" y1="118" x2="520" y2="62" marker-end="url(#arr2)"/>
         </g>
         <g fill="currentColor" font-size="11" opacity="0.72">
-          <text x="330" y="94" text-anchor="end">Op：输入 · 审批决定 · 中断</text>
-          <text x="530" y="94">Event：流式输出 · 审批请求 · token 记账</text>
+          <text x="330" y="94" text-anchor="end">Op: input · approval decision · interrupt</text>
+          <text x="530" y="94">Event: streamed output · approval request · token accounting</text>
         </g>
 
         <!-- runtime container -->
         <rect x="60" y="120" width="740" height="182" rx="5" fill="none" stroke="var(--accent)" stroke-width="2.2"/>
         <rect x="60" y="120" width="740" height="182" rx="5" fill="var(--accent)" opacity="0.05"/>
         <text x="78" y="145" font-size="14" font-weight="900" fill="currentColor">AgentRuntime</text>
-        <text x="200" y="145" font-size="11.5" fill="currentColor" opacity="0.72">while 模型返回 tool calls：policy → 执行 → 回填 → 重采样（asyncio）</text>
+        <text x="200" y="145" font-size="11.5" fill="currentColor" opacity="0.72">while the model returns tool calls: policy → execute → feed back → resample (asyncio)</text>
 
         <g fill="none" stroke="currentColor" stroke-width="1.2">
           <rect x="80" y="162" width="160" height="58" rx="4"/>
@@ -382,187 +381,187 @@
           <text x="700" y="185">SessionStore</text>
         </g>
         <g fill="currentColor" font-size="10.5" opacity="0.72" text-anchor="middle">
-          <text x="160" y="202">投影 · 截断 · masking</text>
-          <text x="160" y="215">token 记账</text>
-          <text x="340" y="202">六步流水线</text>
+          <text x="160" y="202">projection · truncation · masking</text>
+          <text x="160" y="215">token accounting</text>
+          <text x="340" y="202">the six-step pipeline</text>
           <text x="340" y="215">ALLOW / ASK / DENY</text>
-          <text x="520" y="202">9 工具 · workspace 边界</text>
-          <text x="520" y="215">Job Object 进程树</text>
+          <text x="520" y="202">9 tools · the workspace boundary</text>
+          <text x="520" y="215">Job Object process trees</text>
           <text x="700" y="202">versioned JSONL</text>
-          <text x="700" y="215">单一事实源 · 可重放</text>
+          <text x="700" y="215">single source of truth · replayable</text>
         </g>
         <!-- policy gate arrow -->
         <line x1="420" y1="191" x2="432" y2="191" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr2)"/>
-        <text x="430" y="252" font-size="11" fill="currentColor" opacity="0.72" text-anchor="middle">每个副作用动作先过 policy；DENY 带 reason 回给模型，loop 存活</text>
+        <text x="430" y="252" font-size="11" fill="currentColor" opacity="0.72" text-anchor="middle">every side effect passes policy first; a DENY returns a reason to the model and the loop survives</text>
 
         <!-- backend -->
         <rect x="80" y="330" width="330" height="84" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
         <text x="98" y="354" font-size="13" font-weight="700" fill="currentColor">ModelBackend adapters</text>
-        <text x="98" y="373" font-size="11.5" fill="currentColor" opacity="0.72">openai_compat · replay ·（按需：responses / anthropic）</text>
-        <text x="98" y="391" font-size="11.5" fill="currentColor" opacity="0.72">AuthProvider：凭证 DPAPI 加密，仅 HTTP 注入层可见</text>
+        <text x="98" y="373" font-size="11.5" fill="currentColor" opacity="0.72">openai_compat · replay · (as needed: responses / anthropic)</text>
+        <text x="98" y="391" font-size="11.5" fill="currentColor" opacity="0.72">AuthProvider: credentials DPAPI-encrypted, visible only at the HTTP injection layer</text>
         <line x1="245" y1="302" x2="245" y2="322" stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#arr2)"/>
-        <text x="258" y="318" font-size="11" fill="currentColor" opacity="0.72">无状态全量历史 · SSE 流式 · stdlib HTTP</text>
+        <text x="258" y="318" font-size="11" fill="currentColor" opacity="0.72">stateless full history · SSE streaming · stdlib HTTP</text>
 
         <!-- workspace -->
         <rect x="470" y="330" width="160" height="84" rx="4" fill="none" stroke="currentColor" stroke-width="1.3"/>
         <text x="550" y="360" font-size="13" font-weight="700" fill="currentColor" text-anchor="middle">workspace</text>
-        <text x="550" y="378" font-size="11.5" fill="currentColor" opacity="0.72" text-anchor="middle">git 仓库（强制）</text>
-        <text x="550" y="394" font-size="11.5" fill="currentColor" opacity="0.72" text-anchor="middle">baseline + 脏文件 ASK</text>
+        <text x="550" y="378" font-size="11.5" fill="currentColor" opacity="0.72" text-anchor="middle">a git repository (required)</text>
+        <text x="550" y="394" font-size="11.5" fill="currentColor" opacity="0.72" text-anchor="middle">baseline + dirty-file ASK</text>
         <line x1="530" y1="302" x2="530" y2="322" stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#arr2)"/>
 
         <!-- session files -->
         <rect x="660" y="330" width="140" height="84" rx="4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="6 4"/>
         <text x="730" y="360" font-size="12.5" font-weight="700" fill="currentColor" text-anchor="middle">~/.foundry/</text>
         <text x="730" y="378" font-size="11" fill="currentColor" opacity="0.72" text-anchor="middle">sessions/*.jsonl</text>
-        <text x="730" y="394" font-size="11" fill="currentColor" opacity="0.72" text-anchor="middle">audit.jsonl · 凭证</text>
+        <text x="730" y="394" font-size="11" fill="currentColor" opacity="0.72" text-anchor="middle">audit.jsonl · credentials</text>
         <line x1="710" y1="302" x2="710" y2="322" stroke="currentColor" stroke-width="1.3" fill="none" marker-end="url(#arr2)"/>
       </svg>
-      <figcaption><b>核心架构。</b>秘密脱敏走同一 choke point 的三个应用点（session/artifact 写入、事件发出、上下文组装）；session 记录完整到可重建每次模型请求——这同时是 ReplayBackend 离线测试与 V2 resume 的共同基础。</figcaption>
+      <figcaption><b>The core architecture.</b> Secret redaction runs through one choke point applied at three places (the session/artifact write, the event emission, and context assembly); the session records enough to rebuild every model request — which is simultaneously the basis of ReplayBackend's offline tests and of V2's resume.</figcaption>
     </figure>
   </section>
 
   <section>
     <div class="eyebrow">Policy Pipeline</div>
-    <h2>无沙箱时代的唯一防线</h2>
-    <p class="lede">V1 是 trusted-host：审批是行为约束而非安全边界，首次运行明确披露。PolicyEngine 采纳 Claude Code Agent SDK 公开的六步评估规范，外加最先执行的硬编码熔断表。</p>
+    <h2>The only line of defence in a sandbox-free world</h2>
+    <p class="lede">V1 is a trusted host: approval is a behavioural constraint, not a security boundary, and the first run says so plainly. PolicyEngine adopts the six-step evaluation specification published with the Claude Code Agent SDK, plus a hard-coded breaker table that runs before all of it.</p>
     <div class="pipe">
-      <div class="pipe-step breaker"><div class="no">STEP 0</div><div class="nm">Circuit Breaker</div><div class="d">硬编码表，任何规则 / mode 不可覆盖：.git、~/.foundry、销毁性 git、递归删除</div></div>
-      <div class="pipe-step"><div class="no">STEP 1</div><div class="nm">pre_tool 回调</div><div class="d">可扩展点；改写输入后从 STEP 0 重入</div></div>
-      <div class="pipe-step"><div class="no">STEP 2</div><div class="nm">DENY 规则</div><div class="d">任意层 DENY 不可被任何 ALLOW 翻转</div></div>
-      <div class="pipe-step"><div class="no">STEP 3</div><div class="nm">ASK 规则</div><div class="d">内置：脏文件写操作（压过 accept_edits）</div></div>
-      <div class="pipe-step"><div class="no">STEP 4</div><div class="nm">Mode 基线</div><div class="d">default · accept_edits · plan · dont_ask</div></div>
-      <div class="pipe-step"><div class="no">STEP 5</div><div class="nm">ALLOW 规则</div><div class="d">只读工具内置放行；「永久批准」落此层</div></div>
-      <div class="pipe-step"><div class="no">STEP 6</div><div class="nm">交互审批</div><div class="d">headless / dont_ask 时 = DENY（fail-closed）</div></div>
+      <div class="pipe-step breaker"><div class="no">STEP 0</div><div class="nm">Circuit Breaker</div><div class="d">a hard-coded table no rule or mode can override: .git, ~/.foundry, destructive git, recursive deletion</div></div>
+      <div class="pipe-step"><div class="no">STEP 1</div><div class="nm">pre_tool callback</div><div class="d">the extension point; a rewritten input re-enters at STEP 0</div></div>
+      <div class="pipe-step"><div class="no">STEP 2</div><div class="nm">DENY rules</div><div class="d">a DENY at any layer cannot be flipped by any ALLOW</div></div>
+      <div class="pipe-step"><div class="no">STEP 3</div><div class="nm">ASK rules</div><div class="d">built in: writes to dirty files (overriding accept_edits)</div></div>
+      <div class="pipe-step"><div class="no">STEP 4</div><div class="nm">Mode baseline</div><div class="d">default · accept_edits · plan · dont_ask</div></div>
+      <div class="pipe-step"><div class="no">STEP 5</div><div class="nm">ALLOW rules</div><div class="d">read-only tools allowed by default; "approve permanently" lands here</div></div>
+      <div class="pipe-step"><div class="no">STEP 6</div><div class="nm">interactive approval</div><div class="d">under headless / dont_ask this is DENY (fail-closed)</div></div>
     </div>
     <div class="pipe-law">
-      <span class="law"><b>can't parse → ASK</b>：命令无法可信分段时一律询问（分段器按 PowerShell 5.1 语法，先做别名归一）</span>
-      <span class="law"><b>what-you-approve-is-what-runs</b>：审批展示串与执行对象同源</span>
-      <span class="law"><b>仓库配置只能收紧</b>：签入层仅 deny/ask，连接类配置只认机器本地</span>
-      <span class="law"><b>prompt injection 写进威胁模型</b>：一切工具输出视为不可信输入</span>
+      <span class="law"><b>can't parse → ASK</b>: whenever a command cannot be segmented with confidence, ask (the segmenter follows PowerShell 5.1 syntax, normalising aliases first)</span>
+      <span class="law"><b>what-you-approve-is-what-runs</b>: the approval display and the executed object share one source</span>
+      <span class="law"><b>repository configuration can only tighten</b>: the checked-in layer accepts deny/ask only, and connection settings come from machine-local layers alone</span>
+      <span class="law"><b>prompt injection is in the threat model</b>: all tool output is treated as untrusted input</span>
     </div>
   </section>
 
   <section>
     <div class="eyebrow">Key Decisions</div>
-    <h2>七个改变走向的决定</h2>
+    <h2>Seven decisions that changed the direction</h2>
     <div class="grid2">
       <div class="evidence">
-        <div class="dno">D-009 · 推翻草稿最高优先项</div>
-        <h3>ChatGPT 登录 → blocked-with-evidence，个人路径改用 API key</h3>
+        <div class="dno">D-009 · overturning the draft's top priority</div>
+        <h3>ChatGPT login → blocked-with-evidence; the personal path uses an API key</h3>
         <ul>
-          <li>官方 <b>"Sign in with ChatGPT"</b> 只授予身份（姓名/邮箱/头像），不给推理与订阅额度，且需申请审核；</li>
-          <li>Codex 订阅端点 <b>originator 白名单</b>：非 Codex 客户端 403，用即须协议层冒充——违 OpenAI ToS 与 Foundry 章程，有封号先例；</li>
-          <li>OpenAI 认可的程序化路径只有平台 API key。开发验证不受影响：<b>ReplayBackend</b> 离线全覆盖 + 本地模型端点免费冒烟。</li>
+          <li>The official <b>"Sign in with ChatGPT"</b> grants identity only (name/email/avatar), not inference or subscription quota, and requires an application review;</li>
+          <li>the Codex subscription endpoint has an <b>originator allowlist</b>: a non-Codex client gets 403, so using it means impersonation at the protocol level — a violation of OpenAI's ToS and of Foundry's charter, with real bans on record;</li>
+          <li>the only programmatic route OpenAI endorses is a platform API key. Development verification is unaffected: <b>ReplayBackend</b> covers everything offline, and a local model endpoint gives free smoke tests.</li>
         </ul>
       </div>
       <div class="dcard">
         <div class="dno">D-006 / D-010</div>
-        <h3>多模型 Gateway ⇒ 弃 V4A，编辑格式选模型中性</h3>
-        <p>V4A 是 GPT 私有训练格式，Claude 用之崩坏。apply_patch = 信封 + <b>锚定文本 search/replace</b>（Claude Code / OpenHands / aider 独立收敛的方案），逐文件原子、失败带最近似行提示。</p>
+        <h3>A multi-model Gateway ⇒ drop V4A for a model-neutral edit format</h3>
+        <p>V4A is a GPT-private trained format and Claude mangles it. apply_patch is an envelope + <b>anchored-text search/replace</b> (the approach Claude Code, OpenHands and aider converged on independently), atomic per file, with the nearest matching line quoted on failure.</p>
       </div>
       <div class="dcard">
         <div class="dno">D-017</div>
-        <h3>finish 工具：completed 门禁机器可验</h3>
-        <p>验证声明经 <b>finish{status, claims}</b> 提交，runtime 与事件流交叉核验（命令事件存在、exit code 一致、HEAD 未移动）——模型口头声称"已验证"不再可能通过。</p>
+        <h3>The finish tool: a machine-verifiable completed gate</h3>
+        <p>Validation claims are submitted through <b>finish{status, claims}</b>, and the runtime cross-checks them against the event stream (the command event exists, the exit code matches, HEAD has not moved) — a model simply asserting "verified" can no longer pass.</p>
       </div>
       <div class="dcard">
         <div class="dno">D-014 / D-018</div>
-        <h3>依赖预算：运行时仅 rich（+可选 prompt_toolkit）</h3>
-        <p>HTTP/SSE 自研于 stdlib（信任 Windows 系统证书库，公司 MITM 代理零配置）；DPAPI 与 Job Object 走 ctypes；shell 固定 <b>PowerShell 5.1</b>（预装零依赖）。</p>
+        <h3>The dependency budget: only rich at runtime (+ optional prompt_toolkit)</h3>
+        <p>HTTP/SSE is written on the stdlib (trusting the Windows system certificate store, so a corporate MITM proxy needs no configuration); DPAPI and Job Objects go through ctypes; the shell is fixed as <b>PowerShell 5.1</b> (preinstalled, zero dependencies).</p>
       </div>
       <div class="dcard">
         <div class="dno">D-004 / D-012</div>
-        <h3>交互式优先；schema 第一天可重放</h3>
-        <p>核心形态是终端会话，UI 与 loop 解耦。session JSONL 可逐字节重建每次模型请求——resume 功能推 V2，但 schema 不欠债。</p>
+        <h3>Interactive first; a replayable schema from day one</h3>
+        <p>The core form is a terminal session, with the UI decoupled from the loop. The session JSONL can rebuild every model request byte for byte — the resume feature is deferred to V2, but the schema takes on no debt.</p>
       </div>
       <div class="dcard">
         <div class="dno">D-011 / D-019 / D-020</div>
-        <h3>脏工作区、仓库说明文件、验收基准</h3>
-        <p>脏工作区警告继续 + 脏文件写强制 ASK；<b>FOUNDRY.md</b> 声明测试命令（信任门控，M2）；golden 任务集跑在自建样例仓 fixture 上，是改 prompt/loop 的回归基准。</p>
+        <h3>Dirty working trees, the repository instruction file, and the acceptance baseline</h3>
+        <p>A dirty working tree warns and continues, with a forced ASK on writes to dirty files; <b>FOUNDRY.md</b> declares the test commands (trust-gated, M2); the golden task set runs against a sample-repository fixture we build, and is the regression baseline for prompt and loop changes.</p>
       </div>
       <div class="dcard">
-        <div class="dno">D-022 / D-024 · 吸收自平行蓝图</div>
-        <h3>Gateway 情报落地 + 13 项工程要点</h3>
-        <p>OpenAI 系走 <b>Responses</b>、token 来自内网 auth ⇒ responses adapter 升为 M3 必选，<b>入场门 = 先取 tool-call 流式夹具</b>。另吸收：canary 泄漏套件、崩溃恢复语义、内容寻址 artifacts、失败指纹、审批绑定有效期、变更归属分离报告。</p>
+        <div class="dno">D-022 / D-024 · absorbed from a parallel blueprint</div>
+        <h3>The Gateway intelligence, plus 13 engineering points</h3>
+        <p>The OpenAI family goes through <b>Responses</b> and the token comes from intranet auth ⇒ the responses adapter becomes mandatory for M3, with the <b>entry gate being the tool-call streaming fixtures</b>. Also absorbed: the canary leak suite, crash recovery semantics, content-addressed artifacts, failure fingerprints, approval binding and expiry, and a report that separates attribution.</p>
       </div>
       <div class="evidence">
-        <div class="dno">实现后 · 第 1–5 轮对抗评审</div>
-        <h3>四轮都攻破了命令分段器——于是不再依赖它做拒绝</h3>
+        <div class="dno">post-implementation · adversarial review rounds 1–5</div>
+        <h3>Four rounds all broke the command segmenter — so denial stopped depending on it</h3>
         <ul>
-          <li>枚举危险写法追不上：补了 <b>&amp;'foo'</b> 就来 <b>(git reset --hard)</b>，补了注释剥离就来 <b>a&lt;# ; … #&gt;</b>（PowerShell 会执行，而剥离器把它抹掉了）；</li>
-          <li>更糟的是<b>修复自己造成新缺陷</b>：4 个 critical 里有 3 个出在上一轮的修复里，且两次都是把「不可批准的 DENY」降级成「可批准的 ASK」；</li>
-          <li>结构性解法：熔断表额外扫描一个<b>故意错误的读法</b>——无视引号/注释/分组，只增拒绝不增放行，因而没有可被欺骗的假设；自动放行侧收紧到可验证的小语法；</li>
-          <li>并用 <b>540 个自动生成的不变量组合</b>守住「任何装饰都不能让被禁命令变得可批准」，防的是整类错误而非想到的写法。</li>
+          <li>Enumerating dangerous spellings cannot keep up: patch <b>&amp;'foo'</b> and along comes <b>(git reset --hard)</b>; add comment stripping and along comes <b>a&lt;# ; … #&gt;</b> (which PowerShell executes and the stripper erased);</li>
+          <li>worse, <b>the fixes created new defects</b>: 3 of the 4 criticals came out of the previous round's fixes, and twice they downgraded an "unapprovable DENY" into an "approvable ASK";</li>
+          <li>the structural answer: the breaker table additionally scans a <b>deliberately wrong reading</b> — ignoring quotes, comments and grouping, adding only denials and never allowances, and so making no assumption that can be fooled; the auto-approval side was tightened to a small verifiable syntax;</li>
+          <li>and <b>540 generated invariant combinations</b> hold the line that "no decoration can make a forbidden command approvable", defending a whole class of mistake rather than the spellings someone thought of.</li>
         </ul>
       </div>
       <div class="evidence">
-        <div class="dno">第 6 轮 · 净室验证</div>
-        <h3>缺陷不在某一层里，而在两层的接缝上</h3>
+        <div class="dno">round 6 · the clean-room check</div>
+        <h3>The defect was not inside a layer, but on the seam between two</h3>
         <ul>
-          <li>补丁工具知道 <b>AVERYL~1.PY</b> 和长名是同一个文件；policy 层比字符串，于是 8.3 别名绕过了脏文件守卫——那条规则存在的唯一理由就是压过 accept_edits；</li>
-          <li>编码判定用「谁产生的替换字符少」，而可回退码页把 256 个字节全映射、<b>永远产生不了替换字符</b>：一个坏字节就把整段输出翻成乱码，而输出在容量上限处本就按字节切；</li>
-          <li>系统提示词告诉模型「merge 永远被拒」，<b>git pull</b> 干的就是那个 merge，却直接走过熔断表——提示词现由熔断表常量生成，并有双向对齐测试；</li>
-          <li>最尖锐的一个是<b>净室验证</b>抓到的、不是测试套件：凭证跨两个流式 delta 落下，两个片段都不匹配，渲染器再拼回屏幕——事件流干净、终端泄漏。</li>
+          <li>The patch tool knows <b>AVERYL~1.PY</b> and the long name are the same file; the policy layer compares strings, so an 8.3 alias walked past the dirty-file guard — the one rule whose entire reason to exist is overriding accept_edits;</li>
+          <li>encoding was chosen by "which produced fewer replacement characters", and the fallback code page maps all 256 bytes and <b>can never produce a replacement character</b>: one bad byte turned the whole output into mojibake, and output was already cut by byte at the capacity ceiling;</li>
+          <li>the system prompt told the model "a merge is always refused", and <b>git pull</b> does exactly that merge yet walked straight past the breaker table — the prompt is now generated from the breaker table's constants, with a two-way alignment test;</li>
+          <li>the sharpest one was caught by the <b>clean-room check</b>, not the test suite: a credential fell across two streamed deltas, neither fragment matched, and the renderer reassembled it on screen — a clean event stream and a leaking terminal.</li>
         </ul>
-        <p><b>跨层的性质要跨层地验。</b>收口于一次真实净室端到端：重建 wheelhouse → <code>--no-index</code> 装进全新 venv → 跑真实任务，14 项检查全过。</p>
+        <p><b>A cross-layer property has to be verified across layers.</b> It closed on a real clean-room end-to-end: rebuild the wheelhouse → install into a fresh venv with <code>--no-index</code> → run a real task, with all 14 checks passing.</p>
       </div>
     </div>
   </section>
 
   <section>
     <div class="eyebrow">Tool Surface</div>
-    <h2>九个工具，窄而可靠</h2>
-    <p class="lede">SWE-agent 的 ACI 消融证据：简洁、合并、带护栏的工具面实测提分。V1 冻结为九个，每个自带输出上限与截断标记，超限完整输出落盘由 read_artifact 取回。</p>
+    <h2>Nine tools, narrow and reliable</h2>
+    <p class="lede">The SWE-agent ACI ablation evidence: a concise, consolidated, guard-railed tool surface measurably scores higher. V1 freezes at nine, each with its own output ceiling and truncation marker, with over-limit output written to disk for read_artifact to retrieve.</p>
     <div class="tools">
-      <span class="tool">list_files<small>mtime 排序</small></span>
-      <span class="tool">search_text<small>命中上限 ~50</small></span>
-      <span class="tool">read_file<small>窗口式 + 行号</small></span>
-      <span class="tool mut">apply_patch<small>锚定 search/replace</small></span>
+      <span class="tool">list_files<small>sorted by mtime</small></span>
+      <span class="tool">search_text<small>hit ceiling ~50</small></span>
+      <span class="tool">read_file<small>windowed + line numbers</small></span>
+      <span class="tool mut">apply_patch<small>anchored search/replace</small></span>
       <span class="tool mut">run_command<small>PS 5.1 · Job Object</small></span>
-      <span class="tool">read_artifact<small>超限输出取回</small></span>
-      <span class="tool">git_status<small>硬化调用</small></span>
-      <span class="tool">git_diff<small>硬化调用</small></span>
-      <span class="tool">finish<small>收口 + 证据核验</small></span>
+      <span class="tool">read_artifact<small>retrieves over-limit output</small></span>
+      <span class="tool">git_status<small>hardened invocation</small></span>
+      <span class="tool">git_diff<small>hardened invocation</small></span>
+      <span class="tool">finish<small>close-out + evidence check</small></span>
     </div>
-    <p class="tools-legend"><span class="sw"></span> 只读 · 内置 ALLOW　<span class="sw m"></span> mutator · 落交互审批（accept_edits 基线可放行 workspace 内补丁）</p>
+    <p class="tools-legend"><span class="sw"></span> read-only · allowed by default&nbsp;&nbsp;<span class="sw m"></span> mutator · falls to interactive approval (the accept_edits baseline can allow patches inside the workspace)</p>
   </section>
 
   <section>
     <div class="eyebrow">Roadmap</div>
-    <h2>每个里程碑以"可运行 + 可验收"收口</h2>
-    <p class="lede">排序原则：最大不确定项不上关键路径。全部 1111 个测试在<b>无网络、无凭证</b>的机器上通过；真实运行已验证：agent 跑失败测试 → 读文件 → 打补丁 → 重跑测试转绿 → 带证据收口，exit 0。</p>
+    <h2>Every milestone closes on "runnable + acceptable"</h2>
+    <p class="lede">The ordering principle: the largest uncertainty never sits on the critical path. All 1111 tests pass on a machine with <b>no network and no credentials</b>; and a real run is verified: the agent runs failing tests → reads the files → patches → re-runs the tests green → closes out with evidence, exit 0.</p>
     <ul class="miles">
-      <li><span class="mtag">M0</span><span class="mtitle">Walking skeleton · 接口冻结 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">IR / 事件协议 / ModelBackend / session 信封四接口已冻结；replay backend + <code>foundry record</code> 夹具重录就绪。</span></li>
-      <li><span class="mtag">M1a</span><span class="mtitle">文件工具 + Policy 流水线 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">apply_patch（逐文件原子 + 宽容梯度）、workspace 边界、六步流水线、审批 UI、脏工作区策略。攻击表与决策表全绿。</span></li>
-      <li><span class="mtag">M1b</span><span class="mtitle">run_command + 命令分段器 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">Job Object 进程树（实测无孤儿残留）、env 过滤、编码回退；分段器 + 熔断表全表 + audit.jsonl。</span></li>
-      <li><span class="mtag">M2</span><span class="mtitle">个人路径 E2E + 验收任务集 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">login/DPAPI、错误分类学、finish 证据链、FOUNDRY.md、8 个 golden 场景、<code>foundry report</code> 遥测。</span></li>
-      <li><span class="mtag">M3</span><span class="mtitle">公司 Gateway <span style="color:var(--brass)">部分</span></span><br><span class="mdesc">responses adapter + 12 项合同测试已就绪，流式降级已实现；<b>入场门未过</b>——真实 Gateway 的 tool-call 流式夹具待取（OQ-6）。</span></li>
-      <li><span class="mtag">M4</span><span class="mtitle">打包加固 + 披露 <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">净 venv <code>--no-index</code> 安装实测通过（5 个纯 py wheel）；威胁模型文档；<code>foundry exec</code> 已进 V1。</span></li>
-      <li class="v2"><span class="mtag">V2</span><span class="mtitle">候选池</span><br><span class="mdesc">session resume · LLM 摘要压缩 · update_plan · skills · subagent seam · MCP 桥 · shadow-git checkpoint。</span></li>
+      <li><span class="mtag">M0</span><span class="mtitle">Walking skeleton · interfaces frozen <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">The four interfaces (IR / the event protocol / ModelBackend / the session envelope) are frozen; the replay backend and <code>foundry record</code> fixture re-recording are ready.</span></li>
+      <li><span class="mtag">M1a</span><span class="mtitle">File tools + the policy pipeline <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">apply_patch (per-file atomic + a leniency gradient), the workspace boundary, the six-step pipeline, the approval UI, and the dirty working-tree policy. The attack and decision tables are green.</span></li>
+      <li><span class="mtag">M1b</span><span class="mtitle">run_command + the command segmenter <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">Job Object process trees (no orphans left in practice), env filtering, encoding fallback; the segmenter + the full breaker table + audit.jsonl.</span></li>
+      <li><span class="mtag">M2</span><span class="mtitle">Personal path E2E + the acceptance task set <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">login/DPAPI, the error taxonomy, the finish evidence chain, FOUNDRY.md, 8 golden scenarios, and <code>foundry report</code> telemetry.</span></li>
+      <li><span class="mtag">M3</span><span class="mtitle">Corporate Gateway <span style="color:var(--brass)">partial</span></span><br><span class="mdesc">The responses adapter and 12 contract tests are ready, and the streaming downgrade is implemented; <b>the entry gate is not passed</b> — the real Gateway's tool-call streaming fixtures are still needed (OQ-6).</span></li>
+      <li><span class="mtag">M4</span><span class="mtitle">Packaging hardening + disclosure <span style="color:var(--ok)">✓</span></span><br><span class="mdesc">A clean venv <code>--no-index</code> install passes in practice (5 pure-py wheels); the threat model is documented; <code>foundry exec</code> made V1.</span></li>
+      <li class="v2"><span class="mtag">V2</span><span class="mtitle">The candidate pool</span><br><span class="mdesc">session resume · LLM summarisation compaction · update_plan · skills · the subagent seam · an MCP bridge · shadow-git checkpoints.</span></li>
     </ul>
   </section>
 
   <section>
     <div class="eyebrow">Open Questions</div>
-    <h2>还开着的四个问题（不阻塞动工）</h2>
+    <h2>Four questions still open (none of them blocking)</h2>
     <div class="oq">
-      <div class="oq-row"><span class="id">OQ-6</span><span class="q"><b>内网 auth 机制</b><small>协议已确认（OpenAI 系走 Responses）；剩余：token 获取方式、endpoint 形态、模型清单。M3 入场门 = 先取 tool-call 流式夹具</small></span></div>
-      <div class="oq-row"><span class="id">OQ-19</span><span class="q"><b>session 保留策略默认值</b><small>天数 / 体积上限；artifact 是否静态加密（倾向：30 天 + 上限，不承诺未验证的加密）</small></span></div>
-      <div class="oq-row"><span class="id">OQ-10</span><span class="q"><b>语言约定</b><small>文档中文、代码与注释英文——按此假设执行中，待正式确认</small></span></div>
-      <div class="oq-row"><span class="id">OQ-15</span><span class="q"><b>managed policy 下发方式</b><small>IT 推送 ProgramData 文件？随内部 wheel？层机制已预留，部署公司前须定</small></span></div>
-      <div class="oq-row"><span class="id">OQ-16</span><span class="q"><b>headless exec 时点</b><small>事件架构使其成本很低；M4 按余量进 V1，否则 V2</small></span></div>
+      <div class="oq-row"><span class="id">OQ-6</span><span class="q"><b>the intranet auth mechanism</b><small>the protocol is confirmed (the OpenAI family goes through Responses); what remains: how the token is obtained, the endpoint's shape, the model list. The M3 entry gate is the tool-call streaming fixtures</small></span></div>
+      <div class="oq-row"><span class="id">OQ-19</span><span class="q"><b>default session retention</b><small>days / a size ceiling; whether artifacts are encrypted at rest (leaning: 30 days + a ceiling, with no promise of unverified encryption)</small></span></div>
+      <div class="oq-row"><span class="id">OQ-10</span><span class="q"><b>language convention</b><small>settled: everything — documentation, code, identifiers and comments — is in English</small></span></div>
+      <div class="oq-row"><span class="id">OQ-15</span><span class="q"><b>how managed policy is distributed</b><small>an IT-pushed ProgramData file? bundled with an internal wheel? The layer mechanism is in place; it must be settled before a corporate deployment</small></span></div>
+      <div class="oq-row"><span class="id">OQ-16</span><span class="q"><b>when headless exec lands</b><small>the event architecture makes it very cheap; it enters V1 in M4 if there is budget, and otherwise V2</small></span></div>
     </div>
   </section>
 
   <footer>
     <div class="docmap">
       <b>docs/</b>requirements.md · design.md · roadmap.md<br>
-      <b>docs/</b>decision-log.md（D-001…D-020）· open-questions.md<br>
-      <b>docs/research/</b>codex · claude-code · gemini-cli+luban · aider+openhands · auth · windows-python · 3× critique · codex-blueprint 对比
+      <b>docs/</b>decision-log.md (D-001…D-020) · open-questions.md<br>
+      <b>docs/research/</b>codex · claude-code · gemini-cli+luban · aider+openhands · auth · windows-python · 3 critiques · the codex-blueprint comparison
     </div>
     <div class="stamp">
       FOUNDRY · blueprint worktree<br>
-      需求 v0.2 · <span class="hot">2026-08-30</span> · 经 3 轮确认 + 6 轮对抗评审
+      requirements v0.2 · <span class="hot">2026-08-30</span> · 3 rounds of confirmation + 6 rounds of adversarial review
     </div>
   </footer>
 
