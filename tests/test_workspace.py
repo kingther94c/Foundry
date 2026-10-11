@@ -74,6 +74,8 @@ def test_rejects_write_to_foundry_config(ws):
         ws.resolve(".foundry/settings.toml", for_write=True)
 
 
+@pytest.mark.skipif(sys.platform != "win32",
+                    reason="case folding is an NTFS property; POSIX filesystems are case-sensitive")
 def test_case_insensitive_containment(ws):
     # NTFS folds case; the check must too, or SRC/ vs src/ becomes a bypass.
     assert ws.resolve("SRC/APP.PY").absolute.exists()

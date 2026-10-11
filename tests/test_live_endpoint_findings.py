@@ -12,6 +12,7 @@ runnable on a machine with neither the gateway nor a network.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -82,6 +83,17 @@ def test_plain_leaves_no_unserializable_object_behind():
 
 
 # --- loopback is never sent to a proxy ------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _no_inherited_proxy(monkeypatch):
+    """Start every test from a proxy-free environment. On POSIX, urllib's
+    getproxies() lets a lowercase https_proxy override the HTTPS_PROXY a test
+    sets, and no_proxy can bypass the test's host entirely; Windows environment
+    names are case-insensitive, so this only bit outside CI."""
+    for name in list(os.environ):
+        if name.lower().endswith("_proxy"):
+            monkeypatch.delenv(name, raising=False)
 
 
 @pytest.mark.parametrize("url", [

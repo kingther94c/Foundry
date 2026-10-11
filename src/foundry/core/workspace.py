@@ -102,8 +102,12 @@ class Workspace:
             current = current / part
             try:
                 info = current.lstat()
-            except FileNotFoundError:
-                return  # not yet created: nothing to traverse
+            except (FileNotFoundError, NotADirectoryError):
+                # Not yet created: nothing to traverse. A component that is a
+                # regular file means nothing beneath it can exist either --
+                # Windows reports that as FileNotFoundError, POSIX as ENOTDIR --
+                # and callers that care (e.g. a move) report it in their terms.
+                return
             except OSError as exc:
                 raise PathRejected(f"cannot inspect path component {current}: {exc}") from exc
             attrs = getattr(info, "st_file_attributes", 0)
