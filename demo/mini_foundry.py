@@ -187,9 +187,14 @@ class Tools:
             # **allowlist**, holding only what the build genuinely needs.
             # Approving pytest once should not hand every API key in your shell
             # to the repository's test code.
-            env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+            #
+            # PYTHONUTF8: the output is decoded as UTF-8 below, so a child Python
+            # must write UTF-8 into the pipe -- on a zh-CN machine it would
+            # otherwise write cp936. The real Foundry sets the same variable.
+            env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONUTF8": "1"}
             done = subprocess.run(op.args["command"], shell=True, cwd=self.workspace,
-                                  capture_output=True, text=True, timeout=60, env=env)
+                                  capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=60, env=env)
             output = (done.stdout + done.stderr).strip()
             # **Where the evidence chain starts**: the execution is written to
             # the ledger and gets an event number. Later, when finish claims

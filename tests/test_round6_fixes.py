@@ -405,7 +405,8 @@ def test_a_detached_head_is_reported_as_detached(tmp_path):
     subprocess.run(["git", "add", "-A"], cwd=repo, capture_output=True)
     subprocess.run(["git", "commit", "-qm", "one"], cwd=repo, capture_output=True)
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo,
-                          capture_output=True, text=True).stdout.strip()
+                          capture_output=True, text=True, encoding="utf-8",
+                          errors="replace").stdout.strip()
     subprocess.run(["git", "checkout", "-q", "--detach", head], cwd=repo,
                    capture_output=True)
 
