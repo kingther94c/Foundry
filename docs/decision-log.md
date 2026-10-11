@@ -165,3 +165,9 @@
 ## D-029 A single BLOCKED does not end the REPL session
 - **Date**: 2026-09-01 · **Status**: confirmed
 - **Decision**: a dropped stream or an unreachable gateway ends **this round**, not the session. Previously any `outcome.status is not None` broke out, so one bit of network flakiness cost the user the whole conversation context -- while the comment on the code that raised it said "transient, so it will retry", and in fact no layer retries (the deltas are already on screen, and the round cannot be replayed). The comment now tells the truth, and BLOCKED prints a message and continues.
+
+## D-031 Observation masking starts under context pressure, not after a fixed number of rounds
+- **Date**: 2026-10-11 · **Status**: confirmed (found by running Foundry on its own repository)
+- **Background**: every tool output older than the last 5 rounds was masked, whatever the context held. Given a real task in this repository (make `tool_end` carry its duration and exit code), Foundry read `runtime.py`, `command.py` and `tests/test_runtime.py`, had them masked five rounds later, and read them again -- about thirty re-reads in forty rounds. It hit the round budget with the source half-changed and no test written, while the context never passed 21k tokens of a 128k window. Masking saved nothing there and cost a round per re-read; it also rewrote the prefix every round, which defeats a provider's prompt cache.
+- **Decision**: the projection is the full transcript until it would pass half the backend's window (`mask_above_fraction`). Past that, tool outputs are masked oldest first and only until it fits again; the last `mask_after_turns` rounds are never masked. Masking itself is unchanged, and so is the evidence for it in [design.md](design.md); what changed is when it applies.
+- **Note**: none of the 1400-odd tests could see this. They script the model, and a scripted model never needs to look at something twice.

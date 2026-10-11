@@ -136,10 +136,12 @@ async def run_turn(user_input):
   truncated head+tail with a `[truncated: N bytes, artifact_id=...]` marker,
   with the full output written into the session directory for `read_artifact`
   to retrieve.
-- **Observation masking** (V1's "compaction"): tool output older than the last
-  N rounds (5 by default) is projected as a one-line stub (`[output elided;
-  re-run tool if needed]`); the system prompt, the task, and the most recent
-  rounds are kept in full. The evidence: equivalent to LLM summarisation with
+- **Observation masking** (V1's "compaction"): once the projected context would
+  pass half the backend's window, tool output is projected as a one-line stub
+  (`[output elided; re-run tool if needed]`), oldest first and only until it
+  fits again; the system prompt, the task, and the last N rounds (5 by default)
+  are always kept in full. Below that threshold nothing is masked
+  ([D-031](decision-log.md)). The evidence: equivalent to LLM summarisation with
   zero extra dependencies (arXiv 2508.21433; SWE-agent +3pt). LLM
   summarisation compaction is V2, and will enter the log as a `Compacted` event
   when it lands (openhands condensation-as-event).

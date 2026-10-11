@@ -3,11 +3,17 @@
 The journal and the model's context are different things, and keeping them
 separate is what makes replay deterministic and audit meaningful.
 
-V1's context management is observation masking, not summarization: tool outputs
-older than the last few turns collapse to a one-line stub. The Complexity Trap
-paper (arXiv 2508.21433) measured masking as matching LLM summarization on both
-solve rate and cost, and masking needs no extra model call -- which through a
-corporate gateway is a dependency worth not having.
+V1's context management is observation masking, not summarization: old tool
+outputs collapse to a one-line stub. The Complexity Trap paper (arXiv
+2508.21433) measured masking as matching LLM summarization on both solve rate
+and cost, and masking needs no extra model call -- which through a corporate
+gateway is a dependency worth not having.
+
+Masking is compaction, so it starts only under pressure (D-031). Masking every
+output older than a few rounds, whatever the context held, made Foundry forget
+files it had just read while a sixth of the window was in use: working on its
+own repository it re-read the same handful of files round after round and ran
+out of tool rounds before writing a test.
 """
 
 from __future__ import annotations
@@ -25,7 +31,36 @@ from foundry.core.conversation import (
 from foundry.core.redaction import Redactor, default_redactor
 
 MASK_AFTER_TURNS = 5
+# The share of the context window the projection may fill before old outputs
+# are masked. Well short of the ceiling, so masking -- not termination -- is
+# what a long session meets first.
+MASK_ABOVE_FRACTION = 0.5
 MASK_NOTICE = "[output elided to save context; re-run the tool if you need it again]"
+
+
+def _estimate_tokens(messages) -> int:
+    """Rough sizing: four characters to the token."""
+    chars = 0
+    for message in messages:
+        for block in message.blocks:
+            if isinstance(block, TextBlock):
+                chars += len(block.text)
+            elif isinstance(block, ToolResultBlock):
+                chars += len(block.content)
+            elif isinstance(block, ToolUseBlock):
+                chars += len(block.arguments) + len(block.name)
+    return chars // 4
+
+
+def _masked(message: Message) -> Message:
+    # A result already shorter than the notice is left alone: replacing it
+    # would cost context, not save it.
+    return Message(role=message.role, blocks=tuple(
+        ToolResultBlock(call_id=b.call_id, content=MASK_NOTICE, is_error=b.is_error)
+        if isinstance(b, ToolResultBlock) and len(b.content) > len(MASK_NOTICE)
+        else b
+        for b in message.blocks
+    ))
 
 
 @dataclass(slots=True)
@@ -36,7 +71,9 @@ class ContextManager:
     project_doc: str = ""
     environment: str = ""
     max_context_tokens: int = 128_000
+    # The most recent rounds whose output is never masked, whatever the pressure.
     mask_after_turns: int = MASK_AFTER_TURNS
+    mask_above_fraction: float = MASK_ABOVE_FRACTION
     reserve_output_tokens: int = 8_000
 
     redactor: Redactor = field(default_factory=default_redactor)
@@ -80,22 +117,31 @@ class ContextManager:
         return Message.text(Role.SYSTEM, "\n\n".join(parts))
 
     def project(self) -> tuple[Message, ...]:
-        messages: list[Message] = [self.system_message()]
+        """The full transcript while it fits under the masking threshold.
+
+        Past it, tool outputs are masked oldest first, and only until the
+        projection fits again; the last ``mask_after_turns`` rounds are never
+        masked. Below the threshold masking saves nothing worth having and
+        costs a round per re-read -- and it rewrote the prefix every round,
+        which defeats a provider's prompt cache.
+        """
+        system = self.system_message()
+        history = list(self.history)
+        budget = int(self.max_context_tokens * self.mask_above_fraction)
+        total = _estimate_tokens([system, *history])
         cutoff = self._turn - self.mask_after_turns
 
-        for message, turn in zip(self.history, self._turn_of_message):
-            if turn > cutoff or message.role is not Role.TOOL:
-                messages.append(message)
+        for index, turn in enumerate(self._turn_of_message):
+            if total <= budget or turn > cutoff:
+                break
+            message = history[index]
+            if message.role is not Role.TOOL:
                 continue
-            masked = tuple(
-                ToolResultBlock(call_id=b.call_id, content=MASK_NOTICE, is_error=b.is_error)
-                if isinstance(b, ToolResultBlock) and len(b.content) > len(MASK_NOTICE)
-                else b
-                for b in message.blocks
-            )
-            messages.append(Message(role=message.role, blocks=masked))
+            masked = _masked(message)
+            total -= _estimate_tokens([message]) - _estimate_tokens([masked])
+            history[index] = masked
 
-        return tuple(messages)
+        return (system, *history)
 
     # -- budget -----------------------------------------------------------
 
@@ -105,16 +151,7 @@ class ContextManager:
         Never used for reporting: recorded usage always comes from the provider,
         because a wrong number enforced as a budget is worse than no budget.
         """
-        chars = 0
-        for message in self.project():
-            for block in message.blocks:
-                if isinstance(block, TextBlock):
-                    chars += len(block.text)
-                elif isinstance(block, ToolResultBlock):
-                    chars += len(block.content)
-                elif isinstance(block, ToolUseBlock):
-                    chars += len(block.arguments) + len(block.name)
-        return chars // 4
+        return _estimate_tokens(self.project())
 
     def context_exhausted(self) -> bool:
         return self.estimated_context_tokens() > (self.max_context_tokens - self.reserve_output_tokens)

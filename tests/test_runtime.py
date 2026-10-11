@@ -269,16 +269,20 @@ def test_plan_mode_blocks_edits(harness):
     assert "plan mode" in results[0].blocks[0].content
 
 
+def _rendered(ctx: ContextManager) -> str:
+    return " ".join(b.content for m in ctx.project() for b in m.blocks
+                    if hasattr(b, "content"))
+
+
 def test_context_masks_old_tool_output(harness):
-    ctx = ContextManager(system_prompt="s", mask_after_turns=1)
+    # 1000 tokens of budget, 500 before masking starts; the old output alone is ~1000.
+    ctx = ContextManager(system_prompt="s", mask_after_turns=1, max_context_tokens=1000)
     ctx.start_turn()
     ctx.append_tool_result("c1", "OLD-MARKER " + ("x" * 4000))
     ctx.start_turn()
     ctx.start_turn()
     ctx.append_tool_result("c2", "recent output stays")
-    projected = ctx.project()
-    rendered = " ".join(b.content for m in projected for b in m.blocks
-                        if hasattr(b, "content"))
+    rendered = _rendered(ctx)
     assert "recent output stays" in rendered
     assert "OLD-MARKER" not in rendered
     assert "elided" in rendered
@@ -286,11 +290,51 @@ def test_context_masks_old_tool_output(harness):
 
 def test_masking_leaves_short_output_alone(harness):
     """Replacing a short result with a longer notice would cost context, not save it."""
-    ctx = ContextManager(system_prompt="s", mask_after_turns=1)
+    ctx = ContextManager(system_prompt="s", mask_after_turns=1, max_context_tokens=1000)
     ctx.start_turn()
     ctx.append_tool_result("c1", "exit 0")
+    ctx.append_tool_result("c2", "x" * 4000)     # the pressure that turns masking on
     ctx.start_turn()
     ctx.start_turn()
-    rendered = " ".join(b.content for m in ctx.project() for b in m.blocks
-                        if hasattr(b, "content"))
+    rendered = _rendered(ctx)
+    assert "elided" in rendered
     assert "exit 0" in rendered
+
+
+def test_old_output_is_kept_while_the_context_has_room(harness):
+    """Masking every output older than a few rounds, whatever the context held,
+    made Foundry forget files it had just read: working on its own repository
+    it re-read the same files round after round and ran out of tool rounds
+    with a sixth of the window in use."""
+    ctx = ContextManager(system_prompt="s", mask_after_turns=1)
+    ctx.start_turn()
+    ctx.append_tool_result("c1", "OLD-MARKER " + ("x" * 4000))
+    for _ in range(10):
+        ctx.start_turn()
+    assert "OLD-MARKER" in _rendered(ctx)
+
+
+def test_masking_goes_oldest_first_and_stops_once_it_fits(harness):
+    # Threshold 1000 tokens; three ~600-token outputs need exactly two masked.
+    ctx = ContextManager(system_prompt="s", mask_after_turns=1, max_context_tokens=2000)
+    for marker in ("FIRST", "SECOND", "THIRD"):
+        ctx.start_turn()
+        ctx.append_tool_result(marker, marker + " " + "x" * 2400)
+    ctx.start_turn()
+    ctx.start_turn()
+    rendered = _rendered(ctx)
+    assert "FIRST" not in rendered and "SECOND" not in rendered
+    assert "THIRD" in rendered
+    assert ctx.estimated_context_tokens() <= 1000
+
+
+def test_the_latest_rounds_are_never_masked(harness):
+    ctx = ContextManager(system_prompt="s", mask_after_turns=2, max_context_tokens=1000)
+    ctx.start_turn()
+    ctx.append_tool_result("c1", "OLDEST " + "x" * 4000)
+    ctx.start_turn()
+    ctx.append_tool_result("c2", "RECENT " + "x" * 4000)
+    ctx.start_turn()
+    rendered = _rendered(ctx)
+    assert "OLDEST" not in rendered
+    assert "RECENT" in rendered     # still over budget, but inside the window
