@@ -14,6 +14,7 @@ DENY; no tool ever blocks on input itself.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -57,6 +58,29 @@ from foundry.core.tools.finish import ValidationClaim, verify_claims
 from foundry.core.tools.registry import ToolRegistry
 
 ApprovalCallback = Callable[[ApprovalRequest], ApprovalChoice]
+
+
+def _tool_end_summary(op: Operation, output: ToolOutput, content: str) -> str:
+    """One line saying how a tool call ended.
+
+    For run_command the first content line is ``$ <command>`` -- a repeat of
+    tool_begin.display -- so the stream never said what the exit code was.
+    The command's outcome comes from its structured metadata instead.
+    """
+    if op.tool == "run_command" and ("exit_code" in output.metadata
+                                     or output.metadata.get("timed_out")):
+        meta = output.metadata
+        if meta.get("timed_out"):
+            limit = meta.get("timeout_s")
+            summary = f"timed out after {limit}s" if limit else "timed out"
+        elif meta.get("exit_code") is None:
+            summary = "exit code unknown"
+        else:
+            summary = f"exit code {meta['exit_code']}"
+        if meta.get("output_incomplete"):
+            summary += " (output incomplete)"
+        return summary
+    return content.splitlines()[0] if content else ""
 
 
 def _explain(exc: Exception) -> str:
@@ -383,37 +407,52 @@ class AgentRuntime:
     def _execute(self, call: ToolUseBlock, op: Operation) -> None:
         tool = self.registry.get(op.tool)
         self._emit(ToolBegin(call.call_id, op.tool, op.display))
+        # Wall-clock time of the tool's own execution, measured here so every
+        # tool_end carries it -- including the ones for tools that raised.
+        started = time.monotonic()
+
+        def elapsed_ms() -> int:
+            return int((time.monotonic() - started) * 1000)
+
         try:
             output: ToolOutput = tool.execute(op, self.tool_ctx)
         except ToolError as exc:
+            duration_ms = elapsed_ms()
             count = self.failures.record(op, exc)
             if count >= self.budget.max_consecutive_failures:
                 self._emit(ErrorEvent(f"{op.tool} failed {count} times", category=exc.category))
                 self._reply(call, f"{exc} (this exact operation has failed {count} times; "
                                   "try a different approach)", is_error=True)
-                self._emit(ToolEnd(call.call_id, op.tool, False, str(exc)))
+                self._emit(ToolEnd(call.call_id, op.tool, False, str(exc),
+                                   duration_ms=duration_ms))
                 return
             self._reply(call, str(exc), is_error=True)
-            self._emit(ToolEnd(call.call_id, op.tool, False, str(exc)))
+            self._emit(ToolEnd(call.call_id, op.tool, False, str(exc),
+                               duration_ms=duration_ms))
             return
         except FoundryError as exc:
+            duration_ms = elapsed_ms()
             self._reply(call, f"{exc}", is_error=True)
-            self._emit(ToolEnd(call.call_id, op.tool, False, str(exc)))
+            self._emit(ToolEnd(call.call_id, op.tool, False, str(exc),
+                               duration_ms=duration_ms))
             return
         except Exception as exc:  # noqa: BLE001
             # A tool raising something outside the taxonomy -- an OSError from a
             # locked file, a PathRejected (which is a ValueError) -- must become
             # a tool result the model can act on. Letting it escape kills the
             # session with a traceback and loses the turn's evidence.
+            duration_ms = elapsed_ms()
             detail = f"{type(exc).__name__}: {exc}"
             self.failures.record(op, exc)
             self._journal(EventType.ERROR, {"call_id": call.call_id, "tool": op.tool,
                                             "error": detail})
             self._emit(ErrorEvent(detail, category="tool_unexpected"))
             self._reply(call, f"the tool failed unexpectedly: {detail}", is_error=True)
-            self._emit(ToolEnd(call.call_id, op.tool, False, detail))
+            self._emit(ToolEnd(call.call_id, op.tool, False, detail,
+                               duration_ms=duration_ms))
             return
 
+        duration_ms = elapsed_ms()
         self.failures.clear(op)
 
         if op.tool == "finish":
@@ -422,7 +461,8 @@ class AgentRuntime:
                 summary=output.metadata["summary"],
                 claims=tuple(output.metadata["claims"]),
             )
-            self._emit(ToolEnd(call.call_id, op.tool, True, "finalizing"))
+            self._emit(ToolEnd(call.call_id, op.tool, True, "finalizing",
+                               duration_ms=duration_ms))
             return
 
         content = output.content
@@ -439,7 +479,8 @@ class AgentRuntime:
             self._last_mutation = max(self._last_mutation, ordinal)
         self._reply(call, content, is_error=output.is_error)
         self._emit(ToolEnd(call.call_id, op.tool, not output.is_error,
-                           content.splitlines()[0] if content else ""))
+                           _tool_end_summary(op, output, content),
+                           duration_ms=duration_ms))
 
     def _canonicalize_paths(self, op: Operation) -> Operation:
         """Give policy the spelling the filesystem agrees with.

@@ -7,6 +7,7 @@ machine that has neither.
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 
@@ -256,6 +257,101 @@ def test_journal_records_policy_decisions(harness):
     assert decisions
     assert decisions[0].payload["rule_id"]
     assert decisions[0].payload["policy_digest"]
+
+
+class _SlowTool:
+    """Wraps a real tool and sleeps first, so execution has a known minimum."""
+
+    def __init__(self, inner, delay_s: float, raises: Exception | None = None):
+        self.inner = inner
+        self.name = inner.name
+        self.kind = inner.kind
+        self.delay_s = delay_s
+        self.raises = raises
+
+    def schema(self):
+        return self.inner.schema()
+
+    def validate(self, args):
+        return self.inner.validate(args)
+
+    def execute(self, op, ctx):
+        time.sleep(self.delay_s)
+        if self.raises is not None:
+            raise self.raises
+        return self.inner.execute(op, ctx)
+
+
+def test_tool_end_carries_the_real_duration(harness):
+    """Every tool_end reported duration_ms 0, even after a minute-long run."""
+    harness.registry.register(_SlowTool(harness.registry.get("read_file"), 0.25))
+    runtime, events = harness([
+        turn("", call("read_file", {"path": "src/app.py"})),
+        turn("done"),
+    ])
+    runtime.run_turn("read it")
+    end = [e for e in events if isinstance(e, ToolEnd)][0]
+    assert end.ok
+    assert 250 <= end.duration_ms < 10_000
+
+
+def test_tool_end_carries_the_duration_when_the_tool_raises(harness):
+    from foundry.core.errors import ToolError
+    harness.registry.register(_SlowTool(harness.registry.get("read_file"), 0.2,
+                                        raises=ToolError("boom")))
+    harness.registry.register(_SlowTool(harness.registry.get("list_files"), 0.2,
+                                        raises=OSError("locked")))
+    runtime, events = harness([
+        turn("", call("read_file", {"path": "src/app.py"}, "c1")),
+        turn("", call("list_files", {}, "c2")),
+        turn("done"),
+    ])
+    runtime.run_turn("read it")
+    ends = [e for e in events if isinstance(e, ToolEnd)]
+    assert [e.ok for e in ends] == [False, False]
+    assert all(e.duration_ms >= 200 for e in ends)
+
+
+def test_run_command_tool_end_states_the_exit_code(harness):
+    """The summary was `$ <command>`, a repeat of tool_begin.display."""
+    command = "python -c \"raise SystemExit(3)\""
+    runtime, events = harness([
+        turn("", call("run_command", {"command": command})),
+        turn("done"),
+    ], approval=lambda req: ApprovalChoice.ONCE)
+    runtime.run_turn("run it")
+    end = [e for e in events if isinstance(e, ToolEnd)][0]
+    assert not end.ok
+    assert end.summary == "exit code 3"
+    assert command not in end.summary
+    assert end.duration_ms > 0
+
+
+def test_run_command_tool_end_states_success(harness):
+    runtime, events = harness([
+        turn("", call("run_command", {"command": "python -c \"print(1)\""})),
+        turn("done"),
+    ], approval=lambda req: ApprovalChoice.ONCE)
+    runtime.run_turn("run it")
+    end = [e for e in events if isinstance(e, ToolEnd)][0]
+    assert end.ok
+    assert end.summary == "exit code 0"
+
+
+def test_run_command_tool_end_states_a_timeout(harness):
+    runtime, events = harness([
+        turn("", call("run_command", {"command": "python -c \"import time; time.sleep(30)\"",
+                                      "timeout_s": 1})),
+        turn("done"),
+    ], approval=lambda req: ApprovalChoice.ONCE)
+    runtime.run_turn("run it")
+    end = [e for e in events if isinstance(e, ToolEnd)][0]
+    assert not end.ok
+    # A killed child may leave the pipe open; the summary then also says the
+    # output is incomplete, which is true and worth keeping.
+    assert end.summary.startswith("timed out after 1s")
+    assert "exit code" not in end.summary
+    assert end.duration_ms >= 1000
 
 
 def test_plan_mode_blocks_edits(harness):

@@ -358,5 +358,7 @@ class RunCommand:
                 "duration_ms": result.duration_ms,
                 "event_ordinal": ordinal,
                 "timed_out": result.timed_out,
+                "timeout_s": timeout_s,
+                "output_incomplete": result.output_incomplete,
             },
         )
