@@ -40,7 +40,8 @@ def permissions_paragraph(policy: PolicyEngine) -> str:
                     "until the user approves your plan. Produce the plan; do not try to work "
                     "around the restriction."),
         Mode.DONT_ASK: ("Unattended: anything not explicitly allowed by a rule is denied. "
-                        "Nobody is available to approve."),
+                        "Nobody is available to approve, or to read a reply: end the "
+                        "task by calling `finish`, whatever the outcome."),
     }[policy.mode]
     lines.append(mode_text)
 

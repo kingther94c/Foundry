@@ -171,3 +171,78 @@ def test_event_id_is_visible_to_the_model(repo, tmp_path):
     output = tool.execute(tool.validate({"command": 'python -c "print(1)"'}), ctx)
     session.close()
     assert output.metadata["event_ordinal"] > 0
+
+
+# --- an unattended run ends through finish --------------------------------
+
+
+def _unattended(repo, tmp_path, turns):
+    from foundry.core.backends.replay import ScriptedBackend
+
+    wiring = build(repo, home=tmp_path / "home", interactive=False,
+                   overrides={"mode": Mode.DONT_ASK},
+                   console=Console(file=open(tmp_path / "o.txt", "w", encoding="utf-8")))
+    wiring.runtime.approval = None
+    wiring.runtime.backend = ScriptedBackend(turns)
+    return wiring
+
+
+def _said(text):
+    from foundry.core.conversation import ModelTurn, StopReason, Usage
+
+    return ModelTurn(text=text, usage=Usage(input_tokens=10, output_tokens=5),
+                     stop_reason=StopReason.END_TURN)
+
+
+def _finished():
+    from foundry.core.conversation import ModelTurn, StopReason, ToolUseBlock, Usage
+
+    call = ToolUseBlock(call_id="f1", name="finish", arguments=json.dumps(
+        {"status": "completed", "summary": "done", "claims": []}))
+    return ModelTurn(text="", tool_calls=(call,), usage=Usage(input_tokens=10, output_tokens=5),
+                     stop_reason=StopReason.TOOL_USE)
+
+
+def test_a_prose_reply_is_reminded_to_call_finish(repo, tmp_path):
+    """Running on its own repository, Foundry finished the work, described it
+    in prose with the event ids, and exited partial: nobody reads a reply in
+    an unattended run, and only finish reports an outcome."""
+    from foundry.cli.app import FINISH_REMINDER, _run_unattended
+
+    wiring = _unattended(repo, tmp_path, [_said("I fixed it (event 12)."), _finished()])
+    outcome = _run_unattended(wiring.runtime, "fix it")
+    wiring.session.close()
+
+    assert outcome.status is TerminalStatus.COMPLETED
+    sent = wiring.runtime.backend.seen[1].messages[-1]
+    assert FINISH_REMINDER in sent.blocks[0].text
+
+
+def test_the_reminder_is_sent_once(repo, tmp_path):
+    from foundry.cli.app import _run_unattended
+
+    wiring = _unattended(repo, tmp_path, [_said("done"), _said("still done")])
+    outcome = _run_unattended(wiring.runtime, "fix it")
+    wiring.session.close()
+
+    assert outcome.status is None
+    assert len(wiring.runtime.backend.seen) == 2
+
+
+def test_a_run_that_calls_finish_is_not_reminded(repo, tmp_path):
+    from foundry.cli.app import _run_unattended
+
+    wiring = _unattended(repo, tmp_path, [_finished()])
+    outcome = _run_unattended(wiring.runtime, "fix it")
+    wiring.session.close()
+
+    assert outcome.status is TerminalStatus.COMPLETED
+    assert len(wiring.runtime.backend.seen) == 1
+
+
+def test_the_unattended_model_is_told_to_end_with_finish():
+    from foundry.core.policy.engine import PolicyEngine
+    from foundry.core.prompts import permissions_paragraph
+
+    text = permissions_paragraph(PolicyEngine(mode=Mode.DONT_ASK))
+    assert "read a reply" in text and "`finish`" in text

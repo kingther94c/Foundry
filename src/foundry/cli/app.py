@@ -436,6 +436,26 @@ def _event_payload(event) -> dict:
     return payload
 
 
+FINISH_REMINDER = (
+    "This run is unattended: nobody will read a reply. Call finish now to report "
+    "the outcome, citing the event_id of each command that supports it."
+)
+
+
+def _run_unattended(runtime: AgentRuntime, task: str):
+    """One task; a reply in prose gets a single reminder to call finish.
+
+    Only finish reports an outcome, and nobody reads a reply in an unattended
+    run. Running on its own repository, Foundry finished the work, described
+    it in prose -- with the event ids -- and exited partial. Asked once, not
+    in a loop: a model that cannot call tools must still end.
+    """
+    outcome = runtime.run_turn(task)
+    if outcome.status is None:
+        outcome = runtime.run_turn(FINISH_REMINDER)
+    return outcome
+
+
 def cmd_exec(args: argparse.Namespace) -> int:
     """Headless: one task, no prompts, ASK resolves to DENY.
 
@@ -468,7 +488,7 @@ def cmd_exec(args: argparse.Namespace) -> int:
     reason = "headless run ended"
     outcome = None
     try:
-        outcome = wiring.runtime.run_turn(args.task)
+        outcome = _run_unattended(wiring.runtime, args.task)
         # Only the finish gate can produce 'completed'. A turn that simply
         # ended is unfinished work, not success.
         status = outcome.status or TerminalStatus.PARTIAL
@@ -476,8 +496,8 @@ def cmd_exec(args: argparse.Namespace) -> int:
             # Saying "headless run ended" told the operator nothing about why a
             # correct-looking answer exited 10. Against a model that cannot call
             # tools at all, this is the *only* reachable outcome.
-            reason = ("the model ended its turn without calling finish; only finish "
-                      "reports completion, with the evidence for it")
+            reason = ("the model ended its turn without calling finish, even when "
+                      "reminded; only finish reports completion, with the evidence for it")
         if not args.json and outcome.text:
             print(outcome.text)
     except KeyboardInterrupt:
