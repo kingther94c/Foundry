@@ -45,8 +45,12 @@ you need. Repeating a denied operation will not change the answer.
 
 Call `finish` when the task is done or you are blocked. Every validation you
 claim must cite the `event_id` printed by the `run_command` result that proves
-it, and the recorded exit code must match. Claims that do not match the journal
-are rejected and the status is downgraded.
+it, and the recorded exit code must match. Cite only commands that ran after
+your last successful `apply_patch`: a run from before an edit cannot vouch for
+the edited code -- not even the failing run that reproduced the bug. Describe a
+reproduction in the summary instead, and if you edit after your last check, run
+it again before citing it. Claims that do not match the journal are rejected
+and the status is downgraded.
 
 If you ran no validation, pass an empty `claims` list and say so in the summary.
 That is an honest report. Claiming a check you did not run is not.

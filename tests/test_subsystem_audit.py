@@ -8,6 +8,7 @@ commands that read journals back.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 
@@ -139,6 +140,20 @@ def test_a_session_that_changed_nothing_needs_no_ordering():
         [ValidationClaim(claim_text="the suite passes", command_event_id=3)],
         _history((3, "pytest -q")), "completed", last_mutation_ordinal=0)
     assert result.status.value == "completed"
+
+
+def test_the_model_is_told_about_the_ordering_rule():
+    """The gate enforced ordering but neither text the model reads mentioned it.
+    A live run against a real model did what good practice says -- reproduce the
+    failure, fix, re-run green -- then cited both runs. The pre-fix run was
+    rejected and a correctly fixed task exited partial."""
+    from foundry.core.prompts import base_system_prompt
+    from foundry.core.tools.finish import Finish
+
+    for text in (base_system_prompt(), Finish().schema().description):
+        flattened = " ".join(text.split())
+        assert re.search(r"last successful `?apply_patch", flattened), flattened
+        assert "reproduction in the summary" in flattened, flattened
 
 
 # --- a search must not hide what it did not read --------------------------
