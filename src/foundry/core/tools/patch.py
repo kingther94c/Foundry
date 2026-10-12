@@ -81,6 +81,12 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
         lines.pop(0)
     while lines and not lines[-1].strip():
         lines.pop()
+    # A patch that opens straight on a file operation is unambiguous, so the
+    # missing Begin line is supplied rather than refused: refusing cost a real
+    # model a round and a re-send of an 11 KB patch. Anything else -- a code
+    # fence, prose -- is still refused.
+    if lines and lines[0].startswith((UPDATE, ADD, DELETE)):
+        lines.insert(0, BEGIN)
     if not lines or lines[0].strip() != BEGIN:
         raise PatchParseError(f"patch must start with {BEGIN!r}")
     if lines[-1].strip() != END:

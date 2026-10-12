@@ -201,6 +201,26 @@ def test_malformed_patches_rejected_at_validation(bad):
         ApplyPatch().validate({"patch": bad})
 
 
+def test_a_missing_begin_line_is_supplied_when_a_file_operation_opens_the_patch():
+    """A real model sent an 11 KB Add File patch without its Begin line; refusing
+    it cost a round and a full re-send for no gain in safety."""
+    ops = parse_patch("*** Add File: tests/t.py\n+x = 1\n*** End Patch")
+    assert [(op.action, op.path, op.content) for op in ops] == [("add", "tests/t.py", "x = 1")]
+    ops = parse_patch("*** Update File: a.py\n<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE\n"
+                      "*** End Patch")
+    assert ops[0].action == "update" and ops[0].hunks[0].replace == "y"
+
+
+@pytest.mark.parametrize("bad", [
+    "```\n*** Begin Patch\n*** Add File: a.py\n+x\n*** End Patch\n```",
+    "Here is the patch:\n*** Add File: a.py\n+x\n*** End Patch",
+    "*** Add File: a.py\n+x",                      # the end line is still required
+])
+def test_only_a_file_operation_may_stand_in_for_the_begin_line(bad):
+    with pytest.raises(InvalidToolCall):
+        ApplyPatch().validate({"patch": bad})
+
+
 def test_parse_supports_move():
     ops = parse_patch(patch_text(
         "*** Update File: a.py\n*** Move to: b.py\n<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE"
