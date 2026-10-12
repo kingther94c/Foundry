@@ -219,6 +219,87 @@ def test_quarterly_series_first_existing_concept_sorted():
     }
 
 
+# Synthetic companyfacts: "Revenues" stops in 2018 and the ASC 606 concept runs
+# to 2026, both still present -- as for many real filers after the switch.
+STALE_FACTS = {
+    "cik": 1234567,
+    "entityName": "Example Corp",
+    "facts": {
+        "us-gaap": {
+            "Revenues": {
+                "units": {
+                    "USD": [
+                        fact(500, "2017-12-31", "CY2017Q4", filed="2018-02-01"),
+                        fact(510, "2018-03-31", "CY2018Q1", filed="2018-05-01"),
+                        fact(520, "2018-06-30", "CY2018Q2", filed="2018-08-01"),
+                        fact(530, "2018-09-30", "CY2018Q3", filed="2018-11-01"),
+                        fact(540, "2018-12-31", "CY2018Q4", filed="2019-02-01"),
+                        fact(2100, "2018-12-31", "CY2018", form="10-K"),
+                    ]
+                }
+            },
+            "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                "units": {
+                    "USD": [
+                        fact(1000, "2025-09-30", "CY2025Q3", filed="2025-11-01"),
+                        fact(1050, "2025-12-31", "CY2025Q4", filed="2026-02-01"),
+                        fact(1100, "2026-03-31", "CY2026Q1", filed="2026-05-01"),
+                        fact(1200, "2026-06-30", "CY2026Q2", filed="2026-08-01"),
+                        fact(1300, "2026-09-30", "CY2026Q3"),
+                    ]
+                }
+            },
+            # Exists, but only year-to-date: no quarterly values, so ignored.
+            "SalesRevenueNet": {
+                "units": {"USD": [fact(9999, "2026-09-30", None, start="2026-01-01")]}
+            },
+        }
+    },
+}
+
+REVENUE_CONCEPTS = [
+    "Revenues",
+    "RevenueFromContractWithCustomerExcludingAssessedTax",
+    "SalesRevenueNet",
+]
+
+
+def test_summarize_prefers_concept_with_latest_quarter_over_stale_one():
+    revenue = summarize(STALE_FACTS)["metrics"]["revenue"]
+    assert revenue["missing"] is False
+    assert revenue["concept"] == "RevenueFromContractWithCustomerExcludingAssessedTax"
+    assert [r["frame"] for r in revenue["values"]] == [
+        "CY2025Q3", "CY2025Q4", "CY2026Q1", "CY2026Q2", "CY2026Q3",
+    ]
+    assert [r["val"] for r in revenue["values"]] == [1000, 1050, 1100, 1200, 1300]
+
+
+def test_quarterly_series_prefers_concept_with_latest_quarter():
+    series = quarterly_series(STALE_FACTS, REVENUE_CONCEPTS)
+    assert [r["val"] for r in series] == [1000, 1050, 1100, 1200, 1300]
+
+
+def test_concept_tie_goes_to_earlier_candidate():
+    # FACTS: SalesRevenueNet's latest quarter ends on the same date as the
+    # ASC 606 concept's; the earlier candidate wins.
+    asc606 = "RevenueFromContractWithCustomerExcludingAssessedTax"
+    series = quarterly_series(FACTS, [asc606, "SalesRevenueNet"])
+    assert series[-1]["val"] == 1300
+    series = quarterly_series(FACTS, ["SalesRevenueNet", asc606])
+    assert [r["val"] for r in series] == [1]
+
+
+def test_concept_without_quarters_reported_only_if_none_has_any():
+    facts = {"facts": {"us-gaap": {
+        "SalesRevenueNet": STALE_FACTS["facts"]["us-gaap"]["SalesRevenueNet"],
+    }}}
+    revenue = summarize(facts)["metrics"]["revenue"]
+    assert revenue["missing"] is True
+    assert revenue["concept"] == "SalesRevenueNet"
+    assert revenue["values"] == []
+    assert quarterly_series(facts, REVENUE_CONCEPTS) == []
+
+
 def test_quarterly_series_eps_unit():
     assert quarterly_series(FACTS, ["EarningsPerShareDiluted"]) == []
     series = quarterly_series(FACTS, ["EarningsPerShareDiluted"], unit="USD/shares")

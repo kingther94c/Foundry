@@ -135,13 +135,37 @@ def _concept_units(facts: dict[str, Any], concept: str, unit: str) -> list[Any] 
     return values if isinstance(values, list) else None
 
 
-def _first_concept(
+def _select_concept(
     facts: dict[str, Any], concepts: Sequence[str], unit: str
-) -> tuple[str, list[Any]] | None:
+) -> tuple[str, list[dict[str, Any]]] | None:
+    """Pick the candidate concept that is current, with its quarterly series.
+
+    Companies switch concepts over time (e.g. "Revenues" until ~2018, then
+    "RevenueFromContractWithCustomerExcludingAssessedTax"), and the stale one
+    stays in companyfacts. So among the candidates that have quarterly values,
+    the one whose most recent quarter ends latest wins; on a tie the earlier
+    candidate wins. If no candidate has quarterly values, the first one that
+    exists is returned with an empty series; if none exists, ``None``.
+    """
+    best: tuple[str, list[dict[str, Any]]] | None = None
+    best_end = ""
+    first_existing: str | None = None
     for concept in concepts:
         values = _concept_units(facts, concept, unit)
-        if values is not None:
-            return concept, values
+        if values is None:
+            continue
+        if first_existing is None:
+            first_existing = concept
+        series = _quarterly(values)
+        if not series:
+            continue
+        latest_end = str(series[-1]["end"] or "")
+        if best is None or latest_end > best_end:
+            best, best_end = (concept, series), latest_end
+    if best is not None:
+        return best
+    if first_existing is not None:
+        return first_existing, []
     return None
 
 
@@ -174,14 +198,17 @@ def _quarterly(values: list[Any]) -> list[dict[str, Any]]:
 def quarterly_series(
     facts: dict[str, Any], concepts: Sequence[str], unit: str = "USD"
 ) -> list[dict[str, Any]]:
-    """Single-calendar-quarter values of the first concept in ``concepts`` that
-    exists in the us-gaap section with ``unit``.
+    """Single-calendar-quarter values of the current concept in ``concepts``
+    (reported in the us-gaap section with ``unit``).
+
+    Among candidates with quarterly values, the one whose latest quarter ends
+    latest is used; ties go to the earlier candidate.
 
     Returns ``[{frame, end, val, form, filed}]`` sorted by end date; empty when
-    no concept exists or the concept has no quarterly frames.
+    no concept exists or none has quarterly frames.
     """
-    found = _first_concept(facts, concepts, unit)
-    return _quarterly(found[1]) if found else []
+    found = _select_concept(facts, concepts, unit)
+    return found[1] if found else []
 
 
 # (metric, candidate concepts in priority order, unit)
@@ -214,7 +241,7 @@ def summarize(facts: dict[str, Any], quarters: int = 5) -> dict[str, Any]:
         raise ValueError("quarters must be at least 1")
     metrics: dict[str, Any] = {}
     for name, concepts, unit in SUMMARY_METRICS:
-        found = _first_concept(facts, concepts, unit)
+        found = _select_concept(facts, concepts, unit)
         if found is None:
             metrics[name] = {
                 "concept": None,
@@ -224,8 +251,7 @@ def summarize(facts: dict[str, Any], quarters: int = 5) -> dict[str, Any]:
                 "values": [],
             }
             continue
-        concept, values = found
-        series = _quarterly(values)
+        concept, series = found
         if not series:
             metrics[name] = {
                 "concept": concept,
