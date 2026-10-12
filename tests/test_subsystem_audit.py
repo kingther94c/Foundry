@@ -156,6 +156,31 @@ def test_the_model_is_told_about_the_ordering_rule():
         assert "reproduction in the summary" in flattened, flattened
 
 
+# --- the environment paragraph describes the machine it runs on -----------
+
+
+def test_off_windows_the_model_is_told_the_real_shell(monkeypatch, tmp_path):
+    """The paragraph said "Windows ...; shell: Windows PowerShell 5.1" on every
+    platform. On a Linux dev machine, where run_command uses /bin/sh, a real
+    model wrote `-c NUL` and other Windows spellings."""
+    import foundry.core.prompts as prompts
+
+    monkeypatch.setattr(prompts, "IS_WINDOWS", False)
+    monkeypatch.setattr(prompts.platform, "system", lambda: "Linux")
+    text = prompts.environment_paragraph(tmp_path, None, "m")
+    assert "Platform: Linux" in text and "shell: /bin/sh" in text
+    assert "Windows PowerShell 5.1" not in text
+
+
+def test_on_windows_the_paragraph_is_unchanged(monkeypatch, tmp_path):
+    import foundry.core.prompts as prompts
+
+    monkeypatch.setattr(prompts, "IS_WINDOWS", True)
+    text = prompts.environment_paragraph(tmp_path, None, "m")
+    assert "shell: Windows PowerShell 5.1" in text
+    assert "/bin/sh" not in text
+
+
 # --- a search must not hide what it did not read --------------------------
 
 

@@ -19,6 +19,7 @@ from foundry.core.policy.engine import (
     categorical_denials,
 )
 from foundry.core.tools.git import GitBaseline
+from foundry.core.winapi import IS_WINDOWS
 
 PROJECT_DOC_NAMES = ("FOUNDRY.md", "AGENTS.md")
 PROJECT_DOC_MAX_BYTES = 24_000
@@ -84,10 +85,20 @@ def permissions_paragraph(policy: PolicyEngine) -> str:
 
 def environment_paragraph(workspace: Path, baseline: GitBaseline | None,
                           model: str) -> str:
+    if IS_WINDOWS:
+        platform_line = f"Platform: Windows {platform.release()}; shell: Windows PowerShell 5.1"
+    else:
+        # Off Windows run_command uses /bin/sh. Saying "Windows" here sent a
+        # model on a Linux dev machine to `-c NUL` and other Windows spellings.
+        platform_line = (
+            f"Platform: {platform.system()} {platform.release()}; shell: /bin/sh. "
+            "Foundry targets Windows, so where the tool notes describe PowerShell, "
+            "read them for /bin/sh here: use POSIX syntax and paths."
+        )
     lines = [
         "# Environment",
         f"Workspace: {workspace}",
-        f"Platform: Windows {platform.release()}; shell: Windows PowerShell 5.1",
+        platform_line,
         f"Model: {model}",
     ]
     if baseline:
