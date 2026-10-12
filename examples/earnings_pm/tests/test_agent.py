@@ -11,6 +11,7 @@ import pytest
 
 from earnings_pm.agent import (
     REMINDER,
+    SYSTEM_PROMPT,
     TOOLS,
     AgentError,
     AgentRefused,
@@ -159,19 +160,49 @@ def test_request_shape():
     types = {t.get("type") for t in call["tools"]}
     assert {"web_search_20260209", "web_fetch_20260209"} <= types
     names = {t["name"] for t in call["tools"]}
-    assert names == {
+    assert "code_execution" not in names
+    by_name = {t["name"]: t for t in call["tools"]}
+    assert by_name["web_search"]["max_uses"] == 5
+    assert by_name["web_fetch"]["max_uses"] == 6
+    assert "EXMP" in call["messages"][0]["content"]
+    assert "sec.gov" in call["system"]
+
+
+def test_without_edgar_tool_and_prompt_omit_company_facts():
+    client = FakeClient([submit()])
+    run_agent("EXMP", client=client)
+    [call] = client.calls
+    names = [t["name"] for t in call["tools"]]
+    assert names == ["web_search", "web_fetch", "compute_metrics", "submit_memo"]
+    assert "get_company_facts" not in call["system"]
+    assert "compute_metrics" in call["system"]
+    assert "submit_memo" in call["system"]
+    # Steps are renumbered without a gap.
+    assert "\n3. Call compute_metrics" in call["system"]
+    assert "\n4. Call submit_memo" in call["system"]
+    assert "\n5." not in call["system"]
+
+
+def test_with_edgar_tool_and_prompt_include_company_facts():
+    def unused_fetch(url):
+        raise AssertionError("EDGAR should not be fetched in this test")
+
+    client = FakeClient([submit()])
+    run_agent("EXMP", client=client, edgar=EdgarClient(fetch=unused_fetch))
+    [call] = client.calls
+    names = [t["name"] for t in call["tools"]]
+    assert names == [
         "web_search",
         "web_fetch",
         "compute_metrics",
         "get_company_facts",
         "submit_memo",
-    }
-    assert "code_execution" not in names
-    by_name = {t["name"]: t for t in TOOLS}
-    assert by_name["web_search"]["max_uses"] == 5
-    assert by_name["web_fetch"]["max_uses"] == 6
-    assert "EXMP" in call["messages"][0]["content"]
-    assert "sec.gov" in call["system"]
+    ]
+    assert "\n3. Call get_company_facts" in call["system"]
+    assert "\n5. Call submit_memo" in call["system"]
+    # The module-level names describe the with-EDGAR configuration.
+    assert call["system"] == SYSTEM_PROMPT
+    assert call["tools"] == TOOLS
 
 
 def test_pause_turn_resends_without_new_user_message():

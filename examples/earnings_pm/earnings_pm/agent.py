@@ -22,25 +22,32 @@ DEFAULT_MODEL = "claude-opus-5-5"
 BETAS = ["server-side-fallback-2026-07-01"]
 MAX_TOKENS = 16000
 
-SYSTEM_PROMPT = """\
+_PROMPT_INTRO = """\
 You are an equity analyst. You write for a portfolio manager who holds the stock \
 or is considering it. Your job: read the company's latest quarterly earnings \
 release and write a memo saying what happened, what it means for the position, \
 and what to watch.
+"""
 
-Process:
-1. Find the most recent quarterly earnings release for the ticker on the \
-company's investor-relations site or on a newswire. Do not try sec.gov: it \
-cannot be fetched.
-2. Read the release with web_fetch.
-3. Call get_company_facts for the ticker to cross-check the figures. If it \
-returns an error, carry on with the release.
-4. Call compute_metrics with the raw figures for the current quarter and, when \
-the release gives them, the same quarter a year earlier and the preceding \
-quarter. Pass figures in the reporting currency's units as reported, and null \
-for any figure the release does not give.
-5. Call submit_memo with the finished memo.
+_STEP_FIND = (
+    "Find the most recent quarterly earnings release for the ticker on the "
+    "company's investor-relations site or on a newswire. Do not try sec.gov: it "
+    "cannot be fetched."
+)
+_STEP_READ = "Read the release with web_fetch."
+_STEP_EDGAR = (
+    "Call get_company_facts for the ticker to cross-check the figures. If it "
+    "returns an error, carry on with the release."
+)
+_STEP_METRICS = (
+    "Call compute_metrics with the raw figures for the current quarter and, when "
+    "the release gives them, the same quarter a year earlier and the preceding "
+    "quarter. Pass figures in the reporting currency's units as reported, and null "
+    "for any figure the release does not give."
+)
+_STEP_SUBMIT = "Call submit_memo with the finished memo."
 
+_PROMPT_RULES = """\
 Rules:
 - Every growth rate, margin and free-cash-flow number in the memo comes from \
 compute_metrics output. Do not calculate them yourself.
@@ -48,6 +55,16 @@ compute_metrics output. Do not calculate them yourself.
 - List every source you read in the memo's sources.
 - Be plain and direct. The reader is busy.
 """
+
+
+def build_system_prompt(edgar_available: bool) -> str:
+    """The system prompt; the EDGAR step appears only when EDGAR is available."""
+    steps = [_STEP_FIND, _STEP_READ]
+    if edgar_available:
+        steps.append(_STEP_EDGAR)
+    steps += [_STEP_METRICS, _STEP_SUBMIT]
+    numbered = "\n".join(f"{i}. {step}" for i, step in enumerate(steps, start=1))
+    return f"{_PROMPT_INTRO}\nProcess:\n{numbered}\n\n{_PROMPT_RULES}"
 
 WEB_SEARCH_TOOL: dict[str, Any] = {
     "type": "web_search_20260209",
@@ -60,13 +77,19 @@ WEB_FETCH_TOOL: dict[str, Any] = {
     "max_uses": 6,
 }
 
-TOOLS: list[dict[str, Any]] = [
-    WEB_SEARCH_TOOL,
-    WEB_FETCH_TOOL,
-    METRICS_TOOL,
-    COMPANY_FACTS_TOOL,
-    SUBMIT_MEMO_TOOL,
-]
+
+def build_tools(edgar_available: bool) -> list[dict[str, Any]]:
+    """The tool list; get_company_facts is offered only when EDGAR is available."""
+    tools: list[dict[str, Any]] = [WEB_SEARCH_TOOL, WEB_FETCH_TOOL, METRICS_TOOL]
+    if edgar_available:
+        tools.append(COMPANY_FACTS_TOOL)
+    tools.append(SUBMIT_MEMO_TOOL)
+    return tools
+
+
+# The with-EDGAR configuration, kept for callers that import these names.
+SYSTEM_PROMPT = build_system_prompt(edgar_available=True)
+TOOLS: list[dict[str, Any]] = build_tools(edgar_available=True)
 
 REMINDER = (
     "You ended your turn without calling submit_memo. Finish the work and call "
@@ -173,6 +196,8 @@ def run_agent(
             "content": f"Write the earnings memo for {ticker}.",
         }
     ]
+    system_prompt = build_system_prompt(edgar is not None)
+    tools = build_tools(edgar is not None)
     requests = 0
     input_tokens = 0
     output_tokens = 0
@@ -192,8 +217,8 @@ def run_agent(
             betas=BETAS,
             fallbacks="default",
             output_config={"effort": effort},
-            system=SYSTEM_PROMPT,
-            tools=TOOLS,
+            system=system_prompt,
+            tools=tools,
             messages=messages,
         )
         usage = getattr(response, "usage", None)
