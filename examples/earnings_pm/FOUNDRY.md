@@ -71,13 +71,20 @@ response = client.beta.messages.create(
 - Measured on 2026-10-12: `web_fetch` refuses sec.gov URLs (`url_not_allowed`)
   but reads company investor-relations pages and newswires. The system prompt
   should send the model to those for the earnings release.
-- A client tool is `{"name", "description", "input_schema", "strict": True}`.
-  With `strict`, every object in the schema, nested ones included, must set
+- A client tool is `{"name", "description", "input_schema"}`, plus
+  `"strict": True` where the schema guarantee matters. With `strict`, every
+  object in the schema, nested ones included, must set
   `"additionalProperties": False`, and these keywords are not supported:
-  `minimum`, `maximum`, `multipleOf`, `minLength`, `maxLength`. (Project
-  convention, not an API rule: list every property in `required` and make a
-  value that may be absent nullable, e.g. `{"type": ["number", "null"]}`, so a
-  memo is never silently missing a field.)
+  `minimum`, `maximum`, `multipleOf`, `minLength`, `maxLength`.
+- Measured on 2026-10-12: across all strict tools in one request, at most 16
+  parameters may be union-typed (a type array such as `["number", "null"]`, or
+  `anyOf`); more is a 400 ("Schemas contains too many parameters with union
+  types"). So `strict` is for `submit_memo`, whose shape is the product; a tool
+  whose input the code validates itself (compute_metrics) is not strict, and
+  its optional values are optional properties rather than nullable ones.
+  (Project convention for the memo: list every property in `required` and make
+  a value that may be absent nullable, so a memo is never silently missing a
+  field.)
 - `response.content` is a list of typed blocks (`text`, `thinking`,
   `server_tool_use`, `web_search_tool_result`, `web_fetch_tool_result`,
   `tool_use`, ...). Read `block.type` before touching other attributes.

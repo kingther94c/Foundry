@@ -42,8 +42,8 @@ _STEP_EDGAR = (
 _STEP_METRICS = (
     "Call compute_metrics with the raw figures for the current quarter and, when "
     "the release gives them, the same quarter a year earlier and the preceding "
-    "quarter. Pass figures in the reporting currency's units as reported, and null "
-    "for any figure the release does not give."
+    "quarter. Pass figures in the reporting currency's units as reported, and omit "
+    "any figure or period the release does not give."
 )
 _STEP_SUBMIT = "Call submit_memo with the finished memo."
 

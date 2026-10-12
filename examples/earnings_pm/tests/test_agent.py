@@ -16,10 +16,49 @@ from earnings_pm.agent import (
     AgentError,
     AgentRefused,
     AgentResult,
+    build_tools,
     run_agent,
 )
 from earnings_pm.edgar import EdgarClient
 from earnings_pm.memo import render_markdown
+
+STRICT_UNION_LIMIT = 16  # API limit across all strict tools in one request
+
+
+def count_union_params(node):
+    """Count subschemas whose "type" is a list or that use anyOf, at any depth."""
+    count = 0
+    if isinstance(node, dict):
+        if isinstance(node.get("type"), list) or "anyOf" in node:
+            count += 1
+        for value in node.values():
+            count += count_union_params(value)
+    elif isinstance(node, list):
+        for item in node:
+            count += count_union_params(item)
+    return count
+
+
+def test_count_union_params_counts_nested():
+    schema = {
+        "type": "object",
+        "properties": {
+            "a": {"type": ["string", "null"]},
+            "b": {"anyOf": [{"type": "object", "properties": {"c": {"type": ["number", "null"]}}},
+                            {"type": "null"}]},
+            "d": {"type": "array", "items": {"type": ["integer", "null"]}},
+        },
+    }
+    assert count_union_params(schema) == 4
+
+
+@pytest.mark.parametrize("edgar_available", [True, False])
+def test_strict_tools_stay_within_union_type_limit(edgar_available):
+    strict = [t for t in build_tools(edgar_available) if t.get("strict") is True]
+    assert any(t["name"] == "submit_memo" for t in strict)
+    total = sum(count_union_params(t["input_schema"]) for t in strict)
+    assert total <= STRICT_UNION_LIMIT, f"{total} union-typed parameters in strict tools"
+
 
 # Synthetic memo.
 MEMO = {

@@ -1,4 +1,4 @@
-"""Tests for earnings_pm.memo, and strict-schema checks on both client tools.
+"""Tests for earnings_pm.memo, and schema checks on the client tools.
 
 The memo fixture below is synthetic and hand-written; it describes no real company.
 """
@@ -55,7 +55,7 @@ def is_object_schema(schema):
     return t == "object" or (isinstance(t, list) and "object" in t) or "properties" in schema
 
 
-@pytest.mark.parametrize("tool", [METRICS_TOOL, SUBMIT_MEMO_TOOL], ids=lambda t: t["name"])
+@pytest.mark.parametrize("tool", [SUBMIT_MEMO_TOOL], ids=lambda t: t["name"])
 def test_tool_schema_is_strict(tool):
     assert tool["strict"] is True
     assert set(tool) == {"name", "description", "input_schema", "strict"}
@@ -67,6 +67,21 @@ def test_tool_schema_is_strict(tool):
             assert schema.get("additionalProperties") is False, path
             assert sorted(schema.get("required", [])) == sorted(schema["properties"]), path
     assert objects >= 2
+
+
+def test_metrics_tool_schema_is_not_strict_but_closed():
+    # compute_metrics is validated locally; it must not spend the strict
+    # union-type budget, but every object still rejects unknown properties.
+    assert "strict" not in METRICS_TOOL
+    assert set(METRICS_TOOL) == {"name", "description", "input_schema"}
+    objects = 0
+    for path, schema in walk_schemas(METRICS_TOOL["input_schema"]):
+        assert not isinstance(schema.get("type"), list), path
+        assert "anyOf" not in schema, path
+        if is_object_schema(schema):
+            objects += 1
+            assert schema.get("additionalProperties") is False, path
+    assert objects == 4  # input + current + prior_year + prior_quarter
 
 
 def test_submit_memo_tool_uses_memo_schema():

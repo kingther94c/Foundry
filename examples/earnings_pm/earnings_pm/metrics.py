@@ -140,7 +140,8 @@ def _number(name: str, value: Any) -> float | None:
 def period_from_dict(d: dict[str, Any]) -> Period:
     """Build a Period from the compute_metrics tool-input shape.
 
-    Missing numeric fields become None. Raises ValueError on malformed input.
+    A numeric field that is absent or explicitly null becomes None (not given).
+    Raises ValueError on malformed input.
     """
     if not isinstance(d, dict):
         raise ValueError(f"period must be an object, got {type(d).__name__}")
@@ -156,7 +157,10 @@ def period_from_dict(d: dict[str, Any]) -> Period:
 
 
 def run_metrics_tool(tool_input: dict[str, Any]) -> dict[str, Any]:
-    """Execute a compute_metrics tool call from its raw input."""
+    """Execute a compute_metrics tool call from its raw input.
+
+    ``prior_year`` / ``prior_quarter`` may be absent or null; both mean not given.
+    """
     if not isinstance(tool_input, dict) or "current" not in tool_input:
         raise ValueError("compute_metrics needs a 'current' period")
     current = period_from_dict(tool_input["current"])
@@ -168,8 +172,6 @@ def run_metrics_tool(tool_input: dict[str, Any]) -> dict[str, Any]:
         period_from_dict(prior_quarter) if prior_quarter is not None else None,
     )
 
-
-_NULLABLE_NUMBER = {"type": ["number", "null"]}
 
 _FIELD_DESCRIPTIONS = {
     "revenue": "Total revenue for the period.",
@@ -185,19 +187,23 @@ PERIOD_SCHEMA: dict[str, Any] = {
     "type": "object",
     "description": (
         "Raw figures for one period, in the reporting currency's units as "
-        "reported (e.g. 1250000000, not 1.25 or 1250). Use null for a figure "
-        "the report does not give."
+        "reported (e.g. 1250000000, not 1.25 or 1250). Omit a figure the "
+        "report does not give."
     ),
     "properties": {
         "label": {"type": "string", "description": "Period label, e.g. 'Q3 FY2026'."},
         **{
-            name: {**_NULLABLE_NUMBER, "description": _FIELD_DESCRIPTIONS[name]}
+            name: {"type": "number", "description": _FIELD_DESCRIPTIONS[name]}
             for name in NUMERIC_FIELDS
         },
     },
-    "required": ["label", *NUMERIC_FIELDS],
+    "required": ["label"],
     "additionalProperties": False,
 }
+
+# Not strict: the union-type limit across strict tools (16 per request) is
+# reserved for submit_memo. run_metrics_tool validates this input itself, so
+# optional values are optional properties rather than nullable ones.
 
 METRICS_TOOL: dict[str, Any] = {
     "name": "compute_metrics",
@@ -213,16 +219,15 @@ METRICS_TOOL: dict[str, Any] = {
         "properties": {
             "current": PERIOD_SCHEMA,
             "prior_year": {
-                "anyOf": [PERIOD_SCHEMA, {"type": "null"}],
-                "description": "Same period one year earlier, or null.",
+                **PERIOD_SCHEMA,
+                "description": "Same period one year earlier. Omit if not given.",
             },
             "prior_quarter": {
-                "anyOf": [PERIOD_SCHEMA, {"type": "null"}],
-                "description": "The immediately preceding quarter, or null.",
+                **PERIOD_SCHEMA,
+                "description": "The immediately preceding quarter. Omit if not given.",
             },
         },
-        "required": ["current", "prior_year", "prior_quarter"],
+        "required": ["current"],
         "additionalProperties": False,
     },
-    "strict": True,
 }

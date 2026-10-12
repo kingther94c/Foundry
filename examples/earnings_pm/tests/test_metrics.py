@@ -180,14 +180,42 @@ def test_run_metrics_tool_with_null_priors():
     assert result["yoy"] is None and result["qoq"] is None
 
 
+def test_run_metrics_tool_with_absent_priors_and_figures():
+    result = run_metrics_tool({"current": {"label": "c", "revenue": 10, "gross_profit": 4}})
+    assert result["current"]["gross_margin"] == approx(0.4)
+    assert result["current"]["free_cash_flow"] is None
+    assert result["prior_year"] is None and result["prior_quarter"] is None
+    assert result["yoy"] is None and result["qoq"] is None
+
+
+def test_absent_and_null_figures_are_equivalent():
+    absent = run_metrics_tool(
+        {"current": {"label": "c", "revenue": 10}, "prior_year": {"label": "p", "revenue": 8}}
+    )
+    null = run_metrics_tool(
+        {
+            "current": {"label": "c", "revenue": 10, "capex": None, "net_income": None},
+            "prior_year": {"label": "p", "revenue": 8, "capex": None},
+            "prior_quarter": None,
+        }
+    )
+    assert absent == null
+    assert absent["yoy"]["revenue_growth"] == approx(0.25)
+
+
 def test_metrics_tool_definition():
     assert METRICS_TOOL["name"] == "compute_metrics"
-    assert METRICS_TOOL["strict"] is True
+    assert "strict" not in METRICS_TOOL
     schema = METRICS_TOOL["input_schema"]
-    assert set(schema["required"]) == {"current", "prior_year", "prior_quarter"}
-    for prior in ("prior_year", "prior_quarter"):
-        types = [branch.get("type") for branch in schema["properties"][prior]["anyOf"]]
-        assert "null" in types and "object" in types
-    period_props = schema["properties"]["current"]["properties"]
-    assert period_props["revenue"]["type"] == ["number", "null"]
-    assert period_props["label"]["type"] == "string"
+    assert schema["required"] == ["current"]
+    assert schema["additionalProperties"] is False
+    for key in ("current", "prior_year", "prior_quarter"):
+        period = schema["properties"][key]
+        assert period["type"] == "object"
+        assert period["required"] == ["label"]
+        assert period["additionalProperties"] is False
+        props = period["properties"]
+        assert props["label"]["type"] == "string"
+        for name in ("revenue", "gross_profit", "operating_income", "net_income",
+                     "diluted_eps", "operating_cash_flow", "capex"):
+            assert props[name]["type"] == "number"
