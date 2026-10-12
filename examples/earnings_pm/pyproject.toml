@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "earnings-pm"
+version = "0.1.0"
+description = "A portfolio manager's read of an earnings report, driven by the Claude API"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=1.13,<2",
+]
+
+[project.scripts]
+earnings-pm = "earnings_pm.__main__:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["earnings_pm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error::EncodingWarning"]
