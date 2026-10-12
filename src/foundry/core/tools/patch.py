@@ -160,7 +160,13 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
                     )
                 body.append(lines[i][1:])
                 i += 1
-            ops.append(FileOp("add", path, content="\n".join(body)))
+            # Each '+' line is a line, so the file ends with a newline. Joining
+            # alone left every file Foundry created without one; a model that
+            # already wrote a final empty '+' line gets no second newline.
+            content = "\n".join(body)
+            if content and not content.endswith("\n"):
+                content += "\n"
+            ops.append(FileOp("add", path, content=content))
 
         elif line.startswith(DELETE):
             ops.append(FileOp("delete", line[len(DELETE):].strip()))

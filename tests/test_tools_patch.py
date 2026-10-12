@@ -205,7 +205,7 @@ def test_a_missing_begin_line_is_supplied_when_a_file_operation_opens_the_patch(
     """A real model sent an 11 KB Add File patch without its Begin line; refusing
     it cost a round and a full re-send for no gain in safety."""
     ops = parse_patch("*** Add File: tests/t.py\n+x = 1\n*** End Patch")
-    assert [(op.action, op.path, op.content) for op in ops] == [("add", "tests/t.py", "x = 1")]
+    assert [(op.action, op.path, op.content) for op in ops] == [("add", "tests/t.py", "x = 1\n")]
     ops = parse_patch("*** Update File: a.py\n<<<<<<< SEARCH\nx\n=======\ny\n>>>>>>> REPLACE\n"
                       "*** End Patch")
     assert ops[0].action == "update" and ops[0].hunks[0].replace == "y"
@@ -219,6 +219,16 @@ def test_a_missing_begin_line_is_supplied_when_a_file_operation_opens_the_patch(
 def test_only_a_file_operation_may_stand_in_for_the_begin_line(bad):
     with pytest.raises(InvalidToolCall):
         ApplyPatch().validate({"patch": bad})
+
+
+@pytest.mark.parametrize("body", ["+a\n+b", "+a\n+b\n+"])
+def test_an_added_file_ends_with_exactly_one_newline(ctx, body):
+    """Every file Foundry created lacked a final newline: the '+' lines were
+    joined and nothing ended the last one. A model that writes a final empty
+    '+' line meant that newline and must not get a second one."""
+    tool = ApplyPatch()
+    tool.execute(tool.validate({"patch": patch_text(f"*** Add File: src/new.py\n{body}")}), ctx)
+    assert (ctx.workspace.root / "src" / "new.py").read_bytes() == b"a\nb\n"
 
 
 def test_parse_supports_move():
