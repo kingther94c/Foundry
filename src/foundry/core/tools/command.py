@@ -113,7 +113,9 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
     if IS_WINDOWS:
         creationflags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
 
-    started = time.monotonic()
+    # perf_counter for the reported duration: monotonic ticks every ~15.6 ms on
+    # Windows. The timeout deadline below stays on monotonic.
+    started = time.perf_counter()
     job = ProcessJob()
     try:
         process = subprocess.Popen(
@@ -201,7 +203,7 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
     finally:
         job.close()
 
-    duration_ms = int((time.monotonic() - started) * 1000)
+    duration_ms = int((time.perf_counter() - started) * 1000)
     decoded = decode_output(stdout)
     return CommandResult(
         exit_code=exit_code,

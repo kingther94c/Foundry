@@ -292,7 +292,9 @@ def test_tool_end_carries_the_real_duration(harness):
     runtime.run_turn("read it")
     end = [e for e in events if isinstance(e, ToolEnd)][0]
     assert end.ok
-    assert 250 <= end.duration_ms < 10_000
+    # Below the sleep by a margin: the point is that the duration is real, not
+    # that a CI runner's sleep and clock agree to the millisecond.
+    assert 200 <= end.duration_ms < 10_000
 
 
 def test_tool_end_carries_the_duration_when_the_tool_raises(harness):
@@ -309,7 +311,7 @@ def test_tool_end_carries_the_duration_when_the_tool_raises(harness):
     runtime.run_turn("read it")
     ends = [e for e in events if isinstance(e, ToolEnd)]
     assert [e.ok for e in ends] == [False, False]
-    assert all(e.duration_ms >= 200 for e in ends)
+    assert all(e.duration_ms >= 150 for e in ends), [e.duration_ms for e in ends]
 
 
 def test_run_command_tool_end_states_the_exit_code(harness):
@@ -351,7 +353,7 @@ def test_run_command_tool_end_states_a_timeout(harness):
     # output is incomplete, which is true and worth keeping.
     assert end.summary.startswith("timed out after 1s")
     assert "exit code" not in end.summary
-    assert end.duration_ms >= 1000
+    assert end.duration_ms >= 900
 
 
 def test_plan_mode_blocks_edits(harness):

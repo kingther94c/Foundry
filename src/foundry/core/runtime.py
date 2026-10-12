@@ -409,10 +409,12 @@ class AgentRuntime:
         self._emit(ToolBegin(call.call_id, op.tool, op.display))
         # Wall-clock time of the tool's own execution, measured here so every
         # tool_end carries it -- including the ones for tools that raised.
-        started = time.monotonic()
+        # perf_counter, not monotonic: on Windows monotonic ticks every ~15.6 ms,
+        # so a 200 ms call could be reported as 187.
+        started = time.perf_counter()
 
         def elapsed_ms() -> int:
-            return int((time.monotonic() - started) * 1000)
+            return int((time.perf_counter() - started) * 1000)
 
         try:
             output: ToolOutput = tool.execute(op, self.tool_ctx)
