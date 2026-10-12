@@ -146,6 +146,10 @@ def main(
             "requests": result.requests,
             "input_tokens": result.input_tokens,
             "output_tokens": result.output_tokens,
+            "cache_read_input_tokens": result.cache_read_input_tokens,
+            "cache_creation_input_tokens": result.cache_creation_input_tokens,
+            "usage": result.usage,
+            "calculations": result.calculations,
         }
         md_path = args.out / f"{args.ticker}.md"
         json_path = args.out / f"{args.ticker}.json"
@@ -161,7 +165,9 @@ def main(
         _progress("wrote", f"{md_path} {json_path}")
 
     _progress("done", f"requests={result.requests} input_tokens={result.input_tokens} "
-              f"output_tokens={result.output_tokens}")
+              f"output_tokens={result.output_tokens} "
+              f"cache_read_input_tokens={result.cache_read_input_tokens} "
+              f"cache_creation_input_tokens={result.cache_creation_input_tokens}")
     return EXIT_OK
 
 

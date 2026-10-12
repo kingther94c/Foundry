@@ -5,6 +5,7 @@ describe no real company and no real API traffic.
 """
 
 import copy
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -111,12 +112,18 @@ def server_tool_use(name, tool_input, id_):
     return SimpleNamespace(type="server_tool_use", id=id_, name=name, input=tool_input)
 
 
-def response(stop_reason, *blocks, stop_details=None, inp=10, out=5):
+def response(stop_reason, *blocks, stop_details=None, inp=10, out=5,
+             cache_read=None, cache_creation=None):
     return SimpleNamespace(
         stop_reason=stop_reason,
         stop_details=stop_details,
         content=list(blocks),
-        usage=SimpleNamespace(input_tokens=inp, output_tokens=out),
+        usage=SimpleNamespace(
+            input_tokens=inp,
+            output_tokens=out,
+            cache_read_input_tokens=cache_read,
+            cache_creation_input_tokens=cache_creation,
+        ),
     )
 
 
@@ -196,6 +203,7 @@ def test_request_shape():
     assert call["output_config"] == {"effort": "medium"}
     for forbidden in ("thinking", "temperature", "top_p", "top_k", "tool_choice"):
         assert forbidden not in call
+    assert call["cache_control"] == {"type": "ephemeral"}
     types = {t.get("type") for t in call["tools"]}
     assert {"web_search_20260209", "web_fetch_20260209"} <= types
     names = {t["name"] for t in call["tools"]}
@@ -383,6 +391,107 @@ def test_history_is_append_only_across_mixed_turns():
     assert_append_only(client.calls)
     # The assistant content is the response's content, unchanged.
     assert client.calls[1]["messages"][1] == {"role": "assistant", "content": first.content}
+
+
+@pytest.mark.parametrize("with_edgar", [False, True])
+def test_cached_prefix_is_stable_across_requests(with_edgar):
+    def unused_fetch(url):
+        raise AssertionError("EDGAR should not be fetched in this test")
+
+    edgar = EdgarClient(fetch=unused_fetch) if with_edgar else None
+    client = FakeClient(
+        [
+            response("pause_turn", server_tool_use("web_search", {"query": "EXMP"}, "s1")),
+            response("tool_use", tool_use("compute_metrics", METRICS_INPUT, "tu_1")),
+            response("end_turn", text("done")),
+            submit(),
+        ]
+    )
+    run_agent("EXMP", client=client, edgar=edgar)
+    assert len(client.calls) == 4
+    first = client.calls[0]
+    for call in client.calls:
+        assert call["cache_control"] == {"type": "ephemeral"}
+        assert call["system"] == first["system"]
+        assert call["tools"] == first["tools"]
+        # Byte-stable, not merely equal.
+        assert repr(call["system"]) == repr(first["system"])
+        assert repr(call["tools"]) == repr(first["tools"])
+    assert_append_only(client.calls)
+
+
+def test_usage_accounting_with_cache_fields():
+    client = FakeClient(
+        [
+            response("tool_use", tool_use("compute_metrics", METRICS_INPUT, "tu_1"),
+                     inp=1000, out=200, cache_read=None, cache_creation=None),
+            response("end_turn", text("done"),
+                     inp=50, out=20, cache_read=900, cache_creation=None),
+            response("tool_use", tool_use("submit_memo", copy.deepcopy(MEMO), "tu_s"),
+                     inp=30, out=300, cache_read=1000, cache_creation=120),
+        ]
+    )
+    result = run_agent("EXMP", client=client)
+    assert result.requests == 3
+    assert result.usage == [
+        {"input_tokens": 1000, "output_tokens": 200,
+         "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
+        {"input_tokens": 50, "output_tokens": 20,
+         "cache_read_input_tokens": 900, "cache_creation_input_tokens": 0},
+        {"input_tokens": 30, "output_tokens": 300,
+         "cache_read_input_tokens": 1000, "cache_creation_input_tokens": 120},
+    ]
+    assert result.input_tokens == 1080
+    assert result.output_tokens == 520
+    assert result.cache_read_input_tokens == 1900
+    assert result.cache_creation_input_tokens == 120
+
+
+def test_usage_without_cache_attributes_counts_zero():
+    resp = SimpleNamespace(
+        stop_reason="tool_use",
+        stop_details=None,
+        content=[tool_use("submit_memo", copy.deepcopy(MEMO), "tu_s")],
+        usage=SimpleNamespace(input_tokens=7, output_tokens=3),
+    )
+    result = run_agent("EXMP", client=FakeClient([resp]))
+    assert result.cache_read_input_tokens == 0
+    assert result.cache_creation_input_tokens == 0
+    assert result.usage == [{"input_tokens": 7, "output_tokens": 3,
+                             "cache_read_input_tokens": 0,
+                             "cache_creation_input_tokens": 0}]
+
+
+def test_calculations_record_success_and_error():
+    client = FakeClient(
+        [
+            response(
+                "tool_use",
+                tool_use("compute_metrics", {"nope": 1}, "tu_bad"),
+                tool_use("get_company_facts", {"ticker": "EXMP"}, "tu_edgar"),
+                tool_use("compute_metrics", copy.deepcopy(METRICS_INPUT), "tu_ok"),
+            ),
+            submit(),
+        ]
+    )
+    result = run_agent("EXMP", client=client)
+    assert [c["tool_use_id"] for c in result.calculations] == ["tu_bad", "tu_ok"]
+    bad, ok = result.calculations
+    assert bad["input"] == {"nope": 1}
+    assert "output" not in bad
+    assert "current" in bad["error"]
+    assert ok["input"] == METRICS_INPUT
+    assert "error" not in ok
+    assert ok["output"]["yoy"]["revenue_growth"] == pytest.approx(0.2)
+    # The recorded output is what the model was sent.
+    results = {r["tool_use_id"]: r for r in client.calls[1]["messages"][-1]["content"]}
+    assert json.loads(results["tu_ok"]["content"]) == ok["output"]
+    assert results["tu_bad"]["content"] == bad["error"]
+
+
+def test_no_calculations_when_metrics_not_called():
+    result = run_agent("EXMP", client=FakeClient([submit()]))
+    assert result.calculations == []
 
 
 def test_submit_memo_ends_run_immediately():

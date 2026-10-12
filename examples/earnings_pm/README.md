@@ -34,8 +34,12 @@ arguments.
   line per event (each request, web search, page fetch and tool call), so
   `python -m earnings_pm MSFT > msft.md` gives you just the memo.
 - `--out DIR` also writes `DIR/TICKER.md` and `DIR/TICKER.json`. The JSON file
-  holds the structured memo plus the model, effort, request count and token
-  counts.
+  holds the structured memo plus the model, effort, request count, token totals
+  (`input_tokens`, `output_tokens`, `cache_read_input_tokens`,
+  `cache_creation_input_tokens`), a per-request `usage` list with the same four
+  counts, and `calculations`: every `compute_metrics` call in order, as
+  `{"tool_use_id", "input", "output"}`, or `{"tool_use_id", "input", "error"}`
+  when the call failed.
 - Defaults: `--model claude-opus-5-5`, `--effort high`, `--max-requests 20`.
 
 Exit codes:
@@ -72,7 +76,10 @@ Exit codes:
    it read. Growth rates, margins, margin changes and free cash flow are
    computed in `earnings_pm/metrics.py`, so they can be reproduced. The model
    is told not to do this arithmetic itself. A missing input or a division by
-   zero gives `null`, never 0.
+   zero gives `null`, never 0. Every call's input and output (or error) is
+   recorded and saved under `calculations` in the `--out` JSON, so any number
+   in the memo can be traced to the figures it came from and recomputed with
+   `earnings_pm.metrics.run_metrics_tool(input)`.
 4. **The memo: `submit_memo`.** The model hands back the memo as structured
    input checked against a strict JSON schema (`earnings_pm/memo.py`), and that
    ends the run. If the model stops without calling it, it gets one reminder; a
@@ -89,8 +96,15 @@ Exit codes:
   release alone.
 - **A run costs real API tokens.** Each run makes several requests to a large
   model with high effort, and web search and fetch results count as input
-  tokens. The token totals are printed on stderr and saved in the `--out` JSON.
-  Use `--effort` and `--max-requests` to bound the cost.
+  tokens. Every request re-sends the whole conversation so far, so automatic
+  prompt caching is on (`cache_control={"type": "ephemeral"}`): each request
+  writes its prefix to the cache (`cache_creation_input_tokens`) and the next
+  one reads it back (`cache_read_input_tokens`) at a tenth of the input price.
+  The system prompt and tool list are fixed for the whole run and the history
+  is append-only, so the prefix stays cacheable. `input_tokens` counts only the
+  uncached part. The totals, including both cache counts, are printed on the
+  stderr `[done]` line, and the `--out` JSON also has them per request under
+  `usage`. Use `--effort` and `--max-requests` to bound the cost.
 - Money is reported in the release's currency and units as reported. Nothing
   is converted.
 - The memo is a starting point for a human reader, not investment advice.

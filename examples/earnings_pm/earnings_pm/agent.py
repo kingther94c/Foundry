@@ -9,9 +9,10 @@ through untouched. The conversation is append-only.
 
 from __future__ import annotations
 
+import copy
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .edgar import COMPANY_FACTS_TOOL, EdgarClient, run_company_facts_tool
@@ -21,6 +22,18 @@ from .metrics import METRICS_TOOL, run_metrics_tool
 DEFAULT_MODEL = "claude-opus-5-5"
 BETAS = ["server-side-fallback-2026-07-01"]
 MAX_TOKENS = 16000
+# Automatic prompt caching: the API caches each request up to its last
+# cacheable block, so the next request reads the shared prefix at a tenth of
+# the input price. This needs a byte-stable prefix: the system prompt and tool
+# list are built once per run and the history is append-only.
+CACHE_CONTROL: dict[str, str] = {"type": "ephemeral"}
+
+USAGE_FIELDS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+)
 
 _PROMPT_INTRO = """\
 You are an equity analyst. You write for a portfolio manager who holds the stock \
@@ -124,6 +137,23 @@ class AgentResult:
     requests: int
     input_tokens: int
     output_tokens: int
+    cache_read_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    # One entry per request: {input_tokens, output_tokens,
+    # cache_read_input_tokens, cache_creation_input_tokens}; None counts as 0.
+    usage: list[dict[str, int]] = field(default_factory=list)
+    # One entry per compute_metrics call, in order: {"tool_use_id", "input",
+    # "output"} on success or {"tool_use_id", "input", "error"} on failure.
+    calculations: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _usage_entry(usage: Any) -> dict[str, int]:
+    """Token counts of one response; a missing or None count is 0."""
+    entry: dict[str, int] = {}
+    for name in USAGE_FIELDS:
+        value = getattr(usage, name, None) if usage is not None else None
+        entry[name] = value if isinstance(value, int) else 0
+    return entry
 
 
 def _short(value: Any, limit: int = 200) -> str:
@@ -144,8 +174,11 @@ def _describe_server_tool(block: Any) -> str:
 
 def _run_client_tool(
     block: Any, edgar: EdgarClient | None
-) -> tuple[str, bool]:
-    """Execute one client tool_use block. Returns (content, is_error)."""
+) -> tuple[str, bool, Any]:
+    """Execute one client tool_use block. Returns (content, is_error, result).
+
+    ``result`` is the tool's return value on success and None on error.
+    """
     name = getattr(block, "name", None)
     tool_input = getattr(block, "input", None)
     try:
@@ -157,13 +190,14 @@ def _run_client_tool(
                     "EDGAR is not configured for this run; use the web tools on "
                     "the company's investor-relations page or a newswire instead.",
                     True,
+                    None,
                 )
             result = run_company_facts_tool(edgar, tool_input)
         else:
-            return f"unknown tool: {name!r}", True
+            return f"unknown tool: {name!r}", True, None
     except Exception as exc:  # any tool failure goes back to the model
-        return f"{type(exc).__name__}: {exc}", True
-    return json.dumps(result), False
+        return f"{type(exc).__name__}: {exc}", True, None
+    return json.dumps(result), False, result
 
 
 def run_agent(
@@ -199,8 +233,8 @@ def run_agent(
     system_prompt = build_system_prompt(edgar is not None)
     tools = build_tools(edgar is not None)
     requests = 0
-    input_tokens = 0
-    output_tokens = 0
+    usage_log: list[dict[str, int]] = []
+    calculations: list[dict[str, Any]] = []
     continuations = 0
     reminded = False
 
@@ -220,11 +254,9 @@ def run_agent(
             system=system_prompt,
             tools=tools,
             messages=messages,
+            cache_control=CACHE_CONTROL,
         )
-        usage = getattr(response, "usage", None)
-        if usage is not None:
-            input_tokens += getattr(usage, "input_tokens", 0) or 0
-            output_tokens += getattr(usage, "output_tokens", 0) or 0
+        usage_log.append(_usage_entry(getattr(response, "usage", None)))
 
         stop_reason = getattr(response, "stop_reason", None)
         if stop_reason == "refusal":
@@ -254,12 +286,17 @@ def run_agent(
                 memo = block.input
                 if not isinstance(memo, dict):
                     raise AgentError(f"submit_memo input is not an object: {memo!r}")
+                totals = {
+                    name: sum(entry[name] for entry in usage_log)
+                    for name in USAGE_FIELDS
+                }
                 return AgentResult(
                     memo=memo,
                     markdown=render_markdown(memo),
                     requests=requests,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
+                    usage=usage_log,
+                    calculations=calculations,
+                    **totals,
                 )
 
         if stop_reason == "pause_turn":
@@ -278,7 +315,18 @@ def run_agent(
             results: list[dict[str, Any]] = []
             for block in client_calls:
                 emit("tool", f"{block.name}: {_short(block.input)}")
-                result_content, is_error = _run_client_tool(block, edgar)
+                recorded_input = copy.deepcopy(block.input)
+                result_content, is_error, raw = _run_client_tool(block, edgar)
+                if block.name == "compute_metrics":
+                    record: dict[str, Any] = {
+                        "tool_use_id": block.id,
+                        "input": recorded_input,
+                    }
+                    if is_error:
+                        record["error"] = result_content
+                    else:
+                        record["output"] = raw
+                    calculations.append(record)
                 result: dict[str, Any] = {
                     "type": "tool_result",
                     "tool_use_id": block.id,

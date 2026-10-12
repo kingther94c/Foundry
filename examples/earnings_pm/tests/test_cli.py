@@ -33,20 +33,35 @@ MEMO = {
 }
 
 
-def response(stop_reason, *blocks, stop_details=None, inp=10, out=5):
+def response(stop_reason, *blocks, stop_details=None, inp=10, out=5,
+             cache_read=None, cache_creation=None):
     return SimpleNamespace(
         stop_reason=stop_reason,
         stop_details=stop_details,
         content=list(blocks),
-        usage=SimpleNamespace(input_tokens=inp, output_tokens=out),
+        usage=SimpleNamespace(
+            input_tokens=inp,
+            output_tokens=out,
+            cache_read_input_tokens=cache_read,
+            cache_creation_input_tokens=cache_creation,
+        ),
     )
 
 
-def submit():
+def submit(cache_read=None, cache_creation=None):
     block = SimpleNamespace(
         type="tool_use", id="tu_submit", name="submit_memo", input=copy.deepcopy(MEMO)
     )
-    return response("tool_use", block, inp=100, out=50)
+    return response("tool_use", block, inp=100, out=50,
+                    cache_read=cache_read, cache_creation=cache_creation)
+
+
+# Synthetic raw figures for compute_metrics.
+def _period(label, revenue):
+    return {"label": label, "revenue": revenue, "operating_income": revenue / 4}
+
+
+METRICS_INPUT = {"current": _period("Q3 2026", 1200.0), "prior_year": _period("Q3 2025", 1000.0)}
 
 
 class FakeClient:
@@ -110,12 +125,65 @@ def test_success_with_out(tmp_path, capsys):
         "requests": 1,
         "input_tokens": 100,
         "output_tokens": 50,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "usage": [
+            {"input_tokens": 100, "output_tokens": 50,
+             "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
+        ],
+        "calculations": [],
     }
 
     [call] = client.calls
     assert call["output_config"] == {"effort": "medium"}
     # No EARNINGS_PM_USER_AGENT: EDGAR is not offered.
     assert "get_company_facts" not in {t["name"] for t in call["tools"]}
+
+
+def test_out_json_has_calculations_and_usage(tmp_path, capsys):
+    metrics_call = SimpleNamespace(
+        type="tool_use", id="tu_m", name="compute_metrics", input=copy.deepcopy(METRICS_INPUT)
+    )
+    bad_call = SimpleNamespace(
+        type="tool_use", id="tu_bad", name="compute_metrics", input={"nope": 1}
+    )
+    client = FakeClient(
+        [
+            response("tool_use", metrics_call, bad_call, inp=1000, out=200,
+                     cache_read=None, cache_creation=1500),
+            submit(cache_read=1500, cache_creation=None),
+        ]
+    )
+    code = main(["EXMP", "--out", str(tmp_path)], client_factory=factory_for(client))
+    assert code == 0
+    for call in client.calls:
+        assert call["cache_control"] == {"type": "ephemeral"}
+
+    record = json.loads((tmp_path / "EXMP.json").read_text(encoding="utf-8"))
+    assert record["requests"] == 2
+    assert record["input_tokens"] == 1100
+    assert record["output_tokens"] == 250
+    assert record["cache_read_input_tokens"] == 1500
+    assert record["cache_creation_input_tokens"] == 1500
+    assert record["usage"] == [
+        {"input_tokens": 1000, "output_tokens": 200,
+         "cache_read_input_tokens": 0, "cache_creation_input_tokens": 1500},
+        {"input_tokens": 100, "output_tokens": 50,
+         "cache_read_input_tokens": 1500, "cache_creation_input_tokens": 0},
+    ]
+    ok, bad = record["calculations"]
+    assert ok["tool_use_id"] == "tu_m"
+    assert ok["input"] == METRICS_INPUT
+    assert ok["output"]["yoy"]["revenue_growth"] == pytest.approx(0.2)
+    assert bad["tool_use_id"] == "tu_bad"
+    assert bad["input"] == {"nope": 1}
+    assert "error" in bad and "output" not in bad
+
+    done = [l for l in capsys.readouterr().err.splitlines() if l.startswith("[done]")]
+    assert done == [
+        "[done] requests=2 input_tokens=1100 output_tokens=250 "
+        "cache_read_input_tokens=1500 cache_creation_input_tokens=1500"
+    ]
 
 
 def test_edgar_enabled_by_user_agent(monkeypatch, capsys):

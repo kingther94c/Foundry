@@ -102,7 +102,14 @@ response = client.beta.messages.create(
   - `"max_tokens"`: the answer was cut off; treat as an error.
   - `"refusal"`: declined; `response.stop_details` (may be None) has `category`
     and `explanation`. Check this before reading content.
-- Usage: `response.usage.input_tokens`, `response.usage.output_tokens`.
+- Usage: `response.usage.input_tokens`, `response.usage.output_tokens`,
+  `response.usage.cache_read_input_tokens` and
+  `response.usage.cache_creation_input_tokens` (the last two may be None).
+- Prompt caching: pass `cache_control={"type": "ephemeral"}` as a top-level
+  argument of `create(...)`; the API then caches the request up to its last
+  cacheable block, and the next request reads that prefix at a tenth of the
+  input price. It only works while the prefix is byte-stable: the same system
+  prompt and tool list for the whole run, and the append-only history.
 - Errors to catch, most specific first: `anthropic.AuthenticationError`,
   `anthropic.RateLimitError`, `anthropic.BadRequestError`,
   `anthropic.APIStatusError`, `anthropic.APIConnectionError`. The SDK already
