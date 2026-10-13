@@ -292,7 +292,7 @@ class Roles:
   "brier_by_perspective": {name: ...}, "correct_weighted": (prob_weighted >
   0.5) == actual_up, "correct_judge": ...}` (Brier for one forecast is
   `(p - y) ** 2`).
-- `train(root, case_ids, playbook_path, roles, seed=0, mask_config=MaskConfig()) -> list[dict]`:
+- `train(root, case_ids, playbook_path, roles, seed=0, mask_config=MaskConfig(), knowledge_cutoff=None) -> list[dict]`:
   for each case in order, with `rng = random.Random(f"{seed}:{case_id}")`:
   mask (reuse `masked.json` if it exists, else `mask_case` and save), analyze
   with the current playbook, **write `<root>/<case_id>/prediction.json`
@@ -302,20 +302,31 @@ class Roles:
   lessons rejected) to `history`, save the playbook. Returns the scores.
   A case whose masking ends `"identifiable"` is skipped (recorded in history
   with `"skipped": "identifiable"`), because its analysis could rely on
-  recognizing the company.
-- `evaluate(root, case_ids, playbook_path, roles, seed=0, mask_config=MaskConfig()) -> dict`:
-  the same masking, analysis, sealing and scoring, but the playbook is loaded
+  recognizing the company -- unless `knowledge_cutoff` (an ISO date string:
+  the last date the models can know anything about) is given and the case's
+  `event_date` is after it. Then the models cannot have seen how the stock
+  reacted: recognizing the company gives them priors, not the answer. Large
+  companies are rarely maskable (their segment structure and ratios name
+  them), so this is what lets them be used. Such a case is analyzed, scored,
+  and reflected on like any other. Every scored record carries
+  `"identifiable": bool` (whether masking ended `"identifiable"`).
+- `evaluate(root, case_ids, playbook_path, roles, seed=0, mask_config=MaskConfig(), knowledge_cutoff=None) -> dict`:
+  the same masking, skipping (with the same `knowledge_cutoff` rule),
+  analysis, sealing and scoring, but the playbook is loaded
   and **never written or changed**, and nothing is reflected. Returns
   `{"cases": [scores...], "n": count scored, "brier_weighted",
   "brier_judge", "brier_uniform", "brier_coin", "accuracy_weighted",
-  "accuracy_judge"}` where `brier_uniform` combines the views with equal
+  "accuracy_judge", "n_identifiable"}` where `n_identifiable` counts the
+  scored cases whose masking ended `"identifiable"`, and `brier_uniform` combines the views with equal
   weights and `brier_coin` forecasts 0.5 every time; means over scored cases,
   None when no case was scored.
 
 ## researchos.__main__
 
-`python -m researchos train --root DIR --playbook FILE --ids ID[,ID...] [--seed N]`
-and `python -m researchos evaluate ...` (same arguments): build `Roles` from
+`python -m researchos train --root DIR --playbook FILE --ids ID[,ID...] [--seed N] [--knowledge-cutoff YYYY-MM-DD]`
+and `python -m researchos evaluate ...` (same arguments; `--knowledge-cutoff`
+is passed on as `knowledge_cutoff`, and a value that is not an ISO date is a
+bad argument): build `Roles` from
 `ClaudeJSON(anthropic.Anthropic())` (one instance per role; masker and
 guesser at effort `"medium"`, the others at `"high"`), run, and print the
 scores to stdout as JSON -- nothing else goes to stdout; messages go to

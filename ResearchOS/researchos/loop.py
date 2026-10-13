@@ -6,6 +6,7 @@ import json
 import logging
 import random
 from dataclasses import asdict, dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -75,14 +76,44 @@ def _seal(root, analysis: Analysis) -> None:
                     encoding="utf-8")
 
 
-def _predict(root, case_id, playbook, roles, seed, mask_config, split):
+def parse_cutoff(knowledge_cutoff) -> date | None:
+    """The knowledge cutoff as a date (None stays None); ValueError if not an ISO date."""
+    if knowledge_cutoff is None:
+        return None
+    if isinstance(knowledge_cutoff, date):
+        return knowledge_cutoff
+    if not isinstance(knowledge_cutoff, str):
+        raise ValueError(f"knowledge_cutoff must be an ISO date string, got {knowledge_cutoff!r}")
+    try:
+        return date.fromisoformat(knowledge_cutoff.strip())
+    except ValueError:
+        raise ValueError(f"knowledge_cutoff is not an ISO date: {knowledge_cutoff!r}") from None
+
+
+def _after_cutoff(case, cutoff: date | None) -> bool:
+    """True only if the case's event date is known and strictly after the cutoff."""
+    if cutoff is None:
+        return False
+    try:
+        event = date.fromisoformat(str(case.event_date).strip())
+    except ValueError:
+        log.warning("%s: event_date %r is not an ISO date; treated as not after the "
+                    "knowledge cutoff", case.case_id, case.event_date)
+        return False
+    return event > cutoff
+
+
+def _predict(root, case_id, playbook, roles, seed, mask_config, split, cutoff=None):
     """Mask, analyze and seal one case. Returns (case, masked, analysis); analysis None if skipped."""
     case = load_case(root, case_id)
     rng = random.Random(f"{seed}:{case_id}")
     masked = _get_masked(root, case, roles, rng, mask_config)
     if masked.status == "identifiable":
-        log.warning("%s: %s skipped, masking left it identifiable", split, case_id)
-        return case, masked, None
+        if not _after_cutoff(case, cutoff):
+            log.warning("%s: %s skipped, masking left it identifiable", split, case_id)
+            return case, masked, None
+        log.warning("%s: %s is identifiable but its event date %s is after the knowledge "
+                    "cutoff %s; analyzing it", split, case_id, case.event_date, cutoff)
     analysis = analyze(masked, _analysis_playbook(playbook, case), roles.analyst, roles.judge)
     _seal(root, analysis)
     return case, masked, analysis
@@ -95,12 +126,13 @@ def _open_playbook(playbook_path) -> Playbook:
 
 
 def train(root, case_ids, playbook_path, roles: Roles, seed=0,
-          mask_config: MaskConfig = MaskConfig()) -> list[dict]:
+          mask_config: MaskConfig = MaskConfig(), knowledge_cutoff=None) -> list[dict]:
+    cutoff = parse_cutoff(knowledge_cutoff)
     playbook = _open_playbook(playbook_path)
     results: list[dict] = []
     for case_id in case_ids:
         case, masked, analysis = _predict(root, case_id, playbook, roles, seed, mask_config,
-                                          "train")
+                                          "train", cutoff)
         if analysis is None:
             playbook.history.append(
                 {"case_id": case_id, "split": "train", "skipped": "identifiable"})
@@ -111,7 +143,9 @@ def train(root, case_ids, playbook_path, roles: Roles, seed=0,
         update_weights(playbook, analysis.views, record["actual_up"])
         lessons = reflect(case, masked, analysis, outcome, roles.reflector)
         rejected = add_lessons(playbook, lessons, identity_terms(case))
-        record = {"case_id": case_id, "split": "train", **record, "lessons_rejected": rejected}
+        record = {"case_id": case_id, "split": "train", **record,
+                  "identifiable": masked.status == "identifiable",
+                  "lessons_rejected": rejected}
         playbook.history.append(record)
         save_playbook(playbook_path, playbook)
         results.append(record)
@@ -123,7 +157,8 @@ def _mean(values: list[float]) -> float | None:
 
 
 def evaluate(root, case_ids, playbook_path, roles: Roles, seed=0,
-             mask_config: MaskConfig = MaskConfig()) -> dict:
+             mask_config: MaskConfig = MaskConfig(), knowledge_cutoff=None) -> dict:
+    cutoff = parse_cutoff(knowledge_cutoff)
     if Path(playbook_path).is_file():
         playbook = load_playbook(playbook_path)
     else:
@@ -131,7 +166,8 @@ def evaluate(root, case_ids, playbook_path, roles: Roles, seed=0,
         playbook = Playbook.initial()
     records: list[dict] = []
     for case_id in case_ids:
-        _, _, analysis = _predict(root, case_id, playbook, roles, seed, mask_config, "eval")
+        _, masked, analysis = _predict(root, case_id, playbook, roles, seed, mask_config,
+                                       "eval", cutoff)
         if analysis is None:
             continue
         outcome = load_outcome(root, case_id)  # only after the prediction is sealed
@@ -140,7 +176,8 @@ def evaluate(root, case_ids, playbook_path, roles: Roles, seed=0,
         probs = [v.prob_up for v in analysis.views.values()]
         uniform = sum(probs) / len(probs)
         records.append({"case_id": case_id, "split": "eval", **record,
-                        "brier_uniform": _brier(uniform, y)})
+                        "brier_uniform": _brier(uniform, y),
+                        "identifiable": masked.status == "identifiable"})
     n = len(records)
     return {
         "cases": records,
@@ -151,4 +188,5 @@ def evaluate(root, case_ids, playbook_path, roles: Roles, seed=0,
         "brier_coin": _mean([0.25 for _ in records]),
         "accuracy_weighted": _mean([1.0 if r["correct_weighted"] else 0.0 for r in records]),
         "accuracy_judge": _mean([1.0 if r["correct_judge"] else 0.0 for r in records]),
+        "n_identifiable": sum(1 for r in records if r["identifiable"]),
     }

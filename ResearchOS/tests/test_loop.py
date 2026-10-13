@@ -171,9 +171,109 @@ def test_evaluate_with_nothing_scored(tmp_path):
     result = evaluate(root, ["a"], pb_path, make_roles(guesser=FakeLLM(responses=[hit])))
     assert result == {"cases": [], "n": 0, "brier_weighted": None, "brier_judge": None,
                       "brier_uniform": None, "brier_coin": None, "accuracy_weighted": None,
-                      "accuracy_judge": None}
+                      "accuracy_judge": None, "n_identifiable": 0}
     assert not pb_path.exists()
     assert evaluate(root, [], pb_path, make_roles())["n"] == 0
+
+
+HIT = {"guesses": [{"company": "Acme Widgets", "ticker": "ACMW", "confidence": 1.0}],
+       "clues": ["obvious"]}
+
+
+def test_scored_records_say_whether_masking_held(tmp_path):
+    root = setup_root(tmp_path, [("acme-q4", 0.02)])
+    results = train(root, ["acme-q4"], tmp_path / "pb.json", make_roles())
+    assert results[0]["identifiable"] is False
+    report = evaluate(root, ["acme-q4"], tmp_path / "pb.json", make_roles())
+    assert report["cases"][0]["identifiable"] is False
+    assert report["n_identifiable"] == 0
+
+
+def test_train_analyzes_identifiable_case_after_knowledge_cutoff(tmp_path, monkeypatch):
+    # make_case's event_date is 2026-02-01
+    root = setup_root(tmp_path, [("acme-q4", 0.02)])
+    real = cases_mod.load_outcome
+
+    def guarded(r, cid):
+        assert (root / cid / "prediction.json").is_file(), "outcome read before sealing"
+        return real(r, cid)
+
+    monkeypatch.setattr(loop_mod, "load_outcome", guarded)
+    roles = make_roles(guesser=FakeLLM(responses=[HIT]))
+    pb_path = tmp_path / "pb.json"
+    results = train(root, ["acme-q4"], pb_path, roles, knowledge_cutoff="2026-01-31")
+    assert len(results) == 1
+    rec = results[0]
+    assert rec["case_id"] == "acme-q4" and rec["split"] == "train"
+    assert rec["identifiable"] is True and rec["actual_up"] is True
+    assert "skipped" not in rec
+    assert json.loads((root / "acme-q4" / "masked.json").read_text(encoding="utf-8"))[
+        "status"] == "identifiable"
+    assert len(roles.analyst.calls) == len(PERSPECTIVES) and len(roles.judge.calls) == 1
+    assert len(roles.reflector.calls) == 1
+    pb = load_playbook(pb_path)
+    assert pb.history == results
+    assert pb.weights != Playbook.initial().weights
+    assert [l.text for l in pb.lessons] == ["Guidance raises dominate the reaction."]
+    # still nothing identifying reaches the analyst or judge
+    terms = identity_terms(make_case("acme-q4"))
+    for t in roles.analyst.texts() + roles.judge.texts():
+        assert not find_terms(t, terms), t
+
+
+@pytest.mark.parametrize("cutoff", ["2026-02-01", "2026-06-30"])
+def test_identifiable_case_on_or_before_cutoff_is_still_skipped(tmp_path, cutoff):
+    root = setup_root(tmp_path, [("acme-q4", 0.02)])
+    roles = make_roles(guesser=FakeLLM(responses=[HIT]))
+    pb_path = tmp_path / "pb.json"
+    assert train(root, ["acme-q4"], pb_path, roles, knowledge_cutoff=cutoff) == []
+    assert not roles.analyst.calls and not roles.reflector.calls
+    assert not (root / "acme-q4" / "prediction.json").exists()
+    pb = load_playbook(pb_path)
+    assert pb.history == [{"case_id": "acme-q4", "split": "train", "skipped": "identifiable"}]
+    result = evaluate(root, ["acme-q4"], pb_path, roles, knowledge_cutoff=cutoff)
+    assert result["n"] == 0 and result["n_identifiable"] == 0
+
+
+def test_identifiable_case_with_unparseable_event_date_is_skipped(tmp_path):
+    root = tmp_path / "cases"
+    case = make_case("acme-q4")
+    case.event_date = ""
+    save_case(root, case, make_outcome(ar=0.02))
+    roles = make_roles(guesser=FakeLLM(responses=[HIT]))
+    assert train(root, ["acme-q4"], tmp_path / "pb.json", roles,
+                 knowledge_cutoff="2020-01-01") == []
+    assert not roles.analyst.calls
+
+
+def test_evaluate_counts_identifiable_cases(tmp_path):
+    root = setup_root(tmp_path, [("a", 0.02), ("b", -0.03)])
+    pb_path = tmp_path / "pb.json"
+    save_playbook(pb_path, Playbook.initial())
+    # "a" is masked fine; "b" stays identifiable
+    train(root, ["a"], tmp_path / "other.json", make_roles())
+    roles = make_roles(guesser=FakeLLM(responses=[HIT]))
+    before = pb_path.read_bytes()
+    result = evaluate(root, ["a", "b"], pb_path, roles, knowledge_cutoff="2025-12-31")
+    assert pb_path.read_bytes() == before and not roles.reflector.calls
+    assert result["n"] == 2 and result["n_identifiable"] == 1
+    assert [(r["case_id"], r["identifiable"]) for r in result["cases"]] == [("a", False),
+                                                                           ("b", True)]
+    assert (root / "b" / "prediction.json").is_file()
+    # without the cutoff the identifiable case is skipped again
+    result = evaluate(root, ["a", "b"], pb_path, make_roles())
+    assert result["n"] == 1 and result["n_identifiable"] == 0
+
+
+@pytest.mark.parametrize("bad", ["yesterday", "2026-13-01", "", 20260101])
+def test_bad_knowledge_cutoff_raises(tmp_path, bad):
+    root = setup_root(tmp_path, [("acme-q4", 0.02)])
+    roles = make_roles()
+    with pytest.raises(ValueError):
+        train(root, ["acme-q4"], tmp_path / "pb.json", roles, knowledge_cutoff=bad)
+    with pytest.raises(ValueError):
+        evaluate(root, ["acme-q4"], tmp_path / "pb.json", roles, knowledge_cutoff=bad)
+    assert not roles.masker.calls and not (tmp_path / "pb.json").exists()
 
 
 def test_same_seed_same_masking(tmp_path):

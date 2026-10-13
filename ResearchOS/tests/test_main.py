@@ -1,6 +1,7 @@
 import json
 
-from conftest import FakeClient, make_case, make_outcome, schema_client, text_response
+from conftest import (FakeClient, default_answer, make_case, make_outcome, schema_client,
+                      text_response)
 
 from researchos.__main__ import main
 from researchos.cases import save_case
@@ -39,12 +40,59 @@ def test_train_then_evaluate(tmp_path, capsys):
     assert result["n"] == 1
 
 
+def test_knowledge_cutoff_is_passed_on(tmp_path, capsys, monkeypatch):
+    import researchos.__main__ as main_mod
+
+    root = setup_root(tmp_path)
+    seen = []
+
+    def fake_run(root_, ids, playbook, roles, seed=0, knowledge_cutoff=None):
+        seen.append(knowledge_cutoff)
+        return {"n": 0}
+
+    monkeypatch.setattr(main_mod, "train", fake_run)
+    monkeypatch.setattr(main_mod, "evaluate", fake_run)
+    for cmd in ("train", "evaluate"):
+        assert main([cmd, "--root", str(root), "--playbook", str(tmp_path / "pb.json"),
+                     "--ids", "a", "--knowledge-cutoff", "2026-01-31"],
+                    client_factory=schema_client) == 0
+        assert json.loads(capsys.readouterr().out) == {"n": 0}
+    assert main(["train", "--root", str(root), "--playbook", str(tmp_path / "pb.json"),
+                 "--ids", "a"], client_factory=schema_client) == 0
+    assert seen == ["2026-01-31", "2026-01-31", None]
+
+
+def test_knowledge_cutoff_scores_identifiable_case(tmp_path, capsys):
+    root = setup_root(tmp_path)  # event_date 2026-02-01
+
+    def responder(kwargs):
+        schema = kwargs["output_config"]["format"]["schema"]
+        prompt = kwargs["messages"][0]["content"][-1]["text"]
+        if "guesses" in schema["properties"]:
+            body = {"guesses": [{"company": "Acme", "ticker": "ACMW", "confidence": 1.0}],
+                    "clues": []}
+        else:
+            body = default_answer(schema, prompt)
+        return text_response(json.dumps(body))
+
+    code = main(["evaluate", "--root", str(root), "--playbook", str(tmp_path / "pb.json"),
+                 "--ids", "a,b", "--knowledge-cutoff", "2026-01-01"],
+                client_factory=lambda: FakeClient(responder))
+    assert code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["n"] == 2 and result["n_identifiable"] == 2
+    assert all(c["identifiable"] is True for c in result["cases"])
+
+
 def test_bad_arguments_exit_2(tmp_path, capsys):
     assert main([]) == 2
     assert main(["fly", "--root", "x", "--playbook", "p", "--ids", "a"]) == 2
     assert main(["train", "--root", "x", "--playbook", "p"]) == 2
     assert main(["train", "--root", "x", "--playbook", "p", "--ids", "a",
                  "--seed", "nope"]) == 2
+    for bad in ("nope", "2026-02-30", "01/02/2026", ""):
+        assert main(["evaluate", "--root", "x", "--playbook", "p", "--ids", "a",
+                     "--knowledge-cutoff", bad]) == 2
     assert main(["train", "--root", "x", "--playbook", "p", "--ids", " , "]) == 2
     assert capsys.readouterr().out == ""
 

@@ -1,6 +1,7 @@
 """Command line.
 
     python -m researchos {train,evaluate} --root DIR --playbook FILE --ids ID[,ID...] [--seed N]
+                                          [--knowledge-cutoff YYYY-MM-DD]
     python -m researchos build --root DIR --spec FILE --closes FILE --market-closes FILE
 """
 
@@ -15,8 +16,17 @@ from pathlib import Path
 
 from researchos.cases import CASE_FILE, load_outcome
 from researchos.llm import ClaudeJSON, LLMError, anthropic_client
-from researchos.loop import Roles, evaluate, train
+from researchos.loop import Roles, evaluate, parse_cutoff, train
 from researchos.sources import build_case, fetch_pages, load_case_spec, load_closes
+
+
+def _iso_date(value: str) -> str:
+    """argparse type: an ISO date, passed on as the string given (stripped)."""
+    try:
+        parse_cutoff(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not an ISO date (YYYY-MM-DD): {value!r}") from None
+    return value.strip()
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -28,6 +38,10 @@ def _parser() -> argparse.ArgumentParser:
         p.add_argument("--playbook", required=True)
         p.add_argument("--ids", required=True, help="comma-separated case ids")
         p.add_argument("--seed", type=int, default=0)
+        p.add_argument("--knowledge-cutoff", dest="knowledge_cutoff", type=_iso_date,
+                       default=None,
+                       help="last date the models can know about (YYYY-MM-DD); identifiable "
+                            "cases whose event date is after it are analyzed, not skipped")
     p = sub.add_parser("build")
     p.add_argument("--root", required=True)
     p.add_argument("--spec", required=True, help="JSON file holding one CaseSpec")
@@ -69,7 +83,8 @@ def main(argv=None, *, client_factory=None) -> int:
         client = (client_factory or anthropic_client)()
         roles = build_roles(client)
         run = train if args.command == "train" else evaluate
-        result = run(args.root, ids, args.playbook, roles, seed=args.seed)
+        result = run(args.root, ids, args.playbook, roles, seed=args.seed,
+                     knowledge_cutoff=args.knowledge_cutoff)
     except LLMError as exc:
         print(f"error: LLM call failed: {exc}", file=sys.stderr)
         return 1

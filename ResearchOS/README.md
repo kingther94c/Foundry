@@ -123,6 +123,16 @@ and removed the marker matching it replaced; on 20,000 random inputs it
 agrees with the hand-written version, except that it also rejects a boolean
 where a line number should be.
 
+The first real masks then showed that large companies cannot be masked:
+after four rounds and some 200 redactions the guesser still named JPMorgan
+and Apple at 0.97 and 0.99 -- segment structure and ratios survive any
+renaming -- so every such case would have been skipped. Skipping exists so
+the analyst cannot recall how the stock reacted; for an event after the
+models' knowledge cutoff there is nothing to recall. `--knowledge-cutoff`
+keeps identifiable cases whose event date is after it, and every scored
+record says whether masking held. Foundry made the change in 13 rounds
+(~$0.48).
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

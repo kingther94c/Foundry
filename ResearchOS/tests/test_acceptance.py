@@ -499,6 +499,41 @@ def test_evaluate_with_no_scored_case(tmp_path):
     assert report["n"] == 0 and report["brier_judge"] is None
 
 
+def test_identifiable_case_after_the_knowledge_cutoff_is_used(two_cases):
+    r = roles(identified=True)
+    scores = loop.train(two_cases, ["c1"], two_cases / "pb.json", r,
+                        mask_config=masking.MaskConfig(max_rounds=1), knowledge_cutoff="2026-06-30")
+    assert len(scores) == 1 and scores[0]["identifiable"] is True and "skipped" not in scores[0]
+    assert len(r.analyst.calls) == len(perspectives.PERSPECTIVES) and len(r.reflector.calls) == 1
+    book = playbook.load_playbook(two_cases / "pb.json")
+    assert book.history[0]["identifiable"] is True and book.lessons
+
+
+def test_identifiable_case_not_after_the_knowledge_cutoff_is_skipped(two_cases):
+    r = roles(identified=True)
+    loop.train(two_cases, ["c1"], two_cases / "pb.json", r,
+               mask_config=masking.MaskConfig(max_rounds=1), knowledge_cutoff="2026-07-30")
+    assert playbook.load_playbook(two_cases / "pb.json").history[0]["skipped"] == "identifiable"
+    assert r.analyst.calls == []
+
+
+def test_scored_records_say_whether_masking_held(two_cases):
+    scores = loop.train(two_cases, ["c1"], two_cases / "pb.json", roles())
+    assert scores[0]["identifiable"] is False
+
+
+def test_evaluate_counts_identifiable_cases(two_cases):
+    book_path = two_cases / "pb.json"
+    playbook.save_playbook(book_path, playbook.Playbook.initial())
+    report = loop.evaluate(two_cases, ["c1", "c2"], book_path, roles(identified=True),
+                           mask_config=masking.MaskConfig(max_rounds=1), knowledge_cutoff="2026-01-01")
+    assert report["n"] == 2 and report["n_identifiable"] == 2
+    assert all(c["identifiable"] is True for c in report["cases"] if "skipped" not in c)
+    # The saved masks are identifiable; without a cutoff both are skipped.
+    report = loop.evaluate(two_cases, ["c1", "c2"], book_path, roles())
+    assert report["n"] == 0 and report["n_identifiable"] == 0 and report["brier_judge"] is None
+
+
 # --- cli -----------------------------------------------------------------------
 
 def test_cli_bad_arguments():
@@ -570,3 +605,26 @@ def test_cli_missing_case_exits_1(tmp_path, capsys):
                  "--ids", "nope"], client_factory=ScriptedClient)
     assert code == 1
     assert capsys.readouterr().err.strip()
+
+
+class IdentifyingClient(ScriptedClient):
+    """Like ScriptedClient, but the guesser always names the company."""
+
+    def create(self, **kwargs):
+        if role_of(kwargs) == "guesser":
+            body = {"guesses": [{"company": "Zephyrex Corp", "ticker": "ZPX", "confidence": 0.9}],
+                    "clues": ["the segments"]}
+            usage = types.SimpleNamespace(input_tokens=1, output_tokens=1, cache_read_input_tokens=0,
+                                          cache_creation_input_tokens=0)
+            return types.SimpleNamespace(content=[text(json.dumps(body))], stop_reason="end_turn",
+                                         stop_details=None, usage=usage)
+        return super().create(**kwargs)
+
+
+def test_cli_knowledge_cutoff(two_cases, capsys):
+    from researchos.__main__ import main
+    args = ["train", "--root", str(two_cases), "--playbook", str(two_cases / "pb.json"), "--ids", "c1"]
+    assert main(args + ["--knowledge-cutoff", "2026-06-30"], client_factory=IdentifyingClient) == 0
+    trained = json.loads(capsys.readouterr().out)
+    assert trained[0]["identifiable"] is True
+    assert main(args + ["--knowledge-cutoff", "June 2026"], client_factory=IdentifyingClient) == 2
