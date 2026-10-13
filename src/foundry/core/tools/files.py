@@ -8,7 +8,6 @@ that caps results and says so beat one that silently truncated.
 from __future__ import annotations
 
 import fnmatch
-import hashlib
 import os
 import re
 import stat
@@ -427,10 +426,10 @@ class ReadFile:
             raise ToolError(f"{resolved.relative} appears to be binary; cannot read as text")
         text = raw.decode("utf-8", errors="replace")
 
-        # Record the digest even on a partial read: the patch tool re-checks the
-        # anchor anyway, and refusing to edit a file the model paged through
-        # would be worse than useless.
-        ctx.read_tracker.record(resolved.relative, hashlib.sha256(raw).hexdigest())
+        # Record the read even when partial: the patch tool re-checks the anchor
+        # anyway, and refusing to edit a file the model paged through would be
+        # worse than useless.
+        ctx.read_tracker.record(resolved.relative)
 
         lines = text.splitlines()
         start = op.args["start_line"]

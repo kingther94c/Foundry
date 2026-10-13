@@ -222,7 +222,6 @@ class RunCommand:
     name: str = "run_command"
     kind: ToolKind = ToolKind.MUTATOR
     recorder: Any = None  # SessionStore | None -- records command evidence
-    last_event_ordinal: int = 0
     history: list[dict[str, Any]] = field(default_factory=list)
 
     def schema(self) -> ToolSchema:
@@ -304,7 +303,6 @@ class RunCommand:
                 exit_code=result.exit_code, duration_ms=result.duration_ms,
                 stdout=result.stdout, stderr=result.stderr,
             )
-        self.last_event_ordinal = ordinal
         self.history.append({
             "command": op.args["command"],
             # Neither an incomplete capture nor a multi-statement chain can

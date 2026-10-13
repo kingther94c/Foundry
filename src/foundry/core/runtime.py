@@ -22,14 +22,11 @@ from foundry.core.backends.base import ModelBackend, TextDelta, TurnFinished, Us
 from foundry.core.context import ContextManager
 from foundry.core.conversation import Message, Role, ToolUseBlock, TurnRequest
 from foundry.core.errors import (
-    ApprovalDeclined,
     AuthError,
-    BudgetExceeded,
     Cancelled,
     FatalError,
     FoundryError,
     InvalidToolCall,
-    PolicyDenied,
     ToolError,
     TransientError,
 )

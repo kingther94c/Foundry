@@ -91,19 +91,16 @@ class ReadTracker:
     harness rather than trusting the model to remember.
     """
 
-    _digests: dict[str, str] = field(default_factory=dict)
+    _read: set[str] = field(default_factory=set)
 
-    def record(self, relative: str, digest: str) -> None:
-        self._digests[relative] = digest
-
-    def digest_at_read(self, relative: str) -> str | None:
-        return self._digests.get(relative)
+    def record(self, relative: str) -> None:
+        self._read.add(relative)
 
     def has_read(self, relative: str) -> bool:
-        return relative in self._digests
+        return relative in self._read
 
     def forget(self, relative: str) -> None:
-        self._digests.pop(relative, None)
+        self._read.discard(relative)
 
 
 def truncate_middle(text: str, limit: int) -> tuple[str, bool]:

@@ -29,7 +29,6 @@ from foundry.core.policy.segmenter import (
     effective_argv_candidates,
     SegmentedCommand,
     canonicalize,
-    effective_argv,
     paranoid_segments,
     segment_command,
 )
@@ -384,9 +383,6 @@ class PolicyEngine:
 
     def add_rule(self, rule: Rule) -> None:
         self.rules.append(rule)
-
-    def add_rules(self, rules: Iterable[Rule]) -> None:
-        self.rules.extend(rules)
 
     def grant_for_session(self, op: Operation) -> None:
         """In-memory only: a session grant never touches a config file."""

@@ -542,9 +542,7 @@ class ApplyPatch:
                           item.line_ending, item.had_bom)
             self.failures.pop(item.op.path, None)
             ctx.read_tracker.forget(item.relative)
-            ctx.read_tracker.record(
-                item.move_relative,
-                hashlib.sha256(item.move_target.read_bytes()).hexdigest())
+            ctx.read_tracker.record(item.move_relative)
             applied.append(f"updated and moved {item.relative} -> {item.move_relative}")
             return
 
@@ -552,8 +550,7 @@ class ApplyPatch:
         _write_atomic(item.path, item.new_text, "utf-8", item.line_ending, item.had_bom)
         self.failures.pop(item.op.path, None)
 
-        ctx.read_tracker.record(
-            item.relative, hashlib.sha256(item.path.read_bytes()).hexdigest())
+        ctx.read_tracker.record(item.relative)
         verb = "created" if item.op.action == "add" else "updated"
         notes = sorted(set(item.rungs) - {"exact"}) + list(item.notes)
         detail = f" [{', '.join(notes)}]" if notes else ""

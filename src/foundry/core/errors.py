@@ -56,10 +56,6 @@ class PolicyDenied(FoundryError):
     category = "policy_denied"
 
 
-class ApprovalDeclined(PolicyDenied):
-    category = "approval_declined"
-
-
 class ToolError(FoundryError):
     """The tool ran (or refused to run) and failed in a way the model should
     see and can act on."""
@@ -75,10 +71,6 @@ class StaleFileError(ToolError):
     """The file changed since the model last read it; never overwrite blind."""
 
     category = "stale_file"
-
-
-class BudgetExceeded(FoundryError):
-    category = "budget_exceeded"
 
 
 class Cancelled(FoundryError):

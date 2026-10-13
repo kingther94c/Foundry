@@ -35,7 +35,6 @@ class SessionReport:
     output_tokens: int = 0
     # A subset of input_tokens: the part the provider served from its cache.
     cached_input_tokens: int = 0
-    rejected_claims: int = 0
 
     @property
     def patch_first_try_rate(self) -> float | None:
