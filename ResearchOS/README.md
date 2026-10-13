@@ -66,6 +66,13 @@ Only `researchos/llm.py` talks to the API, and only through one method,
 `json(system, prompt, schema, *, prefix=None)`; every other module takes its
 agents as arguments, so the whole loop runs offline against fakes.
 
+## Runs
+
+[runs/2026-10-first-real-run](runs/2026-10-first-real-run/README.md): 15
+large-cap Q2 2026 reports, all after the models' knowledge cutoff. Every mask
+ended identifiable, ten cases trained the playbook, and five were held out.
+Read its caveats before its numbers.
+
 ## How it was built
 
 Foundry wrote the package from SPEC.md and FOUNDRY.md alone, in a fresh

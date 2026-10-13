@@ -1,0 +1,1502 @@
+[
+  {
+    "case_id": "case01",
+    "company": "JPMorgan Chase & Co.",
+    "ticker": "JPM",
+    "fiscal_period": "Q2 2026",
+    "report_date": "2026-07-14",
+    "timing": "bmo",
+    "built": true,
+    "event_date": "2026-07-14",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 26245,
+        "source": "https://www.sec.gov/Archives/edgar/data/19617/000162828026048078/a2q26erfexhibit991narrative.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 67651,
+        "source": "https://www.roic.ai/quote/JPM/transcripts/2026-year/2-quarter"
+      },
+      {
+        "kind": "expectations",
+        "chars": 2056,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": 0.021439688884391517,
+      "stock_return_1d": 0.024990284877290492,
+      "market_return_1d": 0.003550595992898975
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/19617/000162828026048078/a2q26erfexhibit991narrative.htm",
+      "https://www.roic.ai/quote/JPM/transcripts/2026-year/2-quarter",
+      "https://www.tradingkey.com/analysis/stocks/us-stocks/262028637-jpmorgan-jpm-q2-2026-earnings-preview-nii-guidance-338-tradingkey",
+      "https://finance.yahoo.com/markets/stocks/articles/jpmorgan-chase-jpm-q2-earnings-033252452.html",
+      "https://www.barchart.com/story/news/2644246/jpmorgan-chases-q2-2026-earnings-what-to-expect",
+      "https://www.hudson-labs.com/research/jpm-q2-2026-earnings",
+      "https://www.tipranks.com/news/jpmorgan-q2-earnings-preview-analysts-raise-jpm-stock-price-targets",
+      "https://finance.yahoo.com/markets/stocks/articles/unveiling-jpmorgan-chase-co-jpm-131502438.html"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 198,
+      "final_guesses": [
+        {
+          "company": "JPMorgan Chase & Co.",
+          "ticker": "JPM",
+          "confidence": 0.97
+        },
+        {
+          "company": "Bank of America Corporation",
+          "ticker": "BAC",
+          "confidence": 0.02
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.5914285714285715,
+      "prob_judge": 0.55,
+      "thesis": "The core numbers are clearly strong. EPS excluding significant items was $5.39 against a ~$4.85 consensus, about 10-13% above. Managed revenue excluding the gains was ~$46B against ~$43-45B. IB fees of $2.9B beat the $2.51B estimate, and book value per share also beat. Guidance moved the right way: NII ex-Markets rose to $84.7B from $83B on deposit balances, implying a higher exit rate, and card net charge-offs improved to ~3.2% from ~3.4%. That supports a positive tilt. Three things temper it. First, the $2.2B expense-guide raise is the kind of headline this megabank's stock has repeatedly sold off on despite beats. Second, management said outright that conditions are 'close to as good as it gets,' that the equities quarter (+86%) is unlikely to repeat, and that IB had some pull-forward. That invites a peak-earnings, sell-the-news reaction in a richly valued stock. Third, buyback language was softened and CET1 fell 20bp. A beat of this size, together with the NII and credit upgrades, should modestly outweigh those offsets. But the history of muted or negative first-day reactions to strong beats at mega-cap banks keeps conviction below the analysts' consensus of ~0.59.",
+      "views": {
+        "growth": {
+          "stance": "bullish",
+          "prob_up": 0.6,
+          "conviction": "medium"
+        },
+        "profitability": {
+          "stance": "bullish",
+          "prob_up": 0.6,
+          "conviction": "medium"
+        },
+        "guidance": {
+          "stance": "bullish",
+          "prob_up": 0.6,
+          "conviction": "medium"
+        },
+        "cash_flow": {
+          "stance": "bullish",
+          "prob_up": 0.58,
+          "conviction": "medium"
+        },
+        "management_tone": {
+          "stance": "bullish",
+          "prob_up": 0.58,
+          "conviction": "medium"
+        },
+        "expectations_gap": {
+          "stance": "bullish",
+          "prob_up": 0.6,
+          "conviction": "medium"
+        },
+        "risks": {
+          "stance": "bullish",
+          "prob_up": 0.58,
+          "conviction": "medium"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case02",
+    "company": "Netflix, Inc.",
+    "ticker": "NFLX",
+    "fiscal_period": "Q2 2026",
+    "report_date": "2026-07-16",
+    "timing": "amc",
+    "built": true,
+    "event_date": "2026-07-17",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 40374,
+        "source": "https://www.sec.gov/Archives/edgar/data/0001065280/000106528026000211/ex991_q226.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 36165,
+        "source": "https://www.roic.ai/quote/NFLX/transcripts/2026-year/2-quarter"
+      },
+      {
+        "kind": "expectations",
+        "chars": 1841,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": -0.06273228989119084,
+      "stock_return_1d": -0.07262945527908526,
+      "market_return_1d": -0.009897165387894424
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/0001065280/000106528026000211/ex991_q226.htm",
+      "https://www.roic.ai/quote/NFLX/transcripts/2026-year/2-quarter",
+      "https://www.spglobal.com/market-intelligence/en/news-insights/research/2026/07/netflix-earnings-preview-q2-2026",
+      "https://finance.yahoo.com/markets/stocks/articles/netflix-gears-report-q2-earnings-145700087.html",
+      "https://meyka.com/blog/netflix-nasdaq-nflx-q2-earnings-preview-revenue-expected-to-rise-13-5-to-12-57-billion-2607/",
+      "https://benzinga.com/article/11993803"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 283,
+      "final_guesses": [
+        {
+          "company": "Netflix",
+          "ticker": "NFLX",
+          "confidence": 0.97
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.3514335888698334,
+      "prob_judge": 0.36,
+      "thesis": "Q2 was a clean in-line print with little upside for a premium-multiple stock. Revenue of $4.20B matched guidance and consensus exactly. The operating-margin and EPS beat (33.4% vs ~33% consensus; $0.27 vs $0.26) was explicitly attributed to expense timing, and full-year margin was held at 31.5% rather than raised, which confirms it was not operating leverage. The full-year revenue range was only narrowed to $17.0-17.2B, not raised. Q3 guidance of 11.7% reported (11% FX-neutral) extends a visible slowdown from ~17% to ~12%, and North America decelerated to 10% despite a price increase. The softer signals tilt the read negative rather than offset it: view-hour reporting moves to an annual cadence, free trials are being re-tested, and Q2 FCF fell to $0.5B from $0.8B (partly a one-off tax timing effect). The panel's bearish lean is grounded in concrete datapoints (deceleration, no raise, in-line core line) rather than a remembered 'sell the news' prior, so the playbook caution against over-shading does not apply. Mitigants limit the downside: the narrowing implies a ~$17.1B midpoint above the old range midpoint, ads are on track for ~$1B, pricing is landing as expected, the buyback was a record $1.6B with $9.1B authorization left, and management's accuracy rules out a negative guidance shock. Net: modestly below a coin flip, close to the panel average.",
+      "views": {
+        "growth": {
+          "stance": "bearish",
+          "prob_up": 0.37,
+          "conviction": "medium"
+        },
+        "profitability": {
+          "stance": "bearish",
+          "prob_up": 0.38,
+          "conviction": "low"
+        },
+        "guidance": {
+          "stance": "bearish",
+          "prob_up": 0.32,
+          "conviction": "medium"
+        },
+        "cash_flow": {
+          "stance": "neutral",
+          "prob_up": 0.42,
+          "conviction": "low"
+        },
+        "management_tone": {
+          "stance": "bearish",
+          "prob_up": 0.33,
+          "conviction": "medium"
+        },
+        "expectations_gap": {
+          "stance": "bearish",
+          "prob_up": 0.34,
+          "conviction": "medium"
+        },
+        "risks": {
+          "stance": "bearish",
+          "prob_up": 0.3,
+          "conviction": "medium"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case03",
+    "company": "UnitedHealth Group Incorporated",
+    "ticker": "UNH",
+    "fiscal_period": "Q2 2026",
+    "report_date": "2026-07-16",
+    "timing": "bmo",
+    "built": true,
+    "event_date": "2026-07-16",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 48640,
+        "source": "https://www.sec.gov/Archives/edgar/data/0000731766/000073176626000191/earningsrelease2q26_7152.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 61926,
+        "source": "https://stockanalysis.com/stocks/unh/transcripts/652116-q2-2026/"
+      },
+      {
+        "kind": "expectations",
+        "chars": 531,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": 0.017030930434622005,
+      "stock_return_1d": 0.011612348274873341,
+      "market_return_1d": -0.005418582159748664
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/0000731766/000073176626000191/earningsrelease2q26_7152.htm",
+      "https://stockanalysis.com/stocks/unh/transcripts/652116-q2-2026/",
+      "https://www.hudson-labs.com/research/unitedhealth-group-unh-q2-2026-earnings-preview"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 242,
+      "final_guesses": [
+        {
+          "company": "UnitedHealth Group",
+          "ticker": "UNH",
+          "confidence": 0.97
+        },
+        {
+          "company": "CVS Health",
+          "ticker": "CVS",
+          "confidence": 0.01
+        },
+        {
+          "company": "Elevance Health",
+          "ticker": "ELV",
+          "confidence": 0.01
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.7041363889869894,
+      "prob_judge": 0.73,
+      "thesis": "This is a clear beat-and-raise. GAAP EPS of $16.13 beat the $12.12 consensus by about 33%, and net income came in about 25% above consensus. Backing out the ~$2.3B of favorable prior-period development, worth roughly $2 per share after tax, still leaves a core beat of about 15%. Per the playbook, that makes the one-off a distraction rather than a quality problem. The beat is broad: insurance margin roughly doubled to 4.6%, care delivery margin rose to 5.1% from 1.7%, and services margin expanded 160bp. Full-year adjusted EPS guidance rose to $52.06–53.39 from >$47.39 in January (above April's >$48.72 GAAP guide). Insurance operating earnings guidance rose by about $3.2B, and MCR guidance was lowered and narrowed to 88.1% ±25bp. Capital returns and cash flow add support: the buyback target roughly doubled, the OCF guide rose to ~$64B, and debt-to-capital keeps falling. Management explicitly called the new range the durable baseline for 2021, which should drive upward revisions. The negatives are real but contained and already embedded in the raised guide rather than forcing a cut. Commercial trend is running modestly above the double-digit level, with margin recovery pushed past 2021. Medicaid stays negative, the opex ratio is at the high end, membership is shrinking and revenue is flat. That fits the lesson that environment hedges alongside raised numbers rarely sink the first session. The main residual risk is that the market had partly priced in a turnaround beat. With no concrete negative datapoint, I stay at or slightly above the panel's ~0.70.",
+      "views": {
+        "growth": {
+          "stance": "bullish",
+          "prob_up": 0.7,
+          "conviction": "medium"
+        },
+        "profitability": {
+          "stance": "bullish",
+          "prob_up": 0.73,
+          "conviction": "high"
+        },
+        "guidance": {
+          "stance": "bullish",
+          "prob_up": 0.7,
+          "conviction": "medium"
+        },
+        "cash_flow": {
+          "stance": "bullish",
+          "prob_up": 0.72,
+          "conviction": "medium"
+        },
+        "management_tone": {
+          "stance": "bullish",
+          "prob_up": 0.7,
+          "conviction": "medium"
+        },
+        "expectations_gap": {
+          "stance": "bullish",
+          "prob_up": 0.7,
+          "conviction": "medium"
+        },
+        "risks": {
+          "stance": "bullish",
+          "prob_up": 0.68,
+          "conviction": "medium"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case04",
+    "company": "Alphabet Inc.",
+    "ticker": "GOOGL",
+    "fiscal_period": "Q2 2026",
+    "report_date": "2026-07-22",
+    "timing": "amc",
+    "built": true,
+    "event_date": "2026-07-23",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 27333,
+        "source": "https://www.sec.gov/Archives/edgar/data/0001652044/000165204426000066/googexhibit991q22026.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 53951,
+        "source": "https://www.roic.ai/quote/ABEC.F/transcripts/2026-year/2-quarter"
+      },
+      {
+        "kind": "expectations",
+        "chars": 1239,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": -0.05897694621080518,
+      "stock_return_1d": -0.07132625917156299,
+      "market_return_1d": -0.012349312960757808
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/0001652044/000165204426000066/googexhibit991q22026.htm",
+      "https://www.roic.ai/quote/ABEC.F/transcripts/2026-year/2-quarter",
+      "https://www.spglobal.com/market-intelligence/en/news-insights/research/2026/07/alphabet-earnings-preview-q2-2026",
+      "https://www.ig.com/en/news-and-trade-ideas/alphabet-q2-2026-earnings-preview-260716",
+      "https://www.barchart.com/story/news/31828763/earnings-preview-what-to-expect-from-alphabet-s-report"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 275,
+      "final_guesses": [
+        {
+          "company": "Alphabet Inc.",
+          "ticker": "GOOGL",
+          "confidence": 0.97
+        },
+        {
+          "company": "Alphabet Inc. (Class C)",
+          "ticker": "GOOG",
+          "confidence": 0.02
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.6158844254058304,
+      "prob_judge": 0.64,
+      "thesis": "Cloud is the swing metric, and it was a clear beat: revenue $71.4B vs ~$63.9B consensus (82% vs ~63% growth), with growth still accelerating ex the first custom-chip sales. Cloud margin was 35.6% vs 30.8% expected, and backlog rose more than $144B sequentially, with about half converting within 24 months. Consolidated revenue beat by ~2.3% (24% vs ~21%). Search held at 17% and Services were in line. Nothing in the call cuts forward numbers; the hedges (Q3 search comp, slight FX headwind, modest bridge-capacity margin pressure) are mild and leave room against the 31.2% Q3 cloud-margin consensus. Negatives are real but mostly known or demand-justified: an ~8% FY capex raise with 2020 'significantly higher' (street already ~$758B), negative quarterly FCF, no buybacks and the June equity/preferred raise, with the CFO capping further equity at the SBC-tax ATM. Headline EPS is distorted by ~$18 of equity gains, and the core EPS comparison is unreliable given inconsistent scaling. Consolidated operating income beat only slightly and margin trailed the 35.3% consensus. All seven views rest on the same Cloud and revenue beat, so per the playbook I treat that as one piece of evidence rather than seven. Capex and funding fears cap the magnitude, but the direction should follow the Cloud acceleration. Estimate: modestly above the panel average.",
+      "views": {
+        "growth": {
+          "stance": "bullish",
+          "prob_up": 0.67,
+          "conviction": "medium"
+        },
+        "profitability": {
+          "stance": "bullish",
+          "prob_up": 0.6,
+          "conviction": "medium"
+        },
+        "guidance": {
+          "stance": "bullish",
+          "prob_up": 0.6,
+          "conviction": "low"
+        },
+        "cash_flow": {
+          "stance": "neutral",
+          "prob_up": 0.56,
+          "conviction": "low"
+        },
+        "management_tone": {
+          "stance": "bullish",
+          "prob_up": 0.62,
+          "conviction": "medium"
+        },
+        "expectations_gap": {
+          "stance": "bullish",
+          "prob_up": 0.64,
+          "conviction": "medium"
+        },
+        "risks": {
+          "stance": "bullish",
+          "prob_up": 0.62,
+          "conviction": "medium"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case05",
+    "company": "Tesla, Inc.",
+    "ticker": "TSLA",
+    "fiscal_period": "Q2 2026",
+    "report_date": "2026-07-22",
+    "timing": "amc",
+    "built": true,
+    "event_date": "2026-07-23",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 34113,
+        "source": "https://www.sec.gov/Archives/edgar/data/0001318605/000162828026049213/exhibit991.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 51380,
+        "source": "https://www.investing.com/news/transcripts/earnings-call-transcript-tesla-q2-2026-revenue-beats-eps-misses-as-stock-falls-93CH-4807216"
+      },
+      {
+        "kind": "expectations",
+        "chars": 1765,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": -0.13288744541468667,
+      "stock_return_1d": -0.14523675837544447,
+      "market_return_1d": -0.012349312960757808
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/0001318605/000162828026049213/exhibit991.htm",
+      "https://www.investing.com/news/transcripts/earnings-call-transcript-tesla-q2-2026-revenue-beats-eps-misses-as-stock-falls-93CH-4807216",
+      "https://electrek.co/2026/07/21/tesla-tsla-q2-2026-earnings-preview/",
+      "https://www.notateslaapp.com/news/4458/tesla-releases-q2-2026-earnings-estimates-from-analysts",
+      "https://finance.yahoo.com/markets/stocks/articles/tesla-q2-preview-numbers-beat-181919296.html"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 262,
+      "final_guesses": [
+        {
+          "company": "Tesla, Inc.",
+          "ticker": "TSLA",
+          "confidence": 0.98
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.37996512426787515,
+      "prob_judge": 0.38,
+      "thesis": "Revenue beat modestly, about $45.4B against roughly $44.4B consensus, and cash was far better than feared: FCF about -$1.8B versus -$5.2B expected, and ending cash about $70B versus $66B. Deliveries were a record and management cited its largest backlog since 2016. Against that, core profitability clearly missed. Auto gross margin excluding credits was 16.3% versus 18.1% expected. Operating margin fell to 1.4%, with opex up 47% year over year. Energy revenue and margin disappointed on a warranty charge and a structurally lower margin guide. Clean non-GAAP EPS of about $0.53 on a rescaled basis was far below the ~$0.89 consensus, and GAAP EPS was propped up by an affiliate mark-to-market gain and tax items. The FCF beat looks like capex timing rather than discipline. The >$40B full-year capex guide was reiterated with H2 rising, capex is to grow for 2-3 more years, up to $48B of new debt capacity was announced, and opex is guided higher. These fit the playbook's bearish pattern of a revenue beat with a margin and clean-EPS miss plus open-ended capex. Management leaned on long-dated robotaxi, robot and chip narratives, which this stock sometimes rewards. However, the CEO tempered robot ramp expectations, and robotaxi fleet counts remain small, which limits a narrative-driven pop. The cash beat and backlog keep this from being an extreme call, but the balance is modestly bearish.",
+      "views": {
+        "growth": {
+          "stance": "neutral",
+          "prob_up": 0.42,
+          "conviction": "low"
+        },
+        "profitability": {
+          "stance": "bearish",
+          "prob_up": 0.35,
+          "conviction": "medium"
+        },
+        "guidance": {
+          "stance": "bearish",
+          "prob_up": 0.4,
+          "conviction": "low"
+        },
+        "cash_flow": {
+          "stance": "neutral",
+          "prob_up": 0.45,
+          "conviction": "low"
+        },
+        "management_tone": {
+          "stance": "bearish",
+          "prob_up": 0.37,
+          "conviction": "low"
+        },
+        "expectations_gap": {
+          "stance": "bearish",
+          "prob_up": 0.3,
+          "conviction": "medium"
+        },
+        "risks": {
+          "stance": "bearish",
+          "prob_up": 0.37,
+          "conviction": "medium"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case06",
+    "company": "Intel Corporation",
+    "ticker": "INTC",
+    "fiscal_period": "Q2 2026",
+    "report_date": "2026-07-23",
+    "timing": "amc",
+    "built": false,
+    "note": "no full call transcript could be fetched"
+  },
+  {
+    "case_id": "case07",
+    "company": "The Coca-Cola Company",
+    "ticker": "KO",
+    "fiscal_period": "Q2 2026",
+    "report_date": "2026-07-28",
+    "timing": "bmo",
+    "built": true,
+    "event_date": "2026-07-28",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 74219,
+        "source": "https://www.sec.gov/Archives/edgar/data/0000021344/000162828026049922/a2026q2earningsreleaseex-9.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 44369,
+        "source": "https://www.roic.ai/quote/KO.BA/transcripts/2026-year/2-quarter"
+      },
+      {
+        "kind": "expectations",
+        "chars": 1031,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": 0.047563531132626125,
+      "stock_return_1d": 0.04995836802664444,
+      "market_return_1d": 0.002394836894018315
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/0000021344/000162828026049922/a2026q2earningsreleaseex-9.htm",
+      "https://www.roic.ai/quote/KO.BA/transcripts/2026-year/2-quarter",
+      "https://www.moomoo.com/community/feed/coca-cola-ko-q2-2026-earnings-preview-core-focus-areas-116972695322630",
+      "https://finance.yahoo.com/markets/stocks/articles/coca-cola-q2-earnings-buy-170300015.html",
+      "https://www.hudson-labs.com/research/coca-cola-q2-2026-earnings-preview-ko-revenue-and-outlook",
+      "https://longbridge.com/en/events/3258724"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 218,
+      "final_guesses": [
+        {
+          "company": "The Coca-Cola Company",
+          "ticker": "KO",
+          "confidence": 0.97
+        },
+        {
+          "company": "PepsiCo, Inc.",
+          "ticker": "PEP",
+          "confidence": 0.02
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.6414960267066779,
+      "prob_judge": 0.66,
+      "thesis": "This was a clean beat-and-raise for a defensive mega-cap staple. Comparable EPS was $2.73 against a consensus of about $2.59, a beat of roughly 5% and 11% growth against about 6% expected. Revenue was about 2% ahead, organic growth was 6%, unit volume rose 5% (the strongest in years), and comparable operating margin expanded about 90bp to a likely record. Full-year organic revenue, EPS and FCF guidance were all raised. The beat is mostly operating rather than currency-driven. Only 2 points of EPS came from FX, North America delivered 12% comparable currency-neutral operating income growth, and there is no new overhang: the tax case is unchanged and the dairy-brand disruption is immaterial. Several things temper the move. The roughly 1pt raise about equals the Q2 beat, so the implied H2 run-rate is unchanged. Management itself flagged an easy comparison, weather, the one-off sporting event and fewer Q4 days. Asia Pacific price/mix fell 9% with a share loss, EMEA profit fell, and part of the raise rests on below-the-line items. All panel views lean on the same headline facts, so I treat them as correlated evidence. Direction is likely positive but the magnitude should be modest, so I put the probability in the mid-0.60s.",
+      "views": {
+        "growth": {
+          "stance": "bullish",
+          "prob_up": 0.63,
+          "conviction": "medium"
+        },
+        "profitability": {
+          "stance": "bullish",
+          "prob_up": 0.65,
+          "conviction": "medium"
+        },
+        "guidance": {
+          "stance": "bullish",
+          "prob_up": 0.6,
+          "conviction": "medium"
+        },
+        "cash_flow": {
+          "stance": "bullish",
+          "prob_up": 0.66,
+          "conviction": "medium"
+        },
+        "management_tone": {
+          "stance": "bullish",
+          "prob_up": 0.62,
+          "conviction": "medium"
+        },
+        "expectations_gap": {
+          "stance": "bullish",
+          "prob_up": 0.68,
+          "conviction": "medium"
+        },
+        "risks": {
+          "stance": "bullish",
+          "prob_up": 0.65,
+          "conviction": "medium"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case08",
+    "company": "Visa Inc.",
+    "ticker": "V",
+    "fiscal_period": "Q3 FY2026",
+    "report_date": "2026-07-28",
+    "timing": "amc",
+    "built": true,
+    "event_date": "2026-07-29",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 32973,
+        "source": "https://www.sec.gov/Archives/edgar/data/0001403161/000140316126000103/q32026earningsrelease.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 58396,
+        "source": "https://www.roic.ai/quote/VISA.NE/transcripts/2026-year/3-quarter"
+      },
+      {
+        "kind": "expectations",
+        "chars": 3108,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": 0.021225106831015528,
+      "stock_return_1d": 0.005837584222155634,
+      "market_return_1d": -0.015387522608859894
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/0001403161/000140316126000103/q32026earningsrelease.htm",
+      "https://www.roic.ai/quote/VISA.NE/transcripts/2026-year/3-quarter",
+      "https://finance.yahoo.com/markets/stocks/articles/visas-q3-earnings-could-catalyst-162700784.html",
+      "https://finance.yahoo.com/markets/stocks/articles/gear-visa-v-q3-earnings-131503483.html",
+      "https://finance.yahoo.com/markets/stocks/articles/know-ahead-visa-earnings-release-123011513.html",
+      "https://www.benzinga.com/analyst-stock-ratings/price-target/26/07/60720165/visa-earnings-are-imminent-these-most-accurate-analysts-revise-forecasts-ahead-of-earnings-call-2"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 216,
+      "final_guesses": [
+        {
+          "company": "Visa Inc.",
+          "ticker": "V",
+          "confidence": 0.97
+        },
+        {
+          "company": "Mastercard Incorporated",
+          "ticker": "MA",
+          "confidence": 0.02
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.5423380291671751,
+      "prob_judge": 0.57,
+      "thesis": "This was a clean beat with a modest raise, from a highly predictable payments network. Non-GAAP EPS was $6.50 against roughly $6.32 consensus (about +3%), and net revenue was $22.76B against roughly $22.2–22.3B (about +2.5%). For this name those beats sit at the upper end of the usual range. Key drivers also beat clearly. Payments volume grew 10% against about 8.8% expected, and processed transactions grew 10% against about 9.2%. US volume posted its best non-COVID growth in years, and management saw no weakness among lower-spend consumers. That directly undercuts the market's main macro worry for the sector. Value-added services grew 34%, and full-year revenue and EPS growth were nudged up to 'now' low end of low teens and low end of mid teens. July-to-date data are healthy: cross-border up 14%, US up 9%. Several negatives keep conviction modest. Cross-border revenue grew only 6%, short of the roughly 7.9% consensus, and this is the line the buy side watches most. Customer incentives stepped up to 18% growth and are guided higher in Q4. Opex grew 17%, above plan, and some marketing spend shifted into Q4. Management also flagged volatility as a bigger Q4 drag and said cross-border e-commerce should normalize. Most of these caveats were disclosed by management and are timing or one-off in nature, such as the sporting event, tax refunds and promotional timing. Per the playbook, they should not drag the call to a coin flip. The workforce cuts may also be read as efficiency-positive. Net, a mildly positive day-one reaction is the most likely outcome. The cross-border yield miss and incentive creep cap the upside.",
+      "views": {
+        "growth": {
+          "stance": "bullish",
+          "prob_up": 0.55,
+          "conviction": "low"
+        },
+        "profitability": {
+          "stance": "neutral",
+          "prob_up": 0.46,
+          "conviction": "low"
+        },
+        "guidance": {
+          "stance": "bullish",
+          "prob_up": 0.6,
+          "conviction": "medium"
+        },
+        "cash_flow": {
+          "stance": "bullish",
+          "prob_up": 0.57,
+          "conviction": "low"
+        },
+        "management_tone": {
+          "stance": "bullish",
+          "prob_up": 0.55,
+          "conviction": "low"
+        },
+        "expectations_gap": {
+          "stance": "neutral",
+          "prob_up": 0.52,
+          "conviction": "low"
+        },
+        "risks": {
+          "stance": "neutral",
+          "prob_up": 0.55,
+          "conviction": "low"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case09",
+    "company": "Meta Platforms, Inc.",
+    "ticker": "META",
+    "fiscal_period": "Q2 2026",
+    "report_date": "2026-07-29",
+    "timing": "amc",
+    "built": true,
+    "event_date": "2026-07-30",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 20313,
+        "source": "https://www.sec.gov/Archives/edgar/data/0001326801/000162828026050596/meta-06302026xexhibit991.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 60986,
+        "source": "https://www.roic.ai/quote/META:US/transcripts/2026-year/2-quarter"
+      },
+      {
+        "kind": "expectations",
+        "chars": 1869,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": -0.09630681822078968,
+      "stock_return_1d": -0.0795409914448183,
+      "market_return_1d": 0.016765826775971382
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/0001326801/000162828026050596/meta-06302026xexhibit991.htm",
+      "https://www.roic.ai/quote/META:US/transcripts/2026-year/2-quarter",
+      "https://www.moomoo.com/community/feed/meta-platforms-meta-us-will-report-second-quarter-2026-results-116988373106694",
+      "https://finance.yahoo.com/markets/stocks/articles/countdown-meta-platforms-meta-q2-131504708.html",
+      "https://www.benzinga.com/analyst-stock-ratings/price-target/26/07/60751521/top-wall-street-forecasters-revamp-meta-expectations-ahead-of-q2-earnings"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 167,
+      "final_guesses": [
+        {
+          "company": "Meta Platforms, Inc.",
+          "ticker": "META",
+          "confidence": 0.97
+        },
+        {
+          "company": "Alphabet Inc.",
+          "ticker": "GOOGL",
+          "confidence": 0.01
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.43640188460162804,
+      "prob_judge": 0.4,
+      "thesis": "Revenue of $152.2B (+28%) beat consensus by about 1%, and the Q3 guide implies continued mid-to-high-20s growth. Other revenue (+73%) and ad price/volume trends are healthy. Ex the legal and severance charges, operating income rose about 9% and EPS was a small underlying beat. Still, for this mega-cap the beat is thin by its usual standards, and growth decelerated from about 33% in Q1. The capital-intensity story dominates. Quarterly FCF collapsed to about $2B, about $25B of new debt was raised, and an off-balance-sheet data center venture adds complexity. The capex low end was raised, there is no 2019 capex anchor, and management talks of 'maximizing' capacity. The tax-rate guide went up and live trial risk was flagged. The CEO's 'big bet' framing and deferred product timelines ('more to share soon') remove the narrative cushion. The playbook lessons favor a negative skew: high-capex, debt-funded, open-ended spend at premium-valuation names reacts poorly. A solid top-line guide could still spark a relief move, as in past prints where revenue strength outweighed capex, so I keep conviction moderate. Probability is slightly below the playbook-weighted view.",
+      "views": {
+        "growth": {
+          "stance": "bullish",
+          "prob_up": 0.56,
+          "conviction": "low"
+        },
+        "profitability": {
+          "stance": "bearish",
+          "prob_up": 0.4,
+          "conviction": "low"
+        },
+        "guidance": {
+          "stance": "neutral",
+          "prob_up": 0.46,
+          "conviction": "low"
+        },
+        "cash_flow": {
+          "stance": "bearish",
+          "prob_up": 0.4,
+          "conviction": "medium"
+        },
+        "management_tone": {
+          "stance": "bearish",
+          "prob_up": 0.37,
+          "conviction": "medium"
+        },
+        "expectations_gap": {
+          "stance": "neutral",
+          "prob_up": 0.45,
+          "conviction": "low"
+        },
+        "risks": {
+          "stance": "bearish",
+          "prob_up": 0.42,
+          "conviction": "low"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case10",
+    "company": "Microsoft Corporation",
+    "ticker": "MSFT",
+    "fiscal_period": "Q4 FY2026",
+    "report_date": "2026-07-29",
+    "timing": "amc",
+    "built": true,
+    "event_date": "2026-07-30",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 26899,
+        "source": "https://www.sec.gov/Archives/edgar/data/0000789019/000119312526323632/msft-ex99_1.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 58281,
+        "source": "https://www.roic.ai/quote/MSFT:RO/transcripts/2026-year/4-quarter"
+      },
+      {
+        "kind": "expectations",
+        "chars": 1228,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": 0.13830151587779005,
+      "stock_return_1d": 0.15506734265376143,
+      "market_return_1d": 0.016765826775971382
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/0000789019/000119312526323632/msft-ex99_1.htm",
+      "https://www.roic.ai/quote/MSFT:RO/transcripts/2026-year/4-quarter",
+      "https://www.tradingkey.com/analysis/stocks/us-stocks/262060902-microsoft-msft-q4-fy2026-earnings-preview-july-29-azure-capex-tradingkey",
+      "https://finance.yahoo.com/markets/stocks/articles/microsoft-q4-earnings-preview-expect-124253456.html",
+      "https://www.geekwire.com/2026/microsoft-earnings-preview-record-ai-spending-and-a-stock-near-a-one-year-low/"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 234,
+      "final_guesses": [
+        {
+          "company": "Microsoft Corporation",
+          "ticker": "MSFT",
+          "confidence": 0.98
+        },
+        {
+          "company": "Alphabet Inc.",
+          "ticker": "GOOGL",
+          "confidence": 0.01
+        },
+        {
+          "company": "Amazon.com, Inc.",
+          "ticker": "AMZN",
+          "confidence": 0.01
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.6205573609340931,
+      "prob_judge": 0.68,
+      "thesis": "The core signal is unusually strong for a predictable mega-cap. Revenue of $196.9B beat consensus by about 2.7% and cleared the top of guidance. Underlying EPS was about $9.78 after stripping the $0.59 of discrete items, roughly 5% above the $9.28 consensus. Most importantly, the cloud platform grew 43% against a 39-40% guide and consensus (whisper about 41%), and management guided it to about 45% for Q1. That directly refutes the market's dominant worry, that AI demand may not justify the spend. Backlog quality supports the case: RPO is up 25% excluding the AI investee, and all sequential RPO growth came from non-frontier customers. Cloud gross margin of 65% beat the roughly 64% guide, and OS OEM and on-prem lines also came in ahead of expectations. The main offset is capital intensity. Q4 capex of $90B was slightly above guide, Q1 is guided above $109B, next-year capex is left open-ended, and the useful-life extension and lease reclassification look optically convenient. The CFO's ROI answer was also qualitative. Still, this is not the classic capex red-flag cluster: FCF is positive and guided positive, buybacks and dividends continue, debt was repaid rather than raised, and roughly two-thirds of capex goes to flexible short-lived assets. With the most-watched metric beating and accelerating, the capex overhang should temper rather than reverse the reaction. Net, I lean clearly positive with moderate-to-high conviction, slightly above the playbook blend.",
+      "views": {
+        "growth": {
+          "stance": "bullish",
+          "prob_up": 0.68,
+          "conviction": "medium"
+        },
+        "profitability": {
+          "stance": "bullish",
+          "prob_up": 0.58,
+          "conviction": "low"
+        },
+        "guidance": {
+          "stance": "bullish",
+          "prob_up": 0.6,
+          "conviction": "medium"
+        },
+        "cash_flow": {
+          "stance": "neutral",
+          "prob_up": 0.55,
+          "conviction": "low"
+        },
+        "management_tone": {
+          "stance": "bullish",
+          "prob_up": 0.66,
+          "conviction": "medium"
+        },
+        "expectations_gap": {
+          "stance": "bullish",
+          "prob_up": 0.68,
+          "conviction": "medium"
+        },
+        "risks": {
+          "stance": "bullish",
+          "prob_up": 0.6,
+          "conviction": "low"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case11",
+    "company": "The Procter & Gamble Company",
+    "ticker": "PG",
+    "fiscal_period": "Q4 FY2026",
+    "report_date": "2026-07-29",
+    "timing": "bmo",
+    "built": true,
+    "event_date": "2026-07-29",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 102504,
+        "source": "https://www.nasdaq.com/press-release/pg-announces-fourth-quarter-and-fiscal-year-2026-results-2026-07-29"
+      },
+      {
+        "kind": "transcript",
+        "chars": 81406,
+        "source": "https://www.roic.ai/quote/PG:EO/transcripts/2026-year/4-quarter"
+      },
+      {
+        "kind": "expectations",
+        "chars": 1686,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": -0.003285233973622681,
+      "stock_return_1d": -0.018672756582482575,
+      "market_return_1d": -0.015387522608859894
+    },
+    "outcome_sources": [
+      "https://www.nasdaq.com/press-release/pg-announces-fourth-quarter-and-fiscal-year-2026-results-2026-07-29",
+      "https://www.roic.ai/quote/PG:EO/transcripts/2026-year/4-quarter",
+      "https://finance.yahoo.com/markets/stocks/articles/analyst-projections-key-metrics-reveal-131508044.html",
+      "https://finance.yahoo.com/markets/stocks/articles/procter-gamble-report-q4-earnings-171100623.html",
+      "https://finance.yahoo.com/markets/stocks/articles/know-ahead-procter-gambles-earnings-160646780.html"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 299,
+      "final_guesses": [
+        {
+          "company": "Procter & Gamble",
+          "ticker": "PG",
+          "confidence": 0.97
+        },
+        {
+          "company": "Kimberly-Clark",
+          "ticker": "KMB",
+          "confidence": 0.01
+        },
+        {
+          "company": "Colgate-Palmolive",
+          "ticker": "CL",
+          "confidence": 0.01
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.406626803354473,
+      "prob_judge": 0.35,
+      "thesis": "This is a soft print for a defensive staples leader. Core EPS of $2.21 beat the ~$2.18–2.20 consensus only slightly, and the beat came alongside a ~1% revenue miss ($32.8B vs $33.09B) and flat organic sales, a deceleration from ~2% last quarter. North America and developed Europe were each down 1%, and most segments missed sales estimates. Core operating margin fell 130bp as marketing and price reinvestment outran productivity, and segment pretax earnings fell 8–17%. Management blames a sell-in vs sell-out gap and retailer destocking, but analysts noted the issue recurs and the explanation was not persuasive. The guide is the bigger problem. FY23 core EPS growth of 0–3% (midpoint ~1.5%, $10.84) likely sits below Street mid-single-digit hopes. It carries a $0.87 (8%) cost and below-the-line headwind and an unprompted warning that Q1 EPS will be down 5% or more, which forces near-term estimate cuts. The organic sales midpoint already requires share gains. Mitigants: consumption ran at +2%, global share stabilized, China is back to growth, FCF conversion was 133%, the ~$23B cash return plan is intact, and the stock is low-beta. These cushion the downside but provide no catalyst. Most lenses point to the same negative skew (top-line miss plus guide-down), so I lean below the playbook blend, without being extreme given the defensive profile and the small EPS beat.",
+      "views": {
+        "growth": {
+          "stance": "bearish",
+          "prob_up": 0.36,
+          "conviction": "medium"
+        },
+        "profitability": {
+          "stance": "neutral",
+          "prob_up": 0.48,
+          "conviction": "low"
+        },
+        "guidance": {
+          "stance": "bearish",
+          "prob_up": 0.36,
+          "conviction": "medium"
+        },
+        "cash_flow": {
+          "stance": "neutral",
+          "prob_up": 0.48,
+          "conviction": "low"
+        },
+        "management_tone": {
+          "stance": "bearish",
+          "prob_up": 0.36,
+          "conviction": "medium"
+        },
+        "expectations_gap": {
+          "stance": "bearish",
+          "prob_up": 0.28,
+          "conviction": "medium"
+        },
+        "risks": {
+          "stance": "neutral",
+          "prob_up": 0.53,
+          "conviction": "low"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case12",
+    "company": "Apple Inc.",
+    "ticker": "AAPL",
+    "fiscal_period": "Q3 FY2026",
+    "report_date": "2026-07-30",
+    "timing": "amc",
+    "built": true,
+    "event_date": "2026-07-31",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 11654,
+        "source": "https://www.sec.gov/Archives/edgar/data/0000320193/000032019326000018/a8-kex991q3202606272026.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 54149,
+        "source": "https://equibles.com/stocks/aapl/calls/2026-q3"
+      },
+      {
+        "kind": "expectations",
+        "chars": 1517,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": -0.08073844727487445,
+      "stock_return_1d": -0.07353867378460244,
+      "market_return_1d": 0.00719977349027201
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/0000320193/000032019326000018/a8-kex991q3202606272026.htm",
+      "https://equibles.com/stocks/aapl/calls/2026-q3",
+      "https://appleinsider.com/articles/26/07/27/what-wall-street-expects-from-apples-q3-2026-earnings-on-july-30",
+      "https://www.ig.com/en/news-and-trade-ideas/apple-q3-2026-earnings-preview-260722",
+      "https://www.spglobal.com/market-intelligence/en/news-insights/research/2026/07/apple-earnings-preview-q3-2026",
+      "https://finance.yahoo.com/markets/stocks/articles/apples-quarterly-earnings-preview-know-123659826.html"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 281,
+      "final_guesses": [
+        {
+          "company": "Apple Inc.",
+          "ticker": "AAPL",
+          "confidence": 0.99
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.37445369078973817,
+      "prob_judge": 0.42,
+      "thesis": "The headline print is strong but the beat is lower quality than it looks. Revenue was a June-quarter record about 0.5-1% above consensus. Diluted EPS was $4.61 against $4.31, but stripping out the $0.25 tariff refund leaves about $4.36, roughly a 1% beat. The flagship device (+22%, clearly above the $121B consensus) and the computer line (+29%) were excellent, with double-digit growth in every region. Management credibly frames the supply constraints as demand running ahead of forecast. The forward picture is softer, though. The September revenue guide of 9-11% sits below the roughly 12% Street figure. Underlying gross margin steps down again to about 46.5% ex-refunds, after 48.1% this quarter and 49.3% in March, with memory costs said to explain more than all of it. Management called memory a '100-year flood' that could weigh more as carry-in inventory runs out beyond September. Services missed ($70.1B vs $71.7B) on mobile-gaming softness and is guided below 10% reported. Management also gave no December color, and price-elasticity risk from the computer and tablet price increases is unresolved. Every bearish lens rests on the same facts (soft guide, memory margins, Services), so I treat them as one negative surprise rather than seven. The mega-cap profile and the demand-exceeds-supply story should keep any abnormal move small and partly forgiven. That gives a modest negative tilt, below 0.5 but not as low as the lens average.",
+      "views": {
+        "growth": {
+          "stance": "bearish",
+          "prob_up": 0.38,
+          "conviction": "medium"
+        },
+        "profitability": {
+          "stance": "bearish",
+          "prob_up": 0.38,
+          "conviction": "medium"
+        },
+        "guidance": {
+          "stance": "bearish",
+          "prob_up": 0.36,
+          "conviction": "medium"
+        },
+        "cash_flow": {
+          "stance": "neutral",
+          "prob_up": 0.45,
+          "conviction": "low"
+        },
+        "management_tone": {
+          "stance": "bearish",
+          "prob_up": 0.35,
+          "conviction": "medium"
+        },
+        "expectations_gap": {
+          "stance": "bearish",
+          "prob_up": 0.34,
+          "conviction": "medium"
+        },
+        "risks": {
+          "stance": "bearish",
+          "prob_up": 0.37,
+          "conviction": "medium"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case13",
+    "company": "Amazon.com, Inc.",
+    "ticker": "AMZN",
+    "fiscal_period": "Q2 2026",
+    "report_date": "2026-07-30",
+    "timing": "amc",
+    "built": true,
+    "event_date": "2026-07-31",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 39600,
+        "source": "https://www.sec.gov/Archives/edgar/data/0001018724/000101872426000024/amzn-20260630xex991.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 48282,
+        "source": "https://www.fool.com/earnings/call-transcripts/2026/08/07/amazon-amzn-q2-2026-earnings-call-transcript/"
+      },
+      {
+        "kind": "expectations",
+        "chars": 1164,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": 0.1460061713080294,
+      "stock_return_1d": 0.1532059447983014,
+      "market_return_1d": 0.00719977349027201
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/0001018724/000101872426000024/amzn-20260630xex991.htm",
+      "https://www.fool.com/earnings/call-transcripts/2026/08/07/amazon-amzn-q2-2026-earnings-call-transcript/",
+      "https://www.spglobal.com/market-intelligence/en/news-insights/research/2026/07/amazon-earnings-preview-q2-2026",
+      "https://www.ig.com/en/news-and-trade-ideas/amazon-earnings-preview--aws-and-ai-spending-take-centre-stage-260728"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 331,
+      "final_guesses": [
+        {
+          "company": "Amazon.com, Inc.",
+          "ticker": "AMZN",
+          "confidence": 0.98
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.6704936568082914,
+      "prob_judge": 0.72,
+      "thesis": "The most-debated KPI beat decisively. Cloud revenue grew 36.7% against roughly 32% consensus, the fifth straight quarter of acceleration and the largest dollar add ever. Cloud margin was 39.4% against 33.8% consensus; it is still about 37.9% excluding the derivative gain, above the top of the estimate range. Backlog is $927B, growing triple digits, and demand is described as exceeding supply through 2018. The beat was broad. Total revenue rose 20%, above the 16-19% guide and the roughly $368B consensus. Domestic sales and margin beat, advertising grew 26% against a low-20s expectation, and units accelerated. The bear case is capital intensity: capex raised to about $411B from about $374B, negative TTM free cash flow, and long-term debt roughly doubling. The playbook says capex is tolerated when the line it funds is accelerating and supply-constrained, which is the case here. Management also gave a quantified payback framework instead of vague optimism, and attributed the raise to memory inflation rather than scope creep. Remaining headline risks are modest. The Q3 revenue guide of 9-12% looks soft but was explicitly bridged by about 400bp of sales-event timing plus about 80bp of FX. Operating income was flattered by about $2.2B of disclosed one-offs. The EPS figure is distorted by an AI-lab investment gain the market will ignore. On balance this is a high-conviction positive skew driven by the core cloud signal, tempered slightly by the optics of the Q3 guide and the capex and FCF overhang.",
+      "views": {
+        "growth": {
+          "stance": "bullish",
+          "prob_up": 0.68,
+          "conviction": "medium"
+        },
+        "profitability": {
+          "stance": "bullish",
+          "prob_up": 0.72,
+          "conviction": "medium"
+        },
+        "guidance": {
+          "stance": "bullish",
+          "prob_up": 0.63,
+          "conviction": "medium"
+        },
+        "cash_flow": {
+          "stance": "bullish",
+          "prob_up": 0.62,
+          "conviction": "medium"
+        },
+        "management_tone": {
+          "stance": "bullish",
+          "prob_up": 0.72,
+          "conviction": "medium"
+        },
+        "expectations_gap": {
+          "stance": "bullish",
+          "prob_up": 0.68,
+          "conviction": "medium"
+        },
+        "risks": {
+          "stance": "bullish",
+          "prob_up": 0.64,
+          "conviction": "medium"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case14",
+    "company": "NVIDIA Corporation",
+    "ticker": "NVDA",
+    "fiscal_period": "Q2 FY2027",
+    "report_date": "2026-08-26",
+    "timing": "amc",
+    "built": true,
+    "event_date": "2026-08-27",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 72885,
+        "source": "https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2027"
+      },
+      {
+        "kind": "transcript",
+        "chars": 46605,
+        "source": "https://www.roic.ai/quote/NVDA/transcripts/2027-year/2-quarter"
+      },
+      {
+        "kind": "expectations",
+        "chars": 1214,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": 0.08082672648344769,
+      "stock_return_1d": 0.08737956691786697,
+      "market_return_1d": 0.0065528404344192825
+    },
+    "outcome_sources": [
+      "https://nvidianews.nvidia.com/news/nvidia-announces-financial-results-for-second-quarter-fiscal-2027",
+      "https://www.roic.ai/quote/NVDA/transcripts/2027-year/2-quarter",
+      "https://www.spglobal.com/market-intelligence/en/news-insights/research/2026/08/nvidia-earnings-preview-q2-2027",
+      "https://www.ig.com/en/news-and-trade-ideas/nvidia-q2-fy2027-earnings-preview--what-to-watch-260825",
+      "https://www.investing.com/news/stock-market-news/nvidia-fiscal-q2-2027-earnings-outlook-what-to-watch-on-august-26-93CH-4872130"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 306,
+      "final_guesses": [
+        {
+          "company": "NVIDIA Corporation",
+          "ticker": "NVDA",
+          "confidence": 0.97
+        },
+        {
+          "company": "Advanced Micro Devices",
+          "ticker": "AMD",
+          "confidence": 0.01
+        },
+        {
+          "company": "Broadcom Inc.",
+          "ticker": "AVGO",
+          "confidence": 0.01
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.44571428571428584,
+      "prob_judge": 0.42,
+      "thesis": "The quarter was a clean beat. Revenue came in at $244B against roughly $233-238B consensus, non-GAAP EPS was $5.63 against about $5.30, and the Q3 guide of $274B likely sits above the Street. The first-ever full-year view of about 70% growth, described as supply-constrained, is a genuine positive. But for this heavily owned mega-cap, beats of this size are routinely priced in, and the first-session reaction is driven by what is newly negative. Three things qualify. First, management explicitly reset gross margins: 74% in Q3, a 71-72% trough in Q4 and 72-73% next year, a structural 200-300bp cut that lowers forward EPS. Second, sequential growth slows to about 12%, with hyperscale growth deferred to Q4. Third, earnings quality weakened. Operating cash flow halved quarter over quarter, receivables and DSO rose on extended terms, and long-term debt jumped. Vendor-financing optics (credit enhancement, take-or-pay commitments, lab stakes, about 25% of next year's business tied to balance-sheet-backed labs) are now explicit. The 70% outlook gives the bulls a real counterweight, so this is not strongly negative. I lean modestly below a coin flip, in line with the analysts' 0.45 weighted view, shaded slightly lower for the margin reset and this name's history of sell-the-news reactions to beats.",
+      "views": {
+        "growth": {
+          "stance": "bullish",
+          "prob_up": 0.55,
+          "conviction": "low"
+        },
+        "profitability": {
+          "stance": "bearish",
+          "prob_up": 0.42,
+          "conviction": "medium"
+        },
+        "guidance": {
+          "stance": "neutral",
+          "prob_up": 0.45,
+          "conviction": "low"
+        },
+        "cash_flow": {
+          "stance": "bearish",
+          "prob_up": 0.4,
+          "conviction": "medium"
+        },
+        "management_tone": {
+          "stance": "neutral",
+          "prob_up": 0.47,
+          "conviction": "low"
+        },
+        "expectations_gap": {
+          "stance": "neutral",
+          "prob_up": 0.43,
+          "conviction": "low"
+        },
+        "risks": {
+          "stance": "bearish",
+          "prob_up": 0.4,
+          "conviction": "medium"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case15",
+    "company": "Oracle Corporation",
+    "ticker": "ORCL",
+    "fiscal_period": "Q1 FY2027",
+    "report_date": "2026-09-10",
+    "timing": "amc",
+    "built": true,
+    "event_date": "2026-09-11",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 26781,
+        "source": "https://investor.oracle.com/investor-news/news-details/2026/Oracle-Announces-Q1-Results-Driven-by-Triple-Digit-Growth-in-Cloud-Infrastructure-Revenues/default.aspx"
+      },
+      {
+        "kind": "transcript",
+        "chars": 47709,
+        "source": "https://www.roic.ai/quote/ORAC.TO/transcripts/2027-year/1-quarter"
+      },
+      {
+        "kind": "expectations",
+        "chars": 756,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": -0.025916780712072818,
+      "stock_return_1d": -0.017392441480319043,
+      "market_return_1d": 0.008524339231753775
+    },
+    "outcome_sources": [
+      "https://investor.oracle.com/investor-news/news-details/2026/Oracle-Announces-Q1-Results-Driven-by-Triple-Digit-Growth-in-Cloud-Infrastructure-Revenues/default.aspx",
+      "https://www.roic.ai/quote/ORAC.TO/transcripts/2027-year/1-quarter",
+      "https://www.ig.com/uk/news-and-trade-ideas/oracle-q1-fy2027-earnings-preview--can-ai-cloud-growth-justify-i-260908",
+      "https://www.moomoo.com/ca/articles/oracle-stock-earnings",
+      "https://www.insiderfinance.io/news/oracle-earnings-lift-shares-ahead-of-sept-10"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 231,
+      "final_guesses": [
+        {
+          "company": "Oracle Corporation",
+          "ticker": "ORCL",
+          "confidence": 0.97
+        },
+        {
+          "company": "Microsoft Corporation",
+          "ticker": "MSFT",
+          "confidence": 0.01
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.6528571428571429,
+      "prob_judge": 0.63,
+      "thesis": "This is a clean beat-and-raise. Non-GAAP EPS of $3.40 cleared the top of the $3.04-3.11 guide by about 9%. Revenue grew 30%, above the 27-29% guide, and was the first-ever sequential Q1 increase. IaaS accelerated to 121% from 93%. Full-year revenue guidance was raised to at least $159B (+34%), and the Q2 guide (cloud +65-71%) implies further acceleration. The funding overhang also eased: the $35B equity program is complete, the new $53B of contracts reportedly need no incremental company cash, and prepayments covered roughly 40% of gross capex. Management directly said the Site A/B delays won't affect FY guidance. Tempering factors: - Cloud growth was only in line with the 63% street estimate. - RPO grew a relatively modest +$46B sequentially versus prior hype. - Gross margin compressed sharply. - Free cash flow stays negative, with no timeline for turning positive. - The full-year capex range remains large. - Part of the EPS beat came from a lower tax rate and higher non-operating income. For a high-beta, debt-sensitive AI infrastructure name, sentiment on financing can override the print. Still, the size of the beat and the raise skews the first-session reaction positive. I am roughly in line with the analysts' 0.65 but trim slightly for the elevated bar and the RPO-deceleration optics.",
+      "views": {
+        "growth": {
+          "stance": "bullish",
+          "prob_up": 0.66,
+          "conviction": "medium"
+        },
+        "profitability": {
+          "stance": "bullish",
+          "prob_up": 0.65,
+          "conviction": "medium"
+        },
+        "guidance": {
+          "stance": "bullish",
+          "prob_up": 0.67,
+          "conviction": "medium"
+        },
+        "cash_flow": {
+          "stance": "bullish",
+          "prob_up": 0.66,
+          "conviction": "medium"
+        },
+        "management_tone": {
+          "stance": "bullish",
+          "prob_up": 0.65,
+          "conviction": "medium"
+        },
+        "expectations_gap": {
+          "stance": "bullish",
+          "prob_up": 0.66,
+          "conviction": "medium"
+        },
+        "risks": {
+          "stance": "bullish",
+          "prob_up": 0.62,
+          "conviction": "medium"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case16",
+    "company": "Costco Wholesale Corporation",
+    "ticker": "COST",
+    "fiscal_period": "Q4 FY2026",
+    "report_date": "2026-09-24",
+    "timing": "amc",
+    "built": true,
+    "event_date": "2026-09-25",
+    "documents": [
+      {
+        "kind": "release",
+        "chars": 9745,
+        "source": "https://www.sec.gov/Archives/edgar/data/0000909832/000090983226000084/costex9918-k92426.htm"
+      },
+      {
+        "kind": "transcript",
+        "chars": 62947,
+        "source": "https://www.benzinga.com/news/26/09/61987229/full-transcript-costco-wholesale-q4-2026-earnings-call"
+      },
+      {
+        "kind": "expectations",
+        "chars": 546,
+        "source": ""
+      }
+    ],
+    "outcome": {
+      "abnormal_return_1d": 0.02387916184547989,
+      "stock_return_1d": 0.029314652864536717,
+      "market_return_1d": 0.005435491019056826
+    },
+    "outcome_sources": [
+      "https://www.sec.gov/Archives/edgar/data/0000909832/000090983226000084/costex9918-k92426.htm",
+      "https://www.benzinga.com/news/26/09/61987229/full-transcript-costco-wholesale-q4-2026-earnings-call",
+      "https://www.tipranks.com/news/costco-cost-reports-q4-earnings-on-sept-24-heres-what-analysts-expect",
+      "https://www.barchart.com/story/news/3480268/what-to-expect-from-costco-wholesale-s-q4-2026-earnings-report",
+      "https://www.tradingview.com/news/tradingview:c9eb6422eb1d8:0-cost-q4-26-earnings-eps-estimate-is-6-54-usd/",
+      "https://247wallst.com/investing/2026/09/24/live-will-costco-crush-q4-earnings-tonight-after-the-market-closes/"
+    ],
+    "mask": {
+      "status": "identifiable",
+      "rounds": 4,
+      "redactions": 200,
+      "final_guesses": [
+        {
+          "company": "Costco Wholesale Corporation",
+          "ticker": "COST",
+          "confidence": 0.97
+        },
+        {
+          "company": "BJ's Wholesale Club Holdings",
+          "ticker": "BJ",
+          "confidence": 0.01
+        },
+        {
+          "company": "Walmart Inc. (Sam's Club)",
+          "ticker": "WMT",
+          "confidence": 0.01
+        }
+      ]
+    },
+    "prediction": {
+      "prob_weighted": 0.4442857142857144,
+      "prob_judge": 0.45,
+      "thesis": "Steady, high-quality quarter, but nothing in it should re-rate a premium-multiple stock. Headline EPS of $15.32 includes a $0.34 non-recurring tariff-refund benefit. Excluding it, EPS of about $14.98 beats the roughly $14.81–14.86 consensus by only about 1%. Net sales of $213.0B came in slightly below the $215.2B consensus even with about 3 points of help from gas-price inflation. Adjusted comps of 6.7% (also 6.7% excluding gas and FX) match the 6–7% run-rate of the past year, with no visible lift from the tariff-funded price cuts, which an analyst flagged directly. Membership is the soft spot: paid members grew 3.8% after eight straight quarters of slowing growth, the fee-increase tailwind ends this quarter, and management called the current rate 'more typical'. Offsetting positives: underlying core margins rose 18bp, the SG&A ratio improved, the business absorbed a large $345M LIFO charge, renewal rates ticked up, premium-tier members grew 9.4%, digital comps ran about 20%, and cash generation and the balance sheet are excellent. Capex steps up about 17% to $17B, and the inflation, tariff and geopolitical commentary was hedged. For a richly valued, consistent compounder, a thin quality beat with a slightly light top line and decelerating membership usually brings a muted to slightly negative relative reaction. I land a bit below a coin flip, in line with the panel.",
+      "views": {
+        "growth": {
+          "stance": "neutral",
+          "prob_up": 0.42,
+          "conviction": "low"
+        },
+        "profitability": {
+          "stance": "bullish",
+          "prob_up": 0.54,
+          "conviction": "low"
+        },
+        "guidance": {
+          "stance": "neutral",
+          "prob_up": 0.45,
+          "conviction": "low"
+        },
+        "cash_flow": {
+          "stance": "neutral",
+          "prob_up": 0.45,
+          "conviction": "low"
+        },
+        "management_tone": {
+          "stance": "bearish",
+          "prob_up": 0.4,
+          "conviction": "low"
+        },
+        "expectations_gap": {
+          "stance": "neutral",
+          "prob_up": 0.45,
+          "conviction": "low"
+        },
+        "risks": {
+          "stance": "bearish",
+          "prob_up": 0.4,
+          "conviction": "low"
+        }
+      }
+    }
+  },
+  {
+    "case_id": "case17",
+    "company": "Micron Technology, Inc.",
+    "ticker": "MU",
+    "fiscal_period": "Q4 FY2026",
+    "report_date": "2026-09-30",
+    "timing": "amc",
+    "built": false,
+    "note": "no full call transcript could be fetched"
+  }
+]

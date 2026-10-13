@@ -1,0 +1,146 @@
+{
+  "result": {
+    "cases": [
+      {
+        "case_id": "case12",
+        "split": "eval",
+        "actual_up": false,
+        "brier_weighted": 0.14548775510204093,
+        "brier_judge": 0.1444,
+        "brier_by_perspective": {
+          "growth": 0.1444,
+          "profitability": 0.16000000000000003,
+          "guidance": 0.12249999999999998,
+          "cash_flow": 0.2116,
+          "management_tone": 0.1296,
+          "expectations_gap": 0.12249999999999998,
+          "risks": 0.1369
+        },
+        "correct_weighted": true,
+        "correct_judge": true,
+        "brier_uniform": 0.1454877551020408,
+        "identifiable": true
+      },
+      {
+        "case_id": "case13",
+        "split": "eval",
+        "actual_up": true,
+        "brier_weighted": 0.11270408163265301,
+        "brier_judge": 0.09000000000000002,
+        "brier_by_perspective": {
+          "growth": 0.10239999999999996,
+          "profitability": 0.09000000000000002,
+          "guidance": 0.1369,
+          "cash_flow": 0.1444,
+          "management_tone": 0.09000000000000002,
+          "expectations_gap": 0.10239999999999996,
+          "risks": 0.1296
+        },
+        "correct_weighted": true,
+        "correct_judge": true,
+        "brier_uniform": 0.11270408163265301,
+        "identifiable": true
+      },
+      {
+        "case_id": "case14",
+        "split": "eval",
+        "actual_up": true,
+        "brier_weighted": 0.3072326530612243,
+        "brier_judge": 0.3364000000000001,
+        "brier_by_perspective": {
+          "growth": 0.20249999999999996,
+          "profitability": 0.3364000000000001,
+          "guidance": 0.30250000000000005,
+          "cash_flow": 0.36,
+          "management_tone": 0.28090000000000004,
+          "expectations_gap": 0.3249000000000001,
+          "risks": 0.36
+        },
+        "correct_weighted": false,
+        "correct_judge": false,
+        "brier_uniform": 0.3072326530612245,
+        "identifiable": true
+      },
+      {
+        "case_id": "case15",
+        "split": "eval",
+        "actual_up": false,
+        "brier_weighted": 0.4262224489795919,
+        "brier_judge": 0.39690000000000003,
+        "brier_by_perspective": {
+          "growth": 0.43560000000000004,
+          "profitability": 0.42250000000000004,
+          "guidance": 0.4489000000000001,
+          "cash_flow": 0.43560000000000004,
+          "management_tone": 0.42250000000000004,
+          "expectations_gap": 0.43560000000000004,
+          "risks": 0.3844
+        },
+        "correct_weighted": false,
+        "correct_judge": false,
+        "brier_uniform": 0.4262224489795919,
+        "identifiable": true
+      },
+      {
+        "case_id": "case16",
+        "split": "eval",
+        "actual_up": true,
+        "brier_weighted": 0.3088183673469386,
+        "brier_judge": 0.30250000000000005,
+        "brier_by_perspective": {
+          "growth": 0.3364000000000001,
+          "profitability": 0.21159999999999995,
+          "guidance": 0.30250000000000005,
+          "cash_flow": 0.30250000000000005,
+          "management_tone": 0.36,
+          "expectations_gap": 0.30250000000000005,
+          "risks": 0.36
+        },
+        "correct_weighted": false,
+        "correct_judge": false,
+        "brier_uniform": 0.3088183673469386,
+        "identifiable": true
+      }
+    ],
+    "n": 5,
+    "brier_weighted": 0.2600930612244897,
+    "brier_judge": 0.25404000000000004,
+    "brier_uniform": 0.2600930612244897,
+    "brier_coin": 0.25,
+    "accuracy_weighted": 0.4,
+    "accuracy_judge": 0.4,
+    "n_identifiable": 5
+  },
+  "usage": {
+    "masker": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    },
+    "guesser": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    },
+    "analyst": {
+      "input_tokens": 7720,
+      "output_tokens": 31012,
+      "cache_read_input_tokens": 850596,
+      "cache_creation_input_tokens": 141766
+    },
+    "judge": {
+      "input_tokens": 20392,
+      "output_tokens": 4336,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 140871
+    },
+    "reflector": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    }
+  }
+}

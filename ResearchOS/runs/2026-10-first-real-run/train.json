@@ -1,0 +1,236 @@
+{
+  "result": [
+    {
+      "case_id": "case01",
+      "split": "train",
+      "actual_up": true,
+      "brier_weighted": 0.16693061224489789,
+      "brier_judge": 0.20249999999999996,
+      "brier_by_perspective": {
+        "growth": 0.16000000000000003,
+        "profitability": 0.16000000000000003,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.17640000000000003,
+        "management_tone": 0.17640000000000003,
+        "expectations_gap": 0.16000000000000003,
+        "risks": 0.17640000000000003
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case02",
+      "split": "train",
+      "actual_up": false,
+      "brier_weighted": 0.12350556738593109,
+      "brier_judge": 0.1296,
+      "brier_by_perspective": {
+        "growth": 0.1369,
+        "profitability": 0.1444,
+        "guidance": 0.1024,
+        "cash_flow": 0.17639999999999997,
+        "management_tone": 0.10890000000000001,
+        "expectations_gap": 0.11560000000000002,
+        "risks": 0.09
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case03",
+      "split": "train",
+      "actual_up": true,
+      "brier_weighted": 0.08753527632165806,
+      "brier_judge": 0.0729,
+      "brier_by_perspective": {
+        "growth": 0.09000000000000002,
+        "profitability": 0.0729,
+        "guidance": 0.09000000000000002,
+        "cash_flow": 0.07840000000000001,
+        "management_tone": 0.09000000000000002,
+        "expectations_gap": 0.09000000000000002,
+        "risks": 0.10239999999999996
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case04",
+      "split": "train",
+      "actual_up": false,
+      "brier_weighted": 0.37931362545746994,
+      "brier_judge": 0.4096,
+      "brier_by_perspective": {
+        "growth": 0.4489000000000001,
+        "profitability": 0.36,
+        "guidance": 0.36,
+        "cash_flow": 0.31360000000000005,
+        "management_tone": 0.3844,
+        "expectations_gap": 0.4096,
+        "risks": 0.3844
+      },
+      "correct_weighted": false,
+      "correct_judge": false,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case05",
+      "split": "train",
+      "actual_up": false,
+      "brier_weighted": 0.14437349565990182,
+      "brier_judge": 0.1444,
+      "brier_by_perspective": {
+        "growth": 0.17639999999999997,
+        "profitability": 0.12249999999999998,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.2025,
+        "management_tone": 0.1369,
+        "expectations_gap": 0.09,
+        "risks": 0.1369
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case07",
+      "split": "train",
+      "actual_up": true,
+      "brier_weighted": 0.12852509886709898,
+      "brier_judge": 0.11559999999999998,
+      "brier_by_perspective": {
+        "growth": 0.1369,
+        "profitability": 0.12249999999999998,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.11559999999999998,
+        "management_tone": 0.1444,
+        "expectations_gap": 0.10239999999999996,
+        "risks": 0.12249999999999998
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case08",
+      "split": "train",
+      "actual_up": true,
+      "brier_weighted": 0.20945447954658547,
+      "brier_judge": 0.18490000000000004,
+      "brier_by_perspective": {
+        "growth": 0.20249999999999996,
+        "profitability": 0.2916,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.18490000000000004,
+        "management_tone": 0.20249999999999996,
+        "expectations_gap": 0.2304,
+        "risks": 0.20249999999999996
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case09",
+      "split": "train",
+      "actual_up": false,
+      "brier_weighted": 0.19044660488385268,
+      "brier_judge": 0.16000000000000003,
+      "brier_by_perspective": {
+        "growth": 0.31360000000000005,
+        "profitability": 0.16000000000000003,
+        "guidance": 0.2116,
+        "cash_flow": 0.16000000000000003,
+        "management_tone": 0.1369,
+        "expectations_gap": 0.2025,
+        "risks": 0.17639999999999997
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case10",
+      "split": "train",
+      "actual_up": true,
+      "brier_weighted": 0.1439767163413001,
+      "brier_judge": 0.10239999999999996,
+      "brier_by_perspective": {
+        "growth": 0.10239999999999996,
+        "profitability": 0.17640000000000003,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.20249999999999996,
+        "management_tone": 0.11559999999999998,
+        "expectations_gap": 0.10239999999999996,
+        "risks": 0.16000000000000003
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case11",
+      "split": "train",
+      "actual_up": false,
+      "brier_weighted": 0.16534535720627724,
+      "brier_judge": 0.12249999999999998,
+      "brier_by_perspective": {
+        "growth": 0.1296,
+        "profitability": 0.2304,
+        "guidance": 0.1296,
+        "cash_flow": 0.2304,
+        "management_tone": 0.1296,
+        "expectations_gap": 0.07840000000000001,
+        "risks": 0.28090000000000004
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    }
+  ],
+  "usage": {
+    "masker": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    },
+    "guesser": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    },
+    "analyst": {
+      "input_tokens": 174382,
+      "output_tokens": 67579,
+      "cache_read_input_tokens": 2068386,
+      "cache_creation_input_tokens": 344731
+    },
+    "judge": {
+      "input_tokens": 63654,
+      "output_tokens": 9596,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 342941
+    },
+    "reflector": {
+      "input_tokens": 391630,
+      "output_tokens": 22816,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 0
+    }
+  }
+}
