@@ -323,3 +323,148 @@ stderr. `main(argv=None, *, client_factory=None) -> int`: `client_factory` is
 a zero-argument callable returning a client, `anthropic.Anthropic` when None.
 Exit 0 on success, 2 on bad arguments, 1 on any `LLMError` or missing case
 (with a message on stderr).
+
+## researchos.sources (v2: building real cases)
+
+Builds a `Case` and its `Outcome` from the web and from daily closes. The
+documents are found and fetched through the Claude API's server-side web
+tools; prices are not fetched here -- they arrive as JSON files. Tests use
+fakes; nothing in them touches the network.
+
+### Prices and the outcome
+
+- `load_closes(path) -> list[tuple[date, float]]`: reads a JSON file holding
+  `[["2026-07-16", 1234.5], ...]` (ISO date, close), returned sorted by date.
+- `event_date_for(report_date: date, timing: str, trading_days) -> date`:
+  `trading_days` is a sequence of dates (the dates of a closes series).
+  `timing == "bmo"` (released before the open): the first trading day on or
+  after `report_date`. `timing == "amc"` (after the close): the first trading
+  day strictly after `report_date`. Raises ValueError for any other timing or
+  when there is no such day.
+- `outcome_from_closes(stock, market, event_date, *, notes="", sources=()) -> Outcome`:
+  `stock_return_1d = tools.returns.event_return(stock, event_date)`, the same
+  for `market`, `abnormal_return_1d = tools.returns.abnormal_return(stock_return_1d,
+  market_return_1d)`. Raises ValueError if any of them is None.
+
+### Fetching pages
+
+```python
+@dataclass
+class FetchedPage:
+    url: str
+    title: str
+    text: str
+```
+
+- `fetch_pages(client, request, *, model="claude-opus-5-5", max_searches=5,
+  max_fetches=6, max_continuations=4) -> list[FetchedPage]`: asks the model to
+  find and fetch what `request` describes. The call:
+
+  ```python
+  client.beta.messages.create(
+      model=model, max_tokens=16000,
+      betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+      output_config={"effort": "medium"},
+      system=FETCH_SYSTEM,
+      tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": max_searches},
+             {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": max_fetches}],
+      messages=messages,
+  )
+  ```
+
+  `messages` starts as `[{"role": "user", "content": request}]`. While the
+  response's `stop_reason` is `"pause_turn"` (the server paused a long turn),
+  append `{"role": "assistant", "content": response.content}` and call again
+  with the same arguments, at most `max_continuations` more times; then
+  return what was collected. A `"refusal"` stop raises `LLMError` (from
+  `researchos.llm`).
+
+  Pages are collected from the `content` of every response, in order. A page
+  is a block with `type == "web_fetch_tool_result"` whose `content.type ==
+  "web_fetch_result"` and whose `content.content.source.type == "text"`; it
+  gives `FetchedPage(url=content.url, title=content.content.title or "",
+  text=content.content.source.data)`. Anything else (search results, errors,
+  PDFs, which arrive as base64) is ignored. A URL already collected is not
+  collected again. Blocks are objects with attributes (the SDK's models);
+  tests use `types.SimpleNamespace`.
+
+  `FETCH_SYSTEM` tells the model to fetch primary documents (the company's own
+  release, a full call transcript) rather than news coverage of them, and not
+  to summarize: the fetched text is the product.
+
+### Cutting the document out of the page
+
+A fetched page carries navigation, ads and related links around the document.
+
+- `select_span(agent, page, kind) -> str | None`: one `agent.json(SPAN_SYSTEM,
+  prompt, SPAN_SCHEMA)` call (an agent as in `researchos.llm`) whose prompt
+  holds `kind` and the page text. `SPAN_SCHEMA`: `{"found": bool,
+  "first_words": str, "last_words": str}` -- the first and last ten or so
+  words of the document, copied exactly. Returns `None` if `found` is false.
+  Otherwise `i = page.text.find(first_words)` and `j = page.text.find(last_words,
+  i)`; when both are found (`>= 0`) returns `page.text[i : j + len(last_words)]`
+  stripped; otherwise `None`. `SPAN_SYSTEM` asks for the document proper: for a
+  release, from its first line to the end of its financial tables; for a
+  transcript, the prepared remarks and Q&A, without any commentary about the
+  share price.
+
+### Expectations
+
+- `expectations_document(agent, pages, company, fiscal_period) -> Document | None`:
+  one `agent.json(EXPECT_SYSTEM, prompt, EXPECT_SCHEMA)` call whose prompt
+  holds the pages' text. `EXPECT_SCHEMA`: `{"items": [{"metric": str,
+  "consensus": str, "source": str}]}`. The agent reports only what analysts
+  expected *before* the results (consensus EPS, revenue, segment or guidance
+  figures), never the reported results or how the stock traded. `None` when
+  there are no items; otherwise `Document("expectations", f"Consensus
+  expectations for {fiscal_period}", text)` (its `source` left `""`) where
+  `text` has one line per item, `f"- {metric}: {consensus} (source: {source})"`.
+
+### Building a case
+
+- `build_case(root, spec, *, fetch, agent, stock_closes, market_closes) -> Case`:
+  `spec` is a `CaseSpec`:
+
+  ```python
+  @dataclass
+  class CaseSpec:
+      case_id: str
+      company: str
+      ticker: str
+      aliases: list[str]
+      fiscal_period: str       # "Q2 2026"
+      report_date: str         # ISO date the results came out
+      timing: str              # "bmo" | "amc"
+  ```
+
+  `fetch` is a callable `fetch(request) -> list[FetchedPage]` (in production
+  `functools.partial(fetch_pages, client)`). It is called three times, with
+  requests that each name the company, ticker, fiscal period and report date:
+  the release request contains the word "release" and neither "transcript"
+  nor "consensus"; the transcript request contains "transcript"; the
+  expectations request contains "consensus" and not "transcript". Steps:
+  1. Release: `fetch` a request naming the company, ticker, period and date
+     and asking for the official results release; the first page for which
+     `select_span(agent, page, "release")` is not None becomes
+     `Document("release", page.title, span, page.url)`.
+  2. Transcript: the same with a request for the full earnings call
+     transcript and kind `"transcript"`.
+  3. Expectations: `fetch` a request for the analyst consensus before the
+     report, then `expectations_document`.
+  4. Release or transcript missing: raise `LookupError` naming which, before
+     anything is written.
+  5. `event_date = event_date_for(date.fromisoformat(spec.report_date),
+     spec.timing, [d for d, _ in stock_closes])`; the outcome is
+     `outcome_from_closes(stock_closes, market_closes, event_date,
+     sources=[page urls used])`.
+  6. `save_case(root, case, outcome)` with documents in the order release,
+     transcript, expectations (when present), and return the case.
+
+### CLI
+
+`python -m researchos build --root DIR --spec FILE --closes FILE --market-closes FILE`
+where `--spec` is a JSON file holding one `CaseSpec`. It builds the agent as
+`ClaudeJSON(client, effort="medium")` and the fetcher as `fetch_pages` with
+the same client (from `client_factory`), prints the case id and the outcome
+as JSON to stdout, and exits 0; 2 on bad arguments; 1 on `LLMError`,
+`LookupError`, `ValueError` or a missing file, with a message on stderr.

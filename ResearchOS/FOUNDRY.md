@@ -35,3 +35,9 @@ says, with the module, class and function names it gives.
 - `response.usage` has `input_tokens`, `output_tokens`,
   `cache_read_input_tokens`, `cache_creation_input_tokens` (the last two may
   be None).
+- Server-side tools (`web_search`, `web_fetch`) run on Anthropic's side within
+  one `messages.create` call; their calls and results come back as content
+  blocks of that response (`server_tool_use`, `web_search_tool_result`,
+  `web_fetch_tool_result`). A long turn can stop with `stop_reason ==
+  "pause_turn"`; resume it by sending the response's content back as an
+  assistant message.

@@ -43,6 +43,19 @@ set ANTHROPIC_API_KEY=...
 .venv\Scripts\python -m researchos evaluate --root cases --playbook playbook.json --ids d,e
 ```
 
+Real cases come from `build`: it asks the API's server-side web search and
+fetch to find the company's results release, the full call transcript and
+pre-report consensus estimates, has an agent cut each document out of its
+page, and computes the outcome from daily closes you supply (the stock's and
+the market's, `[["2026-07-16", 1234.5], ...]`):
+
+```
+.venv\Scripts\python -m researchos build --root cases --spec case01.json --closes AAPL.json --market-closes SPY.json
+```
+
+where `case01.json` holds `case_id`, `company`, `ticker`, `aliases`,
+`fiscal_period`, `report_date` and `timing` (`bmo` or `amc`).
+
 A case is a directory `cases/<id>/` with `case.json` (the documents and the
 company's identity terms) and `outcome.json` (the abnormal return), kept apart
 so that loading a case never touches its answer. Training writes `masked.json`
@@ -76,7 +89,24 @@ the end, treats masker terms that differ only in case as duplicates, strips
 whitespace around identity terms, and drops any earlier lesson that happens
 to name the company being analyzed.
 
-Review removed one thing: the loop called `load_outcome` through a helper
+`researchos.sources` and `build` came second, the same way: Foundry got
+the merged package plus a new SPEC.md section, in a fresh workspace.
+
+| | Foundry | Hand-written reference |
+|---|---|---|
+| Acceptance tests (new + v1 regression) | 60 / 60 | 60 / 60 |
+| Own tests | 23 | -- |
+| Agent rounds / cost | 16 / ~$1.01 | -- |
+
+The two agree on 3,000 random inputs to each of `event_date_for`,
+`outcome_from_closes` and `select_span`. Foundry's version is again the more
+careful one: it validates the case spec field by field, refuses empty span
+markers (which would match anywhere), and does not ask for expectations when
+no page was fetched, so the agent is never invited to supply figures from
+memory. The run also surfaced a Foundry fix: the model ended an Add File
+patch with `+*** End Patch`, and Foundry now accepts that end line.
+
+Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name
 the loop calls.
