@@ -211,6 +211,16 @@ def test_a_missing_begin_line_is_supplied_when_a_file_operation_opens_the_patch(
     assert ops[0].action == "update" and ops[0].hunks[0].replace == "y"
 
 
+def test_an_end_line_written_with_a_plus_closes_the_patch():
+    """A real model ended an Add File patch with '+*** End Patch', carrying the
+    '+' of the lines above onto the end line; refusing it cost a round."""
+    ops = parse_patch("*** Begin Patch\n*** Add File: t.py\n+x = 1\n+*** End Patch")
+    assert [(op.action, op.content) for op in ops] == [("add", "x = 1\n")]
+    # A file that really contains the line keeps it when the patch has its end line.
+    ops = parse_patch("*** Begin Patch\n*** Add File: t.py\n+*** End Patch\n*** End Patch")
+    assert ops[0].content == "*** End Patch\n"
+
+
 @pytest.mark.parametrize("bad", [
     "```\n*** Begin Patch\n*** Add File: a.py\n+x\n*** End Patch\n```",
     "Here is the patch:\n*** Add File: a.py\n+x\n*** End Patch",

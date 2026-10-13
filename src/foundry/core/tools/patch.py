@@ -89,6 +89,11 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
         lines.insert(0, BEGIN)
     if not lines or lines[0].strip() != BEGIN:
         raise PatchParseError(f"patch must start with {BEGIN!r}")
+    # After a run of '+' lines a real model wrote the end line as '+*** End
+    # Patch'. Read that way the patch has no end line at all, so taking it as
+    # the end line cannot misread a well-formed patch.
+    if lines[-1].strip() == "+" + END:
+        lines[-1] = END
     if lines[-1].strip() != END:
         raise PatchParseError(f"patch must end with {END!r}")
 
