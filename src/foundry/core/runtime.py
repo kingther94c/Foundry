@@ -308,7 +308,10 @@ class AgentRuntime:
             "tool_calls": [{"call_id": c.call_id, "name": c.name, "arguments": c.arguments}
                            for c in finished.tool_calls],
             "stop_reason": finished.stop_reason.value,
+            "notices": list(finished.notices),
         })
+        for notice in finished.notices:
+            self._emit(Notice(notice, level="warning"))
         return finished
 
     # -- one tool call ----------------------------------------------------
@@ -515,7 +518,8 @@ class AgentRuntime:
 
     @staticmethod
     def _block_payload(block) -> dict:
-        from foundry.core.conversation import TextBlock, ToolResultBlock, ToolUseBlock as TU
+        from foundry.core.conversation import (OpaqueBlock, TextBlock, ToolResultBlock,
+                                               ToolUseBlock as TU)
 
         if isinstance(block, TextBlock):
             return {"kind": "text", "text": block.text}
@@ -525,6 +529,8 @@ class AgentRuntime:
         if isinstance(block, ToolResultBlock):
             return {"kind": "tool_result", "call_id": block.call_id,
                     "content": block.content, "is_error": block.is_error}
+        if isinstance(block, OpaqueBlock):
+            return {"kind": "opaque", "provider": block.provider, "data": block.data}
         return {"kind": "unknown"}
 
     def _reply(self, call: ToolUseBlock, content: str, *, is_error: bool = False) -> None:

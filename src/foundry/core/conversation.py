@@ -67,7 +67,21 @@ class ToolResultBlock:
     kind: Literal["tool_result"] = "tool_result"
 
 
-ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+@dataclass(frozen=True, slots=True)
+class OpaqueBlock:
+    """Provider content the runtime never interprets, carried for replay.
+
+    ``data`` is JSON text rather than a parsed structure so the block stays
+    immutable like the rest of the IR. Adapters that do not recognise
+    ``provider`` ignore the block entirely.
+    """
+
+    provider: str
+    data: str
+    kind: Literal["opaque"] = "opaque"
+
+
+ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | OpaqueBlock
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,12 +157,18 @@ class ModelTurn:
     usage: Usage = field(default_factory=Usage)
     stop_reason: StopReason = StopReason.END_TURN
     model: str = ""
+    # Provider content to replay verbatim on the next request (additive).
+    opaque: OpaqueBlock | None = None
+    # Things the provider reported that the user should hear about (additive).
+    notices: tuple[str, ...] = ()
 
     def as_message(self) -> Message:
         blocks: list[ContentBlock] = []
         if self.text:
             blocks.append(TextBlock(self.text))
         blocks.extend(self.tool_calls)
+        if self.opaque is not None:
+            blocks.append(self.opaque)
         return Message(role=Role.ASSISTANT, blocks=tuple(blocks))
 
 
