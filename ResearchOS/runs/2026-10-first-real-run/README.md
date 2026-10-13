@@ -3,7 +3,7 @@
 Seventeen large-cap reports, all published after the models' knowledge
 cutoff (June 2026), so no model in the loop can have seen how any of these
 stocks reacted. Built with `researchos.sources`, trained and scored with
-`researchos.loop`, every role played by `claude-opus-5-5`.
+`researchos.loop`, every role played by the package's default model.
 
 What is here: `cases.json` (each case's identity, dates, document sources and
 sizes, the outcome, how masking went, and the sealed prediction),
