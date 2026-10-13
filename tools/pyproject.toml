@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "foundry-tools"
+version = "0.1.0"
+description = "Reusable utility functions: financial math, returns, statistics, text masking, dates"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0,<9"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["tools"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error::EncodingWarning"]
