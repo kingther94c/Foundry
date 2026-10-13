@@ -67,6 +67,25 @@ jobs:
       - name: Test
         run: python -X warn_default_encoding -m pytest -q
 
+  researchos:
+    # ResearchOS builds on tools/; its suite runs offline against fake agents.
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: ResearchOS
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: python -m pip install -e ../tools -e ".[dev]"
+
+      - name: Test
+        run: python -X warn_default_encoding -m pytest -q
+
   offline-install:
     runs-on: windows-latest
     steps:
