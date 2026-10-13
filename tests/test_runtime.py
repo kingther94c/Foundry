@@ -245,6 +245,30 @@ def test_termination_is_journaled_once(harness):
     assert len(terminations) == 1
 
 
+def test_token_usage_journals_cached_input_tokens(harness):
+    """Cache reads were invisible after the turn: the journal kept only input
+    and output, so the report billed every cached token at full price."""
+    cached = ModelTurn(text="done", usage=Usage(input_tokens=4206, output_tokens=7,
+                                                cached_input_tokens=4202),
+                       stop_reason=StopReason.END_TURN)
+    runtime, events = harness([cached])
+    runtime.run_turn("go")
+    harness.session.close()
+    usage = [r.payload for r in SessionStore.read_records(harness.session.path)
+             if r.type == EventType.TOKEN_USAGE]
+    assert usage == [{"input_tokens": 4206, "output_tokens": 7,
+                      "cached_input_tokens": 4202}]
+
+
+def test_token_usage_journals_zero_cached_tokens_when_none_were_cached(harness):
+    runtime, events = harness([turn("done")])
+    runtime.run_turn("go")
+    harness.session.close()
+    usage = [r.payload for r in SessionStore.read_records(harness.session.path)
+             if r.type == EventType.TOKEN_USAGE]
+    assert usage and usage[0]["cached_input_tokens"] == 0
+
+
 def test_journal_records_policy_decisions(harness):
     runtime, events = harness([
         turn("", call("read_file", {"path": "src/app.py"})),

@@ -33,6 +33,8 @@ class SessionReport:
     approvals: Counter = field(default_factory=Counter)
     input_tokens: int = 0
     output_tokens: int = 0
+    # A subset of input_tokens: the part the provider served from its cache.
+    cached_input_tokens: int = 0
     rejected_claims: int = 0
 
     @property
@@ -79,6 +81,8 @@ def analyse(journal: Path) -> SessionReport:
         elif record.type == EventType.TOKEN_USAGE:
             report.input_tokens += payload.get("input_tokens", 0)
             report.output_tokens += payload.get("output_tokens", 0)
+            # Journals written before the field existed have no key: count 0.
+            report.cached_input_tokens += payload.get("cached_input_tokens", 0) or 0
     return report
 
 
@@ -98,6 +102,8 @@ def summarize(reports: list[SessionReport]) -> dict:
     statuses = Counter(r.status.value for r in reports)
     applied = sum(r.patches_applied for r in reports)
     rejected = sum(r.patches_rejected for r in reports)
+    input_tokens = sum(r.input_tokens for r in reports)
+    cached_input_tokens = sum(r.cached_input_tokens for r in reports)
     return {
         "sessions": len(reports),
         "statuses": dict(statuses),
@@ -109,8 +115,13 @@ def summarize(reports: list[SessionReport]) -> dict:
         },
         "policy_denials": sum(r.denials for r in reports),
         "tokens": {
-            "input": sum(r.input_tokens for r in reports),
+            "input": input_tokens,
             "output": sum(r.output_tokens for r in reports),
+            "cached_input": cached_input_tokens,
+            # Share of input tokens read from the provider cache; None when
+            # there was no input to take a share of.
+            "cache_read_share": (round(cached_input_tokens / input_tokens, 3)
+                                 if input_tokens else None),
         },
         "turns_per_session": round(sum(r.turns for r in reports) / len(reports), 1),
     }
@@ -140,4 +151,9 @@ def render(root: Path, *, as_json: bool = False) -> str:
     lines.append(f"  turns per session     {summary['turns_per_session']}")
     lines.append(f"  tokens                {summary['tokens']['input']} in / "
                  f"{summary['tokens']['output']} out")
+    share = summary["tokens"]["cache_read_share"]
+    share_text = (f"{share:.0%} of input read from cache" if share is not None
+                  else "no input recorded")
+    lines.append(f"  cached input tokens   {summary['tokens']['cached_input']} "
+                 f"({share_text})")
     return "\n".join(lines)

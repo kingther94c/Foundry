@@ -246,6 +246,9 @@ class AgentRuntime:
             self._journal(EventType.TOKEN_USAGE, {
                 "input_tokens": turn.usage.input_tokens,
                 "output_tokens": turn.usage.output_tokens,
+                # Already included in input_tokens; recorded separately so the
+                # report can tell cache reads from full-price input.
+                "cached_input_tokens": turn.usage.cached_input_tokens,
             })
 
             if not turn.tool_calls:
