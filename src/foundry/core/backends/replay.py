@@ -31,6 +31,7 @@ from foundry.core.backends.base import (
 from foundry.core.conversation import (
     Capabilities,
     ModelTurn,
+    OpaqueBlock,
     StopReason,
     ToolUseBlock,
     TurnRequest,
@@ -82,7 +83,9 @@ class RequestSignature:
 
 
 def _turn_to_json(turn: ModelTurn) -> dict:
-    return {
+    # opaque and notices are written only when present, so fixtures from
+    # backends without them stay byte-identical to what they were.
+    payload = {
         "text": turn.text,
         "tool_calls": [
             {"call_id": c.call_id, "name": c.name, "arguments": c.arguments}
@@ -96,10 +99,18 @@ def _turn_to_json(turn: ModelTurn) -> dict:
         "stop_reason": turn.stop_reason.value,
         "model": turn.model,
     }
+    if turn.opaque is not None:
+        payload["opaque"] = {"provider": turn.opaque.provider, "data": turn.opaque.data}
+    if turn.notices:
+        payload["notices"] = list(turn.notices)
+    return payload
 
 
 def _turn_from_json(obj: dict) -> ModelTurn:
     usage = obj.get("usage", {})
+    opaque_obj = obj.get("opaque")
+    opaque = (OpaqueBlock(provider=opaque_obj["provider"], data=opaque_obj["data"])
+              if isinstance(opaque_obj, dict) else None)
     return ModelTurn(
         text=obj.get("text", ""),
         tool_calls=tuple(
@@ -113,6 +124,8 @@ def _turn_from_json(obj: dict) -> ModelTurn:
         ),
         stop_reason=StopReason(obj.get("stop_reason", StopReason.END_TURN.value)),
         model=obj.get("model", ""),
+        opaque=opaque,
+        notices=tuple(obj.get("notices", ())),
     )
 
 

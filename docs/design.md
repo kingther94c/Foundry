@@ -249,9 +249,10 @@ class ModelBackend(Protocol):
 - Adapters: `openai_compat` (Chat Completions -- a personal API key, a local
   endpoint), `replay` (fixture-driven, mandated for tests), and **`responses`
   (mandatory for M3** -- the corporate Gateway's OpenAI-family models go
-  through Responses, [D-022](decision-log.md)). `anthropic_messages` remains an
-  add-on if needed (the Gateway's Claude wire protocol is unverified; it will
-  be decided once observed). Before the ModelBackend protocol is frozen in M0,
+  through Responses, [D-022](decision-log.md)), and `anthropic_messages` (the
+  native Messages API with prompt caching and verbatim replay of thinking,
+  [D-032](decision-log.md); the corporate Gateway's Claude wire protocol is
+  still unobserved). Before the ModelBackend protocol is frozen in M0,
   a paper walkthrough is done against the Responses wire protocol (an
   IR<->Responses mapping table) to keep the freeze promise.
 - A protocol invariant: the provider's native continuation identifiers and

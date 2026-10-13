@@ -60,8 +60,15 @@ class CredentialVault:
     path: Path
     redactor: Redactor = field(default_factory=default_redactor)
 
+    # Every field that holds a secret; each is registered with the redactor on load.
+    SECRET_FIELDS = ("api_key", "token", "anthropic_api_key")
+
     def save(self, data: dict[str, str]) -> None:
-        payload = json.dumps({**data, "saved_at": datetime.now(timezone.utc).isoformat()})
+        """Merge ``data`` into what is stored. Replacing it meant storing an
+        Anthropic key silently deleted the OpenAI key next to it."""
+        existing = self.load() or {}
+        payload = json.dumps({**existing, **data,
+                              "saved_at": datetime.now(timezone.utc).isoformat()})
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             blob = dpapi_protect(payload.encode("utf-8"))
@@ -88,7 +95,9 @@ class CredentialVault:
             data = json.loads(payload.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             return None
-        for key in ("api_key", "token"):
+        if not isinstance(data, dict):
+            return None
+        for key in self.SECRET_FIELDS:
             if data.get(key):
                 self.redactor.register(data[key])
         return data
@@ -109,6 +118,15 @@ class ApiKeySource:
     vault: CredentialVault
     env_var: str = "OPENAI_API_KEY"
     redactor: Redactor = field(default_factory=default_redactor)
+    # The vault field this source reads and writes. Each provider has its own,
+    # so one provider's key is never sent to the other.
+    vault_field: str = "api_key"
+
+    @staticmethod
+    def anthropic(vault: CredentialVault) -> ApiKeySource:
+        """The source for protocol anthropic_messages."""
+        return ApiKeySource(vault, env_var="ANTHROPIC_API_KEY",
+                            vault_field="anthropic_api_key")
 
     def acquire(self) -> SecretHandle:
         from_env = os.environ.get(self.env_var)
@@ -117,8 +135,8 @@ class ApiKeySource:
             return SecretHandle(from_env, label="api key")
 
         stored = self.vault.load()
-        if stored and stored.get("api_key"):
-            return SecretHandle(stored["api_key"], label="api key")
+        if stored and stored.get(self.vault_field):
+            return SecretHandle(stored[self.vault_field], label="api key")
 
         raise AuthError(
             f"no credentials. Set {self.env_var} or run 'foundry login'."
@@ -126,7 +144,7 @@ class ApiKeySource:
 
     def store(self, api_key: str) -> None:
         self.redactor.register(api_key)
-        self.vault.save({"api_key": api_key})
+        self.vault.save({self.vault_field: api_key})
 
     def invalidate(self) -> None:
         pass  # a static key has nothing to refresh

@@ -2,7 +2,10 @@
 
 Golden fixtures have to come from somewhere, and re-recording has to be cheap or
 the suite ossifies around whatever the first capture happened to produce. This
-wraps any real backend, passes every turn through, and writes the pairs out.
+wraps any real backend, passes every turn through, and writes the pairs out --
+the whole ModelTurn, including the provider content an adapter replays verbatim
+(``opaque``) and the notices it raised, so a replayed session sends the same
+history the recorded one did.
 
 Recording from a *local* endpoint is the default path: it costs nothing, and a
 fixture captured from a production session would carry the user's own code into

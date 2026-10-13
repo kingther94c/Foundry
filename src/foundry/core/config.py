@@ -30,6 +30,45 @@ ENV_PREFIX = "FOUNDRY_"
 _CONNECTION_KEYS = frozenset({"base_url", "api_key", "model", "protocol", "headers",
                               "proxy", "ca_bundle", "credential_source"})
 
+# Per-protocol defaults for settings no layer set. The base URL is the one that
+# matters: an Anthropic key sent to the OpenAI default host is a credential
+# handed to the wrong provider.
+ANTHROPIC_PROTOCOL = "anthropic_messages"
+_PROTOCOL_DEFAULTS: dict[str, dict[str, str]] = {
+    ANTHROPIC_PROTOCOL: {"base_url": "https://api.anthropic.com/v1",
+                         "model": "claude-opus-5-5"},
+}
+
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+FALLBACK_VALUES = ("default", "off")
+MIN_CONTEXT_TOKENS = 1000
+
+
+def _validate_backend_setting(key: str, value: Any) -> None:
+    """Range and type checks for backend settings that have them."""
+    if key == "effort":
+        if value is not None and value not in EFFORT_LEVELS:
+            raise ConfigError(
+                f"backend.effort must be one of {', '.join(EFFORT_LEVELS)}, got {value!r}"
+            )
+    elif key == "fallbacks":
+        if value not in FALLBACK_VALUES:
+            raise ConfigError(
+                f"backend.fallbacks must be 'default' or 'off', got {value!r}"
+            )
+    elif key == "max_context_tokens":
+        if value is None:
+            return
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ConfigError(
+                f"backend.max_context_tokens must be an integer, got "
+                f"{type(value).__name__} ({value!r})"
+            )
+        if value < MIN_CONTEXT_TOKENS:
+            raise ConfigError(
+                f"backend.max_context_tokens must be at least {MIN_CONTEXT_TOKENS}, got {value}"
+            )
+
 
 def user_dir() -> Path:
     override = os.environ.get(USER_DIR_ENV)
@@ -56,6 +95,12 @@ class BackendConfig:
     request_max_retries: int = 4
     stream_idle_timeout_ms: int = 300_000
     stream: bool = True
+    # anthropic_messages only: output_config.effort (None leaves it to the API),
+    # server-side fallbacks ("off" disables them), and the context window the
+    # runtime plans masking against (None keeps the backend's own figure).
+    effort: str | None = None
+    fallbacks: str = "default"
+    max_context_tokens: int | None = None
 
 
 @dataclass(slots=True)
@@ -153,6 +198,7 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
                     + (" (one attempt is the minimum; there is no way to make zero requests)"
                        if key == "request_max_retries" else "")
                 )
+        _validate_backend_setting(key, value)
         setattr(config.backend, key, value)
         config.record(f"backend.{key}", value, layer)
 
@@ -254,7 +300,28 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
         if hasattr(config, key):
             setattr(config, key, value)
         elif hasattr(config.backend, key):
+            _validate_backend_setting(key, value)
             setattr(config.backend, key, value)
         config.record(key, value, "cli")
 
+    _apply_protocol_defaults(config)
     return config
+
+
+def _was_set(config: Config, key: str) -> bool:
+    """Whether any layer set backend.<key>. CLI overrides record the bare key."""
+    return f"backend.{key}" in config.provenance or key in config.provenance
+
+
+def _apply_protocol_defaults(config: Config) -> None:
+    """Swap the built-in default for the protocol's own where nothing set it.
+
+    Decided from provenance, not by comparing against the OpenAI default: a
+    user who explicitly points anthropic_messages at a proxy keeps that URL,
+    and one who left it alone never sends an Anthropic key to api.openai.com.
+    """
+    defaults = _PROTOCOL_DEFAULTS.get(config.backend.protocol, {})
+    for key, value in defaults.items():
+        if not _was_set(config, key):
+            setattr(config.backend, key, value)
+            config.record(f"backend.{key}", value, f"default for {config.backend.protocol}")

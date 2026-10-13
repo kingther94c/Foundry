@@ -60,6 +60,25 @@ foundry login
 foundry
 ```
 
+### Using Claude through the native API
+
+`foundry login` and `OPENAI_API_KEY` cover OpenAI-compatible endpoints. For
+Claude, put this in `%LOCALAPPDATA%\Foundry\config.toml` (or `$FOUNDRY_HOME`):
+
+```toml
+[backend]
+protocol = "anthropic_messages"
+# model = "claude-opus-5-5"     # the default for this protocol
+# effort = "high"               # low | medium | high | xhigh | max; unset leaves the API default
+# max_context_tokens = 1000000  # the model's window; masking starts at half of it
+```
+
+and set `ANTHROPIC_API_KEY` (or run `foundry login`, which stores it apart from
+any OpenAI key). The base URL defaults to `https://api.anthropic.com/v1` for
+this protocol, so the key is never sent to the OpenAI default host. Rounds read
+the previous round's prompt from the cache, and safety-classifier declines are
+retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
+
 ## Commands
 
 | Command | What it does |
@@ -114,7 +133,7 @@ both are enforced by tests
 | [docs/design.md](docs/design.md) | the design: package structure, core interfaces, key mechanisms |
 | [docs/threat-model.md](docs/threat-model.md) | what is protected, what is not, and where enforcement happens |
 | [docs/roadmap.md](docs/roadmap.md) | milestones and status |
-| [docs/decision-log.md](docs/decision-log.md) | 31 numbered decisions (including the overturned ones) |
+| [docs/decision-log.md](docs/decision-log.md) | 32 numbered decisions (including the overturned ones) |
 | [docs/open-questions.md](docs/open-questions.md) | open questions |
 | [docs/research/](docs/research/) | research notes, including the [first live endpoint check](docs/research/live-endpoint.md) |
 | [demo/](demo/) | the skeleton in one runnable file, plus a notebook |

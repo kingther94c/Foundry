@@ -21,10 +21,11 @@ from rich.console import Console
 from foundry import __version__
 from foundry.cli.render import Renderer
 from foundry.core.auth import ApiKeySource, CredentialVault, StaticTokenSource
+from foundry.core.backends.anthropic import AnthropicBackend
 from foundry.core.backends.openai_compat import OpenAICompatBackend
 from foundry.core.backends.recording import RecordingBackend
 from foundry.core.backends.responses import ResponsesBackend
-from foundry.core.config import Config, load_config, user_dir
+from foundry.core.config import ANTHROPIC_PROTOCOL, Config, load_config, user_dir
 from foundry.core.context import ContextManager
 from foundry.core.errors import AuthError, ConfigError, FoundryError
 from foundry.core.events import (
@@ -189,8 +190,7 @@ def build(workspace_path: Path, *, home: Path | None = None,
                       "can never match")
 
     vault = CredentialVault(home / "auth.json")
-    source = (StaticTokenSource(vault) if config.backend.credential_source == "gateway_token"
-              else ApiKeySource(vault))
+    source = _credential_source(config, vault)
     api_key = ""
     missing_credential = ""
     try:
@@ -207,13 +207,23 @@ def build(workspace_path: Path, *, home: Path | None = None,
     if backend_class is None:
         raise ConfigError(
             f"unknown protocol {config.backend.protocol!r}; "
-            "supported: openai_compat, responses"
+            f"supported: {', '.join(_PROTOCOLS)}"
         )
+    backend_kwargs: dict = {}
+    if backend_class is AnthropicBackend:
+        backend_kwargs["effort"] = config.backend.effort
+        backend_kwargs["fallbacks"] = (None if config.backend.fallbacks == "off"
+                                       else config.backend.fallbacks)
+        if config.backend.max_context_tokens is not None:
+            backend_kwargs["caps"] = dataclasses.replace(
+                AnthropicBackend().caps,
+                max_context_tokens=config.backend.max_context_tokens)
     backend = backend_class(
         base_url=config.backend.base_url, model=config.backend.model, api_key=api_key,
         extra_headers=config.backend.headers, stream=config.backend.stream,
         client=HttpClient(read_timeout=config.backend.stream_idle_timeout_ms / 1000),
         max_retries=config.backend.request_max_retries,
+        **backend_kwargs,
     )
 
     context = ContextManager(
@@ -247,6 +257,17 @@ def build(workspace_path: Path, *, home: Path | None = None,
         sink.emit(Notice(missing_credential, level="warning"))
     return Wiring(workspace=workspace, config=config, runtime=runtime,
                   renderer=renderer, session=session)
+
+
+def _credential_source(config: Config, vault: CredentialVault):
+    """The credential this configuration uses. anthropic_messages has its own
+    variable and vault field: an OpenAI key must never reach Anthropic, nor the
+    reverse."""
+    if config.backend.credential_source == "gateway_token":
+        return StaticTokenSource(vault)
+    if config.backend.protocol == ANTHROPIC_PROTOCOL:
+        return ApiKeySource.anthropic(vault)
+    return ApiKeySource(vault)
 
 
 # --- commands -------------------------------------------------------------
@@ -322,19 +343,25 @@ def cmd_login(args: argparse.Namespace) -> int:
     # an AuthError on the next run, and the error told them to run this very
     # command again.
     config = load_config(home=home)
-    gateway = config.backend.credential_source == "gateway_token"
-    label = "gateway token" if gateway else "OpenAI API key"
+    source = _credential_source(config, vault)
+    gateway = isinstance(source, StaticTokenSource)
+    if gateway:
+        label = "gateway token"
+    elif source.vault_field == "anthropic_api_key":
+        label = "Anthropic API key"
+    else:
+        label = "OpenAI API key"
 
     console.print(
-        f"Paste a{'' if gateway else 'n'} {label}. Foundry stores it encrypted for "
-        "your Windows account (DPAPI) and never puts it in prompts or logs."
+        f"Paste a{'n' if label[0] in 'AEIOU' else ''} {label}. Foundry stores it "
+        "encrypted for your Windows account (DPAPI) and never puts it in prompts or logs."
     )
 
     # getpass.win_getpass reads the console directly through msvcrt and ignores
     # stdin entirely, so the EOFError handler below could never fire and a
     # piped or detached `foundry login` hung forever instead of failing.
     if not sys.stdin.isatty():
-        env_var = "FOUNDRY_GATEWAY_TOKEN" if gateway else "OPENAI_API_KEY"
+        env_var = source.env_var
         console.print(
             f"[red]stdin is not a terminal[/red], so there is nowhere safe to type a "
             f"secret. Set {env_var} in the environment instead."
@@ -355,10 +382,7 @@ def cmd_login(args: argparse.Namespace) -> int:
         console.print("[red]nothing entered[/red]")
         return 1
 
-    if gateway:
-        StaticTokenSource(vault).store(secret)
-    else:
-        ApiKeySource(vault).store(secret)
+    source.store(secret)
     console.print(f"[green]saved[/green] {home / 'auth.json'} ({label})")
     return 0
 
@@ -408,6 +432,7 @@ def cmd_sessions(args: argparse.Namespace) -> int:
 _PROTOCOLS = {
     "openai_compat": OpenAICompatBackend,
     "responses": ResponsesBackend,
+    ANTHROPIC_PROTOCOL: AnthropicBackend,
 }
 
 
