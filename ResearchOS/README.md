@@ -106,16 +106,22 @@ no page was fetched, so the agent is never invited to supply figures from
 memory. The run also surfaced a Foundry fix: the model ended an Add File
 patch with `+*** End Patch`, and Foundry now accepts that end line.
 
-The first real page broke `select_span`: SPEC.md had it find the model's
-start and end markers by exact search, and a model's copy of a page never
-reproduces its newlines, non-breaking spaces and table pipes. The spec now
-matches markers on letters and digits only and widens the span to whole
-words. Foundry made the change from the revised section in a fresh workspace
-(6 rounds, ~$0.21, all acceptance tests passing) and also rewrote the
-cutter's prompt, which still asked for exact copies. On 20,000 random inputs
-it agrees with the hand-written version -- once that version was fixed: it
-crashed on characters such as `İ` whose lowercase is two characters, which
-Foundry's handled.
+Real pages then reshaped `select_span` twice. It first had the model quote
+the document's first and last words and found them by exact search; a
+model's copy of a page never reproduces its newlines, non-breaking spaces and
+table pipes, so a release and a transcript that were on the page came back
+missing. Matching on letters and digits only fixed those (Foundry made the
+change in 6 rounds, ~$0.21, handling characters such as `İ` whose lowercase
+is two characters, where the hand-written version crashed) -- but on nine of
+the next sixteen cases the model could not quote the end of an 80,000-
+character page at all, and on a release it stopped at the end of the
+highlights. Now the page is shown with numbered lines and the model gives
+line numbers, which it reads off rather than recalls; and since an investor-
+relations page is often a stub linking to a PDF, every fetched page is cut
+and the longest span kept. Foundry made that change too (11 rounds, ~$0.56)
+and removed the marker matching it replaced; on 20,000 random inputs it
+agrees with the hand-written version, except that it also rejects a boolean
+where a line number should be.
 
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.

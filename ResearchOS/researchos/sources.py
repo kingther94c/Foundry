@@ -172,30 +172,37 @@ def fetch_pages(client, request: str, *, model: str = DEFAULT_MODEL, max_searche
 
 SPAN_SYSTEM = """\
 You locate one document inside a web page that also carries navigation, \
-menus, ads, cookie notices, related links and other clutter.
+menus, ads, cookie notices, related links and other clutter. The page is \
+given with its lines numbered from 1, each line written as "N: text".
 
-Find the document proper. For a results release: from its first line \
-(headline or dateline) to the end of its financial tables, leaving out \
-boilerplate that follows (contact details, "about the company" blurbs are \
-fine to drop). For an earnings call transcript: the prepared remarks and the \
-Q&A, leaving out any commentary about the share price or how the stock \
-traded, and any editorial introduction or wrap-up by the publisher.
+Find the document proper and report the number of its first line and of its \
+last line, read off the numbered page.
 
-Report the first ten or so words and the last ten or so words of that \
-document, copied as they appear in the page text (same words, spelling and \
-numbers), so they can be located in the page. If \
-the page does not contain the requested document (for example it is only a \
-news story about it, or a teaser of a paywalled page), set found to false \
-and leave both strings empty."""
+For a results release: from its first line (headline or dateline) to the \
+last line of its financial tables. Releases run far past their highlights: \
+the narrative, the outlook and then the income statement, balance sheet, \
+cash flow and segment tables follow, so do not stop at the end of the \
+highlights or the first table; the last line is the last line of the last \
+financial table.
+
+For an earnings call transcript: from the opening of the call (the operator \
+or the first speaker) to the end of the closing remarks, prepared remarks and \
+Q&A included, without any commentary about the share price or how the stock \
+traded and without any editorial introduction or wrap-up by the publisher.
+
+A page that only announces or links to the document (for example a stub \
+pointing to a PDF, a news story about the results, or a teaser of a \
+paywalled page) does not contain it: set found to false and both line \
+numbers to 0."""
 
 SPAN_SCHEMA = {
     "type": "object",
     "properties": {
         "found": {"type": "boolean"},
-        "first_words": {"type": "string"},
-        "last_words": {"type": "string"},
+        "first_line": {"type": "integer"},
+        "last_line": {"type": "integer"},
     },
-    "required": ["found", "first_words", "last_words"],
+    "required": ["found", "first_line", "last_line"],
     "additionalProperties": False,
 }
 
@@ -203,58 +210,29 @@ _KIND_LABELS = {"release": "earnings results release",
                 "transcript": "earnings call transcript"}
 
 
-def _loose(text: str) -> tuple[str, list[int]]:
-    """``text`` reduced to its lowercased letters and digits, with each kept
-    character's index in ``text``."""
-    chars: list[str] = []
-    positions: list[int] = []
-    for index, ch in enumerate(text):
-        if ch.isalnum():
-            for low in ch.lower():
-                chars.append(low)
-                positions.append(index)
-    return "".join(chars), positions
-
-
-def _locate_span(text: str, first_words: str, last_words: str) -> str | None:
-    """Locate the markers loosely in ``text`` and return the whole-word span."""
-    haystack, positions = _loose(text)
-    first, _ = _loose(first_words)
-    last, _ = _loose(last_words)
-    if not first or not last:
-        return None
-    i = haystack.find(first)
-    if i < 0:
-        return None
-    j = haystack.find(last, i)
-    if j < 0:
-        return None
-    start = positions[i]
-    end = positions[j + len(last) - 1] + 1
-    while start > 0 and not text[start - 1].isspace():
-        start -= 1
-    while end < len(text) and not text[end].isspace():
-        end += 1
-    span = text[start:end].strip()
-    return span or None
+def _is_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def select_span(agent, page: FetchedPage, kind: str) -> str | None:
     """Cut the ``kind`` document out of ``page``; None if it is not there."""
+    lines = page.text.splitlines()
     label = _KIND_LABELS.get(kind, kind)
+    numbered = "\n".join(f"{n}: {line}" for n, line in enumerate(lines, 1))
     prompt = (f"Document kind: {kind} ({label})\n"
               f"Page title: {page.title}\n\n"
-              f"Page text:\n<<<\n{page.text}\n>>>")
+              f"Page ({len(lines)} numbered lines):\n{numbered}")
     answer = agent.json(SPAN_SYSTEM, prompt, SPAN_SCHEMA)
     if not answer.get("found"):
         return None
-    first_words = answer.get("first_words")
-    last_words = answer.get("last_words")
-    if not isinstance(first_words, str) or not isinstance(last_words, str):
+    first = answer.get("first_line")
+    last = answer.get("last_line")
+    if not _is_int(first) or not _is_int(last):
         return None
-    # Markers are matched on letters and digits only; one without any would
-    # "match" anywhere, so _locate_span returns None for it.
-    return _locate_span(page.text, first_words, last_words)
+    if not 1 <= first <= last <= len(lines):
+        return None
+    span = "\n".join(lines[first - 1:last]).strip()
+    return span or None
 
 
 # ---- expectations ----------------------------------------------------------------------
@@ -385,18 +363,24 @@ def expectations_request(spec: CaseSpec) -> str:
             f"before {spec.report_date}.")
 
 
-def _first_document(fetch, agent, request: str, kind: str) -> Document | None:
+def _longest_document(fetch, agent, request: str, kind: str) -> Document | None:
+    """The longest ``kind`` span over every fetched page (earliest among equals).
+
+    Taking the first span found would let a stub that only links to the
+    document stand in for it.
+    """
+    best: Document | None = None
     for page in fetch(request):
         span = select_span(agent, page, kind)
-        if span is not None:
-            return Document(kind, page.title, span, page.url)
-    return None
+        if span is not None and (best is None or len(span) > len(best.text)):
+            best = Document(kind, page.title, span, page.url)
+    return best
 
 
 def build_case(root, spec: CaseSpec, *, fetch, agent, stock_closes, market_closes) -> Case:
     """Fetch the documents, compute the outcome, save both, return the Case."""
-    release = _first_document(fetch, agent, release_request(spec), "release")
-    transcript = _first_document(fetch, agent, transcript_request(spec), "transcript")
+    release = _longest_document(fetch, agent, release_request(spec), "release")
+    transcript = _longest_document(fetch, agent, transcript_request(spec), "transcript")
     expectation_pages = fetch(expectations_request(spec))
     expectations = expectations_document(agent, expectation_pages, spec.company,
                                          spec.fiscal_period)

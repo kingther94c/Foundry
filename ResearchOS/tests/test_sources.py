@@ -13,6 +13,7 @@ from researchos.sources import (
     EXPECT_SCHEMA,
     FETCH_SYSTEM,
     SPAN_SCHEMA,
+    SPAN_SYSTEM,
     CaseSpec,
     FetchedPage,
     build_case,
@@ -174,63 +175,78 @@ def test_fetch_pages_refusal():
 
 # ---- select_span
 
-PAGE_TEXT = ("Home | Investors | Menu\n  Acme reports Q2 2026 results. Revenue rose 10%. "
-             "Table: revenue 100 net income 10 end of tables.  \nRelated: shares jump!")
+PAGE_TEXT = ("Home | Investors | Menu\n"
+             "  Acme reports Q2 2026 results.\n"
+             "Revenue rose 10%.\n"
+             "Table: revenue 100 net income 10  \n"
+             "Related: shares jump!")
 PAGE = FetchedPage("https://acme/ir", "Acme Q2", PAGE_TEXT)
 
 
-def test_select_span_cuts_document():
-    agent = FakeLLM(responses=[{"found": True, "first_words": "Acme reports Q2",
-                                "last_words": "end of tables."}])
+def span_answer(first_line, last_line, found=True):
+    return {"found": found, "first_line": first_line, "last_line": last_line}
+
+
+def span_of(text, first_line, last_line):
+    agent = FakeLLM(responses=[span_answer(first_line, last_line)])
+    return select_span(agent, FetchedPage("u", "t", text), "release")
+
+
+def test_select_span_cuts_lines():
+    agent = FakeLLM(responses=[span_answer(2, 4)])
     span = select_span(agent, PAGE, "release")
-    assert span == ("Acme reports Q2 2026 results. Revenue rose 10%. "
-                    "Table: revenue 100 net income 10 end of tables.")
+    assert span == ("Acme reports Q2 2026 results.\n"
+                    "Revenue rose 10%.\n"
+                    "Table: revenue 100 net income 10")
     (call,) = agent.calls
+    assert call["system"] == SPAN_SYSTEM
     assert call["schema"] is SPAN_SCHEMA and call["prefix"] is None
-    assert "release" in call["prompt"] and PAGE_TEXT in call["prompt"]
+    assert "release" in call["prompt"] and "Acme Q2" in call["prompt"]
+
+
+def test_select_span_prompt_numbers_every_line():
+    agent = FakeLLM(responses=[span_answer(0, 0, found=False)])
+    select_span(agent, PAGE, "transcript")
+    prompt = agent.calls[0]["prompt"]
+    assert "transcript" in prompt
+    numbered = "\n".join(f"{n}: {line}" for n, line in enumerate(PAGE_TEXT.splitlines(), 1))
+    assert numbered in prompt
+    assert "1: Home | Investors | Menu\n2:   Acme reports Q2 2026 results." in prompt
+    assert "5: Related: shares jump!" in prompt
+
+
+def test_select_span_bounds_are_inclusive():
+    assert span_of(PAGE_TEXT, 1, 1) == "Home | Investors | Menu"
+    assert span_of(PAGE_TEXT, 5, 5) == "Related: shares jump!"
+    assert span_of(PAGE_TEXT, 1, 5) == PAGE_TEXT.strip()
+    assert span_of(PAGE_TEXT, 3, 3) == "Revenue rose 10%."
+
+
+def test_select_span_splits_any_line_ending():
+    text = "nav\r\nline one\r\nline two\rline three\nfooter"
+    assert span_of(text, 2, 4) == "line one\nline two\nline three"
 
 
 def test_select_span_none_cases():
     for answer in [
-        {"found": False, "first_words": "Acme reports", "last_words": "tables."},
-        {"found": True, "first_words": "not in page", "last_words": "tables."},
-        {"found": True, "first_words": "Acme reports", "last_words": "not in page"},
-        {"found": True, "first_words": "Revenue rose", "last_words": "Menu"},  # before i
-        {"found": True, "first_words": "", "last_words": ""},
-        {"found": True, "first_words": " | -- ", "last_words": "tables."},  # no alnum
-        {"found": True, "first_words": "Acme reports", "last_words": "... |"},
+        span_answer(2, 4, found=False),
+        span_answer(0, 4),  # lines start at 1
+        span_answer(-1, 2),
+        span_answer(2, 6),  # past the last line
+        span_answer(6, 6),
+        span_answer(4, 2),  # reversed
+        span_answer(0, 0),
+        span_answer(2.0, 4),  # not integers
+        span_answer("2", "4"),
+        span_answer(True, True),
+        {"found": True},
     ]:
-        assert select_span(FakeLLM(responses=[answer]), PAGE, "transcript") is None
+        assert select_span(FakeLLM(responses=[answer]), PAGE, "transcript") is None, answer
 
 
-def span_of(text, first_words, last_words):
-    agent = FakeLLM(responses=[{"found": True, "first_words": first_words,
-                                "last_words": last_words}])
-    return select_span(agent, FetchedPage("u", "t", text), "release")
-
-
-def test_select_span_spec_example():
-    assert span_of("x | Net debt |\n| $5,244 |\nfooter",
-                   "Net debt", "Net debt | $5,244") == "Net debt |\n| $5,244"
-
-
-def test_select_span_ignores_whitespace_punctuation_and_case():
-    text = "nav\nACME\u00a0Reports  Q2\n2026 results ... net income: $10\u00a0million.\nfooter"
-    assert span_of(text, "acme reports q2 2026", "Net Income $10 million") == (
-        "ACME\u00a0Reports  Q2\n2026 results ... net income: $10\u00a0million.")
-
-
-def test_select_span_widens_to_whole_words():
-    text = "menu Acme reports results; revenue was $1,234.5m (up 10%) end"
-    # Markers that start and stop mid-word still yield whole words.
-    assert span_of(text, "me reports", "up 1") == "Acme reports results; revenue was $1,234.5m (up 10%)"
-    # Widening reaches the page edges.
-    assert span_of("Acme reports|x", "cme", "x") == "Acme reports|x"
-
-
-def test_select_span_last_marker_at_or_after_start():
-    text = "total 5 intro Acme starts here total 5 end"
-    assert span_of(text, "Acme starts", "total 5") == "Acme starts here total 5"
+def test_select_span_blank_span_and_empty_page():
+    assert span_of("text\n   \n\t\nmore", 2, 3) is None
+    assert span_of("", 1, 1) is None
 
 
 def test_schemas_are_strict():
@@ -280,11 +296,19 @@ SPEC = CaseSpec(case_id="acme-q2", company="Acme Widgets Inc.", ticker="ACMW",
                 aliases=["Acme", "Jane Roe"], fiscal_period="Q2 2026",
                 report_date="2026-07-15", timing="bmo")
 
-RELEASE_PAGES = [FetchedPage("https://news/story", "Story", "A news story about results."),
-                 FetchedPage("https://acme/ir/q2", "Acme Q2 2026 results",
-                             "nav nav RELEASE START revenue 100 RELEASE END footer")]
+# A stub that only links to the release comes first and does yield a (short)
+# span; the full release further down must win.
+STUB_RELEASE = FetchedPage("https://acme/ir/stub", "Acme Q2 2026 results",
+                           "menu\nSTART Acme Q2 2026 results: see the PDF END\nfooter")
+FULL_RELEASE = FetchedPage("https://acme/ir/q2", "Acme Q2 2026 full release",
+                           "nav\nnav\nSTART Acme reports Q2 2026\nrevenue 100\n"
+                           "net income 10\ntotal assets 900 END\nfooter")
+RELEASE_PAGES = [STUB_RELEASE,
+                 FetchedPage("https://news/story", "Story", "A news story about results."),
+                 FULL_RELEASE]
+FULL_RELEASE_TEXT = "START Acme reports Q2 2026\nrevenue 100\nnet income 10\ntotal assets 900 END"
 TRANSCRIPT_PAGES = [FetchedPage("https://t/acmw", "ACMW call",
-                                "ads CALL START we did well CALL END ads")]
+                                "ads\nSTART Operator: welcome\nCEO: we did well END\nads")]
 EXPECT_PAGES = [FetchedPage("https://preview/acmw", "Preview", "EPS seen at $1.10")]
 EPS_ITEM = {"metric": "EPS", "consensus": "$1.10", "source": "Zacks"}
 
@@ -311,13 +335,21 @@ class FakeFetch:
 
 
 def agent_answer(prompt, schema, items=(EPS_ITEM,)):
+    """Expectations items, or the numbered lines from START to END of the page."""
     if "items" in schema["properties"]:
         return {"items": list(items)}
-    if "RELEASE START" in prompt:
-        return {"found": True, "first_words": "RELEASE START", "last_words": "RELEASE END"}
-    if "CALL START" in prompt:
-        return {"found": True, "first_words": "CALL START", "last_words": "CALL END"}
-    return {"found": False, "first_words": "", "last_words": ""}
+    first = last = 0
+    for line in prompt.splitlines():
+        number, _, text = line.partition(": ")
+        if not number.isdigit():
+            continue
+        if "START" in text and not first:
+            first = int(number)
+        if "END" in text:
+            last = int(number)
+    if first and last:
+        return span_answer(first, last)
+    return span_answer(0, 0, found=False)
 
 
 def build_agent(items=(EPS_ITEM,)):
@@ -326,14 +358,20 @@ def build_agent(items=(EPS_ITEM,)):
 
 def test_build_case(tmp_path):
     fetch = FakeFetch()
-    case = build_case(tmp_path, SPEC, fetch=fetch, agent=build_agent(),
+    agent = build_agent()
+    case = build_case(tmp_path, SPEC, fetch=fetch, agent=agent,
                       stock_closes=STOCK, market_closes=MARKET)
     assert [d.kind for d in case.documents] == ["release", "transcript", "expectations"]
     release, transcript, expectations = case.documents
-    assert release.text == "RELEASE START revenue 100 RELEASE END"
-    assert release.title == "Acme Q2 2026 results" and release.source == "https://acme/ir/q2"
-    assert transcript.text == "CALL START we did well CALL END"
+    assert release.text == FULL_RELEASE_TEXT
+    assert release.title == "Acme Q2 2026 full release"
+    assert release.source == "https://acme/ir/q2"
+    assert transcript.text == "START Operator: welcome\nCEO: we did well END"
     assert transcript.source == "https://t/acmw"
+    # select_span ran on every fetched page: 3 release, 1 transcript, + expectations.
+    span_calls = [c for c in agent.calls if c["schema"] is SPAN_SCHEMA]
+    assert len(span_calls) == len(RELEASE_PAGES) + len(TRANSCRIPT_PAGES)
+    assert len(agent.calls) == len(span_calls) + 1
     assert expectations.text == "- EPS: $1.10 (source: Zacks)"
     assert case.event_date == "2026-07-15"
     assert case.aliases == ["Acme", "Jane Roe"] and case.ticker == "ACMW"
@@ -351,6 +389,29 @@ def test_build_case(tmp_path):
     assert "release" in rel and "transcript" not in rel and "consensus" not in rel
     assert "transcript" in tra and "release" not in tra and "consensus" not in tra
     assert "consensus" in exp and "transcript" not in exp and "release" not in exp
+
+
+def test_build_case_keeps_longest_span_earliest_among_equals(tmp_path):
+    # Longer than STUB_RELEASE's span, shorter than FULL_RELEASE's.
+    later_longer = FetchedPage("https://acme/ir/later", "Later",
+                               "x\nSTART a longer release text with its financial tables END")
+    stub_span = "START Acme Q2 2026 results: see the PDF END"
+    assert len(stub_span) < len("START a longer release text with its financial tables END") \
+        < len(FULL_RELEASE_TEXT)
+    same_a = FetchedPage("https://acme/a", "A", "START same END\nfooter")
+    same_b = FetchedPage("https://acme/b", "B", "nav\nSTART same END")
+    fetch = FakeFetch(release=[FULL_RELEASE, later_longer],
+                      transcript=[same_a, same_b])
+    case = build_case(tmp_path, SPEC, fetch=fetch, agent=build_agent(),
+                      stock_closes=STOCK, market_closes=MARKET)
+    release, transcript, _ = case.documents
+    assert release.source == "https://acme/ir/q2" and release.text == FULL_RELEASE_TEXT
+    assert transcript.source == "https://acme/a" and transcript.text == "START same END"
+
+    fetch = FakeFetch(release=[STUB_RELEASE, later_longer])
+    case = build_case(tmp_path / "2", SPEC, fetch=fetch, agent=build_agent(),
+                      stock_closes=STOCK, market_closes=MARKET)
+    assert case.documents[0].source == "https://acme/ir/later"
 
 
 def test_build_case_amc_without_expectations(tmp_path):
@@ -392,7 +453,7 @@ def cli_files(tmp_path, spec=None):
 
 def cli_client():
     """A fake client serving both the web-fetch calls and the structured-output calls."""
-    first = {"release": RELEASE_PAGES[1], "transcript": TRANSCRIPT_PAGES[0],
+    first = {"release": FULL_RELEASE, "transcript": TRANSCRIPT_PAGES[0],
              "expectations": EXPECT_PAGES[0]}
 
     def responder(kw):

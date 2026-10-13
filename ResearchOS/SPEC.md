@@ -397,27 +397,26 @@ class FetchedPage:
 A fetched page carries navigation, ads and related links around the document.
 
 - `select_span(agent, page, kind) -> str | None`: one `agent.json(SPAN_SYSTEM,
-  prompt, SPAN_SCHEMA)` call (an agent as in `researchos.llm`) whose prompt
-  holds `kind` and the page text. `SPAN_SCHEMA`: `{"found": bool,
-  "first_words": str, "last_words": str}` -- the first and last ten or so
-  words of the document. Returns `None` if `found` is false.
+  prompt, SPAN_SCHEMA)` call (an agent as in `researchos.llm`). The page's
+  lines (`page.text.splitlines()`) are numbered from 1, and the prompt holds
+  `kind`, the page title and the numbered page, each line written as
+  `f"{n}: {line}"`. `SPAN_SCHEMA`: `{"found": bool, "first_line": int,
+  "last_line": int}`. Returns `None` if `found` is false or the numbers are not
+  `1 <= first_line <= last_line <= number of lines`; otherwise lines
+  `first_line` to `last_line` inclusive, joined with `"\n"` and stripped
+  (`None` if that is empty).
 
-  A model's copy of page text rarely reproduces its whitespace exactly
-  (newlines, non-breaking spaces, a table's `|` cells), so the markers are
-  located loosely: the page and both markers are compared on their letters
-  and digits only (`str.isalnum()`), lowercased, with every other character
-  skipped. The first marker's first match gives the start; the last marker's
-  first match beginning at or after the start gives the end. The span then
-  widens to whole words: its start moves back, and its end forward, to the
-  nearest whitespace or the edge of the page. Returns that part of the page
-  text, stripped; `None` if either marker has no letters or digits or is not
-  found. Example: a page `"x | Net debt |\n| $5,244 |\nfooter"` with markers
-  `"Net debt"` and `"Net debt | $5,244"` gives `"Net debt |\n| $5,244"`.
+  Line numbers, not quoted words: asked to quote the first and last words of
+  a document deep inside an 80,000-character page, a model paraphrases them,
+  and asked for its end it tends to stop at the end of the highlights. A line
+  number it reads off the page.
 
-  `SPAN_SYSTEM` asks for the document proper: for a
-  release, from its first line to the end of its financial tables; for a
-  transcript, the prepared remarks and Q&A, without any commentary about the
-  share price.
+  `SPAN_SYSTEM` asks for the document proper: for a release, from its first
+  line to the last line of its financial tables (releases run far past their
+  highlights); for a transcript, from the opening to the end of the closing
+  remarks, without any commentary about the share price. A page that only
+  announces or links to the document (a stub pointing to a PDF, a news story
+  about it) does not contain it.
 
 ### Expectations
 
@@ -455,9 +454,11 @@ A fetched page carries navigation, ads and related links around the document.
   nor "consensus"; the transcript request contains "transcript"; the
   expectations request contains "consensus" and not "transcript". Steps:
   1. Release: `fetch` a request naming the company, ticker, period and date
-     and asking for the official results release; the first page for which
-     `select_span(agent, page, "release")` is not None becomes
-     `Document("release", page.title, span, page.url)`.
+     and asking for the official results release; `select_span(agent, page,
+     "release")` runs on every page fetched, and the longest span found, in
+     characters (the earliest page among equals), becomes `Document("release", page.title,
+     span, page.url)`. Taking the first one found would let a stub that only
+     links to the release stand in for it.
   2. Transcript: the same with a request for the full earnings call
      transcript and kind `"transcript"`.
   3. Expectations: `fetch` a request for the analyst consensus before the

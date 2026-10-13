@@ -150,68 +150,42 @@ class Agent:
 
 
 PAGE = sources.FetchedPage("https://ir.example/q2", "Q2 results",
-                           "Home | Investors | Menu\nACME reports second quarter results. Revenue rose. "
-                           "Table end line.\nRelated: Acme stock jumps")
+                           "Home | Investors | Menu\nACME reports second quarter results.\nRevenue rose.\n"
+                           "| Table | end |\nRelated: Acme stock jumps")
 
 
-def test_select_span_slices_between_the_markers():
-    agent = Agent(lambda s, p, sc: {"found": True, "first_words": "ACME reports second",
-                                    "last_words": "Table end line."})
-    span = sources.select_span(agent, PAGE, "release")
-    assert span == "ACME reports second quarter results. Revenue rose. Table end line."
+def lines_agent(first, last, found=True):
+    return Agent(lambda *a: {"found": found, "first_line": first, "last_line": last})
+
+
+def test_select_span_returns_the_numbered_lines():
+    agent = lines_agent(2, 4)
+    assert sources.select_span(agent, PAGE, "release") == \
+        "ACME reports second quarter results.\nRevenue rose.\n| Table | end |"
     system, prompt, schema = agent.calls[0]
-    assert "release" in prompt and PAGE.text in prompt
-    assert schema["properties"].keys() == {"found", "first_words", "last_words"}
+    assert system == sources.SPAN_SYSTEM
+    assert "release" in prompt and "Q2 results" in prompt
+    assert "1: Home | Investors | Menu" in prompt and "5: Related: Acme stock jumps" in prompt
+    assert schema["properties"].keys() == {"found", "first_line", "last_line"}
+    assert schema["properties"]["first_line"]["type"] == "integer"
     assert schema["additionalProperties"] is False
 
 
-@pytest.mark.parametrize("answer", [
-    {"found": False, "first_words": "ACME", "last_words": "line."},
-    {"found": True, "first_words": "not on the page", "last_words": "line."},
-    {"found": True, "first_words": "ACME reports", "last_words": "missing end"},
+def test_select_span_single_line_and_strip():
+    page = sources.FetchedPage("u", "t", "a\n   body   \nb")
+    assert sources.select_span(lines_agent(2, 2), page, "transcript") == "body"
+
+
+@pytest.mark.parametrize("first,last,found", [
+    (2, 4, False), (0, 3, True), (3, 2, True), (2, 6, True), (-1, 2, True),
 ])
-def test_select_span_none(answer):
-    assert sources.select_span(Agent(lambda *a: answer), PAGE, "release") is None
+def test_select_span_none(first, last, found):
+    assert sources.select_span(lines_agent(first, last, found), PAGE, "release") is None
 
 
-def test_select_span_end_is_searched_after_the_start():
-    page = sources.FetchedPage("u", "t", "END. intro START body END. tail")
-    agent = Agent(lambda *a: {"found": True, "first_words": "START", "last_words": "END."})
-    assert sources.select_span(agent, page, "release") == "START body END."
-
-
-REAL_PAGE = sources.FetchedPage(
-    "https://sec.example/ex99", "Document",
-    "Menu | Search\nExhibit 99.1 \nJuly\xa016, 2026\n\nFellow shareholders,\n\n\u2022Our results grew. "
-    "| Less: Short-term investments | (28,678) |\n| Net debt | $5,244,190 |\n\n| 15 |\nFooter links")
-
-
-def test_select_span_matches_markers_loosely():
-    # Copied the way a model copies: whitespace collapsed, a nbsp as a space, a table pipe lost.
-    agent = Agent(lambda *a: {"found": True,
-                              "first_words": "Exhibit 99.1 July 16, 2026 Fellow shareholders, Our results",
-                              "last_words": "Less: Short-term investments | (28,678) | Net debt | $5,244,190 |"})
-    assert sources.select_span(agent, REAL_PAGE, "release") == (
-        "Exhibit 99.1 \nJuly\xa016, 2026\n\nFellow shareholders,\n\n\u2022Our results grew. "
-        "| Less: Short-term investments | (28,678) |\n| Net debt | $5,244,190")
-
-
-def test_select_span_widens_to_whole_words_and_ignores_case():
-    page = sources.FetchedPage("u", "t", "nav (Unaudited) totals: 1,234 and 5,678. end")
-    agent = Agent(lambda *a: {"found": True, "first_words": "unaudited) TOTALS", "last_words": "5,67"})
-    assert sources.select_span(agent, page, "release") == "(Unaudited) totals: 1,234 and 5,678."
-
-
-def test_select_span_spec_example():
-    page = sources.FetchedPage("u", "t", "x | Net debt |\n| $5,244 |\nfooter")
-    agent = Agent(lambda *a: {"found": True, "first_words": "Net debt", "last_words": "Net debt | $5,244"})
-    assert sources.select_span(agent, page, "release") == "Net debt |\n| $5,244"
-
-
-@pytest.mark.parametrize("first,last", [("| --- |", "Net debt"), ("Exhibit", "..."), ("", "Net debt")])
-def test_select_span_markers_without_letters_or_digits(first, last):
-    agent = Agent(lambda *a: {"found": True, "first_words": first, "last_words": last})
-    assert sources.select_span(agent, REAL_PAGE, "release") is None
+def test_select_span_blank_lines_give_none():
+    page = sources.FetchedPage("u", "t", "a\n\n  \nb")
+    assert sources.select_span(lines_agent(2, 3), page, "release") is None
 
 
 # --- expectations ---------------------------------------------------------------
@@ -233,10 +207,12 @@ def test_expectations_document():
 # --- build_case -----------------------------------------------------------------
 
 RELEASE_PAGE = sources.FetchedPage("https://ir.acme.example/q2", "Acme Q2 2026 results",
-                                   "nav nav RELEASE-START Acme results body RELEASE-END footer")
+                                   "nav\nnav\nRELEASE-START Acme results\nrevenue, margins and the financial tables\nRELEASE-END\nfooter")
+STUB_PAGE = sources.FetchedPage("https://ir.acme.example/stub", "Acme Q2 (PDF)",
+                                "menu\nSTUB Acme has released its results; see the PDF.\nfooter")
 NEWS_PAGE = sources.FetchedPage("https://news.example/acme", "Acme stock falls", "Acme stock fell 8%.")
 TRANSCRIPT_PAGE = sources.FetchedPage("https://t.example/acme-q2", "Acme Q2 call",
-                                      "ads CALL-START Operator: welcome. CALL-END comments")
+                                      "ads\nCALL-START Operator: welcome.\nCALL-END\ncomments")
 CONSENSUS_PAGE = sources.FetchedPage("https://n.example/preview", "Preview", "Consensus EPS $1.10")
 
 SPEC = sources.CaseSpec(case_id="acme-2026q2", company="Acme Corp", ticker="ACME",
@@ -254,21 +230,28 @@ def make_fetch(transcript=True):
             return [TRANSCRIPT_PAGE] if transcript else []
         if "consensus" in low:
             return [CONSENSUS_PAGE]
-        return [NEWS_PAGE, RELEASE_PAGE]
+        return [NEWS_PAGE, STUB_PAGE, RELEASE_PAGE]
 
     fetch.requests = requests
     return fetch
+
+
+def span_answer(prompt):
+    """What a sensible span agent says about whichever fake page is in the prompt."""
+    if "RELEASE-START" in prompt:
+        return {"found": True, "first_line": 3, "last_line": 5}
+    if "STUB" in prompt:   # a stub the agent wrongly accepts: one line
+        return {"found": True, "first_line": 2, "last_line": 2}
+    if "CALL-START" in prompt:
+        return {"found": True, "first_line": 2, "last_line": 3}
+    return {"found": False, "first_line": 0, "last_line": 0}
 
 
 def build_agent():
     def answer(system, prompt, schema):
         if "items" in schema["properties"]:
             return {"items": [{"metric": "EPS", "consensus": "$1.10", "source": "LSEG"}]}
-        if RELEASE_PAGE.text in prompt:
-            return {"found": True, "first_words": "RELEASE-START", "last_words": "RELEASE-END"}
-        if TRANSCRIPT_PAGE.text in prompt:
-            return {"found": True, "first_words": "CALL-START", "last_words": "CALL-END"}
-        return {"found": False, "first_words": "", "last_words": ""}
+        return span_answer(prompt)
     return Agent(answer)
 
 
@@ -284,9 +267,9 @@ def test_build_case(tmp_path):
     assert "transcript" in transcript_req.lower()
     assert "consensus" in consensus_req.lower() and "transcript" not in consensus_req.lower()
     assert [d.kind for d in case.documents] == ["release", "transcript", "expectations"]
-    assert case.documents[0].text == "RELEASE-START Acme results body RELEASE-END"
+    assert case.documents[0].text == "RELEASE-START Acme results\nrevenue, margins and the financial tables\nRELEASE-END"  # not the stub
     assert case.documents[0].source == RELEASE_PAGE.url and case.documents[0].title == RELEASE_PAGE.title
-    assert case.documents[1].text == "CALL-START Operator: welcome. CALL-END"
+    assert case.documents[1].text == "CALL-START Operator: welcome.\nCALL-END"
     assert case.event_date == "2026-07-17"
     assert (case.case_id, case.company, case.ticker, case.aliases, case.fiscal_period) == \
         ("acme-2026q2", "Acme Corp", "ACME", ["Acme"], "Q2 2026")
@@ -320,12 +303,7 @@ class ScriptedClient:
             return reply([fetched(page.url, page.text, page.title)])
         schema = kwargs["output_config"]["format"]["schema"]
         prompt = kwargs["messages"][0]["content"][-1]["text"]
-        if "items" in schema["properties"]:
-            body = {"items": []}
-        elif RELEASE_PAGE.text in prompt:
-            body = {"found": True, "first_words": "RELEASE-START", "last_words": "RELEASE-END"}
-        else:
-            body = {"found": True, "first_words": "CALL-START", "last_words": "CALL-END"}
+        body = {"items": []} if "items" in schema["properties"] else span_answer(prompt)
         return reply([NS(type="text", text=json.dumps(body))])
 
 
