@@ -182,8 +182,8 @@ Q&A, leaving out any commentary about the share price or how the stock \
 traded, and any editorial introduction or wrap-up by the publisher.
 
 Report the first ten or so words and the last ten or so words of that \
-document, copied exactly as they appear in the page text (same spelling, \
-punctuation and spacing), so they can be located by exact string search. If \
+document, copied as they appear in the page text (same words, spelling and \
+numbers), so they can be located in the page. If \
 the page does not contain the requested document (for example it is only a \
 news story about it, or a teaser of a paywalled page), set found to false \
 and leave both strings empty."""
@@ -203,6 +203,42 @@ _KIND_LABELS = {"release": "earnings results release",
                 "transcript": "earnings call transcript"}
 
 
+def _loose(text: str) -> tuple[str, list[int]]:
+    """``text`` reduced to its lowercased letters and digits, with each kept
+    character's index in ``text``."""
+    chars: list[str] = []
+    positions: list[int] = []
+    for index, ch in enumerate(text):
+        if ch.isalnum():
+            for low in ch.lower():
+                chars.append(low)
+                positions.append(index)
+    return "".join(chars), positions
+
+
+def _locate_span(text: str, first_words: str, last_words: str) -> str | None:
+    """Locate the markers loosely in ``text`` and return the whole-word span."""
+    haystack, positions = _loose(text)
+    first, _ = _loose(first_words)
+    last, _ = _loose(last_words)
+    if not first or not last:
+        return None
+    i = haystack.find(first)
+    if i < 0:
+        return None
+    j = haystack.find(last, i)
+    if j < 0:
+        return None
+    start = positions[i]
+    end = positions[j + len(last) - 1] + 1
+    while start > 0 and not text[start - 1].isspace():
+        start -= 1
+    while end < len(text) and not text[end].isspace():
+        end += 1
+    span = text[start:end].strip()
+    return span or None
+
+
 def select_span(agent, page: FetchedPage, kind: str) -> str | None:
     """Cut the ``kind`` document out of ``page``; None if it is not there."""
     label = _KIND_LABELS.get(kind, kind)
@@ -214,18 +250,11 @@ def select_span(agent, page: FetchedPage, kind: str) -> str | None:
         return None
     first_words = answer.get("first_words")
     last_words = answer.get("last_words")
-    # An empty marker would "match" anywhere and cut nothing meaningful.
-    if not isinstance(first_words, str) or not isinstance(last_words, str) \
-            or not first_words.strip() or not last_words.strip():
+    if not isinstance(first_words, str) or not isinstance(last_words, str):
         return None
-    i = page.text.find(first_words)
-    if i < 0:
-        return None
-    j = page.text.find(last_words, i)
-    if j < 0:
-        return None
-    span = page.text[i: j + len(last_words)].strip()
-    return span or None
+    # Markers are matched on letters and digits only; one without any would
+    # "match" anywhere, so _locate_span returns None for it.
+    return _locate_span(page.text, first_words, last_words)
 
 
 # ---- expectations ----------------------------------------------------------------------

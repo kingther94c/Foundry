@@ -180,6 +180,40 @@ def test_select_span_end_is_searched_after_the_start():
     assert sources.select_span(agent, page, "release") == "START body END."
 
 
+REAL_PAGE = sources.FetchedPage(
+    "https://sec.example/ex99", "Document",
+    "Menu | Search\nExhibit 99.1 \nJuly\xa016, 2026\n\nFellow shareholders,\n\n\u2022Our results grew. "
+    "| Less: Short-term investments | (28,678) |\n| Net debt | $5,244,190 |\n\n| 15 |\nFooter links")
+
+
+def test_select_span_matches_markers_loosely():
+    # Copied the way a model copies: whitespace collapsed, a nbsp as a space, a table pipe lost.
+    agent = Agent(lambda *a: {"found": True,
+                              "first_words": "Exhibit 99.1 July 16, 2026 Fellow shareholders, Our results",
+                              "last_words": "Less: Short-term investments | (28,678) | Net debt | $5,244,190 |"})
+    assert sources.select_span(agent, REAL_PAGE, "release") == (
+        "Exhibit 99.1 \nJuly\xa016, 2026\n\nFellow shareholders,\n\n\u2022Our results grew. "
+        "| Less: Short-term investments | (28,678) |\n| Net debt | $5,244,190")
+
+
+def test_select_span_widens_to_whole_words_and_ignores_case():
+    page = sources.FetchedPage("u", "t", "nav (Unaudited) totals: 1,234 and 5,678. end")
+    agent = Agent(lambda *a: {"found": True, "first_words": "unaudited) TOTALS", "last_words": "5,67"})
+    assert sources.select_span(agent, page, "release") == "(Unaudited) totals: 1,234 and 5,678."
+
+
+def test_select_span_spec_example():
+    page = sources.FetchedPage("u", "t", "x | Net debt |\n| $5,244 |\nfooter")
+    agent = Agent(lambda *a: {"found": True, "first_words": "Net debt", "last_words": "Net debt | $5,244"})
+    assert sources.select_span(agent, page, "release") == "Net debt |\n| $5,244"
+
+
+@pytest.mark.parametrize("first,last", [("| --- |", "Net debt"), ("Exhibit", "..."), ("", "Net debt")])
+def test_select_span_markers_without_letters_or_digits(first, last):
+    agent = Agent(lambda *a: {"found": True, "first_words": first, "last_words": last})
+    assert sources.select_span(agent, REAL_PAGE, "release") is None
+
+
 # --- expectations ---------------------------------------------------------------
 
 def test_expectations_document():

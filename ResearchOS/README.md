@@ -106,6 +106,17 @@ no page was fetched, so the agent is never invited to supply figures from
 memory. The run also surfaced a Foundry fix: the model ended an Add File
 patch with `+*** End Patch`, and Foundry now accepts that end line.
 
+The first real page broke `select_span`: SPEC.md had it find the model's
+start and end markers by exact search, and a model's copy of a page never
+reproduces its newlines, non-breaking spaces and table pipes. The spec now
+matches markers on letters and digits only and widens the span to whole
+words. Foundry made the change from the revised section in a fresh workspace
+(6 rounds, ~$0.21, all acceptance tests passing) and also rewrote the
+cutter's prompt, which still asked for exact copies. On 20,000 random inputs
+it agrees with the hand-written version -- once that version was fixed: it
+crashed on characters such as `İ` whose lowercase is two characters, which
+Foundry's handled.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

@@ -400,10 +400,21 @@ A fetched page carries navigation, ads and related links around the document.
   prompt, SPAN_SCHEMA)` call (an agent as in `researchos.llm`) whose prompt
   holds `kind` and the page text. `SPAN_SCHEMA`: `{"found": bool,
   "first_words": str, "last_words": str}` -- the first and last ten or so
-  words of the document, copied exactly. Returns `None` if `found` is false.
-  Otherwise `i = page.text.find(first_words)` and `j = page.text.find(last_words,
-  i)`; when both are found (`>= 0`) returns `page.text[i : j + len(last_words)]`
-  stripped; otherwise `None`. `SPAN_SYSTEM` asks for the document proper: for a
+  words of the document. Returns `None` if `found` is false.
+
+  A model's copy of page text rarely reproduces its whitespace exactly
+  (newlines, non-breaking spaces, a table's `|` cells), so the markers are
+  located loosely: the page and both markers are compared on their letters
+  and digits only (`str.isalnum()`), lowercased, with every other character
+  skipped. The first marker's first match gives the start; the last marker's
+  first match beginning at or after the start gives the end. The span then
+  widens to whole words: its start moves back, and its end forward, to the
+  nearest whitespace or the edge of the page. Returns that part of the page
+  text, stripped; `None` if either marker has no letters or digits or is not
+  found. Example: a page `"x | Net debt |\n| $5,244 |\nfooter"` with markers
+  `"Net debt"` and `"Net debt | $5,244"` gives `"Net debt |\n| $5,244"`.
+
+  `SPAN_SYSTEM` asks for the document proper: for a
   release, from its first line to the end of its financial tables; for a
   transcript, the prepared remarks and Q&A, without any commentary about the
   share price.

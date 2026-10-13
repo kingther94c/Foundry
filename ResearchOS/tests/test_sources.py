@@ -197,8 +197,40 @@ def test_select_span_none_cases():
         {"found": True, "first_words": "Acme reports", "last_words": "not in page"},
         {"found": True, "first_words": "Revenue rose", "last_words": "Menu"},  # before i
         {"found": True, "first_words": "", "last_words": ""},
+        {"found": True, "first_words": " | -- ", "last_words": "tables."},  # no alnum
+        {"found": True, "first_words": "Acme reports", "last_words": "... |"},
     ]:
         assert select_span(FakeLLM(responses=[answer]), PAGE, "transcript") is None
+
+
+def span_of(text, first_words, last_words):
+    agent = FakeLLM(responses=[{"found": True, "first_words": first_words,
+                                "last_words": last_words}])
+    return select_span(agent, FetchedPage("u", "t", text), "release")
+
+
+def test_select_span_spec_example():
+    assert span_of("x | Net debt |\n| $5,244 |\nfooter",
+                   "Net debt", "Net debt | $5,244") == "Net debt |\n| $5,244"
+
+
+def test_select_span_ignores_whitespace_punctuation_and_case():
+    text = "nav\nACME\u00a0Reports  Q2\n2026 results ... net income: $10\u00a0million.\nfooter"
+    assert span_of(text, "acme reports q2 2026", "Net Income $10 million") == (
+        "ACME\u00a0Reports  Q2\n2026 results ... net income: $10\u00a0million.")
+
+
+def test_select_span_widens_to_whole_words():
+    text = "menu Acme reports results; revenue was $1,234.5m (up 10%) end"
+    # Markers that start and stop mid-word still yield whole words.
+    assert span_of(text, "me reports", "up 1") == "Acme reports results; revenue was $1,234.5m (up 10%)"
+    # Widening reaches the page edges.
+    assert span_of("Acme reports|x", "cme", "x") == "Acme reports|x"
+
+
+def test_select_span_last_marker_at_or_after_start():
+    text = "total 5 intro Acme starts here total 5 end"
+    assert span_of(text, "Acme starts", "total 5") == "Acme starts here total 5"
 
 
 def test_schemas_are_strict():
