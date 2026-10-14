@@ -674,3 +674,19 @@ with `--out`, as for the other commands). Exit 2 on bad arguments (no file,
 an unknown rule, an `--eta` that is not a positive number), 1 on a file that
 cannot be read or `load_report` rejects, or a ValueError from `replay`, with
 a message on stderr.
+
+## Shared helpers (v12)
+
+`tools` now decides what a loosely typed value is: `tools.dates.parse_iso_date`
+and `tools.stats.is_number` (the tools package's SPEC.md, "v2"). Several
+modules here carry private copies of the same checks, each slightly
+different. Use the shared ones and keep no copies:
+
+- Every check in `researchos` of whether a value is a finite number uses
+  `tools.stats.is_number`.
+- Every parse of an ISO date from a case's or a record's `event_date`, a
+  history record, or the knowledge cutoff uses `tools.dates.parse_iso_date`.
+  Only `researchos.sources` keeps `date.fromisoformat`, where a malformed
+  date in a file it reads must raise.
+- Nothing else changes: the same inputs give the same results and raise the
+  same errors with the same messages.

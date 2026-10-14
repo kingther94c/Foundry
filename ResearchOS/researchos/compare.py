@@ -13,10 +13,9 @@ e.g. walk-forward training's one `train` output per case.
 from __future__ import annotations
 
 import copy
-import math
 import random
 
-from tools.stats import quantile
+from tools.stats import is_number, quantile
 
 from researchos.jsonio import read_json
 
@@ -87,19 +86,13 @@ def merge_reports(reports) -> dict:
     return {"cases": cases}
 
 
-def _is_number(value) -> bool:
-    """A finite int or float. A bool is not a number here, and nan/inf are no Brier score."""
-    return (isinstance(value, (int, float)) and not isinstance(value, bool)
-            and math.isfinite(value))
-
-
 def _scored(report: dict, metric: str, name: str) -> list[tuple[str, float]]:
     """(case_id, value) for each record scored on `metric`, in the report's order."""
     scored: list[tuple[str, float]] = []
     seen: set[str] = set()
     for record in report["cases"]:
-        if not isinstance(record, dict) or not _is_number(record.get(metric)):
-            continue  # a skipped record has no score
+        if not isinstance(record, dict) or not is_number(record.get(metric)):
+            continue  # a skipped record has no score; a bool, nan or inf is no score either
         case_id = record.get("case_id")
         if not isinstance(case_id, str):
             raise ValueError(f"report {name}: a record scored on {metric} has no case_id")

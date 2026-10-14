@@ -23,17 +23,12 @@ from datetime import date
 from itertools import groupby
 from typing import NamedTuple
 
-from tools.stats import combine_probabilities, hedge_update
+from tools.dates import parse_iso_date
+from tools.stats import combine_probabilities, hedge_update, is_number
 
 from researchos.perspectives import PERSPECTIVES
 
 RULES = ("uniform", "median", "hedge", "leader")
-
-
-def _is_number(value) -> bool:
-    """A finite int or float; a bool is not a number here."""
-    return (isinstance(value, (int, float)) and not isinstance(value, bool)
-            and math.isfinite(value))
 
 
 def perspective_probs(record) -> dict[str, float]:
@@ -55,7 +50,7 @@ def perspective_probs(record) -> dict[str, float]:
         return {}
     derived: dict[str, float] = {}
     for name, b in briers.items():
-        if _is_number(b) and 0 <= b <= 1:
+        if is_number(b) and 0 <= b <= 1:
             distance = math.sqrt(b)  # |p - y|
             derived[name] = 1.0 - distance if up else distance
     return derived
@@ -70,13 +65,12 @@ class _Scored(NamedTuple):
 
 def _event_date(record: dict, case_id: str) -> date:
     value = record.get("event_date")
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value.strip())
-        except ValueError:
-            pass
-    raise ValueError(f"case {case_id}: event_date {value!r} is not an ISO date (YYYY-MM-DD), "
-                     f"so the case cannot be placed in time")
+    # Only a string can be an event date here (parse_iso_date would also pass a date object).
+    when = parse_iso_date(value) if isinstance(value, str) else None
+    if when is None:
+        raise ValueError(f"case {case_id}: event_date {value!r} is not an ISO date (YYYY-MM-DD), "
+                         f"so the case cannot be placed in time")
+    return when
 
 
 def _scored_cases(records) -> list[_Scored]:
@@ -99,7 +93,7 @@ def _scored_cases(records) -> list[_Scored]:
             raise ValueError(f"case {case_id}: actual_up {up!r} is not true or false")
         probs = perspective_probs(record)
         missing = [name for name in PERSPECTIVES
-                   if not (_is_number(probs.get(name)) and 0 <= probs[name] <= 1)]
+                   if not (is_number(probs.get(name)) and 0 <= probs[name] <= 1)]
         if missing:
             raise ValueError(f"case {case_id}: no probability for perspective(s) "
                              f"{', '.join(missing)}")
@@ -143,7 +137,7 @@ def replay(records, rule="hedge", *, eta=0.5) -> dict:
     """
     if rule not in RULES:
         raise ValueError(f"unknown rule {rule!r}: expected one of {', '.join(RULES)}")
-    if not _is_number(eta) or eta <= 0:
+    if not is_number(eta) or eta <= 0:
         raise ValueError(f"eta must be a positive number, got {eta!r}")
     # Walk forward in event-date order; sorted() is stable, so ties keep the order given.
     ordered = sorted(_scored_cases(records), key=lambda case: case.when)

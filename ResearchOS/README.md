@@ -229,6 +229,13 @@ version on 4,000 random record sets; it also checks more than that
 version does (an `actual_up` that is not a boolean, a probability outside
 [0, 1]).
 
+Five versions had left private copies of two checks -- is this a finite
+number, is this an ISO date -- in five places, each slightly different.
+They now live in `tools` (`stats.is_number`, `dates.parse_iso_date`, built
+by Foundry first) and ResearchOS uses them: Foundry made the change in 14
+rounds, 25 lines fewer, with all 169 acceptance tests passing and the same
+results as before on 13,400 fuzzed calls.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

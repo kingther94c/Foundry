@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
+from tools.dates import parse_iso_date
 from tools.stats import hedge_update
 from tools.textmask import find_terms
 
@@ -58,20 +59,6 @@ def load_playbook(path) -> Playbook:
     )
 
 
-def _as_date(value) -> date | None:
-    """A date, or an ISO date string, as a date; None for anything else."""
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value.strip())
-        except ValueError:
-            return None
-    return None
-
-
 def learned_through(playbook: Playbook) -> date | None:
     """The latest event date among the history records the playbook learned from.
 
@@ -87,7 +74,7 @@ def learned_through(playbook: Playbook) -> date | None:
         value = record.get("event_date")
         if value is None:
             continue
-        when = _as_date(value)
+        when = parse_iso_date(value)
         if when is None:
             raise ValueError(f"playbook history record for case {record.get('case_id')!r} has "
                              f"event_date {value!r}, which is not an ISO date (YYYY-MM-DD)")

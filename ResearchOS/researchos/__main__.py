@@ -32,10 +32,11 @@ from __future__ import annotations
 import argparse
 import functools
 import json
-import math
 import sys
 from dataclasses import asdict
 from pathlib import Path
+
+from tools.stats import is_number
 
 from researchos.blend import RULES, replay
 from researchos.cases import CASE_FILE, load_outcome
@@ -92,7 +93,7 @@ def _positive_number(value: str) -> float:
         x = float(value)
     except ValueError:
         raise argparse.ArgumentTypeError(f"not a number: {value!r}") from None
-    if not (math.isfinite(x) and x > 0):  # also rejects nan
+    if not (is_number(x) and x > 0):  # also rejects nan and infinity
         raise argparse.ArgumentTypeError(f"must be a positive number: {value!r}")
     return x
 

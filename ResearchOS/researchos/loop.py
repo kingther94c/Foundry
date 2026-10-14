@@ -10,6 +10,7 @@ from itertools import groupby
 from pathlib import Path
 from typing import Any
 
+from tools.dates import parse_iso_date
 from tools.stats import brier_score
 
 from researchos.cases import identity_terms, load_case, load_outcome
@@ -87,19 +88,19 @@ def parse_cutoff(knowledge_cutoff) -> date | None:
         return knowledge_cutoff
     if not isinstance(knowledge_cutoff, str):
         raise ValueError(f"knowledge_cutoff must be an ISO date string, got {knowledge_cutoff!r}")
-    try:
-        return date.fromisoformat(knowledge_cutoff.strip())
-    except ValueError:
-        raise ValueError(f"knowledge_cutoff is not an ISO date: {knowledge_cutoff!r}") from None
+    cutoff = parse_iso_date(knowledge_cutoff)
+    if cutoff is None:
+        raise ValueError(f"knowledge_cutoff is not an ISO date: {knowledge_cutoff!r}")
+    return cutoff
 
 
 def _after_cutoff(case, cutoff: date | None) -> bool:
     """True only if the case's event date is known and strictly after the cutoff."""
     if cutoff is None:
         return False
-    try:
-        event = date.fromisoformat(str(case.event_date).strip())
-    except ValueError:
+    # Parsed from its text, as always: any value whose str() is an ISO date counts.
+    event = parse_iso_date(str(case.event_date))
+    if event is None:
         log.warning("%s: event_date %r is not an ISO date; treated as not after the "
                     "knowledge cutoff", case.case_id, case.event_date)
         return False
@@ -130,13 +131,12 @@ def _open_playbook(playbook_path) -> Playbook:
 def _event_date(case_id, case) -> date:
     """The case's event date; ValueError naming the case if it is not an ISO date."""
     value = case.event_date
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value.strip())
-        except ValueError:
-            pass
-    raise ValueError(f"case {case_id}: event_date {value!r} is not an ISO date (YYYY-MM-DD), "
-                     f"so the case cannot be placed in time")
+    # Only a string can be an event date here (parse_iso_date would also pass a date object).
+    when = parse_iso_date(value) if isinstance(value, str) else None
+    if when is None:
+        raise ValueError(f"case {case_id}: event_date {value!r} is not an ISO date (YYYY-MM-DD), "
+                         f"so the case cannot be placed in time")
+    return when
 
 
 def _requested_cases(root, case_ids, playbook: Playbook, playbook_path, command: str):
