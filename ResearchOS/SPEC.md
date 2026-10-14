@@ -571,3 +571,27 @@ they would print goes to FILE through `write_json` instead, and nothing goes
 to stdout. A FILE that cannot be written exits 1 with a message on stderr
 (whatever the command already did, such as saving the playbook, stands).
 Without `--out`, output is unchanged.
+
+## researchos.compare: several files a side, training output (v9)
+
+A real comparison rarely sits in two files. Walk-forward training writes one
+`train` output per case, each forecast made before its outcome was opened;
+held-out cases come from `evaluate`. Comparing them meant merging files by
+hand.
+
+- `load_report(path)` also accepts what `train` prints: a JSON list of
+  records, bare or wrapped as `{"result": [...], ...}`; it returns
+  `{"cases": <that list>}`. In every form the cases must be a list of
+  objects; anything else (a list holding a number, a string, `null`, ...)
+  raises ValueError naming the path.
+- `merge_reports(reports) -> dict`: `{"cases": [...]}` holding the cases of
+  every report in turn, in order; `{"cases": []}` for no reports. The
+  reports passed in are not modified.
+- CLI: besides `compare A.json B.json`, each side can be given as one or
+  more files: `compare -a FILE [-a FILE ...] -b FILE [-b FILE ...]`; a side
+  is `merge_reports` of its files' `load_report`, in the order given. A case
+  scored in two files of the same side is a case scored twice: exit 1 with a
+  message on stderr. Bad arguments, exit 2: positional files together with
+  `-a`/`-b`, only one of `-a` and `-b`, or a number of positional files other
+  than two. `--metric`, `--resamples`, `--seed` and `--out` work as before
+  with either form.

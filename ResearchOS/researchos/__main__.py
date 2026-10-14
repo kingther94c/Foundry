@@ -7,9 +7,15 @@
                                [--out FILE]
     python -m researchos compare A.json B.json [--metric NAME] [--resamples N] [--seed S]
                                  [--out FILE]
+    python -m researchos compare -a FILE [-a FILE ...] -b FILE [-b FILE ...] [--metric NAME]
+                                 [--resamples N] [--seed S] [--out FILE]
 
 Each command prints its result as JSON; with --out FILE it writes the result to
 FILE instead (researchos.jsonio.write_json) and prints nothing.
+
+A file compare reads is what `evaluate` or `train` printed (bare or wrapped as
+{"result": ...}); with -a/-b each side is the merge of its files' cases, in the
+order given (researchos.compare.merge_reports).
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from researchos.cases import CASE_FILE, load_outcome
-from researchos.compare import compare, load_report
+from researchos.compare import compare, load_report, merge_reports
 from researchos.jsonio import write_json
 from researchos.llm import ClaudeJSON, LLMError, anthropic_client
 from researchos.loop import Roles, evaluate, parse_cutoff, train
@@ -99,9 +105,18 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--market-closes", required=True, dest="market_closes",
                    help="JSON file of the market's daily closes")
     _add_out(p)
-    p = sub.add_parser("compare", help="paired comparison of two evaluation reports")
-    p.add_argument("report_a", metavar="A.json", help="evaluation report of the baseline")
-    p.add_argument("report_b", metavar="B.json", help="evaluation report compared with it")
+    p = sub.add_parser("compare", help="paired comparison of two reports, or of two sides of "
+                                       "several files each")
+    # Either two positional files, A.json B.json, or each side as -a FILE ... / -b FILE ...;
+    # _compare_sides checks which form was used (argparse cannot say "two, or none").
+    p.add_argument("files", nargs="*", metavar="REPORT",
+                   help="A.json B.json: the baseline's report, then the report compared with "
+                        "it (evaluate or train output)")
+    p.add_argument("-a", dest="files_a", action="append", default=None, metavar="FILE",
+                   help="a file of the baseline side; repeat for several, merged in the order "
+                        "given")
+    p.add_argument("-b", dest="files_b", action="append", default=None, metavar="FILE",
+                   help="a file of the side compared with it; repeat for several")
     p.add_argument("--metric", type=_brier_metric, default="brier_judge",
                    help="per-case Brier score to compare (default brier_judge)")
     p.add_argument("--resamples", type=_resamples, default=10000,
@@ -124,7 +139,15 @@ def build_roles(client) -> Roles:
 def main(argv=None, *, client_factory=None) -> int:
     parser = _parser()
     try:
-        args = parser.parse_args(argv)
+        args, extras = parser.parse_known_args(argv)
+        if extras:
+            # A nargs="*" positional takes only the first run of strings, so in
+            # `compare A.json --seed 5 B.json` B.json comes back here; it is still one of
+            # compare's files, as it was when A and B were two positionals. Anything else
+            # is an unrecognized argument, reported exactly as parse_args reports it.
+            if args.command != "compare" or any(s.startswith("-") for s in extras):
+                parser.error(f"unrecognized arguments: {' '.join(extras)}")
+            args.files = [*args.files, *extras]
     except SystemExit as exc:  # argparse already wrote the message to stderr
         return 0 if exc.code in (0, None) else 2
     if args.command == "build":
@@ -185,17 +208,43 @@ def _build(args, client_factory) -> int:
 
 
 def _compare(args) -> int:
+    sides = _compare_sides(args)
+    if sides is None:
+        return 2
+    files_a, files_b = sides
     try:
-        a = load_report(args.report_a)
-        b = load_report(args.report_b)
+        a = merge_reports([load_report(path) for path in files_a])
+        b = merge_reports([load_report(path) for path in files_b])
         result = compare(a, b, metric=args.metric, resamples=args.resamples, seed=args.seed)
     except OSError as exc:  # missing file, a directory, unreadable
         print(f"error: cannot read report: {exc}", file=sys.stderr)
         return 1
-    except ValueError as exc:  # not JSON, not a report, a case scored twice
+    except ValueError as exc:  # not JSON, not a report, a case scored twice on one side
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return _emit(result, args.out)
+
+
+def _compare_sides(args) -> tuple[list[str], list[str]] | None:
+    """The files of side A and of side B, or None (after a message on stderr) on bad arguments.
+
+    Either exactly two positional files (A.json B.json: one file a side) or -a and -b, each
+    given at least once; the two forms do not mix.
+    """
+    files, files_a, files_b = args.files, args.files_a or [], args.files_b or []
+    if files_a or files_b:
+        if files:
+            problem = "give the reports either as A.json B.json or with -a/-b, not both"
+        elif not (files_a and files_b):
+            problem = "-a and -b go together: each side needs at least one file"
+        else:
+            return files_a, files_b
+    elif len(files) == 2:
+        return [files[0]], [files[1]]
+    else:
+        problem = f"compare needs two reports, A.json B.json (or -a/-b), got {len(files)}"
+    print(f"error: {problem}", file=sys.stderr)
+    return None
 
 
 def _emit(data, out) -> int:

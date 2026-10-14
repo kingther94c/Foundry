@@ -4,10 +4,15 @@ Five or fifteen cases cannot settle much, so the comparison carries a
 percentile-bootstrap interval for the mean per-case difference instead of a
 bare difference of means. Lower Brier is better throughout: `diff = b - a`,
 so a negative diff means report `b` did better on that case.
+
+A report is what `evaluate` returns or what `train` prints (a list of
+records); `merge_reports` joins several into one side of a comparison (v9),
+e.g. walk-forward training's one `train` output per case.
 """
 
 from __future__ import annotations
 
+import copy
 import math
 import random
 
@@ -16,26 +21,70 @@ from tools.stats import quantile
 from researchos.jsonio import read_json
 
 
-def load_report(path) -> dict:
-    """Read the dict `evaluate` returns, bare or wrapped as {"result": <that dict>, ...}.
+_NOT_A_REPORT = "not an evaluation report or training output"
 
-    Returns the dict holding "cases". Raises ValueError if the file is not
-    JSON (read with read_json, so a byte order mark or UTF-16 is fine) or
-    holds neither form; OSError (e.g. FileNotFoundError) if it cannot be read
-    at all.
+
+def _json_kind(value) -> str:
+    """How a JSON value is named in an error message: "a number", "null", ..."""
+    if value is None:
+        return "null"
+    for types, kind in ((bool, "a boolean"), (dict, "an object"), (list, "a list"),
+                        (str, "a string"), ((int, float), "a number")):
+        if isinstance(value, types):
+            return kind
+    return type(value).__name__
+
+
+def load_report(path) -> dict:
+    """Read an evaluation report or training output.
+
+    Accepted forms: the dict `evaluate` returns (it holds "cases"), returned
+    as it is; the list of records `train` prints, returned as
+    {"cases": <that list>}; either one wrapped as {"result": <it>, ...}. In
+    every form the cases must be a list of objects. Raises ValueError naming
+    path if the file is not JSON (read with read_json, so a byte order mark or
+    UTF-16 is fine) or not one of these forms; OSError (e.g.
+    FileNotFoundError) if it cannot be read at all.
     """
     data = read_json(path)
+    inner = data.get("result") if isinstance(data, dict) else None
     if isinstance(data, dict) and "cases" in data:
         report = data
-    elif (isinstance(data, dict) and isinstance(data.get("result"), dict)
-          and "cases" in data["result"]):
-        report = data["result"]
+    elif isinstance(data, list):
+        report = {"cases": data}
+    elif isinstance(inner, dict) and "cases" in inner:
+        report = inner
+    elif isinstance(inner, list):
+        report = {"cases": inner}
     else:
-        raise ValueError(f'{path}: not an evaluation report (no "cases" at the top level '
-                         f'or under "result")')
-    if not isinstance(report["cases"], list):
-        raise ValueError(f'{path}: "cases" is not a list')
+        raise ValueError(f'{path}: {_NOT_A_REPORT} (no "cases" and no list of records, '
+                         f'at the top level or under "result")')
+    cases = report["cases"]
+    if not isinstance(cases, list):
+        raise ValueError(f'{path}: {_NOT_A_REPORT} ("cases" is {_json_kind(cases)}, '
+                         f'not a list)')
+    for i, record in enumerate(cases):
+        if not isinstance(record, dict):
+            raise ValueError(f"{path}: {_NOT_A_REPORT} (case record {i} is "
+                             f"{_json_kind(record)}, not an object)")
     return report
+
+
+def merge_reports(reports) -> dict:
+    """{"cases": [...]} holding the cases of every report in turn, in order.
+
+    {"cases": []} for no reports. Each report is a dict holding a list
+    "cases" (as load_report returns it), else ValueError. The records are
+    copied, so the reports passed in are not modified, neither here nor
+    through later changes to the result. A case scored in two of the reports
+    is scored twice in the result, which `paired` rejects.
+    """
+    cases: list = []
+    for i, report in enumerate(reports):
+        if not isinstance(report, dict) or not isinstance(report.get("cases"), list):
+            raise ValueError(f'report {i}: not a report (no list of "cases")')
+        cases.extend(copy.deepcopy(report["cases"]))
+    return {"cases": cases}
 
 
 def _is_number(value) -> bool:

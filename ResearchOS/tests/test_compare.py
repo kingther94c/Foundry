@@ -1,3 +1,4 @@
+import copy
 import json
 import random
 
@@ -5,7 +6,7 @@ import pytest
 from tools.stats import quantile
 
 from researchos.__main__ import main
-from researchos.compare import bootstrap_ci, compare, load_report, paired
+from researchos.compare import bootstrap_ci, compare, load_report, merge_reports, paired
 
 
 def rec(case_id, judge=None, weighted=None, **extra):
@@ -51,12 +52,17 @@ def test_load_report_plain_and_wrapped(tmp_path):
 
 
 @pytest.mark.parametrize("data", [
-    [], [rep for rep in [report()]], {"n": 0}, {"result": {"n": 0}}, {"result": [report()]},
-    {"result": None}, {"cases": {"a": {}}}, "cases", 3, None,
+    {"n": 0}, {"result": {"n": 0}}, {"result": None}, {"result": "cases"}, {"result": 3},
+    {"cases": {"a": {}}}, {"cases": None}, {"result": {"cases": "a"}}, "cases", 3, None, True,
+    # v9: in every form the cases must be a list of objects
+    [1, 2], ["a"], [None], [True], [[]], [rec("a", 0.1), 3], [rec("a", 0.1), [rec("b", 0.2)]],
+    {"result": [1, 2]}, {"result": [rec("a", 0.1), None]}, {"cases": [rec("a", 0.1), "b"]},
+    {"result": {"cases": [0.1]}},
 ])
 def test_load_report_rejects_other_json(tmp_path, data):
-    with pytest.raises(ValueError):
-        load_report(write_json(tmp_path / "r.json", data))
+    path = write_json(tmp_path / "r.json", data)
+    with pytest.raises(ValueError, match="r.json"):  # the message names the file
+        load_report(path)
 
 
 def test_load_report_rejects_bad_json_and_reports_missing_file(tmp_path):
@@ -82,6 +88,76 @@ def test_load_report_reads_utf16_and_byte_order_marks(tmp_path):
     bom = tmp_path / "bom.json"
     bom.write_bytes(json.dumps({"result": rep}).encode("utf-8-sig"))
     assert load_report(bom) == rep
+
+
+# load_report: training output (v9)
+
+TRAIN = [rec("a", 0.2, split="train", lessons_rejected=0),
+         {"case_id": "b", "split": "train", "skipped": "identifiable"},
+         rec("c", 0.4, split="train", lessons_rejected=1)]
+
+
+def test_load_report_reads_train_output(tmp_path):
+    # what `train` prints: a list of records, bare or wrapped as {"result": [...], ...}
+    assert load_report(write_json(tmp_path / "train.json", TRAIN)) == {"cases": TRAIN}
+    wrapped = {"result": TRAIN, "argv": ["train"]}
+    assert load_report(write_json(tmp_path / "wrapped.json", wrapped)) == {"cases": TRAIN}
+    assert load_report(write_json(tmp_path / "empty.json", [])) == {"cases": []}
+    assert load_report(write_json(tmp_path / "empty_wrapped.json", {"result": []})) == {
+        "cases": []}
+    utf16 = tmp_path / "utf16.json"
+    utf16.write_bytes(json.dumps(TRAIN).encode("utf-16"))  # as PowerShell's `>` writes it
+    assert load_report(utf16) == {"cases": TRAIN}
+
+
+def test_load_report_top_level_cases_still_come_first(tmp_path):
+    rep = {"cases": [rec("a", 0.1)], "result": TRAIN}
+    assert load_report(write_json(tmp_path / "both.json", rep)) == rep
+
+
+# merge_reports
+
+def test_merge_reports_joins_the_cases_in_order():
+    first = report(rec("a", 0.1), skipped("b"))
+    train = {"cases": TRAIN}
+    last = report(rec("z", 0.3))
+    assert merge_reports([first, train, last]) == {
+        "cases": [rec("a", 0.1), skipped("b"), *TRAIN, rec("z", 0.3)]}
+    assert merge_reports([last, first]) == {"cases": [rec("z", 0.3), rec("a", 0.1), skipped("b")]}
+    assert merge_reports([first]) == {"cases": [rec("a", 0.1), skipped("b")]}
+    assert merge_reports(iter([first, last])) == {"cases": [*first["cases"], *last["cases"]]}
+
+
+def test_merge_reports_without_reports_or_cases():
+    assert merge_reports([]) == {"cases": []}
+    assert merge_reports([report(), {"cases": []}]) == {"cases": []}
+
+
+def test_merge_reports_leaves_the_reports_alone():
+    first = report(rec("a", 0.1, brier_by_perspective={"growth": 0.2}))
+    second = {"cases": [rec("b", 0.3)]}
+    before = copy.deepcopy([first, second])
+    merged = merge_reports([first, second])
+    assert [first, second] == before
+    merged["cases"][0]["brier_judge"] = 0.9
+    merged["cases"][0]["brier_by_perspective"]["growth"] = 0.9
+    merged["cases"].append(rec("c", 0.5))
+    assert [first, second] == before
+
+
+def test_merge_reports_rejects_what_is_not_a_report():
+    for reports in ([report(), {"n": 1}], [TRAIN], [None], [{"cases": "a"}]):
+        with pytest.raises(ValueError):
+            merge_reports(reports)
+
+
+def test_compare_counts_a_case_scored_in_two_merged_reports_as_scored_twice():
+    side_a = merge_reports([report(rec("a", 0.1)), {"cases": [rec("a", 0.2, split="train")]}])
+    with pytest.raises(ValueError, match="twice"):
+        compare(side_a, report(rec("a", 0.3)))
+    # skipped in one report and scored in the other: scored once
+    side_a = merge_reports([report(skipped("a")), {"cases": [rec("a", 0.2, split="train")]}])
+    assert compare(side_a, report(rec("a", 0.3)))["n"] == 1
 
 
 # paired
@@ -305,3 +381,145 @@ def test_cli_compare_unwritable_out_exits_1(tmp_path, capsys):
         assert code == 1, out
         assert captured.out == ""
         assert captured.err.startswith("error:") and str(out) in captured.err
+
+
+# CLI: several files a side (v9)
+
+def test_cli_compare_sides_of_several_files(tmp_path, capsys):
+    # walk-forward training writes one train output per case; held-out cases come from evaluate
+    a1 = write_json(tmp_path / "a1.json", [rec("x", 0.30, split="train")])
+    a2 = write_json(tmp_path / "a2.json", {"result": [skipped("y")], "argv": ["train"]})
+    a3 = write_json(tmp_path / "a3.json", A)
+    b1 = write_json(tmp_path / "b1.json", {"result": B})
+    b2 = tmp_path / "b2.json"
+    b2.write_bytes(json.dumps([rec("x", 0.10), rec("y", 0.2)]).encode("utf-16"))
+    side_a = {"cases": [rec("x", 0.30, split="train"), skipped("y"), *A["cases"]]}
+    side_b = {"cases": [*B["cases"], rec("x", 0.10), rec("y", 0.2)]}
+    code = main(["compare", "-a", str(a1), "-a", str(a2), "-b", str(b1), "-a", str(a3),
+                 "-b", str(b2), "--resamples", "300", "--seed", "5"], client_factory=no_client)
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    result = json.loads(captured.out)
+    assert result == compare(side_a, side_b, resamples=300, seed=5)
+    assert [c["case_id"] for c in result["cases"]] == ["x", "a", "b", "c", "e"]
+    # a side's files are merged in the order given
+    assert main(["compare", "-a", str(a3), "-a", str(a1), "-b", str(b2), "-b", str(b1),
+                 "--resamples", "300", "--seed", "5"], client_factory=no_client) == 0
+    result = json.loads(capsys.readouterr().out)
+    side_a = {"cases": [*A["cases"], rec("x", 0.30, split="train")]}
+    side_b = {"cases": [rec("x", 0.10), rec("y", 0.2), *B["cases"]]}
+    assert result == compare(side_a, side_b, resamples=300, seed=5)
+    assert [c["case_id"] for c in result["cases"]] == ["a", "b", "c", "e", "x"]
+
+
+def test_cli_compare_sides_metric_and_out(tmp_path, capsys):
+    a1 = write_json(tmp_path / "a1.json", report(rec("x", judge=0.1, weighted=0.4)))
+    a2 = write_json(tmp_path / "a2.json", [rec("y", judge=0.2, weighted=0.3, split="train")])
+    b = report(rec("x", judge=0.3, weighted=0.1), rec("y", judge=0.2, weighted=0.1))
+    pb = write_json(tmp_path / "b.json", b)
+    side_a = {"cases": [rec("x", judge=0.1, weighted=0.4),
+                        rec("y", judge=0.2, weighted=0.3, split="train")]}
+    out = tmp_path / "comparison.json"
+    code = main(["compare", "--metric", "brier_weighted", "-a", str(a1), "-b", str(pb),
+                 "-a", str(a2), "--resamples", "200", "--seed", "2", "--out", str(out)],
+                client_factory=no_client)
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    assert captured.out == ""
+    expected = compare(side_a, b, metric="brier_weighted", resamples=200, seed=2)
+    assert expected["n"] == 2
+    assert json.loads(out.read_text(encoding="utf-8")) == expected
+    # one file a side with -a/-b is the same comparison as A.json B.json
+    assert main(["compare", "-a", str(a1), "-b", str(pb)], client_factory=no_client) == 0
+    by_option = json.loads(capsys.readouterr().out)
+    assert main(["compare", str(a1), str(pb)], client_factory=no_client) == 0
+    assert json.loads(capsys.readouterr().out) == by_option
+
+
+def test_cli_compare_two_files_with_options_between_them(tmp_path, capsys):
+    pa = write_json(tmp_path / "a.json", A)
+    pb = write_json(tmp_path / "b.json", B)
+    expected = compare(A, B, resamples=300, seed=5)
+    for argv in (["compare", str(pa), "--seed", "5", str(pb), "--resamples", "300"],
+                 ["compare", "--seed", "5", str(pa), "--resamples", "300", str(pb)],
+                 ["compare", "--seed", "5", "--resamples", "300", str(pa), str(pb)]):
+        assert main(argv, client_factory=no_client) == 0, argv
+        assert json.loads(capsys.readouterr().out) == expected
+
+
+def test_cli_compare_train_output_against_evaluate(tmp_path, capsys):
+    held_out = report(rec("a", 0.1), skipped("b"), rec("c", 0.5))
+    pa = write_json(tmp_path / "train.json", TRAIN)
+    pb = write_json(tmp_path / "eval.json", {"result": held_out, "argv": ["evaluate"]})
+    assert main(["compare", str(pa), str(pb), "--resamples", "100"],
+                client_factory=no_client) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result == compare({"cases": TRAIN}, held_out, resamples=100)
+    assert [c["case_id"] for c in result["cases"]] == ["a", "c"]
+
+
+def test_cli_compare_sides_bad_arguments_exit_2(tmp_path, capsys):
+    pa = str(write_json(tmp_path / "a.json", A))
+    pb = str(write_json(tmp_path / "b.json", B))
+    for argv in (
+        # positional files together with -a/-b
+        [pa, pb, "-a", pa, "-b", pb], [pa, "-a", pa, "-b", pb], ["-a", pa, "-b", pb, pa],
+        ["-a", pa, pa, "-b", pb], [pa, pb, "-a", pa], [pa, pb, "-b", pb],
+        # only one of -a and -b
+        ["-a", pa], ["-a", pa, "-a", pb], ["-b", pb], ["-b", pa, "-b", pb],
+        # -a or -b without a file
+        ["-a", pa, "-b"], ["-a", "-b", pb],
+        # a number of positional files other than two
+        [], [pa], [pa, pb, pa], [pa, "--seed", "1", pb, pa],
+        [pa, "--seed", "1", pb, "--seed", "2", pa],
+        # the other options are still checked with -a/-b
+        ["-a", pa, "-b", pb, "--metric", "accuracy_judge"],
+        ["-a", pa, "-b", pb, "--resamples", "0"], ["-a", pa, "-b", pb, "--seed", "x"],
+        ["-a", pa, "-b", pb, "--out"],
+        # unknown options, after, between or before the files
+        ["-a", pa, "-b", pb, "--bogus"], [pa, "--bogus", pb], ["--bogus", pa, pb],
+    ):
+        code = main(["compare", *argv], client_factory=no_client)
+        captured = capsys.readouterr()
+        assert code == 2, argv
+        assert captured.out == ""
+        assert captured.err
+
+
+def test_cli_compare_sides_unusable_files_exit_1(tmp_path, capsys):
+    good = write_json(tmp_path / "good.json", A)
+    other = write_json(tmp_path / "other.json", B)
+    again = write_json(tmp_path / "again.json", [rec("c", 0.6, split="train")])  # c is in A too
+    numbers = write_json(tmp_path / "numbers.json", [rec("q", 0.1), 3])
+    bad_json = tmp_path / "bad.json"
+    bad_json.write_text("[", encoding="utf-8")
+    missing = tmp_path / "missing.json"
+    for argv in (
+        # a case scored in two files of the same side is a case scored twice
+        ["-a", good, "-a", again, "-b", other], ["-a", again, "-a", good, "-b", other],
+        ["-a", good, "-b", other, "-b", other], ["-a", good, "-a", good, "-b", other],
+        ["-a", other, "-b", again, "-b", good],
+        # files that cannot be read or are not reports
+        ["-a", good, "-b", other, "-b", missing], ["-a", missing, "-b", other],
+        ["-a", good, "-a", numbers, "-b", other], ["-a", good, "-b", bad_json],
+        ["-a", good, "-b", tmp_path], [good, numbers],
+    ):
+        code = main(["compare", *map(str, argv)], client_factory=no_client)
+        captured = capsys.readouterr()
+        assert code == 1, argv
+        assert captured.out == ""
+        assert captured.err.startswith("error:")
+    main(["compare", "-a", str(good), "-a", str(again), "-b", str(other)],
+         client_factory=no_client)
+    assert "'c'" in capsys.readouterr().err
+
+
+def test_cli_compare_case_skipped_in_one_file_and_scored_in_another(tmp_path, capsys):
+    # skipped records carry no score, so the case is scored once on that side
+    skipped_c = write_json(tmp_path / "skipped.json", [skipped("c"), rec("new", 0.2)])
+    good = write_json(tmp_path / "good.json", A)
+    other = write_json(tmp_path / "other.json", B)
+    assert main(["compare", "-a", str(skipped_c), "-a", str(good), "-b", str(other),
+                 "--resamples", "100"], client_factory=no_client) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert [c["case_id"] for c in result["cases"]] == ["a", "b", "c", "e"]

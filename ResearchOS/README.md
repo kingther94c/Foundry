@@ -54,7 +54,11 @@ little on its own (negative `mean_diff`: the second report did better):
 
 ```
 .venv\Scripts\python -m researchos compare untrained.json trained.json --metric brier_weighted
+.venv\Scripts\python -m researchos compare -a base1.json -a base2.json -b train1.json -b train2.json
 ```
+
+Either side can be several files (`-a`/`-b`), each what `evaluate` or `train`
+printed; a side's files are merged in the order given.
 
 Real cases come from `build`: it asks the API's server-side web search and
 fetch to find the company's results release, the full call transcript and
@@ -182,6 +186,16 @@ acceptance tests, agrees with the hand-written version on 6,000 fuzzed
 files, and went one step further than it: the four places that each wrote
 JSON their own way now share `write_json`. It also rewrote the one existing
 test the new rule contradicted, instead of deleting it.
+
+Comparing walk-forward training with the untrained playbook then took a
+script: `compare` read one `evaluate` report a side, and walk-forward
+training writes one `train` output per case. `compare` now reads training
+output and merges several files a side (`-a`/`-b`). Foundry made it in 11
+rounds, passed all 135 acceptance tests and agrees with the hand-written
+version on 5,000 random report sets. Its review of the argument parsing
+caught what the hand-written version broke: with a variable-length
+positional list, `compare A.json --seed 5 B.json` -- valid until then --
+became an error. Foundry kept it working.
 
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
