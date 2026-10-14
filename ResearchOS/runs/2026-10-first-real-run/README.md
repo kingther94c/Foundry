@@ -9,7 +9,8 @@ What is here: `cases.json` (each case's identity, dates, document sources and
 sizes, the outcome, how masking went, and the sealed prediction),
 `playbook.json` (the trained playbook: weights, 62 lessons, history),
 `train.json` and `eval_baseline.json` (the loop's output and token usage),
-`eval_subagent_*.json` (the held-out comparison, see Results).
+`eval_subagent_*.json` (the held-out comparison, see Results),
+`walkforward_*.json` (the 15-case comparison, see Walk-forward).
 The documents themselves are not checked in: they are third-party pages.
 
 ## Data
@@ -39,8 +40,16 @@ needs smaller, less-followed companies.
 ## Results
 
 Each training forecast was sealed before its outcome was opened, using only
-the lessons from earlier cases, so the training scores are honest forecasts
-too.
+the lessons from cases trained before it. **But the cases were trained in
+case-id order, which is not quite event order**, so four forecasts used
+lessons from reactions that had not happened yet or happened the same day:
+case03 (reacted July 16) learned from case02 (July 17), case05 and case10
+each from a case that reacted the same day, and case11 (July 29) from two
+cases that reacted July 30. The lessons are general and name no company,
+but that is still a look-ahead, and those four cases scored best: Brier
+(judge) 0.111 and 4 / 4 right, against 0.200 and 5 / 6 for the other six.
+The table below keeps them; read its training rows as optimistic.
+`researchos` is being changed to refuse this (see Walk-forward).
 
 | | n | up | Brier (weighted) | Brier (judge) | Brier (coin) | Accuracy (judge) |
 |---|---|---|---|---|---|---|
@@ -73,6 +82,40 @@ this evidence training neither helps nor hurts. Settling it needs many more
 cases -- and smaller companies, which masking can actually hide.
 `eval_subagent_untrained.json` and `eval_subagent_trained.json` hold the
 per-case scores.
+
+## Walk-forward
+
+Fifteen paired cases instead of five: the ten training cases were also
+forecast with the untrained playbook (`evaluate`, one case at a time) and
+again trained one case at a time with the playbook carried forward -- the
+subagent model in both arms, in the same case-id order as before. Together
+with the five held-out pairs:
+
+```
+python -m researchos compare -a walkforward_untrained.json -a eval_subagent_untrained.json -b walkforward_trained.json -b eval_subagent_trained.json
+```
+
+| Cases | n | Brier (judge), untrained -> trained | difference, 95% CI | trained better / worse / tied |
+|---|---|---|---|---|
+| All | 15 | 0.200 -> 0.189 | -0.011 [-0.024, +0.002] | 9 / 4 / 2 |
+| Without the four look-ahead cases | 11 | 0.220 -> 0.212 | -0.008 [-0.024, +0.008] | 6 / 4 / 1 |
+
+With the learned blend (`--metric brier_weighted`) the difference is
+-0.002 [-0.011, +0.007] on all 15 and -0.002 [-0.010, +0.008] on the 11:
+the weights barely moved from uniform, so they change little. The judge,
+which reads the lessons, does a little better, but three of the four
+look-ahead cases are among its larger gains (case05 -0.039, case03 -0.029),
+and without them the interval is centered near zero. **On this evidence
+training has no measurable effect.** The intervals come from resampling cases
+(10,000 bootstrap resamples); they do not count the noise of the model itself,
+which on case01 -- the same initial playbook in both arms -- moved the judge's
+Brier by 0.009.
+
+The fix, under way in the package: `train` takes cases in event order,
+forecasts every case of the same event date before opening any of their
+outcomes, and `train` and `evaluate` refuse a case dated on or before the
+last reaction the playbook learned from. `walkforward_playbook.json` is
+the playbook the walk-forward arm ended with.
 
 What did come out of training: weights moved little from uniform
 (expectations_gap 0.156 and management_tone 0.152 at the top, growth 0.133 at

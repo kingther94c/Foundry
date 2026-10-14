@@ -1,0 +1,206 @@
+{
+  "model": "subagent behind a local relay (API key out of credit)",
+  "playbook": "initial (evaluate, one case at a time)",
+  "cases": [
+    {
+      "case_id": "case01",
+      "split": "eval",
+      "actual_up": true,
+      "brier_weighted": 0.19612244897959172,
+      "brier_judge": 0.18490000000000004,
+      "brier_by_perspective": {
+        "growth": 0.16000000000000003,
+        "profitability": 0.18490000000000004,
+        "guidance": 0.17640000000000003,
+        "cash_flow": 0.21159999999999995,
+        "management_tone": 0.2601,
+        "expectations_gap": 0.1444,
+        "risks": 0.25
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.19612244897959183,
+      "identifiable": true
+    },
+    {
+      "case_id": "case02",
+      "split": "eval",
+      "actual_up": false,
+      "brier_weighted": 0.16693061224489805,
+      "brier_judge": 0.1444,
+      "brier_by_perspective": {
+        "growth": 0.1296,
+        "profitability": 0.2025,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.2025,
+        "management_tone": 0.17639999999999997,
+        "expectations_gap": 0.1444,
+        "risks": 0.16000000000000003
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.1669306122448979,
+      "identifiable": true
+    },
+    {
+      "case_id": "case03",
+      "split": "eval",
+      "actual_up": true,
+      "brier_weighted": 0.12350204081632644,
+      "brier_judge": 0.10239999999999996,
+      "brier_by_perspective": {
+        "growth": 0.18490000000000004,
+        "profitability": 0.10239999999999996,
+        "guidance": 0.08410000000000002,
+        "cash_flow": 0.1296,
+        "management_tone": 0.1296,
+        "expectations_gap": 0.0625,
+        "risks": 0.20249999999999996
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.12350204081632653,
+      "identifiable": true
+    },
+    {
+      "case_id": "case04",
+      "split": "eval",
+      "actual_up": false,
+      "brier_weighted": 0.30250000000000005,
+      "brier_judge": 0.36,
+      "brier_by_perspective": {
+        "growth": 0.4624000000000001,
+        "profitability": 0.32489999999999997,
+        "guidance": 0.24009999999999998,
+        "cash_flow": 0.16809999999999997,
+        "management_tone": 0.36,
+        "expectations_gap": 0.4096,
+        "risks": 0.2116
+      },
+      "correct_weighted": false,
+      "correct_judge": false,
+      "brier_uniform": 0.30250000000000005,
+      "identifiable": true
+    },
+    {
+      "case_id": "case05",
+      "split": "eval",
+      "actual_up": false,
+      "brier_weighted": 0.20637551020408168,
+      "brier_judge": 0.17639999999999997,
+      "brier_by_perspective": {
+        "growth": 0.32489999999999997,
+        "profitability": 0.1296,
+        "guidance": 0.18489999999999998,
+        "cash_flow": 0.30250000000000005,
+        "management_tone": 0.24009999999999998,
+        "expectations_gap": 0.1444,
+        "risks": 0.16000000000000003
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.20637551020408165,
+      "identifiable": true
+    },
+    {
+      "case_id": "case07",
+      "split": "eval",
+      "actual_up": true,
+      "brier_weighted": 0.16576530612244889,
+      "brier_judge": 0.1521,
+      "brier_by_perspective": {
+        "growth": 0.16000000000000003,
+        "profitability": 0.1444,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.17640000000000003,
+        "management_tone": 0.18490000000000004,
+        "expectations_gap": 0.12249999999999998,
+        "risks": 0.22089999999999999
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.16576530612244897,
+      "identifiable": true
+    },
+    {
+      "case_id": "case08",
+      "split": "eval",
+      "actual_up": true,
+      "brier_weighted": 0.17281836734693867,
+      "brier_judge": 0.17640000000000003,
+      "brier_by_perspective": {
+        "growth": 0.1369,
+        "profitability": 0.17640000000000003,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.21159999999999995,
+        "management_tone": 0.17640000000000003,
+        "expectations_gap": 0.1444,
+        "risks": 0.21159999999999995
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.17281836734693876,
+      "identifiable": true
+    },
+    {
+      "case_id": "case09",
+      "split": "eval",
+      "actual_up": false,
+      "brier_weighted": 0.21822244897959195,
+      "brier_judge": 0.2025,
+      "brier_by_perspective": {
+        "growth": 0.3364,
+        "profitability": 0.1936,
+        "guidance": 0.2304,
+        "cash_flow": 0.16000000000000003,
+        "management_tone": 0.2116,
+        "expectations_gap": 0.25,
+        "risks": 0.16809999999999997
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.21822244897959184,
+      "identifiable": true
+    },
+    {
+      "case_id": "case10",
+      "split": "eval",
+      "actual_up": true,
+      "brier_weighted": 0.18367346938775503,
+      "brier_judge": 0.16000000000000003,
+      "brier_by_perspective": {
+        "growth": 0.1296,
+        "profitability": 0.16000000000000003,
+        "guidance": 0.16810000000000003,
+        "cash_flow": 0.3249000000000001,
+        "management_tone": 0.16000000000000003,
+        "expectations_gap": 0.11559999999999998,
+        "risks": 0.27040000000000003
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.18367346938775514,
+      "identifiable": true
+    },
+    {
+      "case_id": "case11",
+      "split": "eval",
+      "actual_up": false,
+      "brier_weighted": 0.15772244897959192,
+      "brier_judge": 0.1444,
+      "brier_by_perspective": {
+        "growth": 0.1296,
+        "profitability": 0.1444,
+        "guidance": 0.1296,
+        "cash_flow": 0.24009999999999998,
+        "management_tone": 0.1936,
+        "expectations_gap": 0.1369,
+        "risks": 0.1444
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.15772244897959184,
+      "identifiable": true
+    }
+  ]
+}
