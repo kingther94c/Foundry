@@ -121,3 +121,19 @@ when `m` is 12).
 - `business_days_between(start, end, holidays=())`: the number of business
   days in `(start, end]` -- after `start`, up to and including `end`. If `end`
   is before `start`, the count over `(end, start]`, negated. 0 when equal.
+
+## v2: values read from files
+
+Values read from JSON files or written by hand arrive loosely typed: a date
+may be a string with stray spaces, a "number" may be a bool, NaN or a string.
+Two helpers decide what such a value is, so every caller asks the same
+question the same way. Neither ever raises.
+
+- `tools.dates.parse_iso_date(value) -> datetime.date | None`: a
+  `datetime.datetime` gives its `.date()`; a `datetime.date` is returned as
+  it is; a `str` gives `datetime.date.fromisoformat` of the string with
+  surrounding whitespace removed, or None if that fails; anything else
+  (None, numbers, bools, lists, ...) gives None.
+- `tools.stats.is_number(value) -> bool`: True for an `int` (of any size --
+  an int is always finite) and for a finite `float`; False for a bool, NaN,
+  plus or minus infinity, None, a string, and anything else.

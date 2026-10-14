@@ -67,3 +67,17 @@ def business_days_between(
         if start < h <= end and h.weekday() < 5:
             count -= 1
     return count
+
+
+def parse_iso_date(value: object) -> datetime.date | None:
+    """Return value as a date (a datetime's date, a date as is, a stripped ISO string parsed); None otherwise."""
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.date.fromisoformat(value.strip())
+        except ValueError:
+            return None
+    return None

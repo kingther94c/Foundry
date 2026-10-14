@@ -1,4 +1,6 @@
 import math
+from decimal import Decimal
+from fractions import Fraction
 
 import pytest
 
@@ -104,3 +106,35 @@ def test_combine_probabilities():
     )
     assert s.combine_probabilities({"a": 0.2}, {"a": 0}) is None
     assert s.combine_probabilities({}, {}) is None
+
+
+def test_is_number_accepts_ints_and_finite_floats():
+    for value in (0, 1, -7, 10**400, -(10**400), 0.0, -0.0, 1.5, -2.25, 1e308, 5e-324):
+        assert s.is_number(value) is True, repr(value)
+
+
+def test_is_number_rejects_everything_else():
+    others = (
+        True,
+        False,
+        math.nan,
+        -math.nan,
+        math.inf,
+        -math.inf,
+        None,
+        "1",
+        "1.5",
+        "nan",
+        "",
+        b"1",
+        [1],
+        (1,),
+        {1: 1},
+        {1},
+        1 + 0j,
+        Decimal("1"),
+        Fraction(1, 2),
+        object(),
+    )
+    for value in others:
+        assert s.is_number(value) is False, repr(value)

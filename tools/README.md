@@ -41,3 +41,10 @@ attempts 2 and 3, and the first version of the reference, let it escape. The
 acceptance suite now pins the case. Attempt 3 ran with an extra line in
 Foundry's system prompt asking the agent to test a spec's general rules; it
 tested bad and missing input more, never overflow, so the line was dropped.
+
+v2 added `dates.parse_iso_date` and `stats.is_number`, the two checks
+ResearchOS had written privately in five places. Foundry made them in 10
+rounds, with the API out of credit and a subagent standing in for the model
+behind a local relay; they pass all 37 new acceptance cases (`test_v2_acceptance.py`), including
+`is_number(10 ** 400)`, where `math.isfinite` would overflow -- Foundry
+handled it, with a comment saying why.

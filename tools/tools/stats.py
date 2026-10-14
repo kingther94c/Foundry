@@ -208,3 +208,15 @@ def combine_probabilities(
     if total_weight == 0:
         return None
     return total / total_weight
+
+
+def is_number(value: object) -> bool:
+    """Return True if value is an int (not a bool) or a finite float, else False; never None."""
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        # An int is always finite; math.isfinite would overflow on a huge one.
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    return False
