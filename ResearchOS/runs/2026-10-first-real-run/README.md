@@ -8,7 +8,8 @@ stocks reacted. Built with `researchos.sources`, trained and scored with
 What is here: `cases.json` (each case's identity, dates, document sources and
 sizes, the outcome, how masking went, and the sealed prediction),
 `playbook.json` (the trained playbook: weights, 62 lessons, history),
-`train.json` and `eval_baseline.json` (the loop's output and token usage).
+`train.json` and `eval_baseline.json` (the loop's output and token usage),
+`eval_subagent_*.json` (the held-out comparison, see Results).
 The documents themselves are not checked in: they are third-party pages.
 
 ## Data
@@ -51,14 +52,27 @@ too.
 **Do not read a trend into this.** The first five training cases were
 forecast with an almost empty playbook and still scored 4 / 5, and the
 untrained analyst scored 2 / 5 on the held-out cases. With five cases a
-side, case-to-case variance swamps any effect of training. The comparison
-that would isolate the playbook is the trained playbook on the same held-out
-cases. That run failed partway: the API key ran out of credit. To finish it:
+side, case-to-case variance swamps any effect of training.
 
-```
-python -m researchos evaluate --root cases --playbook playbook.json \
-    --ids case12,case13,case14,case15,case16 --knowledge-cutoff 2026-06-30
-```
+The comparison that isolates the playbook -- the same five held-out cases,
+the same masks, untrained against trained -- ran after the API key had run
+out of credit, so both arms used a stand-in for the model: one fresh subagent
+per case per arm behind a local relay that answers in place of the Messages
+API, seeing only the requests (an audit of every subagent's tool calls found
+nothing touched outside its own relay directory). Both arms ran the same
+way, so they compare with each other, not with the API rows above.
+
+| Held out, subagent model | Brier (judge) | Brier (weighted) | Accuracy |
+|---|---|---|---|
+| Untrained playbook | 0.239 | 0.237 | 3 / 5 |
+| Trained playbook | 0.235 | 0.236 | 3 / 5 |
+
+The trained playbook is better on two cases and worse on three; the
+difference (0.004) is noise, and both arms sit near a coin flip (0.25). On
+this evidence training neither helps nor hurts. Settling it needs many more
+cases -- and smaller companies, which masking can actually hide.
+`eval_subagent_untrained.json` and `eval_subagent_trained.json` hold the
+per-case scores.
 
 What did come out of training: weights moved little from uniform
 (expectations_gap 0.156 and management_tone 0.152 at the top, growth 0.133 at
