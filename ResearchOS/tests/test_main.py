@@ -5,6 +5,7 @@ from conftest import (FakeClient, default_answer, make_case, make_outcome, schem
 
 from researchos.__main__ import main
 from researchos.cases import save_case
+from researchos.masking import MaskConfig
 from researchos.playbook import load_playbook
 
 
@@ -62,6 +63,54 @@ def test_knowledge_cutoff_is_passed_on(tmp_path, capsys, monkeypatch):
     assert seen == ["2026-01-31", "2026-01-31", None]
 
 
+def test_mask_give_up_is_passed_on(tmp_path, capsys, monkeypatch):
+    import researchos.__main__ as main_mod
+
+    root = setup_root(tmp_path)
+    seen = []
+
+    def fake_run(root_, ids, playbook, roles, seed=0, mask_config=None, knowledge_cutoff=None):
+        seen.append(mask_config)
+        return {"n": 0}
+
+    monkeypatch.setattr(main_mod, "train", fake_run)
+    monkeypatch.setattr(main_mod, "evaluate", fake_run)
+    for cmd, conf in (("train", "0.95"), ("evaluate", "1")):
+        assert main([cmd, "--root", str(root), "--playbook", str(tmp_path / "pb.json"),
+                     "--ids", "a", "--mask-give-up", conf], client_factory=schema_client) == 0
+        assert json.loads(capsys.readouterr().out) == {"n": 0}
+    assert main(["train", "--root", str(root), "--playbook", str(tmp_path / "pb.json"),
+                 "--ids", "a"], client_factory=schema_client) == 0
+    assert seen[0] == MaskConfig(give_up_confidence=0.95)
+    assert seen[1] == MaskConfig(give_up_confidence=1.0)
+    assert seen[2] is None or seen[2].give_up_confidence is None
+
+
+def test_mask_give_up_stops_masking_early(tmp_path, capsys):
+    root = setup_root(tmp_path)
+
+    def responder(kwargs):
+        schema = kwargs["output_config"]["format"]["schema"]
+        prompt = kwargs["messages"][0]["content"][-1]["text"]
+        if "guesses" in schema["properties"]:
+            body = {"guesses": [{"company": "Acme", "ticker": "ACMW", "confidence": 0.98}],
+                    "clues": ["the segment mix"]}
+        else:
+            body = default_answer(schema, prompt)
+        return text_response(json.dumps(body))
+
+    client = FakeClient(responder)
+    code = main(["evaluate", "--root", str(root), "--playbook", str(tmp_path / "pb.json"),
+                 "--ids", "a", "--mask-give-up", "0.97"], client_factory=lambda: client)
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["n"] == 0  # identifiable, no cutoff: skipped
+    kinds = [set(r["output_config"]["format"]["schema"]["properties"]) for r in client.requests]
+    assert sum(1 for k in kinds if "redactions" in k) == 1
+    assert sum(1 for k in kinds if "guesses" in k) == 1
+    masked = json.loads((root / "a" / "masked.json").read_text(encoding="utf-8"))
+    assert masked["status"] == "identifiable" and masked["rounds"] == 1
+
+
 def test_knowledge_cutoff_scores_identifiable_case(tmp_path, capsys):
     root = setup_root(tmp_path)  # event_date 2026-02-01
 
@@ -94,6 +143,9 @@ def test_bad_arguments_exit_2(tmp_path, capsys):
         assert main(["evaluate", "--root", "x", "--playbook", "p", "--ids", "a",
                      "--knowledge-cutoff", bad]) == 2
     assert main(["train", "--root", "x", "--playbook", "p", "--ids", " , "]) == 2
+    for bad in ("0", "-0.5", "1.01", "nope", "nan", "inf", ""):
+        assert main(["train", "--root", "x", "--playbook", "p", "--ids", "a",
+                     "--mask-give-up", bad]) == 2
     assert capsys.readouterr().out == ""
 
 

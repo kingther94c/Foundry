@@ -140,6 +140,17 @@ keeps identifiable cases whose event date is after it, and every scored
 record says whether masking held. Foundry made the change in 13 rounds
 (~$0.48).
 
+Masking then turned out to be the most expensive step, and for large
+companies a futile one, so it can now give up early: `--mask-give-up CONF`
+ends masking, as identifiable, once the guesser names the company with at
+least that confidence. The API key had run out of credit by then, so for this
+change Foundry's model was a subagent behind a local relay that stands in for
+the Messages API: Foundry's requests are written to disk, a fresh subagent
+that sees only those requests writes the replies, and an audit of its tool
+calls confirms it touched nothing else. Foundry made the change in 7 rounds,
+passed all 76 acceptance tests, and agrees with the hand-written version on
+4,000 scripted masking runs.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

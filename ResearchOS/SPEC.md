@@ -138,6 +138,7 @@ class MaskConfig:
     factor_range: tuple[float, float] = (0.3, 3.0)
     year_offset_range: tuple[int, int] = (-9, -3)
     guess_top_k: int = 3
+    give_up_confidence: float | None = None
 
 @dataclass
 class MaskedCase:
@@ -164,10 +165,13 @@ class MaskedCase:
   not a letter, digit or space with a space; drop the words "the", "inc",
   "incorporated", "corp", "corporation", "co", "company", "ltd", "limited",
   "plc", "holdings", "group"; collapse whitespace; strip.
-- `is_identified(guesses, case, top_k) -> bool`: True if any of the first
-  `top_k` guesses has a `company` whose `normalize_name` equals the
+- `identifying_guess(guesses, case, top_k) -> dict | None`: the first of the
+  first `top_k` guesses that has a `company` whose `normalize_name` equals the
   `normalize_name` of `case.company` or of an alias (and is not empty), or a
-  `ticker` equal to `case.ticker` ignoring case and surrounding spaces.
+  `ticker` equal to `case.ticker` ignoring case and surrounding spaces; `None`
+  if there is none.
+- `is_identified(guesses, case, top_k) -> bool`: `identifying_guess(guesses,
+  case, top_k) is not None`.
 - Masker role. `system` is `MASKER_SYSTEM`; the prompt holds the current
   masked documents and, after a failed round, the guesser's clues. Schema
   `MASKER_SCHEMA`: `{"redactions": [{"term": str, "replacement": str,
@@ -187,7 +191,15 @@ class MaskedCase:
   (redact, then scale_money, then shift_years), then call the guesser. If
   `is_identified` is False the status is `"masked"` and the loop ends;
   otherwise the guesser's clues go to the next masker round. After the last
-  round the status is `"identifiable"`. 3. Guard, applied to the returned
+  round the status is `"identifiable"`. Giving up early: when
+  `config.give_up_confidence` is set and the identifying guess's
+  `confidence` is at least that, the loop ends at once with status
+  `"identifiable"`. A guesser that sure after a round of redaction is naming
+  the company from what its business is, not from a stray name, and further
+  rounds only cost tokens: in the first real run all fifteen large companies
+  were still named at 0.97 or more after four rounds, and masking was the
+  most expensive step. A confidence that is missing or not a number never
+  gives up. 3. Guard, applied to the returned
   documents whatever the agents did: any identity term still found
   (`find_terms`) is redacted to `"the Company"` and added to the mapping.
   The guesser never receives the case's company, ticker or aliases in any
@@ -326,7 +338,9 @@ class Roles:
 `python -m researchos train --root DIR --playbook FILE --ids ID[,ID...] [--seed N] [--knowledge-cutoff YYYY-MM-DD]`
 and `python -m researchos evaluate ...` (same arguments; `--knowledge-cutoff`
 is passed on as `knowledge_cutoff`, and a value that is not an ISO date is a
-bad argument): build `Roles` from
+bad argument; `--mask-give-up CONF` runs with
+`MaskConfig(give_up_confidence=CONF)`, and `CONF` must be a number with
+`0 < CONF <= 1`, else it is a bad argument): build `Roles` from
 `ClaudeJSON(anthropic.Anthropic())` (one instance per role; masker and
 guesser at effort `"medium"`, the others at `"high"`), run, and print the
 scores to stdout as JSON -- nothing else goes to stdout; messages go to

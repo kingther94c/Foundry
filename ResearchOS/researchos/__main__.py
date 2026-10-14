@@ -1,7 +1,7 @@
 """Command line.
 
     python -m researchos {train,evaluate} --root DIR --playbook FILE --ids ID[,ID...] [--seed N]
-                                          [--knowledge-cutoff YYYY-MM-DD]
+                                          [--knowledge-cutoff YYYY-MM-DD] [--mask-give-up CONF]
     python -m researchos build --root DIR --spec FILE --closes FILE --market-closes FILE
 """
 
@@ -17,6 +17,7 @@ from pathlib import Path
 from researchos.cases import CASE_FILE, load_outcome
 from researchos.llm import ClaudeJSON, LLMError, anthropic_client
 from researchos.loop import Roles, evaluate, parse_cutoff, train
+from researchos.masking import MaskConfig
 from researchos.sources import build_case, fetch_pages, load_case_spec, load_closes
 
 
@@ -27,6 +28,17 @@ def _iso_date(value: str) -> str:
     except ValueError:
         raise argparse.ArgumentTypeError(f"not an ISO date (YYYY-MM-DD): {value!r}") from None
     return value.strip()
+
+
+def _give_up_confidence(value: str) -> float:
+    """argparse type: a number with 0 < CONF <= 1."""
+    try:
+        conf = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number: {value!r}") from None
+    if not 0 < conf <= 1:  # also rejects nan
+        raise argparse.ArgumentTypeError(f"must be a number with 0 < CONF <= 1: {value!r}")
+    return conf
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -42,6 +54,10 @@ def _parser() -> argparse.ArgumentParser:
                        default=None,
                        help="last date the models can know about (YYYY-MM-DD); identifiable "
                             "cases whose event date is after it are analyzed, not skipped")
+        p.add_argument("--mask-give-up", dest="mask_give_up", type=_give_up_confidence,
+                       default=None, metavar="CONF",
+                       help="stop masking a case (as identifiable) once the guesser names it "
+                            "with at least this confidence (0 < CONF <= 1)")
     p = sub.add_parser("build")
     p.add_argument("--root", required=True)
     p.add_argument("--spec", required=True, help="JSON file holding one CaseSpec")
@@ -83,8 +99,10 @@ def main(argv=None, *, client_factory=None) -> int:
         client = (client_factory or anthropic_client)()
         roles = build_roles(client)
         run = train if args.command == "train" else evaluate
-        result = run(args.root, ids, args.playbook, roles, seed=args.seed,
-                     knowledge_cutoff=args.knowledge_cutoff)
+        kwargs = {"seed": args.seed, "knowledge_cutoff": args.knowledge_cutoff}
+        if args.mask_give_up is not None:
+            kwargs["mask_config"] = MaskConfig(give_up_confidence=args.mask_give_up)
+        result = run(args.root, ids, args.playbook, roles, **kwargs)
     except LLMError as exc:
         print(f"error: LLM call failed: {exc}", file=sys.stderr)
         return 1

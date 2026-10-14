@@ -24,6 +24,9 @@ class MaskConfig:
     factor_range: tuple[float, float] = (0.3, 3.0)
     year_offset_range: tuple[int, int] = (-9, -3)
     guess_top_k: int = 3
+    # Stop masking at once (status "identifiable") when the identifying guess's
+    # confidence is at least this. None never gives up early.
+    give_up_confidence: float | None = None
 
 
 @dataclass
@@ -179,7 +182,8 @@ def normalize_name(name: str) -> str:
     return " ".join(w for w in cleaned.split() if w not in _DROP_WORDS).strip()
 
 
-def is_identified(guesses: list[dict], case: Case, top_k: int) -> bool:
+def identifying_guess(guesses: list[dict], case: Case, top_k: int) -> dict | None:
+    """The first of the first top_k guesses that names the company (or its ticker), else None."""
     names = {normalize_name(n) for n in [case.company, *case.aliases]}
     names.discard("")
     ticker = case.ticker.strip().lower() if isinstance(case.ticker, str) else ""
@@ -188,12 +192,29 @@ def is_identified(guesses: list[dict], case: Case, top_k: int) -> bool:
             continue
         company = normalize_name(guess.get("company", ""))
         if company and company in names:
-            return True
+            return guess
         guessed_ticker = guess.get("ticker", "")
         if (ticker and isinstance(guessed_ticker, str)
                 and guessed_ticker.strip().lower() == ticker):
-            return True
-    return False
+            return guess
+    return None
+
+
+def is_identified(guesses: list[dict], case: Case, top_k: int) -> bool:
+    return identifying_guess(guesses, case, top_k) is not None
+
+
+def _gives_up(guess: dict | None, threshold: float | None) -> bool:
+    """True if masking should stop: the identifying guess is at least `threshold` confident.
+
+    A confidence that is missing or not a number (a string, a bool, NaN, ...) never gives up.
+    """
+    if guess is None or threshold is None:
+        return False
+    confidence = guess.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        return False
+    return confidence >= threshold
 
 
 def _masker_prompt(documents: list[Document], clues: list[str]) -> str:
@@ -250,8 +271,13 @@ def mask_case(case: Case, masker, guesser, rng: random.Random,
         rounds += 1
         result = result if isinstance(result, dict) else {}
         final_guesses = [g for g in result.get("guesses") or [] if isinstance(g, dict)]
-        if not is_identified(final_guesses, case, config.guess_top_k):
+        hit = identifying_guess(final_guesses, case, config.guess_top_k)
+        if hit is None:
             status = "masked"
+            break
+        if _gives_up(hit, config.give_up_confidence):
+            # Named this confidently after redaction: it recognizes the business itself,
+            # so further rounds only cost tokens. Status stays "identifiable".
             break
         clues = [c for c in result.get("clues") or [] if isinstance(c, str)]
     documents = guard_documents(documents, terms, mapping)

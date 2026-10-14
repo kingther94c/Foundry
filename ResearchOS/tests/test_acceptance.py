@@ -137,6 +137,49 @@ def test_is_identified():
     assert not masking.is_identified([], case, 3)
 
 
+def test_identifying_guess():
+    case = make_case()
+    g = lambda company, ticker="", confidence=0.5: {"company": company, "ticker": ticker, "confidence": confidence}
+    guesses = [g("Other Co", confidence=0.9), g("Zephyrex Corp", confidence=0.4), g("x", " zpx ", 0.3)]
+    assert masking.identifying_guess(guesses, make_case(), 3) is guesses[1]
+    assert masking.identifying_guess(guesses, case, 1) is None
+    assert masking.identifying_guess([g("A"), g("B"), g("C"), g("Zephyrex")], case, 3) is None
+    assert masking.identifying_guess([], case, 3) is None
+
+
+def confident_guesser(confidence, right=True):
+    def reply(n, *a):
+        return {"guesses": [{"company": "Other Co", "ticker": "", "confidence": 0.99},
+                            {"company": "Zephyrex" if right else "Nobody", "ticker": "", "confidence": confidence}],
+                "clues": [f"clue {n}"]}
+    return Fake(reply)
+
+
+@pytest.mark.parametrize("confidence,give_up,rounds", [
+    (0.95, 0.9, 1),       # sure after one round: give up
+    (0.9, 0.9, 1),        # at the threshold counts
+    (0.5, 0.9, 4),        # identified, but not that sure: keep masking
+    (0.95, None, 4),      # not configured: the old behaviour
+    ("high", 0.9, 4),     # a confidence that is not a number never gives up
+])
+def test_masking_gives_up_early_when_the_guesser_is_sure(confidence, give_up, rounds):
+    masker = Fake(lambda n, *a: {"redactions": []})
+    guesser = confident_guesser(confidence)
+    masked = masking.mask_case(make_case(), masker, guesser, random.Random(3),
+                               masking.MaskConfig(give_up_confidence=give_up))
+    assert masked.status == "identifiable" and masked.rounds == rounds
+    assert len(masker.calls) == rounds and len(guesser.calls) == rounds
+    assert masked.final_guesses[1]["confidence"] == confidence
+
+
+def test_the_other_guesses_confidence_does_not_count():
+    # The top guess is wrong at 0.99; the identifying guess is at 0.5.
+    masked = masking.mask_case(make_case(), Fake(lambda n, *a: {"redactions": []}),
+                               confident_guesser(0.5), random.Random(3),
+                               masking.MaskConfig(max_rounds=2, give_up_confidence=0.9))
+    assert masked.rounds == 2
+
+
 # --- masking: the agent loop ----------------------------------------------------
 
 def guesser_sequence(*identified):
@@ -612,6 +655,7 @@ class IdentifyingClient(ScriptedClient):
 
     def create(self, **kwargs):
         if role_of(kwargs) == "guesser":
+            self.kwargs.append(kwargs)
             body = {"guesses": [{"company": "Zephyrex Corp", "ticker": "ZPX", "confidence": 0.9}],
                     "clues": ["the segments"]}
             usage = types.SimpleNamespace(input_tokens=1, output_tokens=1, cache_read_input_tokens=0,
@@ -628,3 +672,16 @@ def test_cli_knowledge_cutoff(two_cases, capsys):
     trained = json.loads(capsys.readouterr().out)
     assert trained[0]["identifiable"] is True
     assert main(args + ["--knowledge-cutoff", "June 2026"], client_factory=IdentifyingClient) == 2
+
+
+def test_cli_mask_give_up(two_cases, capsys):
+    from researchos.__main__ import main
+    client = IdentifyingClient()
+    args = ["train", "--root", str(two_cases), "--playbook", str(two_cases / "pb.json"), "--ids", "c1",
+            "--knowledge-cutoff", "2026-06-30"]
+    assert main(args + ["--mask-give-up", "0.8"], client_factory=lambda: client) == 0
+    guesser_calls = [kw for kw in client.kwargs if role_of(kw) == "guesser"]
+    assert len(guesser_calls) == 1          # 0.9 >= 0.8 after the first round
+    assert json.loads(capsys.readouterr().out)[0]["identifiable"] is True
+    for bad in ["0", "1.5", "-0.2", "sure"]:
+        assert main(args + ["--mask-give-up", bad], client_factory=IdentifyingClient) == 2
