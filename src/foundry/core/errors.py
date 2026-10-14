@@ -49,13 +49,6 @@ class ProtocolError(FatalError):
     category = "provider_protocol"
 
 
-class PolicyDenied(FoundryError):
-    """Denied before execution. Fed back to the model as a tool result so the
-    loop survives and the model can choose a different approach."""
-
-    category = "policy_denied"
-
-
 class ToolError(FoundryError):
     """The tool ran (or refused to run) and failed in a way the model should
     see and can act on."""

@@ -411,7 +411,8 @@ The V1 rules:
   structured error is returned to the model.
 - The error taxonomy: `TransientError (429/5xx/network, retried with
   exponential backoff, respecting Retry-After) / AuthError (refresh and retry
-  once) / FatalError (context exceeded, a content refusal) / PolicyDenied`;
+  once) / FatalError (context exceeded, a content refusal)`, with a policy
+  denial answered as a tool result rather than raised;
   retry logic belongs to AgentRuntime rather than being scattered across
   backends; sustained throttling terminates as `blocked(rate_limited)` rather
   than waiting indefinitely.

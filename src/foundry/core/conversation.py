@@ -97,10 +97,6 @@ class Message:
     def text_content(self) -> str:
         return "".join(b.text for b in self.blocks if isinstance(b, TextBlock))
 
-    @property
-    def tool_uses(self) -> tuple[ToolUseBlock, ...]:
-        return tuple(b for b in self.blocks if isinstance(b, ToolUseBlock))
-
 
 # --- tool declarations ----------------------------------------------------
 

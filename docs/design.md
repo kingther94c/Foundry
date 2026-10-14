@@ -111,11 +111,12 @@ async def run_turn(user_input):
   (codex mid-turn steering).
 - A sampling request is the full history, statelessly; one thread uses a stable
   `prompt_cache_key` (where the backend's capabilities allow it).
-- The error taxonomy (`TransientError/AuthError/FatalError/PolicyDenied`) is
+- The error taxonomy (`TransientError/AuthError/FatalError`) is
   mapped by the adapter and handled uniformly in the runtime for retries
   (exponential backoff + Retry-After + a ceiling); an AuthError triggers a
   single-flight refresh (a process lock plus a file lock against multi-instance
-  races) and one retry.
+  races) and one retry. A policy denial is not an error: the call is answered
+  with a tool result the model reads, and a `tool_rejected` event records it.
 - The cancellation propagation chain belongs to the runtime: Ctrl+C ->
   Interrupt op -> cancel the in-flight HTTP read -> TerminateJobObject kills
   the child process tree -> `Termination(cancelled)` is written to disk.
