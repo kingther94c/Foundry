@@ -197,6 +197,21 @@ caught what the hand-written version broke: with a variable-length
 positional list, `compare A.json --seed 5 B.json` -- valid until then --
 became an error. Foundry kept it working.
 
+That comparison then exposed a look-ahead in training itself: `train` took
+cases in the order given, so a forecast could use a lesson drawn from a
+stock that reacted the same day or later. Now `train` walks forward in
+event-date order, forecasts every case of one event date before opening any
+of their outcomes, and `train` and `evaluate` refuse a case dated on or
+before the last reaction the playbook learned from (`learned_through`), or
+one without an ISO event date. Foundry made it in 18 rounds and passed all
+146 acceptance tests. It found the two existing acceptance tests the new
+rule broke (each evaluated a case dated the same day as the one it trained
+on) and fixed their data rather than the rule. On 400 random training and
+evaluation sequences it agrees with the hand-written version -- once that
+version was fixed: it accepted an event date with stray spaces when
+training and then could not read it back from the playbook, which
+Foundry's version handled.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

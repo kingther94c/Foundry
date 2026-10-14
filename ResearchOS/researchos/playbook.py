@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import date, datetime
 from pathlib import Path
 
 from tools.stats import hedge_update
@@ -55,6 +56,44 @@ def load_playbook(path) -> Playbook:
         ],
         history=list(data.get("history", [])),
     )
+
+
+def _as_date(value) -> date | None:
+    """A date, or an ISO date string, as a date; None for anything else."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def learned_through(playbook: Playbook) -> date | None:
+    """The latest event date among the history records the playbook learned from.
+
+    Records with "skipped" taught it nothing and do not count; records without an
+    event_date (written before training recorded one) are ignored. None if no record
+    counts. An event_date that is present but is not an ISO date raises ValueError:
+    what the playbook knows cannot be told, and guessing could let a look-ahead through.
+    """
+    latest: date | None = None
+    for record in playbook.history:
+        if not isinstance(record, dict) or "skipped" in record:
+            continue
+        value = record.get("event_date")
+        if value is None:
+            continue
+        when = _as_date(value)
+        if when is None:
+            raise ValueError(f"playbook history record for case {record.get('case_id')!r} has "
+                             f"event_date {value!r}, which is not an ISO date (YYYY-MM-DD)")
+        if latest is None or when > latest:
+            latest = when
+    return latest
 
 
 def update_weights(playbook: Playbook, views: dict, actual_up: bool, eta: float = 0.5) -> None:

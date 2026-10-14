@@ -6,6 +6,7 @@ import logging
 import random
 from dataclasses import asdict, dataclass
 from datetime import date
+from itertools import groupby
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +17,8 @@ from researchos.jsonio import write_json
 from researchos.masking import (MASKED_FILE, MaskConfig, guard_documents, load_masked,
                                 mask_case, save_masked)
 from researchos.perspectives import Analysis, analyze
-from researchos.playbook import (Playbook, add_lessons, lesson_is_clean, load_playbook,
-                                 save_playbook, update_weights)
+from researchos.playbook import (Playbook, add_lessons, learned_through, lesson_is_clean,
+                                 load_playbook, save_playbook, update_weights)
 from researchos.reflect import reflect
 
 log = logging.getLogger("researchos")
@@ -102,20 +103,19 @@ def _after_cutoff(case, cutoff: date | None) -> bool:
     return event > cutoff
 
 
-def _predict(root, case_id, playbook, roles, seed, mask_config, split, cutoff=None):
-    """Mask, analyze and seal one case. Returns (case, masked, analysis); analysis None if skipped."""
-    case = load_case(root, case_id)
+def _predict(root, case_id, case, playbook, roles, seed, mask_config, split, cutoff=None):
+    """Mask, analyze and seal one case. Returns (masked, analysis); analysis None if skipped."""
     rng = random.Random(f"{seed}:{case_id}")
     masked = _get_masked(root, case, roles, rng, mask_config)
     if masked.status == "identifiable":
         if not _after_cutoff(case, cutoff):
             log.warning("%s: %s skipped, masking left it identifiable", split, case_id)
-            return case, masked, None
+            return masked, None
         log.warning("%s: %s is identifiable but its event date %s is after the knowledge "
                     "cutoff %s; analyzing it", split, case_id, case.event_date, cutoff)
     analysis = analyze(masked, _analysis_playbook(playbook, case), roles.analyst, roles.judge)
     _seal(root, analysis)
-    return case, masked, analysis
+    return masked, analysis
 
 
 def _open_playbook(playbook_path) -> Playbook:
@@ -124,30 +124,84 @@ def _open_playbook(playbook_path) -> Playbook:
     return Playbook.initial()
 
 
+def _event_date(case_id, case) -> date:
+    """The case's event date; ValueError naming the case if it is not an ISO date."""
+    value = case.event_date
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value.strip())
+        except ValueError:
+            pass
+    raise ValueError(f"case {case_id}: event_date {value!r} is not an ISO date (YYYY-MM-DD), "
+                     f"so the case cannot be placed in time")
+
+
+def _requested_cases(root, case_ids, playbook: Playbook, playbook_path, command: str):
+    """Load every requested case and check it can be forecast without look-ahead.
+
+    Returns [(case_id, case, event_date)] in the order given. Raises ValueError naming
+    every case whose event_date is not an ISO date, or is on or before the latest event
+    date the playbook has learned from (its forecast would use reactions it could not
+    have known). Nothing is called or written here, so a refusal leaves no trace.
+    """
+    through = learned_through(playbook)
+    requested, problems = [], []
+    for case_id in case_ids:
+        case = load_case(root, case_id)
+        try:
+            when = _event_date(case_id, case)
+        except ValueError as exc:
+            problems.append(str(exc))
+            continue
+        if through is not None and when <= through:
+            problems.append(
+                f"case {case_id}: event_date {when.isoformat()} is on or before "
+                f"{through.isoformat()}, the latest event date the playbook {playbook_path} "
+                f"has learned from, so its forecast would use reactions it could not have known")
+        requested.append((case_id, case, when))
+    if problems:
+        raise ValueError(f"{command} refused: " + "; ".join(problems))
+    return requested
+
+
 def train(root, case_ids, playbook_path, roles: Roles, seed=0,
           mask_config: MaskConfig = MaskConfig(), knowledge_cutoff=None) -> list[dict]:
     cutoff = parse_cutoff(knowledge_cutoff)
     playbook = _open_playbook(playbook_path)
+    requested = _requested_cases(root, case_ids, playbook, playbook_path, "train")
+    # Walk forward in event-date order; sorted() is stable, so ties keep the order given.
+    ordered = sorted(requested, key=lambda item: item[2])
     results: list[dict] = []
-    for case_id in case_ids:
-        case, masked, analysis = _predict(root, case_id, playbook, roles, seed, mask_config,
-                                          "train", cutoff)
-        if analysis is None:
-            playbook.history.append(
-                {"case_id": case_id, "split": "train", "skipped": "identifiable"})
+    for _, group in groupby(ordered, key=lambda item: item[2]):
+        batch = list(group)
+        # Cases sharing an event date reacted together: each is forecast (masked, analyzed,
+        # sealed) with the playbook as it stood before the batch, before any of their
+        # outcomes is opened. _predict never changes the playbook.
+        forecasts = []
+        for case_id, case, _ in batch:
+            masked, analysis = _predict(root, case_id, case, playbook, roles, seed, mask_config,
+                                        "train", cutoff)
+            forecasts.append((case_id, case, masked, analysis))
+        # Only then are the outcomes opened, one case at a time in batch order.
+        for case_id, case, masked, analysis in forecasts:
+            if analysis is None:
+                playbook.history.append({"case_id": case_id, "split": "train",
+                                         "event_date": case.event_date,
+                                         "skipped": "identifiable"})
+                save_playbook(playbook_path, playbook)
+                continue
+            outcome = load_outcome(root, case_id)  # only after the whole batch is sealed
+            record = score(analysis, outcome)
+            update_weights(playbook, analysis.views, record["actual_up"])
+            lessons = reflect(case, masked, analysis, outcome, roles.reflector)
+            rejected = add_lessons(playbook, lessons, identity_terms(case))
+            record = {"case_id": case_id, "split": "train", "event_date": case.event_date,
+                      **record,
+                      "identifiable": masked.status == "identifiable",
+                      "lessons_rejected": rejected}
+            playbook.history.append(record)
             save_playbook(playbook_path, playbook)
-            continue
-        outcome = load_outcome(root, case_id)  # only after the prediction is sealed
-        record = score(analysis, outcome)
-        update_weights(playbook, analysis.views, record["actual_up"])
-        lessons = reflect(case, masked, analysis, outcome, roles.reflector)
-        rejected = add_lessons(playbook, lessons, identity_terms(case))
-        record = {"case_id": case_id, "split": "train", **record,
-                  "identifiable": masked.status == "identifiable",
-                  "lessons_rejected": rejected}
-        playbook.history.append(record)
-        save_playbook(playbook_path, playbook)
-        results.append(record)
+            results.append(record)
     return results
 
 
@@ -163,10 +217,12 @@ def evaluate(root, case_ids, playbook_path, roles: Roles, seed=0,
     else:
         log.warning("evaluate: no playbook at %s, using the initial playbook", playbook_path)
         playbook = Playbook.initial()
+    # A held-out case must come after everything the playbook learned from.
+    requested = _requested_cases(root, case_ids, playbook, playbook_path, "evaluate")
     records: list[dict] = []
-    for case_id in case_ids:
-        _, masked, analysis = _predict(root, case_id, playbook, roles, seed, mask_config,
-                                       "eval", cutoff)
+    for case_id, case, _ in requested:
+        masked, analysis = _predict(root, case_id, case, playbook, roles, seed, mask_config,
+                                    "eval", cutoff)
         if analysis is None:
             continue
         outcome = load_outcome(root, case_id)  # only after the prediction is sealed

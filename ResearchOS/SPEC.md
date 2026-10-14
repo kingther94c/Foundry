@@ -595,3 +595,32 @@ hand.
   `-a`/`-b`, only one of `-a` and `-b`, or a number of positional files other
   than two. `--metric`, `--resamples`, `--seed` and `--out` work as before
   with either form.
+
+## Walk-forward without look-ahead (v10)
+
+A forecast may only use lessons from reactions that had already happened.
+Training used to take cases in the order given, so a case could be predicted
+with a lesson drawn from a stock that reacted the same day or later -- a
+look-ahead, however general the lesson.
+
+- Every record `train` returns, and every record it appends to `history`
+  (skipped ones included), carries the case's `event_date`.
+- `learned_through(playbook) -> date | None` in `researchos.playbook`: the
+  latest `event_date` among the history records the playbook learned from --
+  those without `"skipped"` -- as a `datetime.date`; None if there are none.
+  Records without an `event_date` (playbooks trained before v10) are ignored.
+- `train` takes the cases in order of `event_date` (ties keep the order
+  given) and returns its records in that order. Cases sharing an event date
+  form a batch: every case of the batch is masked, analyzed and sealed with
+  the playbook as it stood before the batch; only then are their outcomes
+  opened, one case at a time in batch order (score, update the weights,
+  reflect, add lessons, append to history, save).
+- `train` and `evaluate` raise ValueError naming the case when a requested
+  case's `event_date` is on or before `learned_through` of the playbook they
+  start from: its forecast would use reactions it could not have known. A
+  requested case whose `event_date` is not an ISO date cannot be placed in
+  time and raises ValueError naming it too. They check every requested case
+  first, before any agent is called or any file is written. (For `evaluate`
+  the same rule keeps a held-out case after everything the playbook learned
+  from.)
+- CLI: that ValueError exits 1 with the message on stderr.

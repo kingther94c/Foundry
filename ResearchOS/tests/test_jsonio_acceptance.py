@@ -164,7 +164,10 @@ def test_cli_train_and_evaluate_out(tmp_path, capsys):
     from researchos.__main__ import main
     from test_acceptance import OUTCOME, ScriptedClient, make_case
     cases.save_case(tmp_path, make_case("c1"), OUTCOME)
-    cases.save_case(tmp_path, make_case("c2"), cases.Outcome(abnormal_return_1d=-0.03))
+    # c2 reacted after c1 (2026-07-30): a playbook trained on c1 may be evaluated on it
+    c2 = make_case("c2")
+    c2.event_date = "2026-10-29"
+    cases.save_case(tmp_path, c2, cases.Outcome(abnormal_return_1d=-0.03))
     pb, out = tmp_path / "pb.json", tmp_path / "train-out.json"
     assert main(["train", "--root", str(tmp_path), "--playbook", str(pb), "--ids", "c1",
                  "--out", str(out)], client_factory=ScriptedClient) == 0

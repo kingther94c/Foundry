@@ -13,6 +13,10 @@
 Each command prints its result as JSON; with --out FILE it writes the result to
 FILE instead (researchos.jsonio.write_json) and prints nothing.
 
+train and evaluate refuse a case whose event date is not an ISO date, or is on or
+before the latest event date the playbook has learned from (its forecast would use
+reactions it could not have known): exit 1, with the reason on stderr.
+
 A file compare reads is what `evaluate` or `train` printed (bare or wrapped as
 {"result": ...}); with -a/-b each side is the merge of its files' cases, in the
 order given (researchos.compare.merge_reports).
@@ -177,6 +181,9 @@ def main(argv=None, *, client_factory=None) -> int:
         return 1
     except FileNotFoundError as exc:
         print(f"error: missing file: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:  # a look-ahead or undated case, refused before anything ran
+        print(f"error: {exc}", file=sys.stderr)
         return 1
     return _emit(result, args.out)
 

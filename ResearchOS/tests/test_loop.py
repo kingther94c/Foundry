@@ -14,9 +14,13 @@ from researchos.playbook import Lesson, Playbook, load_playbook, save_playbook
 
 
 def setup_root(tmp_path, specs):
+    """specs: (case_id, abnormal return), or (case_id, abnormal return, event_date)."""
     root = tmp_path / "cases"
-    for cid, ar in specs:
-        save_case(root, make_case(cid), make_outcome(ar=ar))
+    for cid, ar, *event_date in specs:
+        case = make_case(cid)
+        if event_date:
+            case.event_date = event_date[0]
+        save_case(root, case, make_outcome(ar=ar))
     return root
 
 
@@ -55,7 +59,8 @@ def test_prediction_is_sealed_before_outcome_is_read(tmp_path, monkeypatch):
 
 
 def test_train_updates_and_saves_playbook(tmp_path):
-    root = setup_root(tmp_path, [("acme-q3", 0.02), ("acme-q4", -0.01)])
+    # acme-q3 reacted before acme-q4 (2026-02-01), so acme-q4 may learn from it
+    root = setup_root(tmp_path, [("acme-q3", 0.02, "2025-11-01"), ("acme-q4", -0.01)])
     pb_path = tmp_path / "pb.json"
     bad = {"why_market_moved": "", "where_we_were_wrong": "",
            "lessons": [{"lesson": "Acme always beats.", "applies_when": "x",
@@ -93,7 +98,8 @@ def test_train_skips_identifiable_case(tmp_path):
     assert not roles.analyst.calls and not roles.reflector.calls
     assert not (root / "acme-q4" / "prediction.json").exists()
     pb = load_playbook(pb_path)
-    assert pb.history == [{"case_id": "acme-q4", "split": "train", "skipped": "identifiable"}]
+    assert pb.history == [{"case_id": "acme-q4", "split": "train", "event_date": "2026-02-01",
+                           "skipped": "identifiable"}]
     assert pb.weights == Playbook.initial().weights
 
 
@@ -103,7 +109,8 @@ def test_masked_json_is_reused(tmp_path):
     train(root, ["acme-q4"], tmp_path / "pb.json", roles)
     n_masker = len(roles.masker.calls)
     before = (root / "acme-q4" / "masked.json").read_text(encoding="utf-8")
-    evaluate(root, ["acme-q4"], tmp_path / "pb.json", roles)
+    # evaluated with a playbook that has not learned from acme-q4 (pb.json has: refused)
+    evaluate(root, ["acme-q4"], tmp_path / "untrained.json", roles)
     assert len(roles.masker.calls) == n_masker and n_masker >= 1
     assert (root / "acme-q4" / "masked.json").read_text(encoding="utf-8") == before
 
@@ -116,6 +123,8 @@ def test_nothing_identifying_reaches_analyst_or_judge(tmp_path):
     pb.lessons.append(Lesson("WidgetPro launches always pop.", "launch", "growth", "other"))
     pb.lessons.append(Lesson("Clean lesson.", "always", "general", "other"))
     save_playbook(pb_path, pb)
+    eval_path = tmp_path / "eval.json"  # the same playbook, not trained on acme-q4
+    save_playbook(eval_path, pb)
     # a stale masked.json that still leaks the name is guarded too
     roles = make_roles()
     train(root, ["acme-q4"], pb_path, roles)
@@ -124,7 +133,7 @@ def test_nothing_identifying_reaches_analyst_or_judge(tmp_path):
     data["documents"][0]["text"] += " Acme Widgets Inc. is great."
     masked_path.write_text(json.dumps(data), encoding="utf-8")
     roles2 = make_roles()
-    evaluate(root, ["acme-q4"], pb_path, roles2)
+    evaluate(root, ["acme-q4"], eval_path, roles2)
 
     terms = identity_terms(make_case("acme-q4"))
     outcome = make_outcome()
@@ -181,10 +190,10 @@ HIT = {"guesses": [{"company": "Acme Widgets", "ticker": "ACMW", "confidence": 1
 
 
 def test_scored_records_say_whether_masking_held(tmp_path):
-    root = setup_root(tmp_path, [("acme-q4", 0.02)])
+    root = setup_root(tmp_path, [("acme-q4", 0.02), ("acme-q5", 0.02, "2026-05-01")])
     results = train(root, ["acme-q4"], tmp_path / "pb.json", make_roles())
     assert results[0]["identifiable"] is False
-    report = evaluate(root, ["acme-q4"], tmp_path / "pb.json", make_roles())
+    report = evaluate(root, ["acme-q5"], tmp_path / "pb.json", make_roles())
     assert report["cases"][0]["identifiable"] is False
     assert report["n_identifiable"] == 0
 
@@ -230,20 +239,24 @@ def test_identifiable_case_on_or_before_cutoff_is_still_skipped(tmp_path, cutoff
     assert not roles.analyst.calls and not roles.reflector.calls
     assert not (root / "acme-q4" / "prediction.json").exists()
     pb = load_playbook(pb_path)
-    assert pb.history == [{"case_id": "acme-q4", "split": "train", "skipped": "identifiable"}]
+    assert pb.history == [{"case_id": "acme-q4", "split": "train", "event_date": "2026-02-01",
+                           "skipped": "identifiable"}]
+    # a skipped case taught the playbook nothing, so it may still be evaluated
     result = evaluate(root, ["acme-q4"], pb_path, roles, knowledge_cutoff=cutoff)
     assert result["n"] == 0 and result["n_identifiable"] == 0
 
 
-def test_identifiable_case_with_unparseable_event_date_is_skipped(tmp_path):
+def test_case_with_unparseable_event_date_is_refused_even_with_a_cutoff(tmp_path):
+    # a case that cannot be placed in time is refused before masking, not skipped
     root = tmp_path / "cases"
     case = make_case("acme-q4")
     case.event_date = ""
     save_case(root, case, make_outcome(ar=0.02))
     roles = make_roles(guesser=FakeLLM(responses=[HIT]))
-    assert train(root, ["acme-q4"], tmp_path / "pb.json", roles,
-                 knowledge_cutoff="2020-01-01") == []
-    assert not roles.analyst.calls
+    with pytest.raises(ValueError, match="acme-q4"):
+        train(root, ["acme-q4"], tmp_path / "pb.json", roles, knowledge_cutoff="2020-01-01")
+    assert not roles.masker.calls and not roles.analyst.calls
+    assert not (tmp_path / "pb.json").exists()
 
 
 def test_evaluate_counts_identifiable_cases(tmp_path):

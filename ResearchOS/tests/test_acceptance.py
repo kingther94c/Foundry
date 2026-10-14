@@ -460,7 +460,10 @@ def roles(identified=False):
 @pytest.fixture()
 def two_cases(tmp_path):
     cases.save_case(tmp_path, make_case("c1"), OUTCOME)
-    cases.save_case(tmp_path, make_case("c2"), Outcome(abnormal_return_1d=-0.03))
+    # c2 reacted after c1 (2026-07-30): a playbook trained on c1 may be evaluated on it
+    c2 = make_case("c2")
+    c2.event_date = "2026-10-29"
+    cases.save_case(tmp_path, c2, Outcome(abnormal_return_1d=-0.03))
     return tmp_path
 
 

@@ -49,7 +49,7 @@ cases that reacted July 30. The lessons are general and name no company,
 but that is still a look-ahead, and those four cases scored best: Brier
 (judge) 0.111 and 4 / 4 right, against 0.200 and 5 / 6 for the other six.
 The table below keeps them; read its training rows as optimistic.
-`researchos` is being changed to refuse this (see Walk-forward).
+`researchos` now refuses this (see Walk-forward).
 
 | | n | up | Brier (weighted) | Brier (judge) | Brier (coin) | Accuracy (judge) |
 |---|---|---|---|---|---|---|
@@ -111,7 +111,7 @@ training has no measurable effect.** The intervals come from resampling cases
 which on case01 -- the same initial playbook in both arms -- moved the judge's
 Brier by 0.009.
 
-The fix, under way in the package: `train` takes cases in event order,
+The fix, now in the package: `train` takes cases in event order,
 forecasts every case of the same event date before opening any of their
 outcomes, and `train` and `evaluate` refuse a case dated on or before the
 last reaction the playbook learned from. `walkforward_playbook.json` is

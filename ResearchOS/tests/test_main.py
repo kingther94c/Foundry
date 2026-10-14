@@ -17,6 +17,13 @@ def setup_root(tmp_path):
     return root
 
 
+def add_later_case(root, case_id="c", event_date="2026-05-01"):
+    """A held-out case dated after a and b, so a playbook trained on them may evaluate it."""
+    case = make_case(case_id)
+    case.event_date = event_date
+    save_case(root, case, make_outcome(ar=0.02))
+
+
 def test_train_then_evaluate(tmp_path, capsys):
     root = setup_root(tmp_path)
     pb = tmp_path / "pb.json"
@@ -35,7 +42,8 @@ def test_train_then_evaluate(tmp_path, capsys):
         expected = "medium" if schema_props & {"redactions", "guesses"} else "high"
         assert r["output_config"]["effort"] == expected
 
-    code = main(["evaluate", "--root", str(root), "--playbook", str(pb), "--ids", "a"],
+    add_later_case(root)
+    code = main(["evaluate", "--root", str(root), "--playbook", str(pb), "--ids", "c"],
                 client_factory=schema_client)
     assert code == 0
     result = json.loads(capsys.readouterr().out)
@@ -202,7 +210,8 @@ def test_unwritable_out_exits_1_and_the_playbook_stands(tmp_path, capsys):
     assert len(load_playbook(pb).history) == 2
 
     out = tmp_path / "scores.json"
-    code = main(["evaluate", "--root", str(root), "--playbook", str(pb), "--ids", "a",
+    add_later_case(root)
+    code = main(["evaluate", "--root", str(root), "--playbook", str(pb), "--ids", "c",
                  "--out", str(out)], client_factory=schema_client)
     captured = capsys.readouterr()
     assert code == 0, captured.err
