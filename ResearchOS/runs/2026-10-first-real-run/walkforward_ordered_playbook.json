@@ -1,0 +1,561 @@
+{
+  "weights": {
+    "growth": 0.12648687824296212,
+    "profitability": 0.15187967165387908,
+    "guidance": 0.1563174027941952,
+    "cash_flow": 0.1339261560075071,
+    "management_tone": 0.1354345602507338,
+    "expectations_gap": 0.15627051460693667,
+    "risks": 0.1396848164437861
+  },
+  "lessons": [
+    {
+      "text": "When the core (ex-one-time items) EPS beat is large (roughly 10%+) and is accompanied by a raised outlook for the recurring earnings line, treat this as a strong positive signal and assign probabilities in the mid-to-high 0.60s. Do not pull back toward 0.5 merely because part of the beat came from volatile or cyclical revenue.",
+      "applies_when": "Core earnings beat consensus by a wide margin and management raises guidance on the recurring/core revenue driver in the same report.",
+      "perspective": "expectations_gap",
+      "case_id": "case01"
+    },
+    {
+      "text": "Do not discount a strong print for hypothetical 'priced in', 'sell the news' or 'peers will also be strong' arguments unless the documents provide evidence (e.g. explicitly elevated expectations, a whisper number above consensus, or a guide below consensus). Speculative positioning concerns should move the probability only a few points at most.",
+      "applies_when": "The bearish case rests on assumed positioning or sector read-across rather than on anything disclosed in the report or consensus data.",
+      "perspective": "general",
+      "case_id": "case01"
+    },
+    {
+      "text": "Cautionary macro commentary and 'this quarter is hard to repeat' remarks from management that habitually hedges are usually already discounted. Score tone as negative only when management lowers a number, changes a target, or reveals a new problem. Ritual caution alongside raised guidance should be scored neutral-to-positive.",
+      "applies_when": "Management describes conditions as peak-like or non-repeatable but simultaneously raises or reaffirms quantitative guidance.",
+      "perspective": "management_tone",
+      "case_id": "case01"
+    },
+    {
+      "text": "An expense guidance increase that management explicitly ties to revenue outperformance (variable or performance-linked costs, with a high implied marginal margin) is a confirmation of revenue strength, not an offset. Penalize expense raises only when they are driven by fixed-cost investment, inflation or one-offs without matching revenue.",
+      "applies_when": "Cost guidance is raised in a quarter of revenue outperformance and management quantifies the revenue-to-cost relationship.",
+      "perspective": "guidance",
+      "case_id": "case01"
+    },
+    {
+      "text": "In the risks perspective, distinguish new near-term disclosures (a guidance cut, a reserve build, an unexpected loss, deteriorating leading indicators) from well-known, medium-term background risks. Background risks that management merely mentions should not pull the probability to 0.5 when the reported fundamentals are strong and improving.",
+      "applies_when": "The risk list consists mainly of macro, regulatory or cycle concerns already in the public narrative, and current credit or operating metrics are stable or improving.",
+      "perspective": "risks",
+      "case_id": "case01"
+    },
+    {
+      "text": "When one-time gains are clearly separated and the core number still beats, judge earnings quality as clean. The excluded gains can be a mild additional positive through capital or book value, not a reason for skepticism.",
+      "applies_when": "Reported results include large disclosed non-recurring gains alongside an adjusted figure that itself exceeds consensus.",
+      "perspective": "profitability",
+      "case_id": "case01"
+    },
+    {
+      "text": "For well-capitalized companies, hedged or noncommittal comments about the pace of buybacks rarely drive the first-day reaction when capital ratios are strong and the dividend is rising. Keep cash-flow/capital-return views close to the overall fundamental signal rather than discounting them for buyback ambiguity.",
+      "applies_when": "The balance sheet and capital ratios are strong, but management declines to commit to specific repurchase levels.",
+      "perspective": "cash_flow",
+      "case_id": "case01"
+    },
+    {
+      "text": "When most perspectives agree in direction and none raises a concrete, new negative, the final probability should exceed the simple average of views. Neutral votes based on generic caution are not real counter-evidence and should not dilute a consistent beat-and-raise signal.",
+      "applies_when": "Aggregating perspective views where the bullish views cite specific beats and raises and the neutral views cite only generic or habitual caution.",
+      "perspective": "general",
+      "case_id": "case01"
+    },
+    {
+      "text": "When the headline EPS beat against consensus is implausibly large (30%+), assume the consensus figure is stale or not like-for-like, and size the surprise against the prior guidance floor and the raised outlook instead. Keep the direction call positive, but expect a moderate rather than explosive reaction, and hold probabilities in the mid-to-high 0.60s rather than pushing toward 0.80.",
+      "applies_when": "Reported EPS exceeds the provided consensus by an unusually wide margin while management's own prior guidance implied a much higher run-rate than consensus.",
+      "perspective": "expectations_gap",
+      "case_id": "case03"
+    },
+    {
+      "text": "A guidance raise that roughly equals the quarter's beat (second half held, not raised) is a positive signal that supports a modest outperformance. Treat it as confirming the beat's durability rather than as an incremental catalyst, and do not stack it as independent evidence on top of the beat itself.",
+      "applies_when": "Full-year guidance is raised by about the size of the current quarter's upside, and stated earnings cadence for the rest of the year is unchanged.",
+      "perspective": "guidance",
+      "case_id": "case03"
+    },
+    {
+      "text": "A concrete negative confined to one business line, such as a margin-recovery timeline pushed out or a cost trend above plan, should dampen the expected magnitude but not flip the direction, provided the consolidated outlook is raised and no company-level target is cut. Score such a risk view near 0.55-0.60, not below 0.5.",
+      "applies_when": "Management discloses a segment-level deterioration in the same report that raises consolidated earnings, capital-return or margin guidance.",
+      "perspective": "risks",
+      "case_id": "case03"
+    },
+    {
+      "text": "When part of an earnings beat comes from favorable prior-period reserve releases, check for offsetting signs of conservative reserving: rising reserve days, a tighter and better full-year cost-ratio guide, and management treating the raised guide as the baseline. If those are present, treat the beat as largely genuine, but expect the market to haircut it somewhat, which favors a positive yet moderate reaction.",
+      "applies_when": "Reported margins benefit from favorable development on prior estimates while reserve adequacy metrics improve or hold steady.",
+      "perspective": "profitability",
+      "case_id": "case03"
+    },
+    {
+      "text": "Flat or shrinking revenue that results from deliberate pricing discipline, market exits or divestitures does not prevent a positive reaction when margins and guidance improve sharply. Keep the growth view mildly positive or neutral (around 0.55) rather than bearish, and let the margin and guidance views drive the call.",
+      "applies_when": "Top-line and volume metrics are flat to down by management design while earnings, margins and outlook improve substantially.",
+      "perspective": "growth",
+      "case_id": "case03"
+    },
+    {
+      "text": "For a growth company whose valuation rests on sustained growth, a quarter that only matches revenue consensus, does not raise annual guidance, and guides the next quarter to slower y/y growth should be treated as a clear negative, not as neutral. Reaffirmed targets are already priced in; the slowing trend is the news. Place the probability in the low-to-mid 0.30s rather than the mid-0.40s.",
+      "applies_when": "Revenue lands on consensus, annual guidance is reiterated or only narrowed around the same midpoint, and the next-quarter guide implies further y/y growth deceleration at a premium-valued growth company.",
+      "perspective": "guidance",
+      "case_id": "case02"
+    },
+    {
+      "text": "When management attributes an operating margin or EPS beat to expense timing and leaves the full-year margin target unchanged, give that beat close to zero credit. Judge the quarter on the revenue line and the forward guide instead.",
+      "applies_when": "The profit beat is explicitly described as timing or phasing of costs and the annual profitability guide is not raised.",
+      "perspective": "profitability",
+      "case_id": "case02"
+    },
+    {
+      "text": "A revenue miss in the company's largest and highest-monetizing segment or region outweighs beats in smaller segments, especially when the miss comes despite a recent price increase that should have helped. Score it as a concrete negative rather than netting it against small-region upside.",
+      "applies_when": "The core segment or home region grows below consensus while smaller or faster-growing segments beat, and total revenue is only in line.",
+      "perspective": "expectations_gap",
+      "case_id": "case02"
+    },
+    {
+      "text": "When management reduces the frequency or prominence of a key operating metric just as that metric is growing slowly, or reintroduces customer-acquisition incentives it had previously dropped, treat these as new negative disclosures that signal pressure on the underlying growth driver, not as routine housekeeping.",
+      "applies_when": "The report announces less frequent disclosure of a key KPI, a shift of focus away from it, or a return of promotional acquisition tactics while growth is slowing.",
+      "perspective": "risks",
+      "case_id": "case02"
+    },
+    {
+      "text": "When all perspectives lean the same way bearish and the negatives are concrete (a decelerating guide, a core-segment miss, a timing-only beat) with no offsetting positive surprise, the final probability should sit clearly below the simple weighted average. Neutral votes justified only by 'nothing was cut' are not counter-evidence and should not pull the call back toward 0.5.",
+      "applies_when": "Aggregating views that are uniformly neutral-to-bearish, where the bearish ones cite specific negatives and the neutral ones cite only the absence of a guidance cut.",
+      "perspective": "general",
+      "case_id": "case02"
+    },
+    {
+      "text": "When a company that has historically self-funded flips to negative free cash flow, halts buybacks, issues equity or preferred stock, and in the same report raises its capex guide again and signals a further large step-up next year, treat this as a concrete negative that can outweigh a revenue beat on the first day. Score the cash-flow view clearly bearish (around 0.35-0.42) and do not dismiss it as 'already known from earlier financing announcements'.",
+      "applies_when": "Capex guidance is raised while FCF turns negative and capital returns are replaced by external financing, especially when management also says FCF will stay under pressure.",
+      "perspective": "cash_flow",
+      "case_id": "case04"
+    },
+    {
+      "text": "The rule that expense increases tied to revenue outperformance are a positive applies to variable costs only. A capex or fixed-investment raise justified by 'demand outpacing supply' is not a confirmation signal unless it comes with a quantified revenue or earnings raise. Without that, treat it as neutral-to-negative, and more negative when next-year spending is flagged to rise significantly with no earnings guide.",
+      "applies_when": "Management raises capital spending or infrastructure investment guidance, cites strong demand or backlog, but gives no raised revenue, margin or EPS guidance.",
+      "perspective": "guidance",
+      "case_id": "case04"
+    },
+    {
+      "text": "When headline EPS is inflated by a disclosed mark-to-market or one-time gain, subtract the stated per-share effect and compare the remainder with consensus. If the underlying figure is at or below consensus, score it as a core earnings miss. Do not assume the consensus is non-comparable unless the documents say so, because the market reads through to recurring EPS.",
+      "applies_when": "Reported EPS far exceeds consensus, but the release quantifies a large per-share gain from investments or other non-operating items.",
+      "perspective": "expectations_gap",
+      "case_id": "case04"
+    },
+    {
+      "text": "A large beat in a smaller, fast-growing segment does not carry the stock when the largest segment is only in line and the consolidated operating margin misses consensus. Weight consolidated margin and the core segment above segment-level upside, and keep the expectations view only mildly positive (about 0.52-0.55) in that mix.",
+      "applies_when": "Total revenue beats modestly, one smaller segment beats strongly, but the largest segment lands in line and consolidated operating margin is below consensus.",
+      "perspective": "expectations_gap",
+      "case_id": "case04"
+    },
+    {
+      "text": "Do not lift the final probability above the weighted average under the 'most views agree' rule when a dissenting view raises a concrete, new negative about the funding model, capital intensity or recurring earnings. In that case keep the final near or below the weighted average and let the specific dissent count fully.",
+      "applies_when": "Most perspectives are bullish on top-line results, while one or two perspectives cite specific new negatives on cash flow, capital structure or forward cost guidance.",
+      "perspective": "general",
+      "case_id": "case04"
+    },
+    {
+      "text": "Management admitting a competitive gap in a strategically important product area, or saying a future product is required to stay competitive, is a new disclosure rather than ritual caution. Score tone no better than neutral when such admissions come alongside rising investment needs, even if the rhetoric is upbeat.",
+      "applies_when": "On the call, executives concede they trail competitors in a key capability or depend on an unreleased product to regain leadership, while asking investors to fund higher spending.",
+      "perspective": "management_tone",
+      "case_id": "case04"
+    },
+    {
+      "text": "For a premium-valued growth company, a clear miss on the market's headline margin metric plus a large core EPS miss, with operating margin compressing despite strong revenue growth, should be scored well bearish (around 0.25-0.33), not hedged toward 0.45. Expect a large negative reaction rather than a modest one, because valuation leaves no cushion for profit disappointment.",
+      "applies_when": "Revenue beats modestly but the key gross margin metric misses consensus by more than a point, core EPS falls sequentially and well below consensus, and operating income declines y/y.",
+      "perspective": "expectations_gap",
+      "case_id": "case05"
+    },
+    {
+      "text": "A free-cash-flow or capex 'beat' caused by spending coming in below plan, while management reiterates or raises full-year and multi-year capex, is phasing, not a positive surprise. Score the cash-flow view near neutral-to-bearish, and do not use it to offset a profit miss.",
+      "applies_when": "Reported capex and FCF beat consensus, but management says capex will rise further in coming quarters and years.",
+      "perspective": "cash_flow",
+      "case_id": "case05"
+    },
+    {
+      "text": "When unit volumes were disclosed before the earnings report, a revenue beat driven by those volumes carries little new information, and growth with falling ASPs and shrinking high-margin revenue lines is low quality. Keep the growth view at or below neutral (about 0.45-0.50) when margins compress in the same quarter.",
+      "applies_when": "Volume or delivery data were pre-released, revenue beats modestly, but price/mix and high-margin ancillary revenue decline and gross margin falls.",
+      "perspective": "growth",
+      "case_id": "case05"
+    },
+    {
+      "text": "Do not let speculative 'narrative optionality' or an upbeat visionary tone pull a probability back toward 0.5 when the reported numbers miss. Long-dated product promises without quantified near-term financial guidance do not cushion the first-day reaction, and explicit tempering of a hyped product's ramp counts as a negative disclosure.",
+      "applies_when": "Management spends most of the call on future products and technology while the quarter shows a margin and EPS miss, and the only concrete forward statements are higher spending and slower-than-hoped ramps.",
+      "perspective": "management_tone",
+      "case_id": "case05"
+    },
+    {
+      "text": "When the masked or scaled consensus comparison for EPS looks implausibly large on the downside, still treat the direction as reliable if a scale-free ratio metric (margin vs consensus margin) confirms the miss. Hedge the magnitude, not the sign.",
+      "applies_when": "The per-share consensus gap seems too large to be like-for-like, but margin percentages or growth rates versus consensus point the same way.",
+      "perspective": "expectations_gap",
+      "case_id": "case05"
+    },
+    {
+      "text": "When the bearish perspectives cite several concrete new negatives (margin miss, warranty or one-off charge, lower long-term margin guide, higher multi-year cost guide) and the non-bearish ones rest on timing items or pre-known volume, set the final probability clearly below the weighted average, roughly 5-10 points, rather than a couple of points.",
+      "applies_when": "Aggregating views where most are bearish on specific disclosures and the neutral or bullish views rely on pre-announced data, timing effects or narrative.",
+      "perspective": "general",
+      "case_id": "case05"
+    },
+    {
+      "text": "For a low-volatility, defensive large-cap that normally grows earnings mid-single digits, a core EPS beat of roughly 4% or more that comes with a revenue beat, margin expansion and a raise to full-year earnings guidance is an unusually strong signal. Score the expectations view around 0.70 and expect an above-normal positive move, rather than treating it as an ordinary beat worth 0.60-0.65.",
+      "applies_when": "A stable, low-beta company beats core EPS consensus by about 4% or more and revenue consensus, expands operating margin y/y, and raises its annual earnings outlook in the same report.",
+      "perspective": "expectations_gap",
+      "case_id": "case07"
+    },
+    {
+      "text": "When management itself attributes part of a strong quarter to an easy comparison, a one-off event or weather, yet still raises full-year guidance, treat the caveats as already known and the raise as the real signal. Self-tempering on a call after a clear beat-and-raise usually reflects conservatism, not hidden weakness, and should not pull the tone view below about 0.60.",
+      "applies_when": "The call repeatedly stresses easy comps, temporary tailwinds or tougher second-half conditions, while reported results beat and annual guidance is raised across revenue and earnings.",
+      "perspective": "management_tone",
+      "case_id": "case07"
+    },
+    {
+      "text": "Do not discount a guidance raise just because the increase in the full-year number is smaller than the quarter's beat. A company that raises across revenue, earnings and cash flow and still implies a slower second half has usually left room to beat again, and the market reads the raise and the beat together as a positive revision cycle.",
+      "applies_when": "Full-year guidance is raised by less than the size of the quarterly beat, and the implied rest-of-year growth is below first-half growth.",
+      "perspective": "guidance",
+      "case_id": "case07"
+    },
+    {
+      "text": "For the growth view, volume growth reaching a multi-year high together with positive price/mix and organic growth at the top of the long-term range is a strong quality signal for a mature company, even if the prior-year comparison was easy. Weight the acceleration and breadth across regions above two-year-stack arguments, and score around 0.65-0.68.",
+      "applies_when": "A mature consumer or industrial company reports its strongest volume growth in years, organic growth at the top of its long-term target, positive pricing and growth in all major regions, while noting an easy comparison.",
+      "perspective": "growth",
+      "case_id": "case07"
+    },
+    {
+      "text": "In the risks view, long-running and previously disclosed event risks (pending litigation with an unchanged stance, a production issue said to have no financial impact, deal timing) add no new information on report day. Do not let them pull the risks view toward neutral when the consolidated results and outlook are clearly improving; keep it near 0.60 unless a risk is new or worsened.",
+      "applies_when": "The only risk items are previously known litigation, resolved operational incidents or routine macro caveats, and consolidated results beat with a raised outlook.",
+      "perspective": "risks",
+      "case_id": "case07"
+    },
+    {
+      "text": "When all perspectives are bullish, each on a distinct concrete positive (core EPS beat, revenue beat, margin expansion, raised guidance, higher cash-flow outlook) and no view cites a new negative, set the final probability several points above the weighted average (around +5 to +8), not just one or two. The case where every independent signal agrees is the one where the weighted average most understates the probability.",
+      "applies_when": "Aggregating views that are unanimously bullish, each grounded in a different reported metric, with caveats limited to known or segment-level items.",
+      "perspective": "general",
+      "case_id": "case07"
+    },
+    {
+      "text": "When results beat on both revenue and core EPS, most operating KPIs beat their individual consensus, and the outlook is raised, do not cap the expectations view with unsupported claims that whisper numbers were higher or that beats of this size are routine. Absent documentary evidence of elevated expectations (a pre-announcement, prior guidance above consensus, explicit buy-side commentary), score a broad core beat-and-raise around 0.63-0.66.",
+      "applies_when": "Revenue and core EPS beat consensus by roughly 2-4%, the beat is driven by revenue rather than below-the-line items, most KPI-level estimates are beaten, full-year guidance is lifted, and nothing in the documents indicates expectations above published consensus.",
+      "perspective": "expectations_gap",
+      "case_id": "case08"
+    },
+    {
+      "text": "Opex growing faster than revenue in a beat quarter is not a profitability negative when management attributes the overshoot to items that are EPS-neutral (offset elsewhere in the P&L), FX remeasurement or spending that shifted between quarters, and guides next-quarter cost growth below revenue growth. Judge profitability on core EPS versus consensus and the forward margin path, and score it mildly bullish (about 0.56-0.58) rather than neutral.",
+      "applies_when": "Reported opex growth exceeds revenue growth, but the explanation includes offsetting non-operating items or timing shifts, core EPS still beats, and forward cost guidance implies margin recovery.",
+      "perspective": "profitability",
+      "case_id": "case08"
+    },
+    {
+      "text": "For an asset-light, high-margin company, a year-over-year dip in operating cash flow caused by legal settlement payouts, tax-payment timing or settlement-related working capital, and buybacks partly funded by short-term debt at conservative leverage, are non-events on report day. Keep the cash-flow view at about 0.52-0.56 and do not let it dilute an otherwise positive aggregate.",
+      "applies_when": "OCF declines while earnings grow, the drivers are identifiable timing or legal items, capex is stable, and capital returns continue with leverage still conservative.",
+      "perspective": "cash_flow",
+      "case_id": "case08"
+    },
+    {
+      "text": "When management lists one-off tailwinds behind a strong quarter but also discloses post-quarter trading data running near the reported pace, the post-quarter data is the stronger signal. It validates the guide, and the market looks through the 'non-recurring' caveats. Do not treat self-identified one-offs as a material risk in that case.",
+      "applies_when": "The release or call attributes part of the quarter's strength to temporary events (tax timing, events, promotions, prices) while also giving early next-quarter metrics that remain close to the quarter's growth rate.",
+      "perspective": "risks",
+      "case_id": "case08"
+    },
+    {
+      "text": "When no perspective is bearish and the neutral views are neutral only because of known, explained or timing-related caveats, treat those neutral views as weakly supportive and set the final probability 4-6 points above the weighted average, not 1-2. Low-beta quality companies with a clean beat-and-raise tend to outperform whichever way the market moves that day.",
+      "applies_when": "Aggregating views where several are bullish on distinct concrete positives and the rest are neutral without citing any new negative disclosure.",
+      "perspective": "general",
+      "case_id": "case08"
+    },
+    {
+      "text": "When the largest component of a weak forward guide was already quantified in a prior quarter (management says the headwind estimate is unchanged from last quarter), treat the guide as largely priced in. Score the guidance view only mildly bearish (about 0.40-0.44) unless the documents show the guide sits below a stated next-period consensus, and expect a small relative move rather than a selloff.",
+      "applies_when": "New-year guidance implies flat to low growth because of a cost, FX or interest headwind that management explicitly says matches what it disclosed in an earlier quarter, and no next-year consensus figure is given.",
+      "perspective": "guidance",
+      "case_id": "case11"
+    },
+    {
+      "text": "Do not claim a forward guide is below consensus when the documents only give consensus for the reported quarter. Without a next-period consensus, judge the expectations gap mainly on the reported quarter, where a small core EPS beat against an already-lowered estimate plus a ~1% revenue miss is close to neutral (about 0.42-0.46), not strongly bearish.",
+      "applies_when": "The expectations data covers only the just-reported quarter, the company beats a consensus that already assumed a y/y earnings decline, and revenue misses modestly.",
+      "perspective": "expectations_gap",
+      "case_id": "case11"
+    },
+    {
+      "text": "When a consumer company reports flat organic sales but discloses that end-market consumption grew faster than its shipments (retailer destocking or event timing) and that market share is stabilizing, the market partly looks through the shortfall. Keep the growth view only mildly bearish (about 0.42-0.45), not deeply bearish, unless consumption itself is weakening.",
+      "applies_when": "Reported organic sales miss or are flat, management quantifies a sell-in vs sell-out gap with consumption ahead of shipments, and share trends are flat to improving.",
+      "perspective": "growth",
+      "case_id": "case11"
+    },
+    {
+      "text": "For low-beta defensive large-caps, even a uniformly bearish panel usually maps to only a small negative abnormal return when the negatives are soft results plus pre-signaled guidance rather than a fresh shock. In that case set the final probability only a few points below the weighted average (about 2-4), and save deeper discounts for genuinely new negatives such as an unexpected guide cut, a large core EPS miss or a newly disclosed structural problem.",
+      "applies_when": "Aggregating mostly bearish views on a stable, defensive company where the bearish case rests on margin compression, a modest revenue miss and a forward headwind that was at least partly disclosed before the report.",
+      "perspective": "general",
+      "case_id": "case11"
+    },
+    {
+      "text": "When a historically cash-rich, high-margin company reports free cash flow near zero, suspends buybacks and adds debt to fund an investment build-out, and management signals spending will rise further, treat it as a regime change in the equity story rather than a timing issue. Score the cash-flow view around 0.30-0.35, not near 0.40.",
+      "applies_when": "FCF falls by most of its prior-year level because capex absorbs nearly all operating cash flow, capital returns are cut or paused, net cash shrinks, and capex guidance is raised or left open-ended.",
+      "perspective": "cash_flow",
+      "case_id": "case09"
+    },
+    {
+      "text": "A refusal to give next year's capital-spending outlook, paired with statements that the company is capacity-constrained and intends to maximize next year's capacity, should be read as a signal of materially higher spending. Score the guidance view mildly to clearly bearish (about 0.38-0.43) even if near-term revenue guidance looks healthy.",
+      "applies_when": "Management declines to quantify next-year capex or cost growth while describing demand for capacity as exceeding supply and nudging the current-year spending range upward.",
+      "perspective": "guidance",
+      "case_id": "case09"
+    },
+    {
+      "text": "A small revenue beat (about 1-2%) that comes with sequential deceleration does not earn a bullish growth score when costs are growing much faster than revenue in the same quarter. Keep the growth view near neutral (0.48-0.52), because the market weighs incremental margin per dollar of growth, not the top-line beat alone.",
+      "applies_when": "Revenue beats consensus by roughly 1-2%, y/y growth is slower than the prior quarter, and total or underlying expenses grow at well above the revenue growth rate.",
+      "perspective": "growth",
+      "case_id": "case09"
+    },
+    {
+      "text": "When headline EPS misses because of charges, do not treat the add-back as neutralizing the miss if underlying operating income growth is in the single digits while revenue grows several times faster. The add-back only matters when the core business still shows operating leverage. Otherwise score the expectations view around 0.40-0.45, not 0.50.",
+      "applies_when": "GAAP EPS misses consensus by over 10% due to legal, restructuring or similar charges, the adjusted beat is only a few percent, and adjusted operating margin is still down sharply y/y.",
+      "perspective": "expectations_gap",
+      "case_id": "case09"
+    },
+    {
+      "text": "When a CEO frames a large spending program as a 'bet', devotes the call to products not yet launched, and answers return-on-capital questions with general optimism rather than metrics, score the tone view clearly bearish (about 0.38-0.42) when the quarter also shows margin and cash-flow deterioration. Visionary confidence does not cushion the first-day reaction.",
+      "applies_when": "Analysts ask directly about payback or ROIC on rising investment, management gives qualitative answers or defers to future announcements, and reported margins and FCF are falling.",
+      "perspective": "management_tone",
+      "case_id": "case09"
+    },
+    {
+      "text": "When several bearish perspectives cite distinct, newly disclosed negatives (operating income decline, a new one-off charge with more possibly to come, near-zero FCF, halted capital returns, open-ended capex, a higher tax guide) and the only positive is a small revenue beat, set the final probability roughly 10-15 points below the weighted average, in the low 0.30s. Large-cap growth names in a spending cycle can fall high single digits or more on such reports.",
+      "applies_when": "Aggregating views where the bearish cases rest on multiple concrete new disclosures about costs, capital intensity and capital returns, and the bullish or neutral cases rest on a modest top-line beat or unquantified future opportunity.",
+      "perspective": "general",
+      "case_id": "case09"
+    },
+    {
+      "text": "When the single most-watched growth metric beats both company guidance and consensus by several percentage points (above even the high-end estimates) and the company guides that metric to accelerate further, treat it as a high-signal event even for a mega-cap. Score the expectations view around 0.72-0.75 rather than an ordinary beat at 0.62-0.66.",
+      "applies_when": "A key segment or KPI growth rate beats guidance and consensus by roughly 3 or more points, exceeds outlier estimates, and next-quarter guidance for the same metric is higher still.",
+      "perspective": "expectations_gap",
+      "case_id": "case10"
+    },
+    {
+      "text": "Judge rising capital spending by whether it is visibly producing revenue now. If management says demand exceeds supply, new capacity is monetized in-quarter, the backlog is growing fast, and revenue in the capacity-dependent business is accelerating, a higher capex guide and lower FCF are read as demand-backed and are not a negative on report day. Score the cash-flow view about 0.52-0.56. Reserve bearish cash-flow scores for spending whose payoff rests on future or unlaunched products while FCF collapses.",
+      "applies_when": "Capex and capex guidance rise and FCF dips, but the company reports accelerating revenue in the business the capacity serves, capacity-constrained demand, and strong backlog growth.",
+      "perspective": "cash_flow",
+      "case_id": "case10"
+    },
+    {
+      "text": "A guide that implies acceleration in the company's highest-value growth engine, issued right after that engine beat the prior guide, is a strong positive even if the consolidated growth guide dips slightly because of shrinking low-margin segments. Score the guidance view around 0.66-0.70, not 0.60.",
+      "applies_when": "Next-quarter guidance for the main growth segment is above the just-reported (already beating) growth rate, while total-company growth is held down by declining legacy or hardware lines.",
+      "perspective": "guidance",
+      "case_id": "case10"
+    },
+    {
+      "text": "When a customer-concentration concern exists but management discloses backlog and bookings ex that customer and they are still growing healthily, with incremental backlog coming entirely from other customers, treat the concentration risk as defused for report-day purposes. Keep the risks view near 0.60 rather than pulling it toward neutral.",
+      "applies_when": "Headline backlog or bookings growth is inflated by one large customer, but ex-customer metrics are disclosed and show solid double-digit growth.",
+      "perspective": "risks",
+      "case_id": "case10"
+    },
+    {
+      "text": "When every perspective is bullish or neutral, and the report directly answers the market's main debate about the company (for example, proving that heavy investment is earning a return through a large beat and guided acceleration in the relevant metric), set the final probability 8-12 points above the weighted average, around 0.70-0.75. Do not hold back for generic sector-sentiment volatility; a decisive answer to the dominant debate is what produces outsized moves.",
+      "applies_when": "Aggregating views with no bearish perspective, where the key debated metric beats decisively and is guided higher, and the remaining caveats are known, segment-level or explicitly mitigated.",
+      "perspective": "general",
+      "case_id": "case10"
+    }
+  ],
+  "history": [
+    {
+      "case_id": "case01",
+      "split": "train",
+      "event_date": "2026-07-14",
+      "actual_up": true,
+      "brier_weighted": 0.17639999999999995,
+      "brier_judge": 0.17640000000000003,
+      "brier_by_perspective": {
+        "growth": 0.1521,
+        "profitability": 0.1444,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.18490000000000004,
+        "management_tone": 0.2304,
+        "expectations_gap": 0.1296,
+        "risks": 0.25
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case03",
+      "split": "train",
+      "event_date": "2026-07-16",
+      "actual_up": true,
+      "brier_weighted": 0.12408176778232019,
+      "brier_judge": 0.10239999999999996,
+      "brier_by_perspective": {
+        "growth": 0.19359999999999997,
+        "profitability": 0.10239999999999996,
+        "guidance": 0.09000000000000002,
+        "cash_flow": 0.12249999999999998,
+        "management_tone": 0.1296,
+        "expectations_gap": 0.07840000000000001,
+        "risks": 0.17640000000000003
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case02",
+      "split": "train",
+      "event_date": "2026-07-17",
+      "actual_up": false,
+      "brier_weighted": 0.20146713298512778,
+      "brier_judge": 0.17639999999999997,
+      "brier_by_perspective": {
+        "growth": 0.16809999999999997,
+        "profitability": 0.22089999999999999,
+        "guidance": 0.18489999999999998,
+        "cash_flow": 0.25,
+        "management_tone": 0.2025,
+        "expectations_gap": 0.2025,
+        "risks": 0.18489999999999998
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case04",
+      "split": "train",
+      "event_date": "2026-07-23",
+      "actual_up": false,
+      "brier_weighted": 0.33270594719516267,
+      "brier_judge": 0.3844,
+      "brier_by_perspective": {
+        "growth": 0.4624000000000001,
+        "profitability": 0.36,
+        "guidance": 0.30250000000000005,
+        "cash_flow": 0.18489999999999998,
+        "management_tone": 0.36,
+        "expectations_gap": 0.4096,
+        "risks": 0.28090000000000004
+      },
+      "correct_weighted": false,
+      "correct_judge": false,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case05",
+      "split": "train",
+      "event_date": "2026-07-23",
+      "actual_up": false,
+      "brier_weighted": 0.20146397891049764,
+      "brier_judge": 0.16000000000000003,
+      "brier_by_perspective": {
+        "growth": 0.32489999999999997,
+        "profitability": 0.1296,
+        "guidance": 0.17639999999999997,
+        "cash_flow": 0.28090000000000004,
+        "management_tone": 0.25,
+        "expectations_gap": 0.1369,
+        "risks": 0.16000000000000003
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case07",
+      "split": "train",
+      "event_date": "2026-07-28",
+      "actual_up": true,
+      "brier_weighted": 0.14618706181626523,
+      "brier_judge": 0.1296,
+      "brier_by_perspective": {
+        "growth": 0.1296,
+        "profitability": 0.1369,
+        "guidance": 0.1296,
+        "cash_flow": 0.16000000000000003,
+        "management_tone": 0.17640000000000003,
+        "expectations_gap": 0.11559999999999998,
+        "risks": 0.18490000000000004
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case08",
+      "split": "train",
+      "event_date": "2026-07-29",
+      "actual_up": true,
+      "brier_weighted": 0.17576146277114044,
+      "brier_judge": 0.16000000000000003,
+      "brier_by_perspective": {
+        "growth": 0.1369,
+        "profitability": 0.21159999999999995,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.22089999999999999,
+        "management_tone": 0.16000000000000003,
+        "expectations_gap": 0.1444,
+        "risks": 0.20249999999999996
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case11",
+      "split": "train",
+      "event_date": "2026-07-29",
+      "actual_up": false,
+      "brier_weighted": 0.14935506146021593,
+      "brier_judge": 0.10890000000000001,
+      "brier_by_perspective": {
+        "growth": 0.1444,
+        "profitability": 0.1444,
+        "guidance": 0.11560000000000002,
+        "cash_flow": 0.2116,
+        "management_tone": 0.16000000000000003,
+        "expectations_gap": 0.1369,
+        "risks": 0.1444
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case09",
+      "split": "train",
+      "event_date": "2026-07-30",
+      "actual_up": false,
+      "brier_weighted": 0.21720922437872514,
+      "brier_judge": 0.17639999999999997,
+      "brier_by_perspective": {
+        "growth": 0.32489999999999997,
+        "profitability": 0.17639999999999997,
+        "guidance": 0.25,
+        "cash_flow": 0.1521,
+        "management_tone": 0.2025,
+        "expectations_gap": 0.2601,
+        "risks": 0.17639999999999997
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case10",
+      "split": "train",
+      "event_date": "2026-07-30",
+      "actual_up": true,
+      "brier_weighted": 0.16170668237694244,
+      "brier_judge": 0.1369,
+      "brier_by_perspective": {
+        "growth": 0.11559999999999998,
+        "profitability": 0.16000000000000003,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.27040000000000003,
+        "management_tone": 0.1444,
+        "expectations_gap": 0.11559999999999998,
+        "risks": 0.19359999999999997
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    }
+  ]
+}

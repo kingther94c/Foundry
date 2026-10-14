@@ -1,0 +1,216 @@
+{
+  "model": "subagent behind a local relay (API key out of credit)",
+  "playbook": "walk-forward in event-date batches (train, one call per event date, a fresh subagent per call)",
+  "cases": [
+    {
+      "case_id": "case01",
+      "split": "train",
+      "event_date": "2026-07-14",
+      "actual_up": true,
+      "brier_weighted": 0.17639999999999995,
+      "brier_judge": 0.17640000000000003,
+      "brier_by_perspective": {
+        "growth": 0.1521,
+        "profitability": 0.1444,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.18490000000000004,
+        "management_tone": 0.2304,
+        "expectations_gap": 0.1296,
+        "risks": 0.25
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case03",
+      "split": "train",
+      "event_date": "2026-07-16",
+      "actual_up": true,
+      "brier_weighted": 0.12408176778232019,
+      "brier_judge": 0.10239999999999996,
+      "brier_by_perspective": {
+        "growth": 0.19359999999999997,
+        "profitability": 0.10239999999999996,
+        "guidance": 0.09000000000000002,
+        "cash_flow": 0.12249999999999998,
+        "management_tone": 0.1296,
+        "expectations_gap": 0.07840000000000001,
+        "risks": 0.17640000000000003
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case02",
+      "split": "train",
+      "event_date": "2026-07-17",
+      "actual_up": false,
+      "brier_weighted": 0.20146713298512778,
+      "brier_judge": 0.17639999999999997,
+      "brier_by_perspective": {
+        "growth": 0.16809999999999997,
+        "profitability": 0.22089999999999999,
+        "guidance": 0.18489999999999998,
+        "cash_flow": 0.25,
+        "management_tone": 0.2025,
+        "expectations_gap": 0.2025,
+        "risks": 0.18489999999999998
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case04",
+      "split": "train",
+      "event_date": "2026-07-23",
+      "actual_up": false,
+      "brier_weighted": 0.33270594719516267,
+      "brier_judge": 0.3844,
+      "brier_by_perspective": {
+        "growth": 0.4624000000000001,
+        "profitability": 0.36,
+        "guidance": 0.30250000000000005,
+        "cash_flow": 0.18489999999999998,
+        "management_tone": 0.36,
+        "expectations_gap": 0.4096,
+        "risks": 0.28090000000000004
+      },
+      "correct_weighted": false,
+      "correct_judge": false,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case05",
+      "split": "train",
+      "event_date": "2026-07-23",
+      "actual_up": false,
+      "brier_weighted": 0.20146397891049764,
+      "brier_judge": 0.16000000000000003,
+      "brier_by_perspective": {
+        "growth": 0.32489999999999997,
+        "profitability": 0.1296,
+        "guidance": 0.17639999999999997,
+        "cash_flow": 0.28090000000000004,
+        "management_tone": 0.25,
+        "expectations_gap": 0.1369,
+        "risks": 0.16000000000000003
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case07",
+      "split": "train",
+      "event_date": "2026-07-28",
+      "actual_up": true,
+      "brier_weighted": 0.14618706181626523,
+      "brier_judge": 0.1296,
+      "brier_by_perspective": {
+        "growth": 0.1296,
+        "profitability": 0.1369,
+        "guidance": 0.1296,
+        "cash_flow": 0.16000000000000003,
+        "management_tone": 0.17640000000000003,
+        "expectations_gap": 0.11559999999999998,
+        "risks": 0.18490000000000004
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case08",
+      "split": "train",
+      "event_date": "2026-07-29",
+      "actual_up": true,
+      "brier_weighted": 0.17576146277114044,
+      "brier_judge": 0.16000000000000003,
+      "brier_by_perspective": {
+        "growth": 0.1369,
+        "profitability": 0.21159999999999995,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.22089999999999999,
+        "management_tone": 0.16000000000000003,
+        "expectations_gap": 0.1444,
+        "risks": 0.20249999999999996
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case11",
+      "split": "train",
+      "event_date": "2026-07-29",
+      "actual_up": false,
+      "brier_weighted": 0.14935506146021593,
+      "brier_judge": 0.10890000000000001,
+      "brier_by_perspective": {
+        "growth": 0.1444,
+        "profitability": 0.1444,
+        "guidance": 0.11560000000000002,
+        "cash_flow": 0.2116,
+        "management_tone": 0.16000000000000003,
+        "expectations_gap": 0.1369,
+        "risks": 0.1444
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case09",
+      "split": "train",
+      "event_date": "2026-07-30",
+      "actual_up": false,
+      "brier_weighted": 0.21720922437872514,
+      "brier_judge": 0.17639999999999997,
+      "brier_by_perspective": {
+        "growth": 0.32489999999999997,
+        "profitability": 0.17639999999999997,
+        "guidance": 0.25,
+        "cash_flow": 0.1521,
+        "management_tone": 0.2025,
+        "expectations_gap": 0.2601,
+        "risks": 0.17639999999999997
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "case10",
+      "split": "train",
+      "event_date": "2026-07-30",
+      "actual_up": true,
+      "brier_weighted": 0.16170668237694244,
+      "brier_judge": 0.1369,
+      "brier_by_perspective": {
+        "growth": 0.11559999999999998,
+        "profitability": 0.16000000000000003,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.27040000000000003,
+        "management_tone": 0.1444,
+        "expectations_gap": 0.11559999999999998,
+        "risks": 0.19359999999999997
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    }
+  ]
+}
