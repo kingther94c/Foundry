@@ -20,7 +20,8 @@
       "correct_weighted": true,
       "correct_judge": true,
       "brier_uniform": 0.19612244897959183,
-      "identifiable": true
+      "identifiable": true,
+      "event_date": "2026-07-14"
     },
     {
       "case_id": "case02",
@@ -40,7 +41,8 @@
       "correct_weighted": true,
       "correct_judge": true,
       "brier_uniform": 0.1669306122448979,
-      "identifiable": true
+      "identifiable": true,
+      "event_date": "2026-07-17"
     },
     {
       "case_id": "case03",
@@ -60,7 +62,8 @@
       "correct_weighted": true,
       "correct_judge": true,
       "brier_uniform": 0.12350204081632653,
-      "identifiable": true
+      "identifiable": true,
+      "event_date": "2026-07-16"
     },
     {
       "case_id": "case04",
@@ -80,7 +83,8 @@
       "correct_weighted": false,
       "correct_judge": false,
       "brier_uniform": 0.30250000000000005,
-      "identifiable": true
+      "identifiable": true,
+      "event_date": "2026-07-23"
     },
     {
       "case_id": "case05",
@@ -100,7 +104,8 @@
       "correct_weighted": true,
       "correct_judge": true,
       "brier_uniform": 0.20637551020408165,
-      "identifiable": true
+      "identifiable": true,
+      "event_date": "2026-07-23"
     },
     {
       "case_id": "case07",
@@ -120,7 +125,8 @@
       "correct_weighted": true,
       "correct_judge": true,
       "brier_uniform": 0.16576530612244897,
-      "identifiable": true
+      "identifiable": true,
+      "event_date": "2026-07-28"
     },
     {
       "case_id": "case08",
@@ -140,7 +146,8 @@
       "correct_weighted": true,
       "correct_judge": true,
       "brier_uniform": 0.17281836734693876,
-      "identifiable": true
+      "identifiable": true,
+      "event_date": "2026-07-29"
     },
     {
       "case_id": "case09",
@@ -160,7 +167,8 @@
       "correct_weighted": true,
       "correct_judge": true,
       "brier_uniform": 0.21822244897959184,
-      "identifiable": true
+      "identifiable": true,
+      "event_date": "2026-07-30"
     },
     {
       "case_id": "case10",
@@ -180,7 +188,8 @@
       "correct_weighted": true,
       "correct_judge": true,
       "brier_uniform": 0.18367346938775514,
-      "identifiable": true
+      "identifiable": true,
+      "event_date": "2026-07-30"
     },
     {
       "case_id": "case11",
@@ -200,7 +209,8 @@
       "correct_weighted": true,
       "correct_judge": true,
       "brier_uniform": 0.15772244897959184,
-      "identifiable": true
+      "identifiable": true,
+      "event_date": "2026-07-29"
     }
   ]
 }

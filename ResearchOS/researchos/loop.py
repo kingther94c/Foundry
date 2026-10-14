@@ -47,6 +47,9 @@ def score(analysis: Analysis, outcome) -> dict:
         "brier_weighted": _brier(analysis.prob_weighted, y),
         "brier_judge": _brier(analysis.prob_judge, y),
         "brier_by_perspective": {name: _brier(v.prob_up, y) for name, v in analysis.views.items()},
+        # Each perspective's own forecast, so other ways of combining them can be replayed
+        # later (researchos.blend) without calling a model again.
+        "prob_by_perspective": {name: v.prob_up for name, v in analysis.views.items()},
         "correct_weighted": (analysis.prob_weighted > 0.5) == actual_up,
         "correct_judge": (analysis.prob_judge > 0.5) == actual_up,
     }
@@ -230,7 +233,8 @@ def evaluate(root, case_ids, playbook_path, roles: Roles, seed=0,
         y = 1 if record["actual_up"] else 0
         probs = [v.prob_up for v in analysis.views.values()]
         uniform = sum(probs) / len(probs)
-        records.append({"case_id": case_id, "split": "eval", **record,
+        records.append({"case_id": case_id, "split": "eval", "event_date": case.event_date,
+                        **record,
                         "brier_uniform": _brier(uniform, y),
                         "identifiable": masked.status == "identifiable"})
     n = len(records)

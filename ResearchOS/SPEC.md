@@ -624,3 +624,53 @@ look-ahead, however general the lesson.
   the same rule keeps a held-out case after everything the playbook learned
   from.)
 - CLI: that ValueError exits 1 with the message on stderr.
+
+## researchos.blend (v11): how should the perspectives be combined?
+
+The playbook combines the perspectives with Hedge weights learned case by
+case, and on real cases those weights barely moved. Whether another rule
+would have explained the reactions better can be answered from records
+already scored, without calling a model again: replay each rule
+walk-forward over them, every forecast using only what earlier event dates
+taught.
+
+- Every record `score` returns also has `prob_by_perspective`: each
+  perspective's `prob_up`. `evaluate`'s records also carry the case's
+  `event_date` (`train`'s already do).
+- `perspective_probs(record) -> dict[str, float]`: `record["prob_by_perspective"]`
+  when present; otherwise derived from `brier_by_perspective` and
+  `actual_up`: a Brier score is `(p - y) ** 2` with `p` in [0, 1], so
+  `p = 1 - sqrt(b)` when the stock went up and `p = sqrt(b)` when it fell.
+- `RULES = ("uniform", "median", "hedge", "leader")`.
+- `replay(records, rule="hedge", *, eta=0.5) -> dict`: replays a rule over
+  the scored records (those with `brier_by_perspective`; others are
+  ignored). Raises ValueError for an unknown rule, `eta <= 0`, a scored
+  record without an ISO `event_date` or without a probability for one of
+  `PERSPECTIVES` (naming the case), or a case id scored twice. Records are
+  taken in event-date order (ties keep the order given), in batches of one
+  event date; every case of a batch is forecast with the state from before
+  the batch, and the state is updated only after the whole batch:
+  - `uniform`: the mean of the seven probabilities.
+  - `median`: their median (`statistics.median`).
+  - `hedge`: weights start uniform over `PERSPECTIVES`; the forecast is
+    `tools.stats.combine_probabilities(probs, weights)`; after the batch,
+    for each of its cases in order, `weights = hedge_update(weights,
+    {p: (probs[p] - y) ** 2 for p in PERSPECTIVES}, eta)` with `y` 1.0 if
+    the stock went up, else 0.0.
+  - `leader`: the probability of the perspective with the lowest mean Brier
+    over all cases of earlier batches (ties: the first in `PERSPECTIVES`
+    order); the uniform mean while there are no earlier cases.
+  Returns `{"rule", "eta", "n", "brier_blend", "cases": [{"case_id",
+  "event_date", "actual_up", "prob", "brier_blend"}, ...]}` with the cases
+  in replay order; `eta` is the eta used for `hedge` and None for the other
+  rules; `brier_blend` is the mean of the cases' `brier_blend`, None when
+  `n` is 0. Each case's `brier_blend` is `(prob - y) ** 2`, so two replays
+  compare with `compare --metric brier_blend`.
+
+CLI: `python -m researchos blend FILE [FILE ...] [--rule NAME] [--eta X] [--out FILE]`:
+the files are read with `load_report` and merged with `merge_reports` in
+the order given, and `replay` of their cases is printed as JSON (or written
+with `--out`, as for the other commands). Exit 2 on bad arguments (no file,
+an unknown rule, an `--eta` that is not a positive number), 1 on a file that
+cannot be read or `load_report` rejects, or a ValueError from `replay`, with
+a message on stderr.

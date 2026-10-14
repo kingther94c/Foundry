@@ -9,6 +9,7 @@
                                  [--out FILE]
     python -m researchos compare -a FILE [-a FILE ...] -b FILE [-b FILE ...] [--metric NAME]
                                  [--resamples N] [--seed S] [--out FILE]
+    python -m researchos blend FILE [FILE ...] [--rule NAME] [--eta X] [--out FILE]
 
 Each command prints its result as JSON; with --out FILE it writes the result to
 FILE instead (researchos.jsonio.write_json) and prints nothing.
@@ -20,6 +21,10 @@ reactions it could not have known): exit 1, with the reason on stderr.
 A file compare reads is what `evaluate` or `train` printed (bare or wrapped as
 {"result": ...}); with -a/-b each side is the merge of its files' cases, in the
 order given (researchos.compare.merge_reports).
+
+blend reads such files the same way, merges them in the order given, and prints
+researchos.blend.replay of their cases: a rule for combining the perspectives
+(uniform, median, hedge, leader) replayed walk-forward over the scored records.
 """
 
 from __future__ import annotations
@@ -27,10 +32,12 @@ from __future__ import annotations
 import argparse
 import functools
 import json
+import math
 import sys
 from dataclasses import asdict
 from pathlib import Path
 
+from researchos.blend import RULES, replay
 from researchos.cases import CASE_FILE, load_outcome
 from researchos.compare import compare, load_report, merge_reports
 from researchos.jsonio import write_json
@@ -77,6 +84,17 @@ def _resamples(value: str) -> int:
     if n < 1:
         raise argparse.ArgumentTypeError(f"must be at least 1: {value!r}")
     return n
+
+
+def _positive_number(value: str) -> float:
+    """argparse type: a finite number > 0."""
+    try:
+        x = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number: {value!r}") from None
+    if not (math.isfinite(x) and x > 0):  # also rejects nan
+        raise argparse.ArgumentTypeError(f"must be a positive number: {value!r}")
+    return x
 
 
 def _add_out(p: argparse.ArgumentParser) -> None:
@@ -127,6 +145,15 @@ def _parser() -> argparse.ArgumentParser:
                    help="bootstrap resamples (default 10000)")
     p.add_argument("--seed", type=int, default=0)
     _add_out(p)
+    p = sub.add_parser("blend", help="replay a rule for combining the perspectives "
+                                     "walk-forward over scored records")
+    p.add_argument("files", nargs="+", metavar="FILE",
+                   help="evaluate or train output; several files are merged in the order given")
+    p.add_argument("--rule", choices=RULES, default="hedge",
+                   help="how to combine the perspectives (default hedge)")
+    p.add_argument("--eta", type=_positive_number, default=0.5,
+                   help="learning rate of the hedge rule, a positive number (default 0.5)")
+    _add_out(p)
     return parser
 
 
@@ -145,11 +172,13 @@ def main(argv=None, *, client_factory=None) -> int:
     try:
         args, extras = parser.parse_known_args(argv)
         if extras:
-            # A nargs="*" positional takes only the first run of strings, so in
+            # A nargs="*" (or "+") positional takes only the first run of strings, so in
             # `compare A.json --seed 5 B.json` B.json comes back here; it is still one of
-            # compare's files, as it was when A and B were two positionals. Anything else
-            # is an unrecognized argument, reported exactly as parse_args reports it.
-            if args.command != "compare" or any(s.startswith("-") for s in extras):
+            # compare's files, as it was when A and B were two positionals (likewise for
+            # blend's files). Anything else is an unrecognized argument, reported exactly
+            # as parse_args reports it.
+            if (args.command not in ("compare", "blend")
+                    or any(s.startswith("-") for s in extras)):
                 parser.error(f"unrecognized arguments: {' '.join(extras)}")
             args.files = [*args.files, *extras]
     except SystemExit as exc:  # argparse already wrote the message to stderr
@@ -158,6 +187,8 @@ def main(argv=None, *, client_factory=None) -> int:
         return _build(args, client_factory)
     if args.command == "compare":
         return _compare(args)
+    if args.command == "blend":
+        return _blend(args)
     ids = [i.strip() for i in args.ids.split(",") if i.strip()]
     if not ids:
         print("error: --ids needs at least one case id", file=sys.stderr)
@@ -227,6 +258,19 @@ def _compare(args) -> int:
         print(f"error: cannot read report: {exc}", file=sys.stderr)
         return 1
     except ValueError as exc:  # not JSON, not a report, a case scored twice on one side
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return _emit(result, args.out)
+
+
+def _blend(args) -> int:
+    try:
+        merged = merge_reports([load_report(path) for path in args.files])
+        result = replay(merged["cases"], args.rule, eta=args.eta)
+    except OSError as exc:  # missing file, a directory, unreadable
+        print(f"error: cannot read report: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:  # not JSON, not a report, or a record replay refuses
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return _emit(result, args.out)

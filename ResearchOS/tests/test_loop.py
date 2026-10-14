@@ -33,6 +33,7 @@ def test_score():
         "brier_weighted": pytest.approx(0.16),
         "brier_judge": pytest.approx(0.36),
         "brier_by_perspective": {"growth": pytest.approx(0.04), "risks": pytest.approx(0.49)},
+        "prob_by_perspective": {"growth": 0.8, "risks": 0.3},
         "correct_weighted": True,
         "correct_judge": False,
     }

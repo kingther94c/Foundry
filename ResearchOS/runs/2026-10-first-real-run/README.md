@@ -166,6 +166,41 @@ perspective. Picking that perspective on these same cases would be
 fitting to them; whether a faster learning rate generalizes needs cases
 it was not tuned on.
 
+## Would another way of combining them have done better?
+
+`python -m researchos blend` replays a combination rule walk-forward over
+scored records -- each forecast using only what earlier event dates taught --
+without calling a model again. The plan was written down before any replay
+ran: on the 15 untrained forecasts (their views do not depend on the
+weights), Hedge at the textbook rate for seven experts and fifteen rounds,
+`eta = sqrt(8 ln 7 / 15)`, about 1.0, against the uniform blend; every other
+rule descriptive only, and no other eta tried.
+
+```
+python -m researchos blend walkforward_untrained.json eval_subagent_untrained.json --rule hedge --eta 1.0 --out hedge.json
+python -m researchos blend walkforward_untrained.json eval_subagent_untrained.json --rule uniform --out uniform.json
+python -m researchos compare uniform.json hedge.json --metric brier_blend
+```
+
+| Rule | Brier | vs uniform, 95% CI |
+|---|---|---|
+| uniform | 0.205 | |
+| hedge, eta 0.5 (the playbook's) | 0.205 | |
+| **hedge, eta 1.0 (pre-registered)** | 0.205 | -0.0005 [-0.0025, +0.0019] |
+| median | 0.197 | -0.008 [-0.017, +0.001] |
+| leader (best perspective so far) | 0.193 | -0.012 [-0.033, +0.011] |
+
+The pre-registered test finds nothing: even at the textbook rate Hedge stays
+next to uniform -- better on 12 of 15 cases, by a hair -- because the
+perspectives' squared losses differ by only a few hundredths a case.
+Following the best perspective so far, which here soon means the
+expectations gap, and taking the median both do better on these cases,
+but neither interval excludes zero and both were looked at after the fact.
+The direction is consistent with the per-perspective table above; the
+evidence is not yet enough to change the playbook's rule. The probabilities
+of these older records were recovered exactly from their per-perspective
+Brier scores; records scored from now on keep them (`prob_by_perspective`).
+
 What did come out of training: weights moved little from uniform
 (expectations_gap 0.156 and management_tone 0.152 at the top, growth 0.133 at
 the bottom). The 62 lessons are concrete and general -- for example, "when

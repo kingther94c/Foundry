@@ -60,6 +60,14 @@ little on its own (negative `mean_diff`: the second report did better):
 Either side can be several files (`-a`/`-b`), each what `evaluate` or `train`
 printed; a side's files are merged in the order given.
 
+`blend` replays a rule for combining the perspectives (`uniform`, `median`,
+`hedge` with `--eta`, or `leader`: the best perspective so far) walk-forward
+over scored records, so rules can be compared without calling a model again:
+
+```
+.venv\Scripts\python -m researchos blend train.json eval.json --rule leader --out leader.json
+```
+
 Real cases come from `build`: it asks the API's server-side web search and
 fetch to find the company's results release, the full call transcript and
 pre-report consensus estimates, has an agent cut each document out of its
@@ -211,6 +219,15 @@ evaluation sequences it agrees with the hand-written version -- once that
 version was fixed: it accepted an event date with stray spaces when
 training and then could not read it back from the playbook, which
 Foundry's version handled.
+
+On real cases the learned weights barely moved, which raised the question
+of how the perspectives should be combined at all. `researchos.blend`
+replays combination rules walk-forward over records already scored, and
+records now keep each perspective's probability. Foundry made it in 15
+rounds, passed all 166 acceptance tests and agrees with the hand-written
+version on 4,000 random record sets; it also checks more than that
+version does (an `actual_up` that is not a boolean, a probability outside
+[0, 1]).
 
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
