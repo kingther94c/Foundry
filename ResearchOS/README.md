@@ -236,6 +236,15 @@ by Foundry first) and ResearchOS uses them: Foundry made the change in 14
 rounds, 25 lines fewer, with all 169 acceptance tests passing and the same
 results as before on 13,400 fuzzed calls.
 
+Redaction could not hide a megacap, so masking can now abstract first
+(`--mask-abstract`): an abstractor agent rewrites each pre-masked document
+as a generic brief -- rates, ratios and changes, segments as "segment A",
+no names -- and the masker and guesser rounds run on the briefs. Foundry
+made it in 11 rounds and passed all 179 acceptance tests; on 1,131 fuzzed
+runs with valid briefs it agrees with the hand-written version, and where
+the abstractor returns no brief it raises an `LLMError` instead of masking
+an empty document, which the hand-written version did.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

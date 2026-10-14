@@ -234,7 +234,8 @@ def test_save_and_load_masked_keep_key_separate(tmp_path, case):
     save_masked(tmp_path, m)
     public = json.loads((tmp_path / case.case_id / "masked.json").read_text(encoding="utf-8"))
     key = json.loads((tmp_path / case.case_id / "mask_key.json").read_text(encoding="utf-8"))
-    assert set(public) == {"documents", "status", "rounds", "final_guesses"}
+    assert set(public) == {"documents", "status", "rounds", "final_guesses", "abstracted"}
+    assert public["abstracted"] is False
     assert set(key) == {"mapping", "factor", "year_offset"}
     assert "Acme" not in json.dumps(public["documents"])
     assert load_masked(tmp_path, case.case_id) == m

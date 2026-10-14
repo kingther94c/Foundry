@@ -2,7 +2,7 @@
 
     python -m researchos {train,evaluate} --root DIR --playbook FILE --ids ID[,ID...] [--seed N]
                                           [--knowledge-cutoff YYYY-MM-DD] [--mask-give-up CONF]
-                                          [--out FILE]
+                                          [--mask-abstract] [--out FILE]
     python -m researchos build --root DIR --spec FILE --closes FILE --market-closes FILE
                                [--out FILE]
     python -m researchos compare A.json B.json [--metric NAME] [--resamples N] [--seed S]
@@ -120,6 +120,9 @@ def _parser() -> argparse.ArgumentParser:
                        default=None, metavar="CONF",
                        help="stop masking a case (as identifiable) once the guesser names it "
                             "with at least this confidence (0 < CONF <= 1)")
+        p.add_argument("--mask-abstract", dest="mask_abstract", action="store_true",
+                       help="rewrite each pre-masked document as a generic brief (abstractor "
+                            "agent) before the masker and guesser rounds")
         _add_out(p)
     p = sub.add_parser("build")
     p.add_argument("--root", required=True)
@@ -158,13 +161,14 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def build_roles(client) -> Roles:
+def build_roles(client, *, abstract: bool = False) -> Roles:
     return Roles(
         masker=ClaudeJSON(client, effort="medium"),
         guesser=ClaudeJSON(client, effort="medium"),
         analyst=ClaudeJSON(client, effort="high"),
         judge=ClaudeJSON(client, effort="high"),
         reflector=ClaudeJSON(client, effort="high"),
+        abstractor=ClaudeJSON(client, effort="high") if abstract else None,
     )
 
 
@@ -202,11 +206,12 @@ def main(argv=None, *, client_factory=None) -> int:
 
     try:
         client = (client_factory or anthropic_client)()
-        roles = build_roles(client)
+        roles = build_roles(client, abstract=args.mask_abstract)
         run = train if args.command == "train" else evaluate
         kwargs = {"seed": args.seed, "knowledge_cutoff": args.knowledge_cutoff}
-        if args.mask_give_up is not None:
-            kwargs["mask_config"] = MaskConfig(give_up_confidence=args.mask_give_up)
+        if args.mask_give_up is not None or args.mask_abstract:
+            kwargs["mask_config"] = MaskConfig(give_up_confidence=args.mask_give_up,
+                                               abstract=args.mask_abstract)
         result = run(args.root, ids, args.playbook, roles, **kwargs)
     except LLMError as exc:
         print(f"error: LLM call failed: {exc}", file=sys.stderr)

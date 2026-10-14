@@ -10,6 +10,7 @@ from tools.textmask import find_terms, redact, scale_money, shift_years
 
 from researchos.cases import Case, Document, document_from_dict, identity_terms, render_documents
 from researchos.jsonio import read_json, write_json
+from researchos.llm import LLMError
 
 COMPANY_REPLACEMENT = "the Company"
 TICKER_REPLACEMENT = "TICKER"
@@ -27,6 +28,9 @@ class MaskConfig:
     # Stop masking at once (status "identifiable") when the identifying guess's
     # confidence is at least this. None never gives up early.
     give_up_confidence: float | None = None
+    # Rewrite each pre-masked document as a generic brief (the abstractor agent) and
+    # run the masker and guesser rounds on the briefs.
+    abstract: bool = False
 
 
 @dataclass
@@ -39,6 +43,7 @@ class MaskedCase:
     factor: float
     year_offset: int
     final_guesses: list[dict] = field(default_factory=list)
+    abstracted: bool = False  # True when the documents are abstractor briefs
 
 
 MASKER_SYSTEM = """\
@@ -75,6 +80,28 @@ first, each with the company name, its stock ticker (empty string if unknown) \
 and a confidence between 0 and 1. Also list the clues in the text that point \
 to the company (specific products, people, places, figures, phrasing), so they \
 can be redacted."""
+
+ABSTRACT_SYSTEM = """\
+You are the abstractor in a research pipeline that trains an analyst to judge \
+earnings reports without knowing which company issued them. You receive one \
+document of a company's quarterly report (the results release, the call \
+transcript or the market expectations). The company name and ticker are already \
+replaced, money amounts are multiplied by a secret factor and years are shifted, \
+but the document still has the company's shape: its segment structure, product \
+lines and distinctive figures can name it.
+
+Rewrite the document as a brief for an analyst who must judge how the stock will \
+react to this report without knowing the company. Keep what that analyst needs:
+- the results against the prior year and against what was expected;
+- the direction and size of guidance changes;
+- margins and growth rates;
+- cash flow and capital returns;
+- management's tone and the risks raised.
+State them as rates, ratios and changes (percent, percentage points, multiples), \
+not as amounts. Describe the business and each segment generically ("segment A", \
+"the largest segment"). Leave out every name of the company, its products, \
+brands, segments, people, places, customers and competitors, and any detail \
+found at only one company. Do not add facts the document does not contain."""
 
 _STR = {"type": "string"}
 
@@ -114,6 +141,13 @@ GUESSER_SCHEMA = {
         "clues": {"type": "array", "items": _STR},
     },
     "required": ["guesses", "clues"],
+    "additionalProperties": False,
+}
+
+ABSTRACT_SCHEMA = {
+    "type": "object",
+    "properties": {"brief": _STR},
+    "required": ["brief"],
     "additionalProperties": False,
 }
 
@@ -252,11 +286,45 @@ def _add_redactions(mapping: dict[str, str], output: dict) -> None:
         existing.add(term.casefold())
 
 
+def _abstractor_prompt(document: Document) -> str:
+    return (f"Document kind: {document.kind}\n\n"
+            f"Pre-masked text:\n\n{document.text}\n\n"
+            f"Rewrite this {document.kind} document as a brief.")
+
+
+def _abstract_documents(documents: list[Document], abstractor) -> list[Document]:
+    """One abstractor call per document, in order; each becomes Document(kind, "<kind> brief")."""
+    briefs: list[Document] = []
+    for doc in documents:
+        output = abstractor.json(ABSTRACT_SYSTEM, _abstractor_prompt(doc), ABSTRACT_SCHEMA)
+        brief = output.get("brief") if isinstance(output, dict) else None
+        if not isinstance(brief, str) or not brief.strip():
+            raise LLMError(f"abstractor returned no brief for the {doc.kind} document")
+        briefs.append(Document(kind=doc.kind, title=f"{doc.kind} brief", text=brief, source=""))
+    return briefs
+
+
+def _redact_documents(documents: list[Document], mapping: dict[str, str]) -> list[Document]:
+    return [
+        Document(kind=doc.kind, title=redact(doc.title, mapping),
+                 text=redact(doc.text, mapping), source=doc.source)
+        for doc in documents
+    ]
+
+
 def mask_case(case: Case, masker, guesser, rng: random.Random,
-              config: MaskConfig = MaskConfig()) -> MaskedCase:
+              config: MaskConfig = MaskConfig(), *, abstractor=None) -> MaskedCase:
+    if config.abstract and abstractor is None:
+        raise ValueError("MaskConfig.abstract is set but no abstractor was given")
     terms = identity_terms(case)
     documents, mapping, factor, year_offset = pre_mask(case, rng, config)
     documents = guard_documents(documents, terms, mapping)
+    briefs: list[Document] | None = None
+    if config.abstract:
+        # Redaction keeps a document's shape (segments, product lines, ratios), which still
+        # names a large company; the rounds run on generic briefs instead.
+        briefs = guard_documents(_abstract_documents(documents, abstractor), terms, mapping)
+        documents = briefs
     status = "identifiable"
     rounds = 0
     clues: list[str] = []
@@ -265,7 +333,11 @@ def mask_case(case: Case, masker, guesser, rng: random.Random,
         output = masker.json(MASKER_SYSTEM, _masker_prompt(documents, clues if round_no > 1 else []),
                              MASKER_SCHEMA)
         _add_redactions(mapping, output)
-        documents = _mask_documents(case.documents, mapping, factor, year_offset)
+        if briefs is None:
+            documents = _mask_documents(case.documents, mapping, factor, year_offset)
+        else:
+            # The briefs were written from text already scaled and shifted: redact only.
+            documents = _redact_documents(briefs, mapping)
         documents = guard_documents(documents, terms, mapping)
         result = guesser.json(GUESSER_SYSTEM, _guesser_prompt(documents), GUESSER_SCHEMA)
         rounds += 1
@@ -290,6 +362,7 @@ def mask_case(case: Case, masker, guesser, rng: random.Random,
         factor=factor,
         year_offset=year_offset,
         final_guesses=final_guesses,
+        abstracted=briefs is not None,
     )
 
 
@@ -301,6 +374,7 @@ def save_masked(root, masked: MaskedCase) -> None:
         "status": masked.status,
         "rounds": masked.rounds,
         "final_guesses": masked.final_guesses,
+        "abstracted": bool(masked.abstracted),
     }
     key = {"mapping": masked.mapping, "factor": masked.factor, "year_offset": masked.year_offset}
     write_json(case_dir / MASKED_FILE, public)
@@ -320,4 +394,5 @@ def load_masked(root, case_id: str) -> MaskedCase:
         factor=key.get("factor", 1.0),
         year_offset=key.get("year_offset", 0),
         final_guesses=list(public.get("final_guesses", [])),
+        abstracted=bool(public.get("abstracted", False)),
     )

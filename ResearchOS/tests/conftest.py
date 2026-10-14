@@ -80,6 +80,8 @@ def schema_kind(schema):
         return "masker"
     if "guesses" in props:
         return "guesser"
+    if "brief" in props:
+        return "abstractor"
     if "stance" in props:
         return "view"
     if "thesis" in props:
@@ -105,6 +107,9 @@ def default_answer(schema, prompt=""):
                 "key_points": [f"{name} point"]}
     if kind == "judge":
         return {"prob_up": 0.65, "thesis": "Beat and raise."}
+    if kind == "abstractor":
+        return {"brief": "Revenue grew 12% from the prior year and beat expectations; gross "
+                         "margin was 41%; guidance was raised."}
     return {"why_market_moved": "beat", "where_we_were_wrong": "nowhere",
             "lessons": [{"lesson": "Guidance raises dominate the reaction.",
                          "applies_when": "guidance is raised", "perspective": "guidance"}]}

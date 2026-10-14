@@ -690,3 +690,47 @@ different. Use the shared ones and keep no copies:
   date in a file it reads must raise.
 - Nothing else changes: the same inputs give the same results and raise the
   same errors with the same messages.
+
+## Abstraction masking (v13)
+
+Redaction keeps a document's shape: on the first fifteen real cases the
+guesser still named every company after four rounds, from segment
+structure, product lines and ratios that survive any renaming. Abstraction
+rewrites instead: an abstractor agent turns each pre-masked document into a
+brief that keeps what an analyst needs and drops what identifies the
+business; the masker and guesser rounds then run on the briefs.
+
+- `MaskConfig.abstract: bool = False`.
+- `ABSTRACT_SYSTEM` (a module constant) instructs the abstractor to rewrite
+  one document of a company's quarterly report as a brief for an analyst who
+  must judge the stock's reaction without knowing the company: keep the
+  results against the prior year and against what was expected, the
+  direction and size of guidance changes, margins and growth rates, cash
+  flow and capital returns, management's tone and the risks raised; state
+  them as rates, ratios and changes, not as amounts; describe the business
+  and each segment generically ("segment A", "the largest segment"); leave
+  out every name of the company, its products, brands, segments, people,
+  places, customers and competitors, and any detail found at only one
+  company. `ABSTRACT_SCHEMA` is an object with the single required string
+  `brief` (strict: no other properties).
+- `mask_case(case, masker, guesser, rng, config=MaskConfig(), *, abstractor=None)`:
+  with `config.abstract` False the abstractor is never used and nothing
+  changes. With it True (ValueError if `abstractor` is None):
+  1. pre-masking and the identity guard run as before;
+  2. the abstractor is called once per pre-masked document, in order:
+     `abstractor.json(ABSTRACT_SYSTEM, prompt, ABSTRACT_SCHEMA)`, the prompt
+     holding the document's kind and its pre-masked text; each document
+     becomes `Document(kind, "<kind> brief", <the brief>, "")`, and the
+     identity guard runs on the briefs;
+  3. the masker and guesser rounds run as before, except that a round's
+     documents are the briefs redacted with the mapping
+     (`tools.textmask.redact`, then the identity guard) -- the briefs were
+     written from text already scaled and shifted, so money and years are
+     not scaled or shifted again.
+- `MaskedCase.abstracted: bool = False`, True for a case masked with
+  abstraction; `save_masked` writes it into `masked.json`, `load_masked`
+  reads it (False when absent).
+- `Roles.abstractor` defaults to None; training and evaluation pass it to
+  `mask_case`. CLI: `--mask-abstract` on `train` and `evaluate` runs with
+  `MaskConfig(abstract=True)` (together with `--mask-give-up` when both are
+  given), the abstractor being `ClaudeJSON` at effort `"high"`.

@@ -34,6 +34,7 @@ class Roles:
     analyst: Any
     judge: Any
     reflector: Any
+    abstractor: Any = None  # used only when MaskConfig.abstract is set
 
 
 def _brier(p: float, y: int) -> float:
@@ -59,8 +60,14 @@ def score(analysis: Analysis, outcome) -> dict:
 def _get_masked(root, case, roles: Roles, rng: random.Random, mask_config: MaskConfig):
     if (Path(root) / case.case_id / MASKED_FILE).is_file():
         masked = load_masked(root, case.case_id)
+        if masked.abstracted != mask_config.abstract:
+            log.warning("%s: reusing the saved %s, masked %s abstraction although this run "
+                        "masks %s it; delete the file to mask the case again", case.case_id,
+                        MASKED_FILE, "with" if masked.abstracted else "without",
+                        "with" if mask_config.abstract else "without")
     else:
-        masked = mask_case(case, roles.masker, roles.guesser, rng, mask_config)
+        masked = mask_case(case, roles.masker, roles.guesser, rng, mask_config,
+                           abstractor=getattr(roles, "abstractor", None))
         save_masked(root, masked)
     # Whatever is on disk, never show the analyst an identity term.
     masked.documents = guard_documents(masked.documents, identity_terms(case))
