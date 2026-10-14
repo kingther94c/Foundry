@@ -139,6 +139,33 @@ last reaction the playbook learned from. `walkforward_playbook.json` and
 `walkforward_ordered_playbook.json` are the playbooks the two walk-forward
 runs ended with.
 
+## Which perspectives explained the reactions
+
+Each record keeps a Brier score per perspective. Over the 15 untrained
+forecasts:
+
+| Perspective | Brier | best of the seven on |
+|---|---|---|
+| expectations_gap | 0.184 | 5 cases |
+| guidance | 0.192 | 2 |
+| profitability | 0.196 | 2 |
+| management_tone | 0.215 | 0 |
+| growth | 0.219 | 4 |
+| risks | 0.219 | 1 |
+| cash_flow | 0.238 | 2 |
+
+The reaction followed the gap to what the market expected more than
+anything else, as the earnings-surprise literature would predict, and
+management tone added least. Training moved the weights in that direction
+-- expectations_gap and guidance ended on top, growth at the bottom -- but
+only from 0.143 each to between 0.126 and 0.156: the Hedge update at
+`eta=0.5` on squared losses that differ by a few hundredths barely moves
+in ten cases, so the learned blend (0.204) stays where the uniform one
+is (0.205), behind the judge (0.192 trained) and behind the best single
+perspective. Picking that perspective on these same cases would be
+fitting to them; whether a faster learning rate generalizes needs cases
+it was not tuned on.
+
 What did come out of training: weights moved little from uniform
 (expectations_gap 0.156 and management_tone 0.152 at the top, growth 0.133 at
 the bottom). The 62 lessons are concrete and general -- for example, "when
