@@ -37,6 +37,39 @@ ratios identify it. These cases were used anyway (`--knowledge-cutoff
 answer, because the reactions are after its cutoff. Blind training proper
 needs smaller, less-followed companies.
 
+## Abstraction does not hide them either
+
+Redaction left every mask identifiable, so `--mask-abstract` (v13) was tried
+on the first eight cases: an abstractor rewrites each pre-masked document as
+a generic brief -- rates, ratios and changes, segments as "segment A", no
+names -- before the usual four masker and guesser rounds. Roles were kept
+apart: one subagent abstracted and masked, a second, which never saw the
+documents, guessed. Because that guesser remembered its earlier rounds, each
+final mask was also shown to a fresh guesser that saw nothing else.
+
+| Case | Redaction only (final) | Abstraction: guesser, round 1 -> 4 | Fresh guesser on the final mask |
+|---|---|---|---|
+| case01 (a bank) | 0.97 | 0.93 -> 0.78 | named it, 0.88 |
+| case02 | 0.97 | 0.95 -> 0.85 | named it, 0.93 |
+| case03 | 0.97 | 0.93 -> 0.83 | named it, 0.92 |
+| case04 | 0.97 | 0.93 -> 0.86 | named it, 0.93 |
+| case05 | 0.98 | 0.95 -> 0.85 | named it, 0.93 |
+| case07 | 0.97 | 0.93 -> 0.50 | named it, 0.80 |
+| case08 | 0.97 | 0.95 -> 0.85 | named it, 0.90 |
+| case09 | 0.97 | 0.95 -> 0.85 | named it, 0.92 |
+
+Eight of eight stayed identifiable. Abstraction lowered the guesser's
+confidence by about a tenth, but the fresh guesser named every company on
+the final briefs at 0.80 to 0.93. What gives a megacap away is not a name
+but its structure, which an analyst needs: "two segments, one with three
+services units" is UnitedHealth; "three gross revenue lines tied to
+transactions, volume and cross-border activity, less client incentives, at a
+67% margin" is a card network, and there are two. The other seven cases
+were not run: eight of eight with a fresh guesser is a clear enough answer.
+Blind training needs companies whose structure is not unique -- smaller,
+less-followed ones -- and building those cases needs document sources this
+environment's network policy does not allow.
+
 ## Results
 
 Each training forecast was sealed before its outcome was opened, using only
