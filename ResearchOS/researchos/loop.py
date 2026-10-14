@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import random
 from dataclasses import asdict, dataclass
@@ -13,6 +12,7 @@ from typing import Any
 from tools.stats import brier_score
 
 from researchos.cases import identity_terms, load_case, load_outcome
+from researchos.jsonio import write_json
 from researchos.masking import (MASKED_FILE, MaskConfig, guard_documents, load_masked,
                                 mask_case, save_masked)
 from researchos.perspectives import Analysis, analyze
@@ -72,8 +72,7 @@ def _analysis_playbook(playbook: Playbook, case) -> Playbook:
 
 def _seal(root, analysis: Analysis) -> None:
     path = Path(root) / analysis.case_id / PREDICTION_FILE
-    path.write_text(json.dumps(asdict(analysis), indent=2, ensure_ascii=False) + "\n",
-                    encoding="utf-8")
+    write_json(path, asdict(analysis))
 
 
 def parse_cutoff(knowledge_cutoff) -> date | None:

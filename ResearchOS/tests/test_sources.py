@@ -1,3 +1,4 @@
+import codecs
 import json
 from datetime import date
 from types import SimpleNamespace
@@ -479,6 +480,34 @@ def test_cli_build(tmp_path, capsys):
     structured = [r for r in client.requests if "tools" not in r]
     assert structured and all(r["output_config"]["effort"] == "medium" for r in structured)
     assert sum("tools" in r for r in client.requests) == 3
+
+
+def test_cli_build_reads_windows_files_and_writes_out(tmp_path, capsys):
+    args = cli_files(tmp_path)
+    marks = {"spec.json": (codecs.BOM_UTF16_LE, "utf-16-le"),
+             "closes.json": (codecs.BOM_UTF8, "utf-8"),
+             "market.json": (codecs.BOM_UTF16_BE, "utf-16-be")}
+    for name, (mark, codec) in marks.items():
+        path = tmp_path / name
+        path.write_bytes(mark + path.read_text(encoding="utf-8").encode(codec))
+    out = tmp_path / "built.json"
+    code = main(args + ["--out", str(out)], client_factory=cli_client)
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    assert captured.out == ""
+    raw = out.read_bytes()
+    built = json.loads(raw.decode("utf-8"))
+    assert built["case_id"] == "acme-q2"
+    assert built["outcome"]["abnormal_return_1d"] == pytest.approx(0.09)
+    assert raw == (json.dumps(built, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def test_cli_build_unwritable_out_exits_1_and_the_case_stands(tmp_path, capsys):
+    code = main(cli_files(tmp_path) + ["--out", str(tmp_path)], client_factory=cli_client)
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == "" and captured.err.startswith("error:")
+    assert list_cases(tmp_path / "root") == ["acme-q2"]
 
 
 def test_cli_build_bad_arguments(tmp_path, capsys):

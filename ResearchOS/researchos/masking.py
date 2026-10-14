@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import random
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -10,6 +9,7 @@ from pathlib import Path
 from tools.textmask import find_terms, redact, scale_money, shift_years
 
 from researchos.cases import Case, Document, document_from_dict, identity_terms, render_documents
+from researchos.jsonio import read_json, write_json
 
 COMPANY_REPLACEMENT = "the Company"
 TICKER_REPLACEMENT = "TICKER"
@@ -303,16 +303,14 @@ def save_masked(root, masked: MaskedCase) -> None:
         "final_guesses": masked.final_guesses,
     }
     key = {"mapping": masked.mapping, "factor": masked.factor, "year_offset": masked.year_offset}
-    (case_dir / MASKED_FILE).write_text(json.dumps(public, indent=2, ensure_ascii=False) + "\n",
-                                        encoding="utf-8")
-    (case_dir / MASK_KEY_FILE).write_text(json.dumps(key, indent=2, ensure_ascii=False) + "\n",
-                                          encoding="utf-8")
+    write_json(case_dir / MASKED_FILE, public)
+    write_json(case_dir / MASK_KEY_FILE, key)
 
 
 def load_masked(root, case_id: str) -> MaskedCase:
     case_dir = Path(root) / case_id
-    public = json.loads((case_dir / MASKED_FILE).read_text(encoding="utf-8"))
-    key = json.loads((case_dir / MASK_KEY_FILE).read_text(encoding="utf-8"))
+    public = read_json(case_dir / MASKED_FILE)
+    key = read_json(case_dir / MASK_KEY_FILE)
     return MaskedCase(
         case_id=case_id,
         documents=[document_from_dict(d) for d in public["documents"]],

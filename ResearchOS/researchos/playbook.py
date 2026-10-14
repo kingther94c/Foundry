@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from tools.stats import hedge_update
 from tools.textmask import find_terms
 
+from researchos.jsonio import read_json, write_json
 from researchos.perspectives import PERSPECTIVES
 
 
@@ -41,11 +41,11 @@ def save_playbook(path, playbook: Playbook) -> None:
         "lessons": [asdict(lesson) for lesson in playbook.lessons],
         "history": playbook.history,
     }
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_json(path, data)
 
 
 def load_playbook(path) -> Playbook:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    data = read_json(path)
     return Playbook(
         weights={k: float(v) for k, v in data.get("weights", {}).items()},
         lessons=[

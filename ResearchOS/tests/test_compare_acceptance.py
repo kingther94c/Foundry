@@ -1,4 +1,5 @@
-"""Hidden acceptance tests for researchos.compare -- never shown to an attempt.
+"""Acceptance tests for researchos.compare, written from SPEC.md independently of the code
+(held back from the agent that built it).
 
 Each case traces to the "researchos.compare" section of SPEC.md.
 """

@@ -8,9 +8,10 @@ Layout under a root directory::
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+from researchos.jsonio import read_json, write_json
 
 CASE_FILE = "case.json"
 OUTCOME_FILE = "outcome.json"
@@ -44,14 +45,6 @@ class Case:
     documents: list[Document]
 
 
-def _write_json(path: Path, data: object) -> None:
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
-def _read_json(path: Path) -> object:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def document_from_dict(data: dict) -> Document:
     return Document(
         kind=data["kind"],
@@ -65,13 +58,13 @@ def save_case(root, case: Case, outcome: Outcome) -> None:
     """Write case.json and outcome.json under <root>/<case_id>/."""
     case_dir = Path(root) / case.case_id
     case_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(case_dir / CASE_FILE, asdict(case))
-    _write_json(case_dir / OUTCOME_FILE, asdict(outcome))
+    write_json(case_dir / CASE_FILE, asdict(case))
+    write_json(case_dir / OUTCOME_FILE, asdict(outcome))
 
 
 def load_case(root, case_id: str) -> Case:
     """Read case.json only; outcome.json is never opened here."""
-    data = _read_json(Path(root) / case_id / CASE_FILE)
+    data = read_json(Path(root) / case_id / CASE_FILE)
     return Case(
         case_id=data["case_id"],
         company=data["company"],
@@ -84,7 +77,7 @@ def load_case(root, case_id: str) -> Case:
 
 
 def load_outcome(root, case_id: str) -> Outcome:
-    data = _read_json(Path(root) / case_id / OUTCOME_FILE)
+    data = read_json(Path(root) / case_id / OUTCOME_FILE)
     return Outcome(
         abnormal_return_1d=data["abnormal_return_1d"],
         stock_return_1d=data.get("stock_return_1d"),

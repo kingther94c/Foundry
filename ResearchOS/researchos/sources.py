@@ -9,15 +9,14 @@ JSON files of ``[["YYYY-MM-DD", close], ...]``.
 
 from __future__ import annotations
 
-import json
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, fields
 from datetime import date
-from pathlib import Path
 
 from tools.returns import abnormal_return, event_return
 
 from researchos.cases import Case, Document, Outcome, save_case
+from researchos.jsonio import read_json
 from researchos.llm import BETAS, DEFAULT_MODEL, LLMError, _get, _is_api_error
 
 TIMINGS = ("bmo", "amc")
@@ -27,7 +26,7 @@ TIMINGS = ("bmo", "amc")
 
 def load_closes(path) -> list[tuple[date, float]]:
     """Read ``[["2026-07-16", 1234.5], ...]`` from a JSON file, sorted by date."""
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    data = read_json(path)
     if not isinstance(data, list):
         raise ValueError(f"{path}: expected a JSON list of [date, close] pairs")
     closes: list[tuple[date, float]] = []
@@ -335,7 +334,7 @@ def case_spec_from_dict(data) -> CaseSpec:
 
 
 def load_case_spec(path) -> CaseSpec:
-    return case_spec_from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+    return case_spec_from_dict(read_json(path))
 
 
 def _who(spec: CaseSpec) -> str:

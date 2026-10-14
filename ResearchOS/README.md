@@ -40,8 +40,13 @@ python -m venv .venv
 
 set ANTHROPIC_API_KEY=...
 .venv\Scripts\python -m researchos train --root cases --playbook playbook.json --ids a,b,c
-.venv\Scripts\python -m researchos evaluate --root cases --playbook playbook.json --ids d,e > untrained.json
+.venv\Scripts\python -m researchos evaluate --root cases --playbook playbook.json --ids d,e --out untrained.json
 ```
+
+Every command prints its result as JSON, or writes it to a file with
+`--out`. Every JSON file ResearchOS reads may be plain UTF-8, UTF-8 with a
+byte order mark, or UTF-16 with one -- what Windows PowerShell 5.1 writes
+with `>` and `Out-File`.
 
 `compare` pairs two evaluation reports case by case and puts a bootstrap
 interval on the difference in Brier score, since a handful of cases settles
@@ -166,6 +171,17 @@ mean difference. Foundry made it through the relay in 10 rounds, passed all
 92 acceptance tests, and agrees with the hand-written version on 9,000 random
 report pairs -- except that it skips a NaN or infinite score instead of
 letting it poison the means, which is the better choice.
+
+The model playing Foundry pointed out, while building `compare`, that its
+reports would be saved on Windows with PowerShell 5.1, whose `>` writes
+UTF-16 and whose `Out-File -Encoding utf8` adds a byte order mark -- files
+`compare` refused. Now every JSON file goes through `researchos.jsonio`,
+which decodes by the byte order mark, and the commands take `--out FILE`.
+Foundry made the change through the relay in 19 rounds, passed all 112
+acceptance tests, agrees with the hand-written version on 6,000 fuzzed
+files, and went one step further than it: the four places that each wrote
+JSON their own way now share `write_json`. It also rewrote the one existing
+test the new rule contradicted, instead of deleting it.
 
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.

@@ -543,3 +543,31 @@ CLI: `python -m researchos compare A.json B.json [--metric NAME]
 ...)` to stdout as JSON and exits 0; 2 on bad arguments (including a metric
 that does not start with `brier_`); 1 on a missing file or a file
 `load_report` rejects, with a message on stderr.
+
+## researchos.jsonio (v8: JSON files written on Windows)
+
+ResearchOS runs on Windows, where the JSON files people hand it are often not
+plain UTF-8: Windows PowerShell 5.1 writes UTF-16 with a byte order mark when
+output is redirected with `>`, and `Out-File -Encoding utf8` (like older
+Notepad) puts a UTF-8 byte order mark in front. Such a file holds perfectly
+good JSON; refusing it would make the tool fail where it is meant to run, for
+a reason the user cannot see.
+
+- `read_json(path) -> object`: reads the file's bytes and decodes them by
+  their byte order mark: `EF BB BF` UTF-8, `FF FE` UTF-16 little-endian,
+  `FE FF` UTF-16 big-endian, the mark itself dropped; with no mark, UTF-8.
+  Returns `json.loads` of the text. Bytes that do not decode, or text that is
+  not JSON (an empty file included), raise ValueError with a message naming
+  the path. OSError (a missing file, a directory) propagates unchanged.
+- `write_json(path, data) -> None`: writes `json.dumps(data, indent=2,
+  ensure_ascii=False)` and a newline, as UTF-8 with no byte order mark.
+- Every JSON file ResearchOS reads goes through `read_json`: `load_closes`,
+  `load_case_spec`, `load_report`, `load_playbook`, `load_case`,
+  `load_outcome` and `load_masked`. Nothing else about them changes: a file
+  that decodes to JSON of the wrong shape raises what it raised before.
+
+CLI: `train`, `evaluate`, `build` and `compare` take `--out FILE`. The JSON
+they would print goes to FILE through `write_json` instead, and nothing goes
+to stdout. A FILE that cannot be written exits 1 with a message on stderr
+(whatever the command already did, such as saving the playbook, stands).
+Without `--out`, output is unchanged.

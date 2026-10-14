@@ -8,27 +8,23 @@ so a negative diff means report `b` did better on that case.
 
 from __future__ import annotations
 
-import json
 import math
 import random
-from pathlib import Path
 
 from tools.stats import quantile
+
+from researchos.jsonio import read_json
 
 
 def load_report(path) -> dict:
     """Read the dict `evaluate` returns, bare or wrapped as {"result": <that dict>, ...}.
 
     Returns the dict holding "cases". Raises ValueError if the file is not
-    UTF-8 JSON or holds neither form; OSError (e.g. FileNotFoundError) if it
-    cannot be read at all.
+    JSON (read with read_json, so a byte order mark or UTF-16 is fine) or
+    holds neither form; OSError (e.g. FileNotFoundError) if it cannot be read
+    at all.
     """
-    try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except UnicodeDecodeError as exc:
-        raise ValueError(f"{path}: not UTF-8 text ({exc})") from exc
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"{path}: not valid JSON ({exc})") from exc
+    data = read_json(path)
     if isinstance(data, dict) and "cases" in data:
         report = data
     elif (isinstance(data, dict) and isinstance(data.get("result"), dict)

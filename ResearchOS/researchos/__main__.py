@@ -2,8 +2,14 @@
 
     python -m researchos {train,evaluate} --root DIR --playbook FILE --ids ID[,ID...] [--seed N]
                                           [--knowledge-cutoff YYYY-MM-DD] [--mask-give-up CONF]
+                                          [--out FILE]
     python -m researchos build --root DIR --spec FILE --closes FILE --market-closes FILE
+                               [--out FILE]
     python -m researchos compare A.json B.json [--metric NAME] [--resamples N] [--seed S]
+                                 [--out FILE]
+
+Each command prints its result as JSON; with --out FILE it writes the result to
+FILE instead (researchos.jsonio.write_json) and prints nothing.
 """
 
 from __future__ import annotations
@@ -17,6 +23,7 @@ from pathlib import Path
 
 from researchos.cases import CASE_FILE, load_outcome
 from researchos.compare import compare, load_report
+from researchos.jsonio import write_json
 from researchos.llm import ClaudeJSON, LLMError, anthropic_client
 from researchos.loop import Roles, evaluate, parse_cutoff, train
 from researchos.masking import MaskConfig
@@ -62,6 +69,11 @@ def _resamples(value: str) -> int:
     return n
 
 
+def _add_out(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--out", default=None, metavar="FILE",
+                   help="write the JSON result to FILE (UTF-8) instead of printing it")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m researchos")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -79,12 +91,14 @@ def _parser() -> argparse.ArgumentParser:
                        default=None, metavar="CONF",
                        help="stop masking a case (as identifiable) once the guesser names it "
                             "with at least this confidence (0 < CONF <= 1)")
+        _add_out(p)
     p = sub.add_parser("build")
     p.add_argument("--root", required=True)
     p.add_argument("--spec", required=True, help="JSON file holding one CaseSpec")
     p.add_argument("--closes", required=True, help="JSON file of the stock's daily closes")
     p.add_argument("--market-closes", required=True, dest="market_closes",
                    help="JSON file of the market's daily closes")
+    _add_out(p)
     p = sub.add_parser("compare", help="paired comparison of two evaluation reports")
     p.add_argument("report_a", metavar="A.json", help="evaluation report of the baseline")
     p.add_argument("report_b", metavar="B.json", help="evaluation report compared with it")
@@ -93,6 +107,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--resamples", type=_resamples, default=10000,
                    help="bootstrap resamples (default 10000)")
     p.add_argument("--seed", type=int, default=0)
+    _add_out(p)
     return parser
 
 
@@ -140,8 +155,7 @@ def main(argv=None, *, client_factory=None) -> int:
     except FileNotFoundError as exc:
         print(f"error: missing file: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps(result, indent=2))
-    return 0
+    return _emit(result, args.out)
 
 
 def _build(args, client_factory) -> int:
@@ -167,8 +181,7 @@ def _build(args, client_factory) -> int:
     except ValueError as exc:  # includes malformed JSON
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps({"case_id": case.case_id, "outcome": asdict(outcome)}, indent=2))
-    return 0
+    return _emit({"case_id": case.case_id, "outcome": asdict(outcome)}, args.out)
 
 
 def _compare(args) -> int:
@@ -182,7 +195,24 @@ def _compare(args) -> int:
     except ValueError as exc:  # not JSON, not a report, a case scored twice
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps(result, indent=2))
+    return _emit(result, args.out)
+
+
+def _emit(data, out) -> int:
+    """Print data as JSON, or with --out write it to that file and print nothing.
+
+    Returns the exit code: 1, with a message on stderr, if the file cannot be
+    written. Whatever the command already did (a saved playbook, a built case)
+    stands either way.
+    """
+    if out is None:
+        print(json.dumps(data, indent=2))
+        return 0
+    try:
+        write_json(out, data)
+    except (OSError, ValueError) as exc:  # a directory, a missing folder, no permission, ...
+        print(f"error: cannot write {out}: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 

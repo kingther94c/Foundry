@@ -5,6 +5,7 @@ from conftest import (FakeClient, default_answer, make_case, make_outcome, schem
 
 from researchos.__main__ import main
 from researchos.cases import save_case
+from researchos.jsonio import read_json
 from researchos.masking import MaskConfig
 from researchos.playbook import load_playbook
 
@@ -165,3 +166,45 @@ def test_llm_error_exits_1(tmp_path, capsys):
                  "--ids", "a"], client_factory=lambda: client)
     captured = capsys.readouterr()
     assert code == 1 and "refused" in captured.err and captured.out == ""
+
+
+def test_out_writes_the_result_to_a_file_and_prints_nothing(tmp_path, capsys, monkeypatch):
+    import researchos.__main__ as main_mod
+
+    root = setup_root(tmp_path)
+    result = {"n": 1, "note": "caf\xe9 \N{EN DASH} ok", "cases": [{"case_id": "a"}]}
+
+    def fake_run(root_, ids, playbook, roles, **kwargs):
+        return result
+
+    monkeypatch.setattr(main_mod, "train", fake_run)
+    monkeypatch.setattr(main_mod, "evaluate", fake_run)
+    for cmd in ("train", "evaluate"):
+        out = tmp_path / f"{cmd}.json"
+        code = main([cmd, "--root", str(root), "--playbook", str(tmp_path / "pb.json"),
+                     "--ids", "a", "--out", str(out)], client_factory=schema_client)
+        captured = capsys.readouterr()
+        assert code == 0, captured.err
+        assert captured.out == ""
+        assert out.read_bytes() == (json.dumps(result, indent=2, ensure_ascii=False)
+                                    + "\n").encode("utf-8")
+
+
+def test_unwritable_out_exits_1_and_the_playbook_stands(tmp_path, capsys):
+    root = setup_root(tmp_path)
+    pb = tmp_path / "pb.json"
+    code = main(["train", "--root", str(root), "--playbook", str(pb), "--ids", "a,b",
+                 "--out", str(tmp_path)], client_factory=schema_client)  # a directory
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == ""
+    assert captured.err.startswith("error:") and str(tmp_path) in captured.err
+    assert len(load_playbook(pb).history) == 2
+
+    out = tmp_path / "scores.json"
+    code = main(["evaluate", "--root", str(root), "--playbook", str(pb), "--ids", "a",
+                 "--out", str(out)], client_factory=schema_client)
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    assert captured.out == ""
+    assert read_json(out)["n"] == 1

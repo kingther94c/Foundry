@@ -64,12 +64,24 @@ def test_load_report_rejects_bad_json_and_reports_missing_file(tmp_path):
     bad.write_text("{not json", encoding="utf-8")
     with pytest.raises(ValueError):
         load_report(bad)
-    utf16 = tmp_path / "utf16.json"
-    utf16.write_bytes(json.dumps(report()).encode("utf-16"))
-    with pytest.raises(ValueError):
-        load_report(utf16)
+    cp1252 = tmp_path / "cp1252.json"
+    cp1252.write_bytes(json.dumps(report(rec("Soci\xe9t\xe9", 0.1)),
+                                  ensure_ascii=False).encode("cp1252"))
+    with pytest.raises(ValueError, match="cp1252.json"):
+        load_report(cp1252)
     with pytest.raises(FileNotFoundError):
         load_report(tmp_path / "nope.json")
+
+
+def test_load_report_reads_utf16_and_byte_order_marks(tmp_path):
+    # What Windows PowerShell 5.1 writes with `>`, and with Out-File -Encoding utf8 (v8).
+    rep = report(rec("a", 0.1), skipped("b"))
+    utf16 = tmp_path / "utf16.json"
+    utf16.write_bytes(json.dumps(rep).encode("utf-16"))
+    assert load_report(utf16) == rep
+    bom = tmp_path / "bom.json"
+    bom.write_bytes(json.dumps({"result": rep}).encode("utf-8-sig"))
+    assert load_report(bom) == rep
 
 
 # paired
@@ -246,6 +258,7 @@ def test_cli_compare_bad_arguments_exit_2(tmp_path, capsys):
         ["compare", pa, pb, "--resamples", "many"],
         ["compare", pa, pb, "--resamples", "2.5"],
         ["compare", pa, pb, "--seed", "x"],
+        ["compare", pa, pb, "--out"],
     ):
         assert main(argv, client_factory=no_client) == 2, argv
     assert capsys.readouterr().out == ""
@@ -265,3 +278,30 @@ def test_cli_compare_unusable_reports_exit_1(tmp_path, capsys):
         assert code == 1, (path_a, path_b)
         assert captured.out == ""
         assert captured.err.startswith("error:")
+
+
+def test_cli_compare_out_writes_the_file_and_prints_nothing(tmp_path, capsys):
+    pa = write_json(tmp_path / "a.json", A)
+    pb = tmp_path / "b.json"
+    pb.write_bytes(json.dumps({"result": B}).encode("utf-16"))  # as PowerShell's `>` writes it
+    out = tmp_path / "comparison.json"
+    code = main(["compare", str(pa), str(pb), "--resamples", "300", "--seed", "5",
+                 "--out", str(out)], client_factory=no_client)
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    assert captured.out == ""
+    expected = compare(A, B, resamples=300, seed=5)
+    assert out.read_bytes() == (json.dumps(expected, indent=2, ensure_ascii=False)
+                                + "\n").encode("utf-8")
+
+
+def test_cli_compare_unwritable_out_exits_1(tmp_path, capsys):
+    pa = str(write_json(tmp_path / "a.json", A))
+    pb = str(write_json(tmp_path / "b.json", B))
+    for out in (tmp_path, tmp_path / "no-such-dir" / "c.json"):
+        code = main(["compare", pa, pb, "--resamples", "50", "--out", str(out)],
+                    client_factory=no_client)
+        captured = capsys.readouterr()
+        assert code == 1, out
+        assert captured.out == ""
+        assert captured.err.startswith("error:") and str(out) in captured.err
