@@ -40,7 +40,15 @@ python -m venv .venv
 
 set ANTHROPIC_API_KEY=...
 .venv\Scripts\python -m researchos train --root cases --playbook playbook.json --ids a,b,c
-.venv\Scripts\python -m researchos evaluate --root cases --playbook playbook.json --ids d,e
+.venv\Scripts\python -m researchos evaluate --root cases --playbook playbook.json --ids d,e > untrained.json
+```
+
+`compare` pairs two evaluation reports case by case and puts a bootstrap
+interval on the difference in Brier score, since a handful of cases settles
+little on its own (negative `mean_diff`: the second report did better):
+
+```
+.venv\Scripts\python -m researchos compare untrained.json trained.json --metric brier_weighted
 ```
 
 Real cases come from `build`: it asks the API's server-side web search and
@@ -150,6 +158,14 @@ that sees only those requests writes the replies, and an audit of its tool
 calls confirms it touched nothing else. Foundry made the change in 7 rounds,
 passed all 76 acceptance tests, and agrees with the hand-written version on
 4,000 scripted masking runs.
+
+Comparing an untrained with a trained playbook on five held-out cases gave a
+0.004 difference in Brier score, which says nothing without a sense of its
+noise, so `compare` now pairs two reports case by case and bootstraps the
+mean difference. Foundry made it through the relay in 10 rounds, passed all
+92 acceptance tests, and agrees with the hand-written version on 9,000 random
+report pairs -- except that it skips a NaN or infinite score instead of
+letting it poison the means, which is the better choice.
 
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.

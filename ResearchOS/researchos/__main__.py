@@ -3,6 +3,7 @@
     python -m researchos {train,evaluate} --root DIR --playbook FILE --ids ID[,ID...] [--seed N]
                                           [--knowledge-cutoff YYYY-MM-DD] [--mask-give-up CONF]
     python -m researchos build --root DIR --spec FILE --closes FILE --market-closes FILE
+    python -m researchos compare A.json B.json [--metric NAME] [--resamples N] [--seed S]
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from researchos.cases import CASE_FILE, load_outcome
+from researchos.compare import compare, load_report
 from researchos.llm import ClaudeJSON, LLMError, anthropic_client
 from researchos.loop import Roles, evaluate, parse_cutoff, train
 from researchos.masking import MaskConfig
@@ -41,6 +43,25 @@ def _give_up_confidence(value: str) -> float:
     return conf
 
 
+def _brier_metric(value: str) -> str:
+    """argparse type: a metric name starting with "brier_" (compare assumes lower is better)."""
+    if not value.startswith("brier_"):
+        raise argparse.ArgumentTypeError(f"must name a Brier score (start with 'brier_'): "
+                                         f"{value!r}")
+    return value
+
+
+def _resamples(value: str) -> int:
+    """argparse type: an integer >= 1."""
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not an integer: {value!r}") from None
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1: {value!r}")
+    return n
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m researchos")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -64,6 +85,14 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--closes", required=True, help="JSON file of the stock's daily closes")
     p.add_argument("--market-closes", required=True, dest="market_closes",
                    help="JSON file of the market's daily closes")
+    p = sub.add_parser("compare", help="paired comparison of two evaluation reports")
+    p.add_argument("report_a", metavar="A.json", help="evaluation report of the baseline")
+    p.add_argument("report_b", metavar="B.json", help="evaluation report compared with it")
+    p.add_argument("--metric", type=_brier_metric, default="brier_judge",
+                   help="per-case Brier score to compare (default brier_judge)")
+    p.add_argument("--resamples", type=_resamples, default=10000,
+                   help="bootstrap resamples (default 10000)")
+    p.add_argument("--seed", type=int, default=0)
     return parser
 
 
@@ -85,6 +114,8 @@ def main(argv=None, *, client_factory=None) -> int:
         return 0 if exc.code in (0, None) else 2
     if args.command == "build":
         return _build(args, client_factory)
+    if args.command == "compare":
+        return _compare(args)
     ids = [i.strip() for i in args.ids.split(",") if i.strip()]
     if not ids:
         print("error: --ids needs at least one case id", file=sys.stderr)
@@ -137,6 +168,21 @@ def _build(args, client_factory) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     print(json.dumps({"case_id": case.case_id, "outcome": asdict(outcome)}, indent=2))
+    return 0
+
+
+def _compare(args) -> int:
+    try:
+        a = load_report(args.report_a)
+        b = load_report(args.report_b)
+        result = compare(a, b, metric=args.metric, resamples=args.resamples, seed=args.seed)
+    except OSError as exc:  # missing file, a directory, unreadable
+        print(f"error: cannot read report: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:  # not JSON, not a report, a case scored twice
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2))
     return 0
 
 

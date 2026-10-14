@@ -505,3 +505,41 @@ where `--spec` is a JSON file holding one `CaseSpec`. It builds the agent as
 the same client (from `client_factory`), prints the case id and the outcome
 as JSON to stdout, and exits 0; 2 on bad arguments; 1 on `LLMError`,
 `LookupError`, `ValueError` or a missing file, with a message on stderr.
+
+## researchos.compare (v7: is one playbook better than another?)
+
+Compares two evaluation reports case by case. Five or fifteen cases cannot
+settle much, so the comparison reports its own uncertainty instead of a bare
+difference of means. Lower Brier is better throughout.
+
+- `load_report(path) -> dict`: reads a JSON file holding the dict `evaluate`
+  returns, or a wrapper `{"result": <that dict>, ...}`. Returns the dict with
+  `"cases"`; raises ValueError if neither form is found.
+- `paired(a, b, metric="brier_judge") -> list[tuple[str, float, float]]`:
+  `(case_id, a_value, b_value)` for every case scored in both reports, in the
+  order of `a["cases"]`. A case is scored in a report when its record has the
+  metric as a number (a bool is not a number); skipped records have none.
+  A case id that appears twice among one report's scored records raises
+  ValueError.
+- `bootstrap_ci(diffs, resamples=10000, seed=0, level=0.95) -> tuple[float, float] | None`:
+  a percentile bootstrap of the mean. With `rng = random.Random(seed)`, each
+  of `resamples` resamples is `rng.choices(diffs, k=len(diffs))` and its mean
+  is kept; the result is `(tools.stats.quantile(means, (1 - level) / 2),
+  tools.stats.quantile(means, 1 - (1 - level) / 2))`. `None` for no diffs.
+  `resamples < 1` or `level` outside `(0, 1)` raises ValueError.
+- `compare(a, b, metric="brier_judge", resamples=10000, seed=0) -> dict`: with
+  the pairs above and `diff = b_value - a_value` per case (negative: `b` did
+  better):
+  `{"metric", "n", "mean_a", "mean_b", "mean_diff", "ci_low", "ci_high",
+  "b_better", "a_better", "ties", "cases": [{"case_id", "a", "b", "diff"}, ...]}`,
+  where `b_better` counts cases with `diff < 0`, `a_better` those with
+  `diff > 0`, and the CI is `bootstrap_ci` of the diffs. With no pairs, `n`
+  is 0, the means and CI bounds are None and the counts 0. A `metric` that
+  does not start with `"brier_"` raises ValueError (the counts assume lower
+  is better).
+
+CLI: `python -m researchos compare A.json B.json [--metric NAME]
+[--resamples N] [--seed S]` prints `compare(load_report(A), load_report(B),
+...)` to stdout as JSON and exits 0; 2 on bad arguments (including a metric
+that does not start with `brier_`); 1 on a missing file or a file
+`load_report` rejects, with a message on stderr.
