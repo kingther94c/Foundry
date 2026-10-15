@@ -1,17 +1,23 @@
 """Build real cases: documents from the web, the outcome from daily closes.
 
 Documents are found and fetched through the Claude API's server-side web
-tools (``fetch_pages``); an agent cuts the document proper out of each page
-(``select_span``) and extracts the pre-report consensus
-(``expectations_document``). Prices are never fetched here: they arrive as
-JSON files of ``[["YYYY-MM-DD", close], ...]``.
+tools (``fetch_pages``) or, when their addresses are already known, fetched
+directly with one GET each (``url_fetcher``, ``get_page``, ``html_to_text``);
+an agent cuts the document proper out of each page (``select_span``) and
+extracts the pre-report consensus (``expectations_document``). Prices are
+never fetched here: they arrive as JSON files of ``[["YYYY-MM-DD", close], ...]``.
 """
 
 from __future__ import annotations
 
+import http.client
+import logging
+import re
+import urllib.request
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, fields
 from datetime import date
+from html.parser import HTMLParser
 
 from tools.returns import abnormal_return, event_return
 
@@ -20,6 +26,8 @@ from researchos.jsonio import read_json
 from researchos.llm import BETAS, DEFAULT_MODEL, LLMError, _get, _is_api_error
 
 TIMINGS = ("bmo", "amc")
+
+log = logging.getLogger("researchos")
 
 
 # ---- prices and the outcome -------------------------------------------------------
@@ -165,6 +173,219 @@ def fetch_pages(client, request: str, *, model: str = DEFAULT_MODEL, max_searche
             return pages
         continuations += 1
         messages.append({"role": "assistant", "content": content})
+
+
+# ---- fetching pages by address --------------------------------------------------------
+
+# Elements whose contents are never shown.
+_HIDDEN_TAGS = frozenset({"script", "style", "noscript", "head", "svg", "template"})
+# What the head may hold: any other start tag there means it ended without its end tag.
+_HEAD_CONTENT = frozenset({"title", "meta", "link", "base", "style", "script", "noscript",
+                           "template"})
+# Each starts a new line, and so does its end tag (what follows is on a line of its own).
+_LINE_TAGS = frozenset({"p", "div", "br", "li", "tr", "table", "h1", "h2", "h3", "h4", "h5",
+                        "h6", "section", "article", "header", "footer", "pre", "blockquote",
+                        "ul", "ol", "dl", "dt", "dd", "hr"})
+_CELL_TAGS = frozenset({"td", "th"})
+_CELL_SEPARATOR = " | "
+# Every character str.splitlines() breaks a line at. In a page's source outside <pre> such
+# a break is only a space; inside <pre> it is a new line. Either way none is left within a
+# line, so select_span numbers exactly the lines of the text.
+_LINE_BREAKS = re.compile(
+    "\r\n|[\n\r\x0b\x0c\x1c\x1d\x1e\x85\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}]")
+_BLANKS = re.compile("[ \t\xa0]+")
+
+
+class _TextParser(HTMLParser):
+    """Collects a page's first <title> and its visible text, broken into lines."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.title: list[str] = []
+        self.title_seen = False  # the page's <title> has ended
+        self.in_title = False
+        self.capture_title = False
+        self.hidden: list[str] = []  # open hidden elements, innermost last
+        self.pre = 0  # open <pre> elements
+        # Per open table, the cells so far in its current row (None between rows).
+        self.rows: list[int | None] = []
+
+    def handle_starttag(self, tag, attrs):
+        if self.hidden and self.hidden[-1] == "head" and tag not in _HEAD_CONTENT:
+            self.hidden.pop()  # the head ended without its end tag
+        elif tag == "body" and "head" in self.hidden:
+            del self.hidden[self.hidden.index("head"):]
+        if tag == "title":
+            self.in_title = True
+            # An SVG's <title> is a tooltip, not the page's.
+            self.capture_title = not (self.title_seen or "svg" in self.hidden
+                                      or "template" in self.hidden)
+            return
+        if tag in _HIDDEN_TAGS:
+            self.hidden.append(tag)
+            return
+        if self.hidden:
+            return
+        if tag in _LINE_TAGS:
+            self.parts.append("\n")
+        if tag == "pre":
+            self.pre += 1
+        elif tag == "table":
+            self.rows.append(None)
+        elif tag == "tr":
+            if not self.rows:  # a row outside any table
+                self.rows.append(None)
+            self.rows[-1] = 0
+        elif tag in _CELL_TAGS:
+            if not self.rows:  # a cell outside any table
+                self.rows.append(None)
+            cells = self.rows[-1] or 0
+            if cells:
+                self.parts.append(_CELL_SEPARATOR)
+            self.rows[-1] = cells + 1
+
+    def handle_endtag(self, tag):
+        if tag == "title":
+            if self.in_title:
+                self.in_title = False
+                self.title_seen = self.title_seen or self.capture_title
+                self.capture_title = False
+            return
+        if tag in _HIDDEN_TAGS:
+            if tag in self.hidden:  # close it, and whatever was left open inside it
+                del self.hidden[len(self.hidden) - 1 - self.hidden[::-1].index(tag):]
+            return
+        if self.hidden:
+            return
+        if tag in _LINE_TAGS:
+            self.parts.append("\n")
+        if tag == "pre":
+            self.pre = max(self.pre - 1, 0)
+        elif tag == "table":
+            if self.rows:
+                self.rows.pop()
+        elif tag == "tr":
+            if self.rows:
+                self.rows[-1] = None
+
+    def handle_data(self, data):
+        if self.in_title:
+            if self.capture_title:
+                self.title.append(data)
+            return
+        if not self.hidden:
+            self.parts.append(_LINE_BREAKS.sub("\n" if self.pre else " ", data))
+
+
+def html_to_text(html: str) -> tuple[str, str]:
+    """``(title, text)`` of an HTML page, using only ``html.parser``.
+
+    The title is the text of the page's <title>, whitespace collapsed ("" when
+    there is none). The text is the visible text: script, style, noscript,
+    head, svg and template are dropped; block elements (p, div, br, li, tr,
+    table, h1-h6, ...) start new lines; the cells of a table row are joined by
+    " | "; character references are decoded; runs of spaces, tabs and
+    non-breaking spaces become one space; lines are stripped, empty ones dropped.
+    """
+    parser = _TextParser()
+    parser.feed(html)
+    parser.close()
+    title = " ".join("".join(parser.title).split())
+    lines = (_BLANKS.sub(" ", line).strip() for line in "".join(parser.parts).split("\n"))
+    return title, "\n".join(line for line in lines if line)
+
+
+_HTML_TYPES = frozenset({"text/html", "application/xhtml+xml"})
+
+
+def _urlopen(url: str, headers: dict) -> tuple[bytes, str]:
+    """The default transport: one GET through urllib; the body and its Content-Type."""
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers),
+                                    timeout=30) as response:
+            return response.read(), response.headers.get("Content-Type") or ""
+    except OSError:  # urllib's HTTP and URL errors, timeouts, refused connections
+        raise
+    except http.client.HTTPException as exc:
+        # A garbled status line or a body cut short: a network failure like the
+        # OSErrors above, so it is reported as one.
+        raise OSError(f"{url}: {exc!r}") from exc
+
+
+def _parse_content_type(content_type: str) -> tuple[str, str]:
+    """The media type (lower case) and the charset ("" when none) of a Content-Type."""
+    media_type, *params = content_type.split(";")
+    charset = ""
+    for param in params:
+        name, _, value = param.partition("=")
+        if name.strip().lower() == "charset" and not charset:
+            charset = value.strip().strip("\"'").strip()
+    return media_type.strip().lower(), charset
+
+
+def _decode(body: bytes, charset: str) -> str:
+    try:
+        text = body.decode(charset or "utf-8", errors="replace")
+    except LookupError:  # a charset Python does not know: read it as UTF-8
+        text = body.decode("utf-8", errors="replace")
+    return text.removeprefix("\N{ZERO WIDTH NO-BREAK SPACE}")  # a byte order mark is not text
+
+
+def get_page(url: str, *, user_agent: str, transport=None) -> FetchedPage:
+    """One GET of ``url`` with ``User-Agent: <user_agent>``; the page it returns.
+
+    ``transport(url, headers) -> (body, content_type)`` defaults to urllib. HTML
+    goes through ``html_to_text``; plain text is kept as it is; any other content
+    type (a PDF, an image) raises ValueError. The transport's errors (OSError,
+    which includes urllib's HTTP and URL errors) propagate.
+    """
+    body, content_type = (transport or _urlopen)(url, {"User-Agent": user_agent})
+    media_type, charset = _parse_content_type(content_type or "")
+    if media_type and media_type not in _HTML_TYPES and media_type != "text/plain":
+        raise ValueError(f"{url}: cannot read content type {content_type!r}; only HTML and "
+                         f"plain text pages are read")
+    text = _decode(body, charset)
+    if media_type == "text/plain":
+        return FetchedPage(url, "", text)
+    if not media_type and not text.lstrip().startswith("<"):
+        raise ValueError(f"{url}: no content type, and the body is not HTML")
+    return FetchedPage(url, *html_to_text(text))
+
+
+URL_KINDS = ("release", "transcript", "expectations")
+
+
+def _kind_of_request(request: str) -> str:
+    """Which document a build_case request asks for (see release_request and the others)."""
+    low = request.lower()
+    if "transcript" in low:
+        return "transcript"
+    if "consensus" in low:
+        return "expectations"
+    return "release"
+
+
+def url_fetcher(urls, *, user_agent: str, transport=None):
+    """A ``fetch(request) -> list[FetchedPage]`` for build_case that GETs known addresses.
+
+    ``urls`` maps "release", "transcript" and "expectations" to lists of
+    addresses; a kind with none gives ``[]``. An address whose fetch raises
+    OSError or ValueError is left out, with a warning naming it, so one dead
+    link does not stop the case.
+    """
+    addresses = {kind: list(urls.get(kind) or ()) for kind in URL_KINDS}
+
+    def fetch(request: str) -> list[FetchedPage]:
+        pages: list[FetchedPage] = []
+        for url in addresses[_kind_of_request(request)]:
+            try:
+                pages.append(get_page(url, user_agent=user_agent, transport=transport))
+            except (OSError, ValueError) as exc:
+                log.warning("left out %s: %s", url, exc)
+        return pages
+
+    return fetch
 
 
 # ---- cutting the document out of the page --------------------------------------------

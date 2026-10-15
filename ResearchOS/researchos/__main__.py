@@ -4,6 +4,8 @@
                                           [--knowledge-cutoff YYYY-MM-DD] [--mask-give-up CONF]
                                           [--mask-abstract] [--out FILE]
     python -m researchos build --root DIR --spec FILE --closes FILE --market-closes FILE
+                               [--release-url URL] [--transcript-url URL]
+                               [--expectations-url URL] [--user-agent TEXT]
                                [--out FILE]
     python -m researchos compare A.json B.json [--metric NAME] [--resamples N] [--seed S]
                                  [--out FILE]
@@ -17,6 +19,13 @@ FILE instead (researchos.jsonio.write_json) and prints nothing.
 train and evaluate refuse a case whose event date is not an ISO date, or is on or
 before the latest event date the playbook has learned from (its forecast would use
 reactions it could not have known): exit 1, with the reason on stderr.
+
+build finds the case's documents through the API's server-side web search and
+fetch. Given any --release-url, --transcript-url or --expectations-url (each may
+be repeated) it fetches exactly those addresses instead, with no web tools
+(researchos.sources.url_fetcher), sending --user-agent (default: the
+RESEARCHOS_USER_AGENT environment variable, else "ResearchOS/0.1 (research use)");
+sites such as SEC EDGAR ask for one naming who is fetching.
 
 A file compare reads is what `evaluate` or `train` printed (bare or wrapped as
 {"result": ...}); with -a/-b each side is the merge of its files' cases, in the
@@ -32,6 +41,7 @@ from __future__ import annotations
 import argparse
 import functools
 import json
+import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -45,7 +55,10 @@ from researchos.jsonio import write_json
 from researchos.llm import ClaudeJSON, LLMError, anthropic_client
 from researchos.loop import Roles, evaluate, parse_cutoff, train
 from researchos.masking import MaskConfig
-from researchos.sources import build_case, fetch_pages, load_case_spec, load_closes
+from researchos.sources import build_case, fetch_pages, load_case_spec, load_closes, url_fetcher
+
+USER_AGENT_ENV = "RESEARCHOS_USER_AGENT"
+DEFAULT_USER_AGENT = "ResearchOS/0.1 (research use)"
 
 
 def _iso_date(value: str) -> str:
@@ -130,6 +143,18 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--closes", required=True, help="JSON file of the stock's daily closes")
     p.add_argument("--market-closes", required=True, dest="market_closes",
                    help="JSON file of the market's daily closes")
+    for kind, what in (("release", "the results release"),
+                       ("transcript", "the earnings call transcript"),
+                       ("expectations", "a page stating the pre-report consensus")):
+        p.add_argument(f"--{kind}-url", dest=f"{kind}_urls", action="append", default=None,
+                       metavar="URL",
+                       help=f"fetch {what} from URL (repeat for several) instead of searching "
+                            f"the web; with any of the URL options no web tools are used")
+    p.add_argument("--user-agent", dest="user_agent", default=None, metavar="TEXT",
+                   help=f"User-Agent sent when fetching the URLs (default: the "
+                        f"{USER_AGENT_ENV} environment variable, else "
+                        f"{DEFAULT_USER_AGENT!r}); sites such as SEC EDGAR ask for one "
+                        f"naming who is fetching")
     _add_out(p)
     p = sub.add_parser("compare", help="paired comparison of two reports, or of two sides of "
                                        "several files each")
@@ -225,14 +250,28 @@ def main(argv=None, *, client_factory=None) -> int:
     return _emit(result, args.out)
 
 
+def _user_agent(given: str | None) -> str:
+    """--user-agent, else $RESEARCHOS_USER_AGENT (unless blank), else DEFAULT_USER_AGENT."""
+    if given is not None:
+        return given
+    from_env = os.environ.get(USER_AGENT_ENV, "")
+    return from_env if from_env.strip() else DEFAULT_USER_AGENT
+
+
 def _build(args, client_factory) -> int:
+    urls = {"release": args.release_urls or [], "transcript": args.transcript_urls or [],
+            "expectations": args.expectations_urls or []}
     try:
         spec = load_case_spec(args.spec)
         stock_closes = load_closes(args.closes)
         market_closes = load_closes(args.market_closes)
         client = (client_factory or anthropic_client)()
         agent = ClaudeJSON(client, effort="medium")
-        fetch = functools.partial(fetch_pages, client)
+        if any(urls.values()):
+            # The addresses are known: fetch exactly those, with no web tools.
+            fetch = url_fetcher(urls, user_agent=_user_agent(args.user_agent))
+        else:
+            fetch = functools.partial(fetch_pages, client)
         case = build_case(args.root, spec, fetch=fetch, agent=agent,
                           stock_closes=stock_closes, market_closes=market_closes)
         outcome = load_outcome(args.root, case.case_id)

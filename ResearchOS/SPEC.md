@@ -734,3 +734,54 @@ business; the masker and guesser rounds then run on the briefs.
   `mask_case`. CLI: `--mask-abstract` on `train` and `evaluate` runs with
   `MaskConfig(abstract=True)` (together with `--mask-give-up` when both are
   given), the abstractor being `ClaudeJSON` at effort `"high"`.
+
+## Fetching pages by address (v14)
+
+`build` finds its documents through the API's server-side web search and
+fetch. When the addresses are already known -- an 8-K exhibit, a transcript
+page, a preview article -- the pages can be fetched directly instead, with
+no web tools and no API tokens spent on finding them. In `researchos.sources`:
+
+- `html_to_text(html: str) -> tuple[str, str]`: `(title, text)` using only
+  `html.parser`. The title is the text of the `<title>` element, whitespace
+  collapsed, "" if there is none. The text is the visible text of the page:
+  the contents of `script`, `style`, `noscript`, `head`, `svg` and `template`
+  are dropped; `p`, `div`, `br`, `li`, `tr`, `table`, `h1`-`h6`, `section`,
+  `article`, `header`, `footer`, `pre`, `blockquote`, `ul`, `ol`, `dl`,
+  `dt`, `dd` and `hr` each start a new line; within a table row the cells
+  (`td`, `th`) are joined by " | "; character references are decoded; runs
+  of spaces, tabs and non-breaking spaces within a line become one space;
+  lines are stripped, and empty lines dropped.
+- `get_page(url, *, user_agent, transport=None) -> FetchedPage`: one GET
+  with the header `User-Agent: <user_agent>`. `transport(url, headers) ->
+  (body: bytes, content_type: str)`; the default calls
+  `urllib.request.urlopen(urllib.request.Request(url, headers=headers),
+  timeout=30)` and returns the body and the response's `Content-Type`
+  header ("" when absent). The body is decoded with the charset the content
+  type names (UTF-8 when none; undecodable bytes replaced). An HTML page --
+  a content type of `text/html` or `application/xhtml+xml`, or no content
+  type and a body that begins, after whitespace, with `<` -- becomes
+  `FetchedPage(url, *html_to_text(body))`; `text/plain` becomes
+  `FetchedPage(url, "", body)`; any other content type (a PDF, an image)
+  raises ValueError naming the url and the type. Errors from the transport
+  (`OSError`, which includes urllib's HTTP and URL errors) propagate.
+- `url_fetcher(urls, *, user_agent, transport=None)`: `urls` maps
+  `"release"`, `"transcript"` and `"expectations"` to lists of addresses.
+  Returns a `fetch(request) -> list[FetchedPage]` for `build_case`, which
+  tells the kinds apart by its requests: a request containing "transcript"
+  is the transcript's, else one containing "consensus" is the
+  expectations', else it is the release's. It returns `get_page` of each
+  address of that kind, in order; an address whose fetch raises `OSError`
+  or ValueError is left out, with a warning on the `researchos` logger
+  naming it, so one dead link does not stop the case. A kind with no
+  addresses gives `[]`.
+- No contact address is built in. The user agent comes from the caller;
+  sites such as SEC EDGAR ask for one that names who is fetching.
+
+CLI: `build` takes `--release-url URL`, `--transcript-url URL` and
+`--expectations-url URL` (each may be repeated) and `--user-agent TEXT`
+(default: the `RESEARCHOS_USER_AGENT` environment variable, else
+`"ResearchOS/0.1 (research use)"`). When any URL option is given, the
+fetcher is `url_fetcher` of those addresses and no web tools are used; the
+span and expectations agent is `ClaudeJSON` as before. Without URL options
+`build` works as before.

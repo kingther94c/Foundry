@@ -245,6 +245,14 @@ runs with valid briefs it agrees with the hand-written version, and where
 the abstractor returns no brief it raises an `LLMError` instead of masking
 an empty document, which the hand-written version did.
 
+`build` can now fetch documents straight from their addresses
+(`--release-url`, `--transcript-url`, `--expectations-url`, with
+`--user-agent` or `RESEARCHOS_USER_AGENT`; no contact address is built in),
+without the API's web tools. Foundry made it in 13 rounds and passed all 192
+acceptance tests. On a real page its HTML-to-text agrees with the
+hand-written version line for line, and gets the title right where the
+hand-written one swallowed the tooltips of the page's SVG icons.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name
