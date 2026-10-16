@@ -4,7 +4,7 @@ import json
 import random
 
 import pytest
-from tools.textmask import (redact, replace_years_before, scale_money, scale_table_numbers,
+from tools.textmask import (redact, replace_years_before, scale_money, scale_numbers,
                             shift_years)
 
 from conftest import FakeLLM, make_case, make_outcome, schema_client
@@ -50,11 +50,14 @@ def one_doc_case(text, event_date="2026-02-01"):
 
 
 def reference(text, mapping, cutoff):
-    """The v16 order: names, years long past, money, year shift, table numbers."""
+    """The v16 order with v17's last step: names, years long past, money, year shift, amounts.
+
+    v17 replaced the last step, scale_table_numbers, with scale_numbers.
+    """
     text = redact(text, mapping)
     if cutoff is not None:
         text = replace_years_before(text, cutoff, EARLIER_YEAR)
-    return scale_table_numbers(shift_years(scale_money(text, FACTOR), OFFSET), FACTOR)
+    return scale_numbers(shift_years(scale_money(text, FACTOR), OFFSET), FACTOR)
 
 
 def test_constant_and_default():

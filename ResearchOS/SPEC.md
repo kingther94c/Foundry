@@ -38,9 +38,13 @@ longest key first, case-insensitive by default, never rescans replacements),
 offset)`, `tools.textmask.scale_table_numbers(text, factor)` (every number
 that fills a table cell -- lines containing `" | "` -- times `factor`, keeping
 its format; percentages and bare years 1900-2099 are left alone),
-`tools.textmask.replace_years_before(text, cutoff, replacement)` (every year
-below `cutoff`, as `shift_years` recognizes years, becomes `replacement`; a
-year right after a letter, as in "FY2019", stays),
+`tools.textmask.scale_numbers(text, factor)` (every amount other than money,
+whatever the layout: numbers that fill a table cell, including a negative
+split as `(22` and `)` across two cells, lines that are just a number, and
+comma-grouped numbers in prose; percentages, bare years and numbers right
+after `$` stay), `tools.textmask.replace_years_before(text, cutoff,
+replacement)` (every year below `cutoff`, as `shift_years` recognizes years,
+becomes `replacement`; a year right after a letter, as in "FY2019", stays),
 `tools.stats.brier_score(probs, outcomes)`, `tools.stats.log_loss(probs,
 outcomes)`, `tools.stats.directional_accuracy(predicted, actual)`,
 `tools.stats.hedge_update(weights, losses, eta)`,
@@ -873,3 +877,19 @@ masking uses both.
 - CLI: `train` and `evaluate` take `--mask-history-years N` (an integer,
   `N >= 0`, else a bad argument), which runs with
   `MaskConfig(history_years=N)` together with the other mask options given.
+
+## Every amount, whatever the layout (v17)
+
+`scale_table_numbers` reads tables as `" | "`-separated rows. With v16 the
+16 small-cap cases still showed 404 of their 6,194 comma-grouped real
+figures after pre-masking, all in other layouts: one release printed every
+table cell on a line of its own (179 of its 179 came through), others split
+a negative as `(22` and `)` across two cells, and a slide deck flattened
+into long lines kept its figures inline. `tools.textmask.scale_numbers`
+(see "Using `tools`") scales every amount whatever the layout; masking uses
+it in place of `scale_table_numbers`.
+
+- Masking a text (in `pre_mask` and in every redaction-mode round) is as in
+  v16 with the last step changed: `scale_numbers(..., factor)` instead of
+  `scale_table_numbers(..., factor)`, still after `shift_years` and before
+  the round's `redact(..., mapping)`. Nothing else changes.

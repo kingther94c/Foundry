@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from tools.textmask import (find_terms, redact, replace_years_before, scale_money,
-                            scale_table_numbers, shift_years)
+                            scale_numbers, shift_years)
 
 from researchos.cases import Case, Document, document_from_dict, identity_terms, render_documents
 from researchos.jsonio import read_json, write_json
@@ -188,19 +188,22 @@ def _history_cutoff(case: Case, config: MaskConfig) -> int | None:
 
 def _mask_text(text: str, mapping: dict[str, str], factor: float, year_offset: int,
                cutoff: int | None = None) -> str:
-    """Names, then years long past, then money, then the year shift, then table numbers.
+    """Names, then years long past, then money, then the year shift, then every other amount.
 
     Names go first, so a name that contains a year is still caught. Years before `cutoff`
     (when it is not None) are dropped before the shift, which applies to the years that
-    remain. Table numbers are scaled last, so a number that scaling brings into the range of
-    years is not taken for a year and shifted, while a year heading a table column is
-    shifted and then left alone as a year.
+    remain. The other amounts are scaled last with `scale_numbers` (v17), whatever the
+    layout: table cells, a negative split as "(22" and ")" across two cells, lines that are
+    just a number, comma-grouped numbers in prose. Being last, a number that scaling brings
+    into the range of years is not taken for a year and shifted, while a year heading a
+    table column is shifted and then left alone as a year; money, already scaled by
+    `scale_money`, sits right after "$" and is left alone.
     """
     text = redact(text, mapping)
     if cutoff is not None:
         text = replace_years_before(text, cutoff, EARLIER_YEAR)
     text = shift_years(scale_money(text, factor), year_offset)
-    return scale_table_numbers(text, factor)
+    return scale_numbers(text, factor)
 
 
 def _mask_documents(documents: list[Document], mapping: dict[str, str], factor: float,
@@ -222,7 +225,7 @@ def _round_text(text: str, base: dict[str, str], mapping: dict[str, str], factor
 
     `base` (company, aliases, ticker) is redacted before anything else, so a name that holds
     a year or an amount is still caught. The masker writes its terms as it saw them --
-    years long past dropped, amounts and table numbers scaled, years shifted, earlier
+    years long past dropped, money and every other amount scaled, years shifted, earlier
     replacements in place -- so the full mapping is matched against that masked text only.
     """
     return redact(_mask_text(text, base, factor, year_offset, cutoff), mapping)
@@ -265,8 +268,8 @@ def guard_documents(documents: list[Document], terms: list[str],
 
 def pre_mask(case: Case, rng: random.Random,
              config: MaskConfig) -> tuple[list[Document], dict[str, str], float, int]:
-    """Deterministic masking: names, years long past, money and table numbers scaled by a
-    secret factor, years shifted.
+    """Deterministic masking: names, years long past, money and every other amount scaled by
+    a secret factor, years shifted.
 
     Raises ValueError for a negative `config.history_years`, or when it is set and the
     case's event date does not start with a four-digit year.
