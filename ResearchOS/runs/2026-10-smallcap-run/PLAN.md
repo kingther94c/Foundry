@@ -41,3 +41,43 @@ analysts judge from the release and the call.
    event-date batches, the rest held out; evaluate the held-out cases with
    the untrained and the trained playbook and compare them with
    `researchos compare`. Report it as underpowered whatever it shows.
+
+## Amendment, 2026-10-16: re-mask on a fixed pipeline
+
+Written after the first eight cases were masked and before any of the
+sixteen is masked again. No price, return or outcome file of any case has
+been opened; the masking runs read only `case.json`.
+
+The first eight cases (sc01-sc07, sc09) were masked as planned, with the
+code as it stood (v14). All eight stayed identifiable, but the maskers'
+reports, checked against the masked text, showed three defects in the
+pipeline rather than in the companies:
+
+1. The masker wrote its terms as they appeared to it (amounts scaled,
+   years shifted, earlier redactions in place) and each round applied them
+   to the original text, where such terms do not occur: on sc05, 16 of the
+   masker's 146 terms changed nothing.
+2. Real figures survived. Tables print `$` in a cell of its own, or not at
+   all, so only prose amounts were scaled: in sc07, 877 of 911 comma-grouped
+   numbers came through as reported (book value per share $27.13 among
+   them, which the guesser quoted).
+3. Years long past undid the year shift: guessers read it off a founding
+   year or the 1995 securities reform act and then mapped every other year
+   back.
+
+Fixes, each built by Foundry: terms are matched against the text the
+masker saw (v15, merged); numbers in `" | "` table rows are scaled and
+years more than three years before the event are replaced by "an earlier
+year" (tools v3 and ResearchOS v16, merged; `history_years=3`). That still
+leaves 404 of the sixteen cases' 6,194 comma-grouped real figures after
+pre-masking, all in other layouts (cells one per line, negatives split
+across cells, slide text); tools v4 and ResearchOS v17, being built when
+this was written, scale amounts in any layout (29 of 6,194 left with the
+hand-written reference). No case is masked again until they are merged.
+
+So the masking step is run again on all sixteen cases with the fixed
+pipeline, `history_years=3`, the same seeds, four rounds, masker and
+guesser played by different subagents, and a fresh guesser on each final
+mask. The eight masks made with v14 are reported as well, as the result
+before the fixes. Everything else in the plan stands, including the rule
+that training runs only if at least eight cases end masked.
