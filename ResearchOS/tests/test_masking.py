@@ -105,10 +105,12 @@ def test_mask_case_stops_when_guesser_fails(case):
     assert "Zephyr" not in all_text(m.documents)
     assert "the product line" in m.documents[0].text
     assert m.final_guesses == GUESS_MISS["guesses"]
-    # re-masked from the original documents with the full mapping
+    # re-masked from the original documents (v15): pre_mask's names before scaling and
+    # shifting, the full mapping after
+    _, base, _, _ = pre_mask(case, random.Random(1), MaskConfig())
     for masked, orig in zip(m.documents, case.documents):
-        assert masked.text == shift_years(scale_money(redact(orig.text, m.mapping), m.factor),
-                                          m.year_offset)
+        assert masked.text == redact(shift_years(scale_money(redact(orig.text, base), m.factor),
+                                                 m.year_offset), m.mapping)
 
 
 def test_mask_case_identifiable_after_max_rounds_and_clues_flow(case):

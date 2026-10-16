@@ -173,6 +173,31 @@ def _mask_documents(documents: list[Document], mapping: dict[str, str], factor: 
     ]
 
 
+def _round_text(text: str, base: dict[str, str], mapping: dict[str, str], factor: float,
+                year_offset: int) -> str:
+    """A redaction-mode round's text: pre_mask's masking with `base`, then `mapping`.
+
+    `base` (company, aliases, ticker) is redacted before scaling and shifting, so a name that
+    holds a year or an amount is still caught. The masker writes its terms as it saw them --
+    amounts scaled, years shifted, earlier replacements in place -- so the full mapping is
+    matched against the scaled and shifted text only.
+    """
+    return redact(_mask_text(text, base, factor, year_offset), mapping)
+
+
+def _round_documents(documents: list[Document], base: dict[str, str], mapping: dict[str, str],
+                     factor: float, year_offset: int) -> list[Document]:
+    return [
+        Document(
+            kind=doc.kind,
+            title=_round_text(doc.title, base, mapping, factor, year_offset),
+            text=_round_text(doc.text, base, mapping, factor, year_offset),
+            source="",
+        )
+        for doc in documents
+    ]
+
+
 def guard_documents(documents: list[Document], terms: list[str],
                     mapping: dict[str, str] | None = None) -> list[Document]:
     """Redact any identity term still present to "the Company" (recording it in mapping)."""
@@ -267,7 +292,21 @@ def _guesser_prompt(documents: list[Document]) -> str:
             + "\nWhich company is this? Give your guesses and the clues.")
 
 
+def _rewrite_replacements(mapping: dict[str, str], term: str, replacement: str) -> None:
+    """Redact `term` inside every replacement already in mapping (whole word, any case)."""
+    single = {term: replacement}
+    for key, value in list(mapping.items()):
+        if find_terms(value, [term]):
+            mapping[key] = redact(value, single)
+
+
 def _add_redactions(mapping: dict[str, str], output: dict) -> None:
+    """Add the masker's redactions to mapping, in order; a term already there is skipped.
+
+    Adding a term first rewrites every replacement already in the mapping that contains it,
+    so text an earlier redaction put in is redacted too and one redact pass with the mapping
+    still gives the final text. The new term's own replacement is kept as given.
+    """
     existing = {k.casefold() for k in mapping}
     redactions = output.get("redactions") if isinstance(output, dict) else None
     for item in redactions or []:
@@ -278,10 +317,12 @@ def _add_redactions(mapping: dict[str, str], output: dict) -> None:
             continue
         term = term.strip()
         if term.casefold() in existing:
-            continue  # an existing term keeps its first replacement
+            # An existing term keeps its place (its replacement may have been rewritten).
+            continue
         replacement = item.get("replacement")
         if not isinstance(replacement, str):
             replacement = DEFAULT_REPLACEMENT
+        _rewrite_replacements(mapping, term, replacement)
         mapping[term] = replacement
         existing.add(term.casefold())
 
@@ -318,6 +359,8 @@ def mask_case(case: Case, masker, guesser, rng: random.Random,
         raise ValueError("MaskConfig.abstract is set but no abstractor was given")
     terms = identity_terms(case)
     documents, mapping, factor, year_offset = pre_mask(case, rng, config)
+    # pre_mask's own mapping, applied to the originals before scaling and shifting.
+    base = dict(mapping)
     documents = guard_documents(documents, terms, mapping)
     briefs: list[Document] | None = None
     if config.abstract:
@@ -334,7 +377,8 @@ def mask_case(case: Case, masker, guesser, rng: random.Random,
                              MASKER_SCHEMA)
         _add_redactions(mapping, output)
         if briefs is None:
-            documents = _mask_documents(case.documents, mapping, factor, year_offset)
+            # Re-mask the originals; the masker's terms match the scaled, shifted text it saw.
+            documents = _round_documents(case.documents, base, mapping, factor, year_offset)
         else:
             # The briefs were written from text already scaled and shifted: redact only.
             documents = _redact_documents(briefs, mapping)

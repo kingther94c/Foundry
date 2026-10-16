@@ -187,8 +187,8 @@ class MaskedCase:
   1. `pre_mask`. 2. Up to `config.max_rounds` rounds: call the masker
   (previous clues included from round 2 on), add each proposed redaction with
   a non-empty term to the mapping (an existing term keeps its first
-  replacement), re-mask the *original* documents with the full mapping
-  (redact, then scale_money, then shift_years), then call the guesser. If
+  replacement), re-mask the *original* documents with the full mapping as
+  "Redacting what the masker sees (v15)" describes, then call the guesser. If
   `is_identified` is False the status is `"masked"` and the loop ends;
   otherwise the guesser's clues go to the next masker round. After the last
   round the status is `"identifiable"`. Giving up early: when
@@ -785,3 +785,41 @@ CLI: `build` takes `--release-url URL`, `--transcript-url URL` and
 fetcher is `url_fetcher` of those addresses and no web tools are used; the
 span and expectations agent is `ClaudeJSON` as before. Without URL options
 `build` works as before.
+
+## Redacting what the masker sees (v15)
+
+The masker proposes each term exactly as it appears in the text it was
+shown, where money amounts are already scaled, years already shifted and
+earlier redactions already replaced. Until now each round redacted the
+*original* documents before scaling and shifting, so such a term never
+matched: on the first small-cap case 16 of the masker's 146 terms changed
+nothing (for instance "inception in 2010", a shifted year, and "an
+automotive partner", the replacement of an earlier term), and the guesser
+kept naming the company from them.
+
+- In redaction mode (`MaskConfig.abstract` False), a round's documents are
+  made from the case's original documents: each title and text becomes
+  `redact(shift_years(scale_money(redact(original, base), factor), year_offset), mapping)`,
+  where `base` is the mapping `pre_mask` returned (company, aliases and
+  ticker, redacted before scaling and shifting so that a name containing a
+  year or an amount is still caught) and `mapping` is the full mapping. A
+  masker term is therefore matched against the scaled and shifted text only:
+  a term naming a shifted year never redacts the original year it came
+  from, nor a different original year that shifting happens to turn into
+  it. `source` stays `""`; the identity guard runs afterwards as before.
+  `pre_mask` itself is unchanged.
+- In both modes, when a redaction is added to the mapping, every replacement
+  already in the mapping that contains its term as a whole word (matched as
+  `redact` matches, ignoring case) is rewritten to `redact(replacement,
+  {term: new_replacement})`, so text an earlier redaction put in is redacted too and
+  one `redact` pass with the mapping still produces the final text. The new
+  redaction's own replacement is kept as given, even when it contains its own
+  term (it is not rewritten and does not grow from round to round). The
+  redactions of one masker output are added in order. A term already in the
+  mapping (ignoring case) is skipped as before: its key keeps its place,
+  though its replacement may have been rewritten by later terms.
+- `MaskedCase.mapping` (and `mask_key.json`) hold the mapping after these
+  rewrites.
+- Abstraction mode otherwise works as before: its rounds redact the briefs,
+  which are written in the scaled and shifted text the masker sees, so only
+  the rewriting of earlier replacements is new there.
