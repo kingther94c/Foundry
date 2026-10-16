@@ -54,7 +54,7 @@ def test_percent_sign_must_open_the_next_cell():
 
 
 def test_what_is_not_a_number():
-    for cell in ["$1.02", "5.90%", "Q2", "—", "1,234 units", "1,23", "12,3456", "1.", ".5", "+5",
+    for cell in ["$1.02", "5.90%", "Q2", "\u2014", "1,234 units", "1,23", "12,3456", "1.", ".5", "+5",
                  "(-5)", "- 5", "1 000", "(5", "5)"]:
         row = f"a | {cell} | b"
         assert scale_table_numbers(row, 2) == row, cell

@@ -6,7 +6,8 @@ import random
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from tools.textmask import find_terms, redact, scale_money, shift_years
+from tools.textmask import (find_terms, redact, replace_years_before, scale_money,
+                            scale_table_numbers, shift_years)
 
 from researchos.cases import Case, Document, document_from_dict, identity_terms, render_documents
 from researchos.jsonio import read_json, write_json
@@ -15,6 +16,8 @@ from researchos.llm import LLMError
 COMPANY_REPLACEMENT = "the Company"
 TICKER_REPLACEMENT = "TICKER"
 DEFAULT_REPLACEMENT = "[REDACTED]"
+# What a year long past (before the MaskConfig.history_years cutoff) becomes.
+EARLIER_YEAR = "an earlier year"
 MASKED_FILE = "masked.json"
 MASK_KEY_FILE = "mask_key.json"
 
@@ -31,6 +34,10 @@ class MaskConfig:
     # Rewrite each pre-masked document as a generic brief (the abstractor agent) and
     # run the masker and guesser rounds on the briefs.
     abstract: bool = False
+    # When set, every year before (year of case.event_date) - history_years becomes
+    # EARLIER_YEAR: a founding year or a statute's year would otherwise give away the shift.
+    # None changes nothing about years.
+    history_years: int | None = None
 
 
 @dataclass
@@ -156,17 +163,53 @@ _DROP_WORDS = frozenset(
 )
 
 
-def _mask_text(text: str, mapping: dict[str, str], factor: float, year_offset: int) -> str:
-    return shift_years(scale_money(redact(text, mapping), factor), year_offset)
+def _history_cutoff(case: Case, config: MaskConfig) -> int | None:
+    """The first year kept as a year under `config.history_years`; None when it is unset.
+
+    The cutoff is the year of `case.event_date` minus `history_years`; every year before it
+    becomes EARLIER_YEAR. Raises ValueError for a negative (or non-integer) `history_years`
+    and, when it is set, for an event date that does not start with a four-digit year.
+    """
+    years = config.history_years
+    if years is None:
+        return None
+    if isinstance(years, bool) or not isinstance(years, int):
+        raise ValueError(f"MaskConfig.history_years must be an integer >= 0 or None, "
+                         f"got {years!r}")
+    if years < 0:
+        raise ValueError(f"MaskConfig.history_years must not be negative, got {years}")
+    event_date = case.event_date
+    head = event_date[:4] if isinstance(event_date, str) else ""
+    if len(head) != 4 or not all(c in "0123456789" for c in head):
+        raise ValueError(f"case {case.case_id!r}: event_date {event_date!r} does not start "
+                         f"with a four-digit year, which MaskConfig.history_years needs")
+    return int(head) - years
+
+
+def _mask_text(text: str, mapping: dict[str, str], factor: float, year_offset: int,
+               cutoff: int | None = None) -> str:
+    """Names, then years long past, then money, then the year shift, then table numbers.
+
+    Names go first, so a name that contains a year is still caught. Years before `cutoff`
+    (when it is not None) are dropped before the shift, which applies to the years that
+    remain. Table numbers are scaled last, so a number that scaling brings into the range of
+    years is not taken for a year and shifted, while a year heading a table column is
+    shifted and then left alone as a year.
+    """
+    text = redact(text, mapping)
+    if cutoff is not None:
+        text = replace_years_before(text, cutoff, EARLIER_YEAR)
+    text = shift_years(scale_money(text, factor), year_offset)
+    return scale_table_numbers(text, factor)
 
 
 def _mask_documents(documents: list[Document], mapping: dict[str, str], factor: float,
-                    year_offset: int) -> list[Document]:
+                    year_offset: int, cutoff: int | None = None) -> list[Document]:
     return [
         Document(
             kind=doc.kind,
-            title=_mask_text(doc.title, mapping, factor, year_offset),
-            text=_mask_text(doc.text, mapping, factor, year_offset),
+            title=_mask_text(doc.title, mapping, factor, year_offset, cutoff),
+            text=_mask_text(doc.text, mapping, factor, year_offset, cutoff),
             source="",
         )
         for doc in documents
@@ -174,24 +217,25 @@ def _mask_documents(documents: list[Document], mapping: dict[str, str], factor: 
 
 
 def _round_text(text: str, base: dict[str, str], mapping: dict[str, str], factor: float,
-                year_offset: int) -> str:
+                year_offset: int, cutoff: int | None = None) -> str:
     """A redaction-mode round's text: pre_mask's masking with `base`, then `mapping`.
 
-    `base` (company, aliases, ticker) is redacted before scaling and shifting, so a name that
-    holds a year or an amount is still caught. The masker writes its terms as it saw them --
-    amounts scaled, years shifted, earlier replacements in place -- so the full mapping is
-    matched against the scaled and shifted text only.
+    `base` (company, aliases, ticker) is redacted before anything else, so a name that holds
+    a year or an amount is still caught. The masker writes its terms as it saw them --
+    years long past dropped, amounts and table numbers scaled, years shifted, earlier
+    replacements in place -- so the full mapping is matched against that masked text only.
     """
-    return redact(_mask_text(text, base, factor, year_offset), mapping)
+    return redact(_mask_text(text, base, factor, year_offset, cutoff), mapping)
 
 
 def _round_documents(documents: list[Document], base: dict[str, str], mapping: dict[str, str],
-                     factor: float, year_offset: int) -> list[Document]:
+                     factor: float, year_offset: int,
+                     cutoff: int | None = None) -> list[Document]:
     return [
         Document(
             kind=doc.kind,
-            title=_round_text(doc.title, base, mapping, factor, year_offset),
-            text=_round_text(doc.text, base, mapping, factor, year_offset),
+            title=_round_text(doc.title, base, mapping, factor, year_offset, cutoff),
+            text=_round_text(doc.text, base, mapping, factor, year_offset, cutoff),
             source="",
         )
         for doc in documents
@@ -221,7 +265,13 @@ def guard_documents(documents: list[Document], terms: list[str],
 
 def pre_mask(case: Case, rng: random.Random,
              config: MaskConfig) -> tuple[list[Document], dict[str, str], float, int]:
-    """Deterministic masking: names, money scaled by a secret factor, years shifted."""
+    """Deterministic masking: names, years long past, money and table numbers scaled by a
+    secret factor, years shifted.
+
+    Raises ValueError for a negative `config.history_years`, or when it is set and the
+    case's event date does not start with a four-digit year.
+    """
+    cutoff = _history_cutoff(case, config)  # checked before anything is drawn
     factor = rng.uniform(*config.factor_range)
     year_offset = rng.randint(*config.year_offset_range)
     mapping: dict[str, str] = {}
@@ -230,7 +280,7 @@ def pre_mask(case: Case, rng: random.Random,
             mapping[name.strip()] = COMPANY_REPLACEMENT
     if isinstance(case.ticker, str) and case.ticker.strip():
         mapping[case.ticker.strip()] = TICKER_REPLACEMENT
-    documents = _mask_documents(case.documents, mapping, factor, year_offset)
+    documents = _mask_documents(case.documents, mapping, factor, year_offset, cutoff)
     return documents, mapping, factor, year_offset
 
 
@@ -361,6 +411,8 @@ def mask_case(case: Case, masker, guesser, rng: random.Random,
     documents, mapping, factor, year_offset = pre_mask(case, rng, config)
     # pre_mask's own mapping, applied to the originals before scaling and shifting.
     base = dict(mapping)
+    # pre_mask has already checked history_years and the event date.
+    cutoff = _history_cutoff(case, config)
     documents = guard_documents(documents, terms, mapping)
     briefs: list[Document] | None = None
     if config.abstract:
@@ -378,7 +430,8 @@ def mask_case(case: Case, masker, guesser, rng: random.Random,
         _add_redactions(mapping, output)
         if briefs is None:
             # Re-mask the originals; the masker's terms match the scaled, shifted text it saw.
-            documents = _round_documents(case.documents, base, mapping, factor, year_offset)
+            documents = _round_documents(case.documents, base, mapping, factor, year_offset,
+                                         cutoff)
         else:
             # The briefs were written from text already scaled and shifted: redact only.
             documents = _redact_documents(briefs, mapping)

@@ -35,7 +35,13 @@ LLMs; nothing in the tests touches the network.
 longest key first, case-insensitive by default, never rescans replacements),
 `tools.textmask.find_terms(text, terms, *, case_sensitive=False)`,
 `tools.textmask.scale_money(text, factor)`, `tools.textmask.shift_years(text,
-offset)`, `tools.stats.brier_score(probs, outcomes)`, `tools.stats.log_loss(probs,
+offset)`, `tools.textmask.scale_table_numbers(text, factor)` (every number
+that fills a table cell -- lines containing `" | "` -- times `factor`, keeping
+its format; percentages and bare years 1900-2099 are left alone),
+`tools.textmask.replace_years_before(text, cutoff, replacement)` (every year
+below `cutoff`, as `shift_years` recognizes years, becomes `replacement`; a
+year right after a letter, as in "FY2019", stays),
+`tools.stats.brier_score(probs, outcomes)`, `tools.stats.log_loss(probs,
 outcomes)`, `tools.stats.directional_accuracy(predicted, actual)`,
 `tools.stats.hedge_update(weights, losses, eta)`,
 `tools.stats.combine_probabilities(probs, weights)`.
@@ -823,3 +829,47 @@ kept naming the company from them.
 - Abstraction mode otherwise works as before: its rounds redact the briefs,
   which are written in the scaled and shifted text the masker sees, so only
   the rewriting of earlier replacements is new there.
+
+## Tables and years long past (v16)
+
+On the first small-cap cases, masking left two kinds of real figures in
+place. Financial tables kept their reported numbers (in one release 877 of
+911 comma-grouped numbers came through unchanged): the tables put `$` in a
+cell of its own or print rows with no `$`, and `scale_money` only scales
+amounts with an attached `$`. And years long past -- a founding year, the
+year of a statute -- let the guesser work out the year shift and then undo
+it everywhere ("PSLRA 1995 shown as 1987, an 8-year shift").
+`tools.textmask` now has `scale_table_numbers(text, factor)` and
+`replace_years_before(text, cutoff, replacement)` (see "Using `tools`");
+masking uses both.
+
+- `EARLIER_YEAR = "an earlier year"` (a module constant of
+  `researchos.masking`).
+- `MaskConfig.history_years: int | None = None`. When it is set, the cutoff
+  is the year of `case.event_date` (`int(case.event_date[:4])`) minus
+  `history_years`, and every year before the cutoff becomes `EARLIER_YEAR`.
+  A negative `history_years` raises ValueError (from `pre_mask`, and so from
+  `mask_case`).
+- Masking a text with mapping `m` now goes: `redact(text, m)`; then, when
+  `history_years` is set, `replace_years_before(..., cutoff, EARLIER_YEAR)`;
+  then `scale_money(..., factor)`; then `shift_years(..., year_offset)`;
+  then `scale_table_numbers(..., factor)`. Names are redacted first, so a
+  name that contains a year is still caught; years long past are dropped
+  before the shift, which applies to the years that remain; table numbers
+  are scaled after the shift, so a number that scaling brings into the
+  range of years is not taken for a year and shifted, while a year that
+  heads a table column is shifted and then left alone as a year.
+- `pre_mask(case, rng, config)` masks every title and text this way with
+  its base mapping (the factor and offset are drawn as before). In
+  redaction mode a round's documents are the originals masked this way with
+  `base` and then redacted with the full mapping, as in v15:
+  `redact(<the masking above with base>, mapping)`. In abstraction mode the
+  abstractor receives `pre_mask`'s documents, so it too never sees a table's
+  real numbers or a year long past; its briefs are redacted as before.
+- The year replacement uses the case, not the text: a case whose
+  `event_date` does not start with a four-digit year raises ValueError when
+  `history_years` is set. With `history_years` None nothing about years
+  changes.
+- CLI: `train` and `evaluate` take `--mask-history-years N` (an integer,
+  `N >= 0`, else a bad argument), which runs with
+  `MaskConfig(history_years=N)` together with the other mask options given.

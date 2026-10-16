@@ -2,7 +2,8 @@
 
     python -m researchos {train,evaluate} --root DIR --playbook FILE --ids ID[,ID...] [--seed N]
                                           [--knowledge-cutoff YYYY-MM-DD] [--mask-give-up CONF]
-                                          [--mask-abstract] [--out FILE]
+                                          [--mask-abstract] [--mask-history-years N]
+                                          [--out FILE]
     python -m researchos build --root DIR --spec FILE --closes FILE --market-closes FILE
                                [--release-url URL] [--transcript-url URL]
                                [--expectations-url URL] [--user-agent TEXT]
@@ -81,6 +82,17 @@ def _give_up_confidence(value: str) -> float:
     return conf
 
 
+def _history_years(value: str) -> int:
+    """argparse type: an integer N >= 0."""
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not an integer: {value!r}") from None
+    if n < 0:
+        raise argparse.ArgumentTypeError(f"must be an integer N >= 0: {value!r}")
+    return n
+
+
 def _brier_metric(value: str) -> str:
     """argparse type: a metric name starting with "brier_" (compare assumes lower is better)."""
     if not value.startswith("brier_"):
@@ -136,6 +148,10 @@ def _parser() -> argparse.ArgumentParser:
         p.add_argument("--mask-abstract", dest="mask_abstract", action="store_true",
                        help="rewrite each pre-masked document as a generic brief (abstractor "
                             "agent) before the masker and guesser rounds")
+        p.add_argument("--mask-history-years", dest="mask_history_years", type=_history_years,
+                       default=None, metavar="N",
+                       help="replace every year more than N years before the case's event "
+                            "year with 'an earlier year' when masking (N >= 0)")
         _add_out(p)
     p = sub.add_parser("build")
     p.add_argument("--root", required=True)
@@ -234,9 +250,11 @@ def main(argv=None, *, client_factory=None) -> int:
         roles = build_roles(client, abstract=args.mask_abstract)
         run = train if args.command == "train" else evaluate
         kwargs = {"seed": args.seed, "knowledge_cutoff": args.knowledge_cutoff}
-        if args.mask_give_up is not None or args.mask_abstract:
+        if (args.mask_give_up is not None or args.mask_abstract
+                or args.mask_history_years is not None):
             kwargs["mask_config"] = MaskConfig(give_up_confidence=args.mask_give_up,
-                                               abstract=args.mask_abstract)
+                                               abstract=args.mask_abstract,
+                                               history_years=args.mask_history_years)
         result = run(args.root, ids, args.playbook, roles, **kwargs)
     except LLMError as exc:
         print(f"error: LLM call failed: {exc}", file=sys.stderr)
@@ -244,7 +262,7 @@ def main(argv=None, *, client_factory=None) -> int:
     except FileNotFoundError as exc:
         print(f"error: missing file: {exc}", file=sys.stderr)
         return 1
-    except ValueError as exc:  # a look-ahead or undated case, refused before anything ran
+    except ValueError as exc:  # a look-ahead or undated case, or one masking cannot date
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return _emit(result, args.out)
