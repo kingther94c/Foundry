@@ -151,3 +151,99 @@ def test_replace_years_before_inserts_replacement_literally():
     assert t.replace_years_before("in 1999 and 2001", 2000, r"\g<0> \1") == r"in \g<0> \1 and 2001"
     # Replacement text is not scanned again.
     assert t.replace_years_before("in 1999", 2000, "1990") == "in 1990"
+
+
+@pytest.mark.parametrize(
+    "src, expected",
+    [
+        # The examples in SPEC.md.
+        ("over 1,300 tenants", "over 650 tenants"),
+        ("a 1,000 percent rise", "a 1,000 percent rise"),
+        ("$1,300", "$1,300"),
+        ("500 tenants", "500 tenants"),
+        ("Net | 1,000 | | 30 | %", "Net | 500 | | 30 | %"),
+        ("Loss | (22 | )", "Loss | (11 | )"),
+        ("Q2 | Sales 2,000 and 3", "Q2 | Sales 1,000 and 3"),
+        ("(1,000)", "(500)"),
+        ("  64", "  32"),
+        ("2026", "2026"),
+        # Each line is handled on its own; carriage returns stay where they were.
+        ("", ""),
+        ("over 1,300\r\nRevenue | 1,000\r\n", "over 650\r\nRevenue | 500\r\n"),
+    ],
+)
+def test_scale_numbers_half(src, expected):
+    assert t.scale_numbers(src, 0.5) == expected
+
+
+def test_scale_numbers_prose_boundaries():
+    def s(text):
+        return t.scale_numbers(text, 2)
+
+    assert s("1,234.5 and 12,345,678.") == "2,469.0 and 24,691,356."
+    assert s("a loss of (1,000), or -1,000; _1,000") == "a loss of (2,000), or -2,000; _2,000"
+    untouched = "a1,000 1,000b x.1,000 ,1,000 $1,000 US$1,000 1,000,5 1,000.5.6 1,2345 1234,567"
+    assert s(untouched) == untouched
+    # Numbers without comma groups are not amounts in prose.
+    assert s("500 stores, 3.5 times, 12345 units in 2026") == "500 stores, 3.5 times, 12345 units in 2026"
+
+
+def test_scale_numbers_leaves_percentages_in_prose():
+    text = "1,000% 1,000 % 1,000 Percent 1,000 per cent 1,000 BPS 1,000 basis points 1,000.5 percentage points"
+    assert t.scale_numbers(text, 2) == text
+    assert t.scale_numbers("1,000 points, 1,000 per share", 2) == "2,000 points, 2,000 per share"
+
+
+def test_scale_numbers_one_cell_per_line():
+    src = "Revenue\n63,296\n  64\n(1.5)\n-4\n2026\n1899\n2,026\r\n5.90%\n1.\n+5\n"
+    expected = "Revenue\n126,592\n  128\n(3.0)\n-8\n2026\n3798\n4,052\r\n5.90%\n1.\n+5\n"
+    assert t.scale_numbers(src, 2) == expected
+
+
+@pytest.mark.parametrize(
+    "src, expected",
+    [
+        # Rows are scaled as scale_table_numbers scales them...
+        ("Revenue | 1,234 | 1,000", "Revenue | 2,468 | 2,000"),
+        ("Net loss | $ | (80.2) | | -4.6", "Net loss | $ | (160.4) | | -9.2"),
+        ("Margin | 23.6 | % | | 23.9 | %", "Margin | 23.6 | % | | 23.9 | %"),
+        ("| 2026 | | 2025 |", "| 2026 | | 2025 |"),
+        # ...a cell before a "%" cell is a percentage and stays as written, even comma-grouped...
+        ("x | 1,000 | %", "x | 1,000 | %"),
+        # ...and comma-grouped numbers in the other cells are scaled as in prose, once.
+        (
+            "Sales | 1,234 units | $1,300 | 5.90% | 1,000 bps",
+            "Sales | 2,468 units | $1,300 | 5.90% | 1,000 bps",
+        ),
+        ("x | 1,000 | 2,000 units", "x | 2,000 | 4,000 units"),
+        ("Revenue 1,000 | 7", "Revenue 2,000 | 14"),
+        # "(" and a number, closed in the next cell, is a negative amount (never a year).
+        ("Loss | (2026 |  ) | (1,234.5 | )x", "Loss | (4052 |  ) | (2,469.0 | )x"),
+        # Not closed in the next cell, signed, or the last cell: not a number cell.
+        ("Loss | (22 | x | (22 | (-22 | ) | (22", "Loss | (22 | x | (22 | (-22 | ) | (22"),
+    ],
+)
+def test_scale_numbers_table_rows(src, expected):
+    assert t.scale_numbers(src, 2) == expected
+
+
+def test_scale_numbers_formats_as_scale_money():
+    for number in ["1,234.567", "0.05", "999", "1,000,000", "12.5"]:
+        expected = t.scale_money("$" + number, 0.37)[1:]
+        assert t.scale_numbers(number, 0.37) == expected
+        assert t.scale_numbers(f"r | {number}", 0.37) == f"r | {expected}"
+    expected = t.scale_money("$1,234.567", 0.37)[1:]
+    assert t.scale_numbers("about 1,234.567 units", 0.37) == f"about {expected} units"
+    assert t.scale_numbers("900,000\n9000", 2) == "1,800,000\n18000"
+
+
+def test_scale_numbers_after_scale_money_scales_each_amount_once():
+    text = "Revenue of $1,300 million, up 12% from 1,150 stores\nCash | $ | 2,000 | US$4,000"
+    masked = t.scale_numbers(t.scale_money(text, 0.5), 0.5)
+    assert masked == "Revenue of $650 million, up 12% from 575 stores\nCash | $ | 1,000 | US$2,000"
+
+
+@pytest.mark.parametrize("factor", [0, -1, None])
+def test_scale_numbers_rejects_non_positive_factor(factor):
+    with pytest.raises(ValueError):
+        t.scale_numbers("no numbers here", factor)

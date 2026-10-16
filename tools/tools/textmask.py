@@ -79,23 +79,31 @@ _CELL_SIGNED = re.compile(r"(?P<minus>-?)" + _UNSIGNED)
 _CELL_PARENS = re.compile(r"\(" + _UNSIGNED + r"\)")
 # A bare year in a cell is a column heading, not an amount.
 _CELL_YEAR = re.compile(r"(?:19|20)[0-9]{2}")
+# The first half of a negative amount whose closing parenthesis is in the next cell: "(22".
+_CELL_OPEN_PARENS = re.compile(r"\(" + _UNSIGNED)
+
+
+def _number_cell(cell: str, factor: int | float, *, open_parens: bool = False) -> str | None:
+    """Return the cell with its number scaled; None if it is a year or not just a number."""
+    body = cell.strip()
+    if _CELL_YEAR.fullmatch(body):
+        return None
+    if (m := _CELL_SIGNED.fullmatch(body)) is not None:
+        number = m.group("minus") + _scaled(m.group("int"), m.group("frac"), factor)
+    elif (m := _CELL_PARENS.fullmatch(body)) is not None:
+        number = "(" + _scaled(m.group("int"), m.group("frac"), factor) + ")"
+    elif open_parens and (m := _CELL_OPEN_PARENS.fullmatch(body)) is not None:
+        number = "(" + _scaled(m.group("int"), m.group("frac"), factor)
+    else:
+        return None
+    start = len(cell) - len(cell.lstrip())
+    return cell[:start] + number + cell[start + len(body):]
 
 
 def _scale_cell(cell: str, factor: int | float) -> str:
     """Return the cell with its number scaled; unchanged if it is a year or not just a number."""
-    body = cell.strip()
-    if _CELL_YEAR.fullmatch(body):
-        return cell
-    m = _CELL_SIGNED.fullmatch(body)
-    if m is not None:
-        number = m.group("minus") + _scaled(m.group("int"), m.group("frac"), factor)
-    else:
-        m = _CELL_PARENS.fullmatch(body)
-        if m is None:
-            return cell
-        number = "(" + _scaled(m.group("int"), m.group("frac"), factor) + ")"
-    start = len(cell) - len(cell.lstrip())
-    return cell[:start] + number + cell[start + len(body):]
+    scaled = _number_cell(cell, factor)
+    return cell if scaled is None else scaled
 
 
 def _scale_row(row: str, factor: int | float) -> str:
@@ -113,6 +121,52 @@ def scale_table_numbers(text: str, factor: int | float) -> str:
     _check_factor(factor)
     lines = text.split("\n")
     return "\n".join(_scale_row(line, factor) if " | " in line else line for line in lines)
+
+
+# In prose only a comma-grouped number is taken for an amount: not after a digit, an ASCII
+# letter, ",", "." or "$" (money is scale_money's), not followed by a digit, an ASCII letter,
+# or "," or "." and a digit, and not a percentage. Backtracking cannot yield a shorter match,
+# because a shorter one is always followed by a digit or by "," or "." and a digit.
+_PROSE_NUMBER = re.compile(
+    r"(?<![0-9A-Za-z,.$])"
+    r"(?P<int>[0-9]{1,3}(?:,[0-9]{3})+)(?:\.(?P<frac>[0-9]+))?"
+    r"(?![0-9A-Za-z])(?![,.][0-9])"
+    r"(?! *(?i:%|percent|per cent|bps|basis point))"
+)
+
+
+def _scale_prose(text: str, factor: int | float) -> str:
+    """Return text with each comma-grouped number that is an amount multiplied by factor."""
+    return _PROSE_NUMBER.sub(lambda m: _scaled(m.group("int"), m.group("frac"), factor), text)
+
+
+def _scale_any_row(row: str, factor: int | float) -> str:
+    """Return the row scaled as _scale_row does, also scaling split "(22" cells and text cells."""
+    cells = row.split("|")
+    scaled = []
+    for i, cell in enumerate(cells):
+        following = cells[i + 1].strip() if i + 1 < len(cells) else ""
+        if following.startswith("%"):
+            # A percentage whose sign the table printed in a cell of its own stays as written.
+            scaled.append(cell)
+            continue
+        number = _number_cell(cell, factor, open_parens=following.startswith(")"))
+        scaled.append(_scale_prose(cell, factor) if number is None else number)
+    return "|".join(scaled)
+
+
+def _scale_line(line: str, factor: int | float) -> str:
+    """Return the line with its amounts scaled as a table row, a lone number or prose."""
+    if " | " in line:
+        return _scale_any_row(line, factor)
+    number = _number_cell(line, factor)
+    return _scale_prose(line, factor) if number is None else number
+
+
+def scale_numbers(text: str, factor: int | float) -> str:
+    """Return text with every amount other than money multiplied by factor, whatever the layout; never None."""
+    _check_factor(factor)
+    return "\n".join(_scale_line(line, factor) for line in text.split("\n"))
 
 
 # A four-digit year from 1900 to 2099 not followed by a digit, nor by "," or "." and a

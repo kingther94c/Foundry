@@ -10,7 +10,7 @@ contract.
 | `tools.finance` | growth, CAGR, margins, basis-point changes, free cash flow, TTM, earnings surprise and beat/miss |
 | `tools.returns` | simple/log/compound returns, abnormal and event-window returns, drawdown, volatility |
 | `tools.stats` | mean, stdev, quantiles, winsorizing, Brier score, log loss, calibration, multiplicative-weights updates, probability pooling |
-| `tools.textmask` | whole-word redaction, money rescaling (in prose and in table cells), year shifting and dropping years long past -- for disguising a document's identity |
+| `tools.textmask` | whole-word redaction, money and amount rescaling in any layout, year shifting and dropping years long past -- for disguising a document's identity |
 | `tools.dates` | fiscal quarters for any year end, business-day arithmetic |
 
 ```
@@ -57,3 +57,11 @@ everyone knows (a founding year, the 1995 securities reform act). Foundry
 made both in 6 rounds through the relay; they pass all 24 new acceptance
 cases (`test_v3_acceptance.py`) and agree with a hand-written reference on
 20,000 fuzzed inputs.
+
+v4 added `textmask.scale_numbers`: with v3 in place, 404 of the sixteen
+cases' 6,194 comma-grouped real figures still came through, all in layouts
+v3 does not read as tables (a cell per line, a negative split as `(22` and
+`)` across cells, slide text). `scale_numbers` scales every amount other
+than money whatever the layout, leaving 29. Foundry made it in 7 rounds;
+it passes all 42 new acceptance cases (`test_v4_acceptance.py`) and agrees
+with a hand-written reference on 30,000 fuzzed inputs.

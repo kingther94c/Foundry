@@ -187,3 +187,47 @@ year. In `tools.textmask`:
   `"Reform Act of 1995."` -> `"Reform Act of an earlier year."`; `"in 2025
   and 2022"` -> `"in 2025 and an earlier year"`; `"$1,995"`, `"2019.5"`,
   `"FY2019"` and `"FY19"` are unchanged.
+
+## v4: every amount, whatever the layout
+
+`scale_table_numbers` reads a table as rows of `" | "`-separated cells. Real
+releases come in other layouts too: converters that put every cell on a
+line of its own, accounts that print a negative as `(22` in one cell and
+`)` in the next, slide decks flattened into long lines. In those, real
+figures still came through. `scale_numbers` scales every number that is an
+amount, whatever the layout, except the money amounts `scale_money`
+handles; it is meant to run after `scale_money` and to take the place of
+`scale_table_numbers`. In `tools.textmask`:
+
+- `scale_numbers(text, factor) -> str`: the text is split on `"\n"` and
+  rejoined with `"\n"`; each line is handled on its own, and every number is
+  scaled at most once.
+  - A table row (a line containing `" | "`) is handled as
+    `scale_table_numbers` handles it, with one addition: a cell that,
+    without whitespace, is `(` followed by a number (no `-`, no closing
+    parenthesis), and whose next cell, without whitespace, begins with `)`,
+    is a negative amount in parentheses and is scaled too. In the row's
+    remaining cells (those not scaled as a number), comma-grouped numbers
+    are scaled as in prose (below).
+  - A line that, without the whitespace around it, is just a number, as a
+    table cell would be (`"63,296"`, `"(1.5)"`, `"-4"`), is scaled as a
+    table cell is, unless it is a year (four digits from 1900 to 2099 with
+    no sign, comma, decimal part or parentheses).
+  - Any other line is prose. In prose, a comma-grouped number -- one to
+    three digits, then one or more groups of a comma and three digits, then
+    optionally `.` and digits -- is scaled when the character before it is
+    not a digit, an ASCII letter, `,`, `.` or `$`, and the number is not
+    followed by a digit, an ASCII letter, or a `,` or `.` that is itself
+    followed by a digit; unless it is a percentage: followed, after optional
+    spaces, by `%`, `percent`, `per cent`, `bps` or `basis point` (any
+    case). Other numbers in prose (`500`, `3.5`, years) stay as they are.
+  - Scaled numbers keep their decimal places, use comma separators exactly
+    when the original did, and keep their sign or parentheses and the
+    whitespace around them (formatted as `scale_money` formats).
+  - `factor <= 0` raises ValueError.
+  - Examples with factor 0.5: `"over 1,300 tenants"` -> `"over 650
+    tenants"`; `"a 1,000 percent rise"`, `"$1,300"` and `"500 tenants"` are
+    unchanged; `"Net | 1,000 | | 30 | %"` -> `"Net | 500 | | 30 | %"`;
+    `"Loss | (22 | )"` -> `"Loss | (11 | )"`; `"Q2 | Sales 2,000 and 3"` ->
+    `"Q2 | Sales 1,000 and 3"`; the lines `"(1,000)"` and `"  64"` become
+    `"(500)"` and `"  32"`; the line `"2026"` is unchanged.
