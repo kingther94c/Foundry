@@ -137,3 +137,53 @@ question the same way. Neither ever raises.
 - `tools.stats.is_number(value) -> bool`: True for an `int` (of any size --
   an int is always finite) and for a finite `float`; False for a bool, NaN,
   plus or minus infinity, None, a string, and anything else.
+
+## v3: amounts in tables, years long past
+
+Masking scales money and shifts years so that a document's figures cannot
+be looked up. Two gaps let real figures through. Financial tables, as
+`html_to_text`-style converters write them (cells joined by `" | "`), put
+the `$` in a cell of its own (`"Book value per share | $ | 27.13"`) and
+print most rows with no `$` at all, so `scale_money` leaves them as
+reported. And a year long past -- a founding year, the year of a statute
+everyone knows -- tells a reader the shift, which then undoes every other
+year. In `tools.textmask`:
+
+- `scale_table_numbers(text, factor) -> str`: multiply the numbers in table
+  cells by `factor`.
+  - The text is split on `"\n"` and rejoined with `"\n"`. A line that
+    contains `" | "` is a table row; every other line stays exactly as it is.
+  - The cells of a table row are the pieces between `"|"` characters (the
+    first piece, before the first `"|"`, is a cell too). A cell is scaled
+    when its text, without the whitespace around it, is a number: an
+    optional `-`, then digits with comma thousands separators (one to three
+    digits, then groups of a comma and three digits) or plain digits, then
+    an optional `.` and digits; the whole may instead be wrapped in
+    parentheses, `(...)`, with no `-` (a negative amount in accounts).
+  - The new number is the old one times `factor`, keeping its decimal
+    places, using comma separators exactly when the original did (formatted
+    as `scale_money` formats), and keeping the `-` or the parentheses and
+    the whitespace around it; the `|` characters stay where they were.
+  - Not scaled: a cell whose next cell, without whitespace, begins with `%`
+    (a percentage whose sign the table printed in a cell of its own); a
+    year, four digits from 1900 to 2099 with no sign, comma, decimal part or
+    parentheses; and every cell that is not just a number (`"$1.02"`,
+    `"5.90%"`, `"Q2"`, `"1,234 units"`, an empty cell). Amounts with an
+    attached `$` are `scale_money`'s.
+  - A ratio printed without a percent sign is scaled like any other number:
+    nothing in a cell says it is a ratio.
+  - `factor <= 0` raises ValueError.
+  - Examples with factor 0.5: `"Revenue | 1,234 | 1,000"` -> `"Revenue | 617
+    | 500"`; `"Net loss | $ | (80.2) | | -4.6"` -> `"Net loss | $ | (40.1) |
+    | -2.3"`; `"Margin | 23.6 | % | | 23.9 | %"`, `"| 2026 | | 2025 |"` and
+    `"Sales of 1,234 units"` are unchanged.
+- `replace_years_before(text, cutoff, replacement) -> str`: every year, as
+  `shift_years` recognizes one (four digits from 1900 to 2099 with the same
+  rules about the characters around it), that is less than `cutoff` becomes
+  `replacement`. A year directly preceded by an ASCII letter (as in
+  `"FY2019"`) and the two-digit `FYdd` form are left as they are; so is
+  everything else. Examples with cutoff 2023 and replacement `"an earlier
+  year"`: `"founded in 1902"` -> `"founded in an earlier year"`;
+  `"Reform Act of 1995."` -> `"Reform Act of an earlier year."`; `"in 2025
+  and 2022"` -> `"in 2025 and an earlier year"`; `"$1,995"`, `"2019.5"`,
+  `"FY2019"` and `"FY19"` are unchanged.

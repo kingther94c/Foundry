@@ -10,7 +10,7 @@ contract.
 | `tools.finance` | growth, CAGR, margins, basis-point changes, free cash flow, TTM, earnings surprise and beat/miss |
 | `tools.returns` | simple/log/compound returns, abnormal and event-window returns, drawdown, volatility |
 | `tools.stats` | mean, stdev, quantiles, winsorizing, Brier score, log loss, calibration, multiplicative-weights updates, probability pooling |
-| `tools.textmask` | whole-word redaction, money rescaling and year shifting -- for disguising a document's identity |
+| `tools.textmask` | whole-word redaction, money rescaling (in prose and in table cells), year shifting and dropping years long past -- for disguising a document's identity |
 | `tools.dates` | fiscal quarters for any year end, business-day arithmetic |
 
 ```
@@ -48,3 +48,12 @@ rounds, with the API out of credit and a subagent standing in for the model
 behind a local relay; they pass all 37 new acceptance cases (`test_v2_acceptance.py`), including
 `is_number(10 ** 400)`, where `math.isfinite` would overflow -- Foundry
 handled it, with a comment saying why.
+
+v3 added `textmask.scale_table_numbers` and `textmask.replace_years_before`.
+On the first small-cap ResearchOS cases, masked releases still carried their
+real table figures (a `$` in a cell of its own, most rows with no `$`, so
+`scale_money` never saw them), and guessers undid the year shift from years
+everyone knows (a founding year, the 1995 securities reform act). Foundry
+made both in 6 rounds through the relay; they pass all 24 new acceptance
+cases (`test_v3_acceptance.py`) and agree with a hand-written reference on
+20,000 fuzzed inputs.

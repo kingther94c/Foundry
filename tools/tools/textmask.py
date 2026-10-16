@@ -47,27 +47,82 @@ _MONEY = re.compile(
 )
 
 
-def scale_money(text: str, factor: int | float) -> str:
-    """Return text with every money amount multiplied by factor, keeping its format; never None."""
+def _check_factor(factor: int | float) -> None:
+    """Raise ValueError unless factor is positive; returns None."""
     if factor is None or factor <= 0:
         raise ValueError(f"factor must be positive, got {factor!r}")
 
+
+def _scaled(int_part: str, frac: str | None, factor: int | float) -> str:
+    """Return the unsigned number int_part[.frac] times factor, keeping its decimals and comma style."""
+    decimals = len(frac) if frac is not None else 0
+    number = int_part.replace(",", "") + ("." + frac if frac is not None else "")
+    value = float(number) * factor
+    spec = f",.{decimals}f" if "," in int_part else f".{decimals}f"
+    return format(value, spec)
+
+
+def scale_money(text: str, factor: int | float) -> str:
+    """Return text with every money amount multiplied by factor, keeping its format; never None."""
+    _check_factor(factor)
+
     def replace(m: re.Match[str]) -> str:
-        int_part = m.group("int")
-        frac = m.group("frac")
-        decimals = len(frac) if frac is not None else 0
-        number = int_part.replace(",", "") + ("." + frac if frac is not None else "")
-        value = float(number) * factor
-        spec = f",.{decimals}f" if "," in int_part else f".{decimals}f"
-        return m.group("prefix") + format(value, spec)
+        return m.group("prefix") + _scaled(m.group("int"), m.group("frac"), factor)
 
     return _MONEY.sub(replace, text)
 
 
-_YEARS = re.compile(
-    r"FY(?P<fy>[0-9]{2})(?![0-9])"
-    r"|(?<![0-9,.$])(?P<year>(?:19|20)[0-9]{2})(?![0-9])(?![,.][0-9])"
-)
+# What a table cell must be, once the whitespace around it is stripped, to be scaled:
+# an optional "-" and an unsigned number, or an unsigned number in parentheses.
+_UNSIGNED = r"(?P<int>[0-9]{1,3}(?:,[0-9]{3})+|[0-9]+)(?:\.(?P<frac>[0-9]+))?"
+_CELL_SIGNED = re.compile(r"(?P<minus>-?)" + _UNSIGNED)
+_CELL_PARENS = re.compile(r"\(" + _UNSIGNED + r"\)")
+# A bare year in a cell is a column heading, not an amount.
+_CELL_YEAR = re.compile(r"(?:19|20)[0-9]{2}")
+
+
+def _scale_cell(cell: str, factor: int | float) -> str:
+    """Return the cell with its number scaled; unchanged if it is a year or not just a number."""
+    body = cell.strip()
+    if _CELL_YEAR.fullmatch(body):
+        return cell
+    m = _CELL_SIGNED.fullmatch(body)
+    if m is not None:
+        number = m.group("minus") + _scaled(m.group("int"), m.group("frac"), factor)
+    else:
+        m = _CELL_PARENS.fullmatch(body)
+        if m is None:
+            return cell
+        number = "(" + _scaled(m.group("int"), m.group("frac"), factor) + ")"
+    start = len(cell) - len(cell.lstrip())
+    return cell[:start] + number + cell[start + len(body):]
+
+
+def _scale_row(row: str, factor: int | float) -> str:
+    """Return the table row with each number cell scaled, except one followed by a "%" cell."""
+    cells = row.split("|")
+    scaled = []
+    for i, cell in enumerate(cells):
+        before_percent = i + 1 < len(cells) and cells[i + 1].strip().startswith("%")
+        scaled.append(cell if before_percent else _scale_cell(cell, factor))
+    return "|".join(scaled)
+
+
+def scale_table_numbers(text: str, factor: int | float) -> str:
+    """Return text with each number filling a table cell multiplied by factor; never None."""
+    _check_factor(factor)
+    lines = text.split("\n")
+    return "\n".join(_scale_row(line, factor) if " | " in line else line for line in lines)
+
+
+# A four-digit year from 1900 to 2099 not followed by a digit, nor by "," or "." and a
+# digit. What may precede it is set by each pattern's own lookbehind.
+_YEAR = r"(?:19|20)[0-9]{2}(?![0-9])(?![,.][0-9])"
+
+_YEARS = re.compile(r"FY(?P<fy>[0-9]{2})(?![0-9])" + r"|(?<![0-9,.$])(?P<year>" + _YEAR + r")")
+
+# The same years, except one directly after an ASCII letter (as in "FY2019").
+_YEARS_NOT_AFTER_LETTER = re.compile(r"(?<![0-9,.$A-Za-z])" + _YEAR)
 
 
 def shift_years(text: str, offset: int) -> str:
@@ -79,3 +134,12 @@ def shift_years(text: str, offset: int) -> str:
         return str(int(m.group("year")) + offset)
 
     return _YEARS.sub(replace, text)
+
+
+def replace_years_before(text: str, cutoff: int, replacement: str) -> str:
+    """Return text with each year below cutoff, unless directly after a letter, replaced; never None."""
+
+    def replace(m: re.Match[str]) -> str:
+        return replacement if int(m.group()) < cutoff else m.group()
+
+    return _YEARS_NOT_AFTER_LETTER.sub(replace, text)
