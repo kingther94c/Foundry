@@ -81,3 +81,27 @@ guesser played by different subagents, and a fresh guesser on each final
 mask. The eight masks made with v14 are reported as well, as the result
 before the fixes. Everything else in the plan stands, including the rule
 that training runs only if at least eight cases end masked.
+
+## Amendment 2, 2026-10-16: an abstraction arm
+
+Written while the redaction re-run (v17) was in progress, with seven of
+the sixteen cases finished, all seven still identifiable (the true
+company's confidence after four rounds 0.50-0.82, against 0.30-0.80 before
+the fixes). No outcome of any case has been opened.
+
+The guessers' last clues are no longer stray figures but the shape of the
+documents: table layouts and line-item names ("State and local taxes",
+"Card revenue"), the sections a company always reports, and the quarter's
+own events. Redaction cannot remove a layout. Abstraction (v13) rewrites
+each pre-masked document as a generic brief in rates and changes, which
+removes layouts and line-item names by construction; on the megacaps it
+failed because a megacap's business itself is unique, which need not hold
+here.
+
+So a second masking arm runs on all sixteen cases: abstraction masking
+(`MaskConfig(abstract=True, history_years=3)`), four rounds, the
+abstractor and masker played by one subagent and the guesser by another
+that never sees the documents, a fresh guesser on each final mask, the
+same seeds. Both arms are reported. Training follows the plan's rule on
+whichever arm masks at least eight cases (abstraction if both do, since its
+briefs carry less of the company); if neither does, there is no training.
