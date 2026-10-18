@@ -1,0 +1,885 @@
+{
+  "weights": {
+    "growth": 0.14386298679603562,
+    "profitability": 0.1368124987365158,
+    "guidance": 0.14783715531293823,
+    "cash_flow": 0.15028167493135386,
+    "management_tone": 0.14145213142714355,
+    "expectations_gap": 0.14128249067423987,
+    "risks": 0.13847106212177304
+  },
+  "lessons": [
+    {
+      "text": "For banks, guidance that lowers next-quarter NIM or net interest income tends to dominate the reaction, even when the cause is mechanical, such as reinvesting divestiture proceeds at lower yields. Analysts still have to cut forward EPS. Weight it more heavily than qualitative loan-growth upside.",
+      "applies_when": "A lender guides a specific basis-point decline in margin or loan yield, for whatever reason, alongside otherwise upbeat volume commentary.",
+      "perspective": "guidance",
+      "case_id": "sc01"
+    },
+    {
+      "text": "Loan-growth acceleration earns little credit when it comes with falling period-end deposits, rising wholesale borrowings and a climbing loan-to-deposit ratio. Investors read it as margin-dilutive growth. Judge loan growth jointly with how it is funded.",
+      "applies_when": "A bank reports faster loan growth while customer deposits shrink and wholesale borrowings rise.",
+      "perspective": "growth",
+      "case_id": "sc01"
+    },
+    {
+      "text": "Excess capital is only a positive catalyst if management commits to returning it. If management ranks acquisitions ahead of buybacks, gives no repurchase target, or concedes recent deals were richly priced, treat capital 'optionality' as neutral to negative.",
+      "applies_when": "A company is about to accumulate excess capital or cash and discusses deployment priorities on the call.",
+      "perspective": "management_tone",
+      "case_id": "sc01"
+    },
+    {
+      "text": "When the GAAP beat comes from a one-time reserve release or gain and core pre-provision profit is flat sequentially, assume the market grades the quarter on the flat core. Any forward-estimate cut then tips the reaction negative.",
+      "applies_when": "Headline EPS growth is driven by non-operating items while sequential core earnings growth is near zero.",
+      "perspective": "profitability",
+      "case_id": "sc01"
+    },
+    {
+      "text": "When signals look balanced, do not average them to 0.5. Separate items that change next quarter's consensus numbers, which carry heavy weight, from narrative or next-year optionality, which carries light weight. If the near-term items skew negative, lean bearish even at low conviction.",
+      "applies_when": "Mixed quarters with no consensus data, where positives are long-dated and negatives hit near-term estimates.",
+      "perspective": "expectations_gap",
+      "case_id": "sc01"
+    },
+    {
+      "text": "When adjusting reported EPS for non-recurring items, adjust both periods symmetrically. Remove fair-value marks or one-time items from the prior-year base too, and back out disclosed one-off costs as well as one-off gains. A one-sided adjustment manufactures a 'core decline' the market will not recognize.",
+      "applies_when": "Computing a core or underlying EPS trend where valuation marks or one-time items appear in both the current and comparison periods, or where expenses include disclosed merger, legal or catch-up charges.",
+      "perspective": "profitability",
+      "case_id": "sc02"
+    },
+    {
+      "text": "For spread-based lenders, an explicit multi-quarter margin-expansion guide backed by mechanical drivers usually dominates the reaction. Those drivers include origination yields above the book yield, runoff redeployment and a short-duration asset book repricing. Treat it as the primary signal, not a mere offset to fee-quality or expense noise.",
+      "applies_when": "A bank reports margin expansion and management quantifies continued per-quarter expansion with identifiable repricing mechanics, while other line items are mixed.",
+      "perspective": "guidance",
+      "case_id": "sc02"
+    },
+    {
+      "text": "Distinguish idiosyncratic from systemic credit deterioration. A rise in non-performing loans concentrated in one or two named, reserved credits rarely triggers a selloff on its own. This holds when it comes with falling past-dues, negligible charge-offs, stable reserve-to-loans and management stating no industry-level stress.",
+      "applies_when": "Non-performing ratios rise from a low base and most of the increase comes from a single large exposure.",
+      "perspective": "risks",
+      "case_id": "sc02"
+    },
+    {
+      "text": "The heuristic that a beat built on non-operating items gets graded on the core applies when the core is genuinely deteriorating. It does not apply when the core revenue engine (net interest income, margin, volume) is accelerating. In that case the non-core items are simply ignored rather than penalized.",
+      "applies_when": "Headline results include notable non-recurring gains but core revenue metrics are improving and forward guidance on core revenue is constructive.",
+      "perspective": "expectations_gap",
+      "case_id": "sc02"
+    },
+    {
+      "text": "Avoid restating one concern across many perspectives so that it dominates the aggregate. When earnings quality, expense creep and credit drift appear in every lens while a single strong forward driver is consistently noted as an offset, re-weight toward whichever factor moves forward estimates most.",
+      "applies_when": "Synthesizing several analytical perspectives that share overlapping evidence.",
+      "perspective": "general",
+      "case_id": "sc02"
+    },
+    {
+      "text": "For well-capitalized banks compounding tangible book at double-digit rates, modest wholesale funding growth and paused buybacks are second-order. This is especially true when buybacks are paused around an acquisition. Investors tolerate them while loan growth and margin are expanding.",
+      "applies_when": "Loan growth outpaces deposits and buybacks are on hold, but capital ratios and tangible book per share are rising.",
+      "perspective": "cash_flow",
+      "case_id": "sc02"
+    },
+    {
+      "text": "When a bank delivers PPNR-driven growth, holds or raises guidance, and shows no NIM/NII cut, the base case is modest outperformance (under about 1-2 points) rather than a large move. Keep conviction moderate and treat pull-forward or pipeline softness as limits on size, not on direction.",
+      "applies_when": "A bank posts a clean operating beat with a partial guidance raise, while disclosing that some activity was pulled forward or that the pipeline declined.",
+      "perspective": "expectations_gap",
+      "case_id": "sc03"
+    },
+    {
+      "text": "A clean beat with no negative triggers tends to give defensive relative performance on a down market day. The stock can fall in absolute terms yet still beat the index, so judge success against the market, not the raw price change.",
+      "applies_when": "The broader market is weak on the reaction day and the company reports solid results without guidance cuts.",
+      "perspective": "general",
+      "case_id": "sc03"
+    },
+    {
+      "text": "Incremental credit drift is usually tolerated when charge-offs stay low, criticized/classified assets fall and management keeps provision and charge-off guidance. Such drift includes a few nonaccrual migrations, slightly lower reserve coverage, and higher early-stage past-dues. Treat it as a cap on upside rather than a reason to turn bearish.",
+      "applies_when": "A lender shows creeping nonaccruals or past-dues alongside benign charge-offs and improving criticized-asset trends.",
+      "perspective": "risks",
+      "case_id": "sc03"
+    },
+    {
+      "text": "Raising volume guidance (loans, fees) while the average-balance assumption barely moves, because growth was pulled forward, adds little to forward EPS. Weight such a raise as confirming rather than as a major upward revision.",
+      "applies_when": "Management raises growth guidance but admits timing pull-forward, seasonal slowdown or a lower pipeline.",
+      "perspective": "guidance",
+      "case_id": "sc03"
+    },
+    {
+      "text": "Funding-mix deterioration rarely drives a negative reaction on its own if total deposits grow close to loan growth and non-interest-bearing balances rise. Examples are more CDs, some brokered deposits, and higher short-term borrowings from a small base. It becomes a key negative mainly when deposits shrink while loans grow.",
+      "applies_when": "A bank's loan growth outpaces deposit growth modestly and wholesale or promotional funding increases.",
+      "perspective": "cash_flow",
+      "case_id": "sc03"
+    },
+    {
+      "text": "When a bank shows simultaneous improvement in margin, funding cost, efficiency, returns and credit, treat it as a clean beat. Do not net it down because part of the per-share growth came from buybacks or a slightly lower tax rate. The market prices the breadth of core improvement more than earnings-quality nitpicks.",
+      "applies_when": "Bank or lender earnings where most core operating metrics improve together and the 'low-quality' items are small relative to the total.",
+      "perspective": "profitability",
+      "case_id": "sc04"
+    },
+    {
+      "text": "Guidance phrased as 'stable around X', where X roughly equals the just-reported level, should be scored as a maintain, not a cut. Only treat it as negative if the stated range clearly sits below the print or below prior guidance.",
+      "applies_when": "Margin or other KPI guidance given as a range or 'around' level close to the current quarter's result.",
+      "perspective": "guidance",
+      "case_id": "sc04"
+    },
+    {
+      "text": "A signal to slow buybacks in favor of organic growth or M&A is not a reliable negative when capital remains well above requirements and management stresses selectivity and deal discipline. Reserve the bearish read for cases where a large dilutive deal looks imminent or buybacks were the core investment thesis.",
+      "applies_when": "A management capital-allocation shift away from repurchases, paired with cautious or selective M&A commentary.",
+      "perspective": "management_tone",
+      "case_id": "sc04"
+    },
+    {
+      "text": "For lenders, a sequential decline in nonperforming assets after a period of increases, with stable criticized assets, is a meaningful positive catalyst. Weight the QoQ inflection more heavily than elevated YoY comparisons.",
+      "applies_when": "Bank earnings where problem-asset metrics turn down QoQ after rising, especially when sector credit fears are elevated.",
+      "perspective": "risks",
+      "case_id": "sc04"
+    },
+    {
+      "text": "Do not let the same caveat drive multiple perspectives toward the same direction. If one concern appears in nearly every lens, count it once. Keep the aggregate near 0.5 unless independent signals point the same way.",
+      "applies_when": "Several perspectives cite the same single issue as their main negative.",
+      "perspective": "general",
+      "case_id": "sc04"
+    },
+    {
+      "text": "Without consensus data, use proxies to infer a beat. These include positive sell-side tone on the call, double-digit YoY EPS growth, and improving returns. Lean modestly positive on a clean quarter rather than assuming the good news is already priced.",
+      "applies_when": "No consensus figures are provided and the quarter shows broad strength with favorable analyst reception.",
+      "perspective": "expectations_gap",
+      "case_id": "sc04"
+    },
+    {
+      "text": "On down-market days, a fundamentally clean, well-capitalized report tends to outperform the market. Abnormal return can be positive even if absolute moves are modest, so do not anchor bearish just because guidance lacks a raise.",
+      "applies_when": "A low-drama, solid quarter from a defensive or high-quality name being judged on relative performance.",
+      "perspective": "general",
+      "case_id": "sc04"
+    },
+    {
+      "text": "When a lender raises loan-growth guidance and improves loss-rate guidance in the same quarter, treat it as a strong positive and give it high weight. It lifts forward earnings through both revenue and provisions, and it is the combination this sector rewards most.",
+      "applies_when": "Consumer or commercial lenders whose guidance lifts volume growth and lowers expected credit losses in the same release, with margin guidance not cut.",
+      "perspective": "guidance",
+      "case_id": "sc05"
+    },
+    {
+      "text": "Do not net a buyback slowdown one-for-one against raised growth guidance. Investors usually read capital redirected from repurchases into high-return loan growth as a quality signal, not an EPS headwind, unless the slowdown comes from capital stress or regulatory pressure.",
+      "applies_when": "Management says repurchases will slow because asset growth is absorbing capital, while capital ratios are stable and growth guidance is rising.",
+      "perspective": "cash_flow",
+      "case_id": "sc05"
+    },
+    {
+      "text": "Separate reserve builds caused by loan growth from reserve builds caused by worsening credit. The first, alongside falling delinquencies and losses, should barely dent the thesis, even if it trims near-term net income or caps return upside.",
+      "applies_when": "A lender's provision rises or reserve releases shrink while delinquency and charge-off rates fall.",
+      "perspective": "profitability",
+      "case_id": "sc05"
+    },
+    {
+      "text": "With no consensus data, do not default the expectations gap to neutral. Infer the direction of estimate revisions from guidance changes. Raised top-line plus improved credit guidance implies upward forward revisions, so lean positive.",
+      "applies_when": "Consensus figures are unavailable but management changed full-year guidance in a clear direction on multiple lines.",
+      "perspective": "expectations_gap",
+      "case_id": "sc05"
+    },
+    {
+      "text": "Discount routine management hedges such as tougher comparisons ahead, a soft start to the quarter, or rising variable costs tied to volume when they come with raised guidance. They signal prudence, not a hidden downgrade, and rarely drive the reaction.",
+      "applies_when": "Cautious call commentary accompanies upward guidance revisions and improving core metrics.",
+      "perspective": "management_tone",
+      "case_id": "sc05"
+    },
+    {
+      "text": "A quarter with clean, improving credit and stable funding can outperform on a down market day, because it reads as lower-risk earnings. Treat strong credit trends as both a fundamental and a relative-defensive positive.",
+      "applies_when": "Credit-sensitive companies report improving delinquency and loss trends during periods of macro uncertainty.",
+      "perspective": "risks",
+      "case_id": "sc05"
+    },
+    {
+      "text": "When several perspectives agree on direction and each cites the same offsets, the offsets are probably being counted more than once. Lift conviction above the low-to-medium range rather than letting repeated caveats pull every view toward 0.55.",
+      "applies_when": "Most perspectives are bullish and the bearish points across them are the same handful of near-term per-share items.",
+      "perspective": "general",
+      "case_id": "sc05"
+    },
+    {
+      "text": "When GAAP operating margin compresses mainly because of higher depreciation, preopening costs or writedowns tied to a disclosed growth-capex program, do not treat it as core margin deterioration. Judge profitability from segment-level adjusted margins and flow-through in the core business, which is what the market keys on.",
+      "applies_when": "Reported margins fall while the company is in a heavy reinvestment phase with rising D&A and development costs, but core segment EBITDA margins are stable or improving.",
+      "perspective": "profitability",
+      "case_id": "sc06"
+    },
+    {
+      "text": "Before aggregating perspectives, list the distinct underlying facts each bearish or bullish point rests on. If several lenses cite the same one or two caveats, count them once. Otherwise the combined probability drifts systematically toward whichever side is more often restated.",
+      "applies_when": "Multiple analysis lenses all mention the same segment weakness, guidance hedge or accounting quirk.",
+      "perspective": "general",
+      "case_id": "sc06"
+    },
+    {
+      "text": "For a mature, buyback-heavy company with no consensus disclosed, a quarter described as in line with internal plans, with guidance raised in some segments and cut in none, tends to draw a small positive or flat reaction. Do not expect a large move either way; keep probabilities near but slightly above 0.5 and conviction low.",
+      "applies_when": "Steady-state operators report flat-to-low-single-digit growth, reaffirm capital returns, and offer small guidance raises with no negative revisions.",
+      "perspective": "expectations_gap",
+      "case_id": "sc06"
+    },
+    {
+      "text": "Headwinds that management attaches to a specific end date, such as construction finishing next quarter or a drag shrinking by a stated amount, are usually already priced and cap upside rather than drive downside. Weight open-ended or newly disclosed headwinds far more heavily than dated, previously telegraphed ones.",
+      "applies_when": "Management's cautious commentary concerns known disruptions with explicit timelines for improvement.",
+      "perspective": "risks",
+      "case_id": "sc06"
+    },
+    {
+      "text": "When reported revenue is flat but management gives a comparable growth figure adjusted for a one-off prior-year transaction or pass-through accounting, check whether the adjustment is mechanical and verifiable. If it is, anchor growth judgments on the comparable figure, because the market generally does.",
+      "applies_when": "Year-over-year comparisons are distorted by divestitures, deconsolidations, or gross-versus-net revenue presentation changes.",
+      "perspective": "growth",
+      "case_id": "sc06"
+    },
+    {
+      "text": "In the first full quarter after an acquisition, judge results on per-share and run-rate metrics rather than headline growth. Aggregate revenue and income growth from added acquired balances is already known and priced. Per-share dilution and an unproven synergy path tend to produce flat-to-slightly-negative reactions unless guidance is raised.",
+      "applies_when": "A company reports a quarter with stub-period or full-quarter effects from a recently closed acquisition, and headline growth is mostly inorganic.",
+      "perspective": "growth",
+      "case_id": "sc07"
+    },
+    {
+      "text": "When an analyst on the call shows that the guided clean expense run rate does not reach the announced deal cost-save target, and management answers with offsetting cost additions rather than a firm reconciliation, treat it as a modest negative for forward estimates. It is a credibility tilt, not a decisive catalyst.",
+      "applies_when": "Merger synergy targets exist and management reiterates, rather than raises, the expense guidance that is meant to deliver them.",
+      "perspective": "guidance",
+      "case_id": "sc07"
+    },
+    {
+      "text": "For a bank, a guide that margin expansion will continue but slow, combined with a statement that funding costs have bottomed, reads as a peak-rate-of-change signal. It tends to cap upside even when the current-quarter margin gain is solid.",
+      "applies_when": "A spread lender reports margin expansion but signals deceleration and rising deposit costs ahead.",
+      "perspective": "profitability",
+      "case_id": "sc07"
+    },
+    {
+      "text": "A deposit decline filled with short-term wholesale borrowing should be weighted lightly when it has specific, credible explanations. Examples are seasonal tax outflows, deliberate brokered runoff, or a single large withdrawal, especially alongside a moderate loan-to-deposit ratio and ample liquidity coverage. It is a mild negative, not a driver of a large move.",
+      "applies_when": "A bank shows QoQ deposit outflows and higher borrowings but provides itemized explanations and solid liquidity metrics.",
+      "perspective": "cash_flow",
+      "case_id": "sc07"
+    },
+    {
+      "text": "With no consensus data, guidance reiterated rather than changed, benign credit, and positives and negatives that roughly offset, expect a small abnormal move. Keep probabilities near 0.45-0.50 with low conviction, and do not read a small realized move as strong confirmation of the thesis.",
+      "applies_when": "A quarter has no explicit expectations anchor, no guidance raise or cut, and mixed but low-drama fundamentals.",
+      "perspective": "expectations_gap",
+      "case_id": "sc07"
+    },
+    {
+      "text": "When several perspectives cite the same few negatives, count those negatives once in the aggregate. Stacking them as independent evidence would push the probability too far from even and overstate conviction.",
+      "applies_when": "Multiple analytical lenses converge on the same small set of concerns with similar slightly-bearish probabilities.",
+      "perspective": "general",
+      "case_id": "sc07"
+    },
+    {
+      "text": "When a company grows mainly through acquisitions announced and funded in advance, a guidance raise that mostly reflects that already-disclosed deal volume is largely priced in. Expect a muted reaction unless the organic metrics surprise.",
+      "applies_when": "Acquisition-driven companies raise per-share guidance by a low-single-digit percentage and the increase can be traced to previously disclosed deals or capital raises.",
+      "perspective": "expectations_gap",
+      "case_id": "sc09"
+    },
+    {
+      "text": "Without consensus data, separate the mechanical part of a guidance raise (known deals, settled equity, timing) from the part that comes from operating outperformance. Only the second part is likely to move estimates beyond what the market already models.",
+      "applies_when": "No consensus figures are available and guidance revision is used as the proxy for surprise.",
+      "perspective": "guidance",
+      "case_id": "sc09"
+    },
+    {
+      "text": "If every perspective lands on the same mild lean, citing the same evidence and the same offsets, treat it as one weak signal rather than corroboration. Keep the probability close to 0.5 and expect a small move.",
+      "applies_when": "Aggregating multiple lenses that share an underlying data set and produce near-identical low-conviction views.",
+      "perspective": "general",
+      "case_id": "sc09"
+    },
+    {
+      "text": "A soft headline organic metric that management itemizes with specific one-time drivers, that beats internal budget, and that leaves full-year organic guidance intact usually neutralizes the downside. It rarely drives upside either.",
+      "applies_when": "A key same-store or organic growth metric dips for one quarter but is quantitatively explained and full-year guidance on that metric is reaffirmed.",
+      "perspective": "growth",
+      "case_id": "sc09"
+    },
+    {
+      "text": "For asset-heavy vehicles valued on cash-flow measures, a GAAP EPS guidance cut caused by acquisition-related depreciation is usually ignored by the market. Weight it near zero unless it reflects impairments or core margin erosion.",
+      "applies_when": "GAAP earnings fall or guidance is cut while the industry's preferred cash-flow metric is rising or raised.",
+      "perspective": "profitability",
+      "case_id": "sc09"
+    },
+    {
+      "text": "Pre-funded growth plans (cash plus forward equity covering the stated pipeline) remove a source of negative surprise but are typically already visible to investors from prior issuance. Treat them as limiting downside, not as an upside catalyst.",
+      "applies_when": "Management states that funding for raised investment targets is fully in hand via previously executed equity or debt.",
+      "perspective": "cash_flow",
+      "case_id": "sc09"
+    },
+    {
+      "text": "When the full-year guidance raise is smaller than the cumulative beats already delivered, compute the implied rest-of-year figure and compare it with the prior implied figure. If it is flat or lower, treat the 'raise' as a forward cut, and lean negative even when headline numbers are strong.",
+      "applies_when": "A company raises annual guidance after beating its own targets in one or more earlier quarters of the year.",
+      "perspective": "guidance",
+      "case_id": "sc10"
+    },
+    {
+      "text": "A large implied sequential drop, such as second-half EPS well below the first half or next-quarter growth a fraction of this quarter's, usually outweighs a backward-looking beat. This is especially true when the stock has rallied on a recovery narrative. Markets price the slope, not the level.",
+      "applies_when": "Guidance implies sharp deceleration from the reported quarter, particularly after an earlier raise or a strong run-up.",
+      "perspective": "expectations_gap",
+      "case_id": "sc10"
+    },
+    {
+      "text": "When shipment growth far outpaces end-market or retail sell-through growth, expect convergence in coming quarters even if channel inventory looks lean. The gap itself signals that the reported growth rate is near its peak.",
+      "applies_when": "Reported revenue growth materially exceeds disclosed retail, end-customer or sell-through growth.",
+      "perspective": "growth",
+      "case_id": "sc10"
+    },
+    {
+      "text": "If management answers a direct challenge about a cautious outlook by citing macro, cost or policy uncertainty rather than offering offsetting positives, read it as an unwillingness to underwrite momentum. That is a mild negative, not proof of a beatable guide.",
+      "applies_when": "Analysts on the call question why guidance doesn't reflect the year-to-date outperformance.",
+      "perspective": "management_tone",
+      "case_id": "sc10"
+    },
+    {
+      "text": "When most of a headline EPS beat or guidance raise comes from one-time items, judge the stock on the underlying trajectory alone. A strong ex-item year-over-year comparison is not enough if the ex-item forward path is decelerating.",
+      "applies_when": "Adjusted results include large non-recurring gains such as refunds, settlements or one-off benefits.",
+      "perspective": "profitability",
+      "case_id": "sc10"
+    },
+    {
+      "text": "Don't let the 'count the shared offsets once' rule shrink a risk that is actually the dominant driver. If several lenses independently flag the same forward-looking concern, weigh it by its importance to the forward estimate, not by how many times it was mentioned.",
+      "applies_when": "Multiple perspectives raise the same caveat about the forward outlook in an otherwise positive print.",
+      "perspective": "general",
+      "case_id": "sc10"
+    },
+    {
+      "text": "Without consensus data, a second guidance raise in a recovering business should be treated as likely already expected. Default toward a neutral-to-negative reaction unless the forward implied numbers clearly step up.",
+      "applies_when": "No consensus is provided, and the company has previously raised guidance or is in a widely followed turnaround.",
+      "perspective": "expectations_gap",
+      "case_id": "sc10"
+    },
+    {
+      "text": "If guidance is described as raised but the call reveals that consensus already sits at or above the guided range, treat it as a de facto guide-down. Expect estimate cuts and a negative reaction, however the guidance is framed.",
+      "applies_when": "An analyst points out on the call that consensus is already at or near the guided range, or management argues that consensus is inflated by outliers.",
+      "perspective": "expectations_gap",
+      "case_id": "sb03"
+    },
+    {
+      "text": "When management dismisses the high end of consensus as 'outliers' or calls the Street too optimistic, read it as an admission that the median estimate will fall. It is bearish, not neutral.",
+      "applies_when": "Management argues with or dismisses sell-side estimates during Q&A.",
+      "perspective": "management_tone",
+      "case_id": "sb03"
+    },
+    {
+      "text": "Big 'one-time' charges and earn-back math get much less benefit of the doubt from a company that has restructured before. Fatigue with repeat restructurings and a refusal to rule out more actions usually outweigh the stated economics. Default to negative unless the forward numbers clearly beat consensus.",
+      "applies_when": "A company takes another round of restructuring or repositioning charges after earlier rounds, especially if management will not rule out more.",
+      "perspective": "risks",
+      "case_id": "sb03"
+    },
+    {
+      "text": "A steep discount on assets sold, especially ones described as mostly performing, invites investors to mark down the assets that remain. Treat a large implied haircut as evidence about the whole book, not as a contained one-off.",
+      "applies_when": "A lender or asset holder sells part of its portfolio at a sizable implied mark, or discloses one.",
+      "perspective": "risks",
+      "case_id": "sb03"
+    },
+    {
+      "text": "For banks and other capital-constrained firms, a restructuring that pushes the key capital ratio below the level management needs before resuming buybacks removes near-term capital return and weakens the cushion. That usually outweighs a short earn-back in the first reaction.",
+      "applies_when": "A restructuring drops the regulatory capital ratio below the stated threshold for buybacks, or materially below where it was.",
+      "perspective": "cash_flow",
+      "case_id": "sb03"
+    },
+    {
+      "text": "When the reported quarter's core run-rate deteriorates (margin down, efficiency worse, expenses up, nonperforming loans up), promised step-ups that rely on future mechanical actions are discounted, especially if a pending transaction still has to close. The market weights the actual run-rate more heavily.",
+      "applies_when": "Core metrics weaken in the quarter while the bull case rests on future transactions or mechanical improvements.",
+      "perspective": "profitability",
+      "case_id": "sb03"
+    },
+    {
+      "text": "Don't let a generic base rate (e.g. 'kitchen-sink quarters get rewarded') override specific contrary evidence about how the guide compares with consensus. If every lens lists the same expectations-related offsets, those offsets are the main signal and should set the direction, not just lower conviction.",
+      "applies_when": "The analysis leans on a pattern-based prior while the transcript holds direct evidence that forward numbers will not beat consensus.",
+      "perspective": "general",
+      "case_id": "sb03"
+    },
+    {
+      "text": "When a margin guide is described as 'effectively lowered' but the prior level is not actually disclosed in the materials, do not treat it as a confirmed guide-down. Treat it as uncertain and reduce conviction rather than making it the dominant bearish driver.",
+      "applies_when": "Guidance changes are inferred from management language or comparisons to internal plans, not from explicitly stated prior vs new ranges.",
+      "perspective": "guidance",
+      "case_id": "sc13"
+    },
+    {
+      "text": "A raised full-year guide whose implied second half roughly equals the latest quarter's growth rate is a hold of the run-rate, not a deceleration. Combined with management saying they have beaten the prior outlook, it leans mildly positive.",
+      "applies_when": "Revenue guidance is raised and the implied remaining-period growth is within about 1pt of the most recent quarter.",
+      "perspective": "expectations_gap",
+      "case_id": "sc13"
+    },
+    {
+      "text": "Gross margin dilution caused by a fast-growing segment outrunning internal demand expectations is often forgiven by growth investors. This holds especially when the long-term margin target is kept and the new margin floor sits above the current quarter. Weigh it as 'good problem' mix, not structural erosion, unless pricing or cost per unit is deteriorating.",
+      "applies_when": "Management attributes a margin shortfall mainly to mix from an above-plan, high-growth segment.",
+      "perspective": "profitability",
+      "case_id": "sc13"
+    },
+    {
+      "text": "For a company that recently swung to adjusted profitability, sequential improvement in opex ratio, EBITDA and EPS can matter more to the reaction than year-over-year compression, especially when the prior-year quarter had an unusually high margin.",
+      "applies_when": "YoY profit metrics compress but QoQ metrics improve sharply.",
+      "perspective": "profitability",
+      "case_id": "sc13"
+    },
+    {
+      "text": "When most analyst perspectives cite the same single negative (e.g., a margin issue), count it once in the final probability. Overlapping bearish lenses should not push the aggregate far below 0.5 without an independent second driver or a consensus miss.",
+      "applies_when": "Aggregating multiple perspective views that share a common primary concern.",
+      "perspective": "general",
+      "case_id": "sc13"
+    },
+    {
+      "text": "With no consensus anchor available, keep probabilities near neutral unless there is an explicit guide cut, a revenue shortfall, or a clear break in demand. Mixed prints with raised revenue guidance and intact demand rarely justify a bearish lean below about 0.40.",
+      "applies_when": "Neither the release nor the call provides consensus comparisons.",
+      "perspective": "expectations_gap",
+      "case_id": "sc13"
+    },
+    {
+      "text": "A recently funded balance sheet, combined with turning free-cash-flow positive, can make a growth stock relatively defensive on weak market days. Such stocks may outperform the market even on a mixed print.",
+      "applies_when": "A growth company has removed financing risk and reaffirmed positive FCF, and the market is broadly down on the reaction day.",
+      "perspective": "cash_flow",
+      "case_id": "sc13"
+    },
+    {
+      "text": "When guidance is reaffirmed despite newly disclosed headwinds that management explicitly offsets with identified cost savings, read it as a modest positive. Do not treat it as neutral. It shows control over the earnings bridge and signals the underlying run-rate is better than the headline decline.",
+      "applies_when": "No consensus is available, the company maintains full-year guidance, and in the same quarter it lowers a sub-component outlook or absorbs a one-off charge.",
+      "perspective": "guidance",
+      "case_id": "sc15"
+    },
+    {
+      "text": "Do not count leverage, interest expense or negative operating cash flow as fresh bearish evidence when they stem from funding a previously disclosed, one-time obligation that is now fully settled. Settling a known liability removes an overhang. Penalize leverage only if the trajectory or the peak is worse than previously communicated.",
+      "applies_when": "A balance-sheet deterioration traces to a known acquisition-related or contractual payment that the market already anticipated.",
+      "perspective": "cash_flow",
+      "case_id": "sc15"
+    },
+    {
+      "text": "When several lenses draw on the same balance-sheet or cost facts, deduplicate before aggregating. Otherwise one known negative gets counted three times and drags a weighted probability across 0.5 against a coherent positive thesis.",
+      "applies_when": "Combining per-lens probabilities and two or more lenses cite the same leverage, interest or margin-collapse datum as their main driver.",
+      "perspective": "general",
+      "case_id": "sc15"
+    },
+    {
+      "text": "A steep decline that management pre-announced, paired with an unchanged outlook and language that the decline has stopped worsening, tends to be a non-event or a mild relief. The size of the reported drop matters far less than whether the forward view changed.",
+      "applies_when": "A segment or the consolidated top line shows a large year-over-year decline that was previously guided and is attributed to industry-wide destocking or cyclical demand.",
+      "perspective": "expectations_gap",
+      "case_id": "sc15"
+    },
+    {
+      "text": "Concrete, externally benchmarked share-gain evidence in the highest-margin segment can anchor a positive reaction even when consolidated numbers are down. Examples are growth versus industry trackers, sequential distribution gains, and early sell-through data. Weight it above generic confident tone.",
+      "applies_when": "The core or highest-margin segment grows against a declining industry backdrop while other segments drag on reported totals.",
+      "perspective": "growth",
+      "case_id": "sc15"
+    },
+    {
+      "text": "The target is return relative to the market. A low-surprise, de-risked print can register a meaningful positive abnormal return on a down-market day even with a near-flat absolute move. Do not dismiss a mild positive lean just because the absolute reaction is likely small.",
+      "applies_when": "The signal is weak but net-positive, and the stock's story centres on stabilization, holding guidance or removing an overhang rather than acceleration.",
+      "perspective": "general",
+      "case_id": "sc15"
+    },
+    {
+      "text": "Weight an analyst's on-call statement that EPS or the outlook was 'more challenging than expected' as a strong consensus-miss signal. When no consensus numbers are available, it is the best proxy, and it should move probability meaningfully below 0.5 rather than marginally.",
+      "applies_when": "Consensus figures are absent and a sell-side participant explicitly characterizes results or guidance as below expectations.",
+      "perspective": "expectations_gap",
+      "case_id": "sc16"
+    },
+    {
+      "text": "In a cyclical-recovery story, assume backlog growth and demand optimism are largely priced in. The first-session reaction is driven by whether the near-term margin inflection arrives on schedule. Pushing the price-cost recovery out by one or more quarters tends to produce a clear negative move, even with a revenue beat.",
+      "applies_when": "The company is emerging from a downturn, backlog has already grown for consecutive quarters, and guidance defers margin recovery to later periods.",
+      "perspective": "profitability",
+      "case_id": "sc16"
+    },
+    {
+      "text": "Treat a large capital raise announced alongside earnings as an independent negative catalyst, not a footnote. This applies especially to convertible or other potentially dilutive debt sized as a big fraction of existing liquidity. The negative weight is larger when equity is shrinking, leverage is rising and operating cash flow depends on working-capital timing.",
+      "applies_when": "Post-quarter or concurrent financing is disclosed that materially expands liquidity or debt, particularly when funding a ramp while the company is loss-making.",
+      "perspective": "cash_flow",
+      "case_id": "sc16"
+    },
+    {
+      "text": "When several independent lenses agree on the same negative drivers and the only bullish case rests on forward-looking narrative, raise conviction rather than averaging toward 0.5. Count the shared drivers once, but do not let missing consensus data erase a coherent negative signal.",
+      "applies_when": "Most perspectives lean bearish on the same near-term earnings issues and the bullish view relies on next-year promises.",
+      "perspective": "general",
+      "case_id": "sc16"
+    },
+    {
+      "text": "Expect larger abnormal moves for loss-making, levered cyclicals on down-market days. Beta and funding risk amplify negative surprises, so the size of the move should be scaled up when profitability is negative and leverage is rising.",
+      "applies_when": "The company has negative operating margins, rising debt/equity and high sensitivity to the macro cycle.",
+      "perspective": "risks",
+      "case_id": "sc16"
+    },
+    {
+      "text": "Revenue 'above management's prior expectations' with EPS merely 'within the guided range' signals an unfavorable mix of top-line strength and cost pressure. Markets reward the earnings line, not the revenue beat, when margins are negative.",
+      "applies_when": "Revenue beats internal guidance but EPS only meets the range because costs ran ahead of pricing.",
+      "perspective": "growth",
+      "case_id": "sc16"
+    }
+  ],
+  "history": [
+    {
+      "case_id": "sc01",
+      "split": "train",
+      "event_date": "2026-07-21",
+      "actual_up": false,
+      "brier_weighted": 0.2586448979591839,
+      "brier_judge": 0.25,
+      "brier_by_perspective": {
+        "growth": 0.31360000000000005,
+        "profitability": 0.2025,
+        "guidance": 0.28090000000000004,
+        "cash_flow": 0.25,
+        "management_tone": 0.31360000000000005,
+        "expectations_gap": 0.2601,
+        "risks": 0.2025
+      },
+      "prob_by_perspective": {
+        "growth": 0.56,
+        "profitability": 0.45,
+        "guidance": 0.53,
+        "cash_flow": 0.5,
+        "management_tone": 0.56,
+        "expectations_gap": 0.51,
+        "risks": 0.45
+      },
+      "correct_weighted": false,
+      "correct_judge": true,
+      "identifiable": false,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sc02",
+      "split": "train",
+      "event_date": "2026-07-23",
+      "actual_up": true,
+      "brier_weighted": 0.28023436128031853,
+      "brier_judge": 0.30250000000000005,
+      "brier_by_perspective": {
+        "growth": 0.20249999999999996,
+        "profitability": 0.3364000000000001,
+        "guidance": 0.2304,
+        "cash_flow": 0.2916,
+        "management_tone": 0.28090000000000004,
+        "expectations_gap": 0.2916,
+        "risks": 0.3364000000000001
+      },
+      "prob_by_perspective": {
+        "growth": 0.55,
+        "profitability": 0.42,
+        "guidance": 0.52,
+        "cash_flow": 0.46,
+        "management_tone": 0.47,
+        "expectations_gap": 0.46,
+        "risks": 0.42
+      },
+      "correct_weighted": false,
+      "correct_judge": false,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sc03",
+      "split": "train",
+      "event_date": "2026-07-23",
+      "actual_up": true,
+      "brier_weighted": 0.17664602773817106,
+      "brier_judge": 0.17640000000000003,
+      "brier_by_perspective": {
+        "growth": 0.16000000000000003,
+        "profitability": 0.16000000000000003,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.21159999999999995,
+        "management_tone": 0.16000000000000003,
+        "expectations_gap": 0.17640000000000003,
+        "risks": 0.21159999999999995
+      },
+      "prob_by_perspective": {
+        "growth": 0.6,
+        "profitability": 0.6,
+        "guidance": 0.6,
+        "cash_flow": 0.54,
+        "management_tone": 0.6,
+        "expectations_gap": 0.58,
+        "risks": 0.54
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sc04",
+      "split": "train",
+      "event_date": "2026-07-23",
+      "actual_up": true,
+      "brier_weighted": 0.3026910656404463,
+      "brier_judge": 0.2916,
+      "brier_by_perspective": {
+        "growth": 0.28090000000000004,
+        "profitability": 0.28090000000000004,
+        "guidance": 0.2916,
+        "cash_flow": 0.30250000000000005,
+        "management_tone": 0.30250000000000005,
+        "expectations_gap": 0.31360000000000005,
+        "risks": 0.3481000000000001
+      },
+      "prob_by_perspective": {
+        "growth": 0.47,
+        "profitability": 0.47,
+        "guidance": 0.46,
+        "cash_flow": 0.45,
+        "management_tone": 0.45,
+        "expectations_gap": 0.44,
+        "risks": 0.41
+      },
+      "correct_weighted": false,
+      "correct_judge": false,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sc05",
+      "split": "train",
+      "event_date": "2026-07-23",
+      "actual_up": true,
+      "brier_weighted": 0.20002067512763877,
+      "brier_judge": 0.18490000000000004,
+      "brier_by_perspective": {
+        "growth": 0.17640000000000003,
+        "profitability": 0.18490000000000004,
+        "guidance": 0.18490000000000004,
+        "cash_flow": 0.19359999999999997,
+        "management_tone": 0.20249999999999996,
+        "expectations_gap": 0.25,
+        "risks": 0.21159999999999995
+      },
+      "prob_by_perspective": {
+        "growth": 0.58,
+        "profitability": 0.57,
+        "guidance": 0.57,
+        "cash_flow": 0.56,
+        "management_tone": 0.55,
+        "expectations_gap": 0.5,
+        "risks": 0.54
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sc06",
+      "split": "train",
+      "event_date": "2026-07-24",
+      "actual_up": true,
+      "brier_weighted": 0.2601051012220993,
+      "brier_judge": 0.16000000000000003,
+      "brier_by_perspective": {
+        "growth": 0.27040000000000003,
+        "profitability": 0.31360000000000005,
+        "guidance": 0.22089999999999999,
+        "cash_flow": 0.2304,
+        "management_tone": 0.25,
+        "expectations_gap": 0.25,
+        "risks": 0.2916
+      },
+      "prob_by_perspective": {
+        "growth": 0.48,
+        "profitability": 0.44,
+        "guidance": 0.53,
+        "cash_flow": 0.52,
+        "management_tone": 0.5,
+        "expectations_gap": 0.5,
+        "risks": 0.46
+      },
+      "correct_weighted": false,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sc07",
+      "split": "train",
+      "event_date": "2026-07-24",
+      "actual_up": false,
+      "brier_weighted": 0.2066673736472277,
+      "brier_judge": 0.22089999999999999,
+      "brier_by_perspective": {
+        "growth": 0.2025,
+        "profitability": 0.22089999999999999,
+        "guidance": 0.22089999999999999,
+        "cash_flow": 0.2025,
+        "management_tone": 0.22089999999999999,
+        "expectations_gap": 0.2025,
+        "risks": 0.17639999999999997
+      },
+      "prob_by_perspective": {
+        "growth": 0.45,
+        "profitability": 0.47,
+        "guidance": 0.47,
+        "cash_flow": 0.45,
+        "management_tone": 0.47,
+        "expectations_gap": 0.45,
+        "risks": 0.42
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": false,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sc09",
+      "split": "train",
+      "event_date": "2026-07-28",
+      "actual_up": true,
+      "brier_weighted": 0.17033569902819595,
+      "brier_judge": 0.17640000000000003,
+      "brier_by_perspective": {
+        "growth": 0.17640000000000003,
+        "profitability": 0.17640000000000003,
+        "guidance": 0.16000000000000003,
+        "cash_flow": 0.16000000000000003,
+        "management_tone": 0.17640000000000003,
+        "expectations_gap": 0.16000000000000003,
+        "risks": 0.18490000000000004
+      },
+      "prob_by_perspective": {
+        "growth": 0.58,
+        "profitability": 0.58,
+        "guidance": 0.6,
+        "cash_flow": 0.6,
+        "management_tone": 0.58,
+        "expectations_gap": 0.6,
+        "risks": 0.57
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sc10",
+      "split": "train",
+      "event_date": "2026-07-28",
+      "actual_up": false,
+      "brier_weighted": 0.37941794803481593,
+      "brier_judge": 0.39690000000000003,
+      "brier_by_perspective": {
+        "growth": 0.4096,
+        "profitability": 0.4096,
+        "guidance": 0.4096,
+        "cash_flow": 0.28090000000000004,
+        "management_tone": 0.3844,
+        "expectations_gap": 0.4096,
+        "risks": 0.36
+      },
+      "prob_by_perspective": {
+        "growth": 0.64,
+        "profitability": 0.64,
+        "guidance": 0.64,
+        "cash_flow": 0.53,
+        "management_tone": 0.62,
+        "expectations_gap": 0.64,
+        "risks": 0.6
+      },
+      "correct_weighted": false,
+      "correct_judge": false,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sb03",
+      "split": "train",
+      "event_date": "2026-07-29",
+      "actual_up": false,
+      "brier_weighted": 0.3011542241882788,
+      "brier_judge": 0.30250000000000005,
+      "brier_by_perspective": {
+        "growth": 0.30250000000000005,
+        "profitability": 0.30250000000000005,
+        "guidance": 0.31360000000000005,
+        "cash_flow": 0.30250000000000005,
+        "management_tone": 0.31360000000000005,
+        "expectations_gap": 0.31360000000000005,
+        "risks": 0.2601
+      },
+      "prob_by_perspective": {
+        "growth": 0.55,
+        "profitability": 0.55,
+        "guidance": 0.56,
+        "cash_flow": 0.55,
+        "management_tone": 0.56,
+        "expectations_gap": 0.56,
+        "risks": 0.51
+      },
+      "correct_weighted": false,
+      "correct_judge": false,
+      "identifiable": false,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sc13",
+      "split": "train",
+      "event_date": "2026-07-29",
+      "actual_up": true,
+      "brier_weighted": 0.3817218137129582,
+      "brier_judge": 0.42250000000000004,
+      "brier_by_perspective": {
+        "growth": 0.3249000000000001,
+        "profitability": 0.42250000000000004,
+        "guidance": 0.39690000000000003,
+        "cash_flow": 0.3364000000000001,
+        "management_tone": 0.4096,
+        "expectations_gap": 0.39690000000000003,
+        "risks": 0.39690000000000003
+      },
+      "prob_by_perspective": {
+        "growth": 0.43,
+        "profitability": 0.35,
+        "guidance": 0.37,
+        "cash_flow": 0.42,
+        "management_tone": 0.36,
+        "expectations_gap": 0.37,
+        "risks": 0.37
+      },
+      "correct_weighted": false,
+      "correct_judge": false,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sc15",
+      "split": "train",
+      "event_date": "2026-07-29",
+      "actual_up": true,
+      "brier_weighted": 0.25644523333868485,
+      "brier_judge": 0.2304,
+      "brier_by_perspective": {
+        "growth": 0.25,
+        "profitability": 0.28090000000000004,
+        "guidance": 0.25,
+        "cash_flow": 0.3249000000000001,
+        "management_tone": 0.19359999999999997,
+        "expectations_gap": 0.20249999999999996,
+        "risks": 0.30250000000000005
+      },
+      "prob_by_perspective": {
+        "growth": 0.5,
+        "profitability": 0.47,
+        "guidance": 0.5,
+        "cash_flow": 0.43,
+        "management_tone": 0.56,
+        "expectations_gap": 0.55,
+        "risks": 0.45
+      },
+      "correct_weighted": false,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    },
+    {
+      "case_id": "sc16",
+      "split": "train",
+      "event_date": "2026-07-29",
+      "actual_up": false,
+      "brier_weighted": 0.180679568782278,
+      "brier_judge": 0.18489999999999998,
+      "brier_by_perspective": {
+        "growth": 0.28090000000000004,
+        "profitability": 0.16000000000000003,
+        "guidance": 0.17639999999999997,
+        "cash_flow": 0.17639999999999997,
+        "management_tone": 0.17639999999999997,
+        "expectations_gap": 0.16000000000000003,
+        "risks": 0.1444
+      },
+      "prob_by_perspective": {
+        "growth": 0.53,
+        "profitability": 0.4,
+        "guidance": 0.42,
+        "cash_flow": 0.42,
+        "management_tone": 0.42,
+        "expectations_gap": 0.4,
+        "risks": 0.38
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "identifiable": true,
+      "lessons_rejected": 0
+    }
+  ]
+}

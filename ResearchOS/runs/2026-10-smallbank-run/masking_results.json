@@ -1,0 +1,330 @@
+{
+ "banks": [
+  {
+   "case": "sb01",
+   "ticker": "GBFH",
+   "company": "GBank Financial Holdings Inc.",
+   "file_date": "2026-07-29",
+   "timing": "amc"
+  },
+  {
+   "case": "sb02",
+   "ticker": "ALRS",
+   "company": "ALERUS FINANCIAL CORP",
+   "file_date": "2026-07-29",
+   "timing": "amc"
+  },
+  {
+   "case": "sb03",
+   "ticker": "BANC",
+   "company": "BANC OF CALIFORNIA, INC.",
+   "file_date": "2026-07-29",
+   "timing": "bmo"
+  },
+  {
+   "case": "sb04",
+   "ticker": "TBBK",
+   "company": "Bancorp, Inc.",
+   "file_date": "2026-07-30",
+   "timing": "amc"
+  },
+  {
+   "case": "sb05",
+   "ticker": "NEWT",
+   "company": "NewtekOne, Inc.",
+   "file_date": "2026-08-06",
+   "timing": "amc"
+  }
+ ],
+ "abstraction_masks_banks": [
+  {
+   "case": "sb01",
+   "status_round_guesser": "masked",
+   "rounds": 1,
+   "final_top_guesses": [
+    [
+     "FINW",
+     0.08
+    ],
+    [
+     "BAFN",
+     0.06
+    ],
+    [
+     "ESQ",
+     0.04
+    ]
+   ],
+   "fresh_guesser_named_it": false,
+   "fresh_top_guesses": [
+    [
+     "MVLY",
+     0.12
+    ],
+    [
+     "ESQ",
+     0.05
+    ],
+    [
+     "BAFN",
+     0.05
+    ]
+   ],
+   "usd": 0.475
+  },
+  {
+   "case": "sb02",
+   "status_round_guesser": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "ALRS",
+     0.25
+    ],
+    [
+     "UVSP",
+     0.12
+    ],
+    [
+     "WASH",
+     0.1
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.834
+  },
+  {
+   "case": "sb03",
+   "status_round_guesser": "masked",
+   "rounds": 2,
+   "final_top_guesses": [
+    [
+     "MSBI",
+     0.25
+    ],
+    [
+     "DCOM",
+     0.12
+    ],
+    [
+     "CNOB",
+     0.1
+    ]
+   ],
+   "fresh_guesser_named_it": false,
+   "fresh_top_guesses": [
+    [
+     "AMTB",
+     0.22
+    ],
+    [
+     "MSBI",
+     0.12
+    ],
+    [
+     "DCOM",
+     0.1
+    ]
+   ],
+   "usd": 0.564
+  },
+  {
+   "case": "sb04",
+   "status_round_guesser": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "TBBK",
+     0.88
+    ],
+    [
+     "CASH",
+     0.06
+    ],
+    [
+     "CCB",
+     0.03
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.651
+  },
+  {
+   "case": "sb05",
+   "status_round_guesser": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "NEWT",
+     0.88
+    ],
+    [
+     "LOB",
+     0.05
+    ],
+    [
+     "MFIN",
+     0.02
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.58
+  }
+ ],
+ "abstraction_masks_remaining_small_caps": [
+  {
+   "case": "sc13",
+   "status_round_guesser": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "AXGN",
+     0.72
+    ],
+    [
+     "MDXG",
+     0.05
+    ],
+    [
+     "TCMD",
+     0.04
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.636
+  },
+  {
+   "case": "sc14",
+   "status_round_guesser": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "MTH",
+     0.55
+    ],
+    [
+     "KBH",
+     0.15
+    ],
+    [
+     "CCS",
+     0.1
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.624
+  },
+  {
+   "case": "sc15",
+   "status_round_guesser": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "MGPI",
+     0.85
+    ],
+    [
+     "NAPA",
+     0.03
+    ],
+    [
+     "TPB",
+     0.02
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.613
+  },
+  {
+   "case": "sc16",
+   "status_round_guesser": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "WNC",
+     0.6
+    ],
+    [
+     "GBX",
+     0.08
+    ],
+    [
+     "RAIL",
+     0.06
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.59
+  },
+  {
+   "case": "sc17",
+   "status_round_guesser": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "BHC",
+     0.88
+    ],
+    [
+     "BLCO",
+     0.05
+    ],
+    [
+     "ENDP",
+     0.02
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.705
+  }
+ ],
+ "robustly_masked_in_pool": [
+  "sc07",
+  "sb01",
+  "sb03"
+ ],
+ "split": {
+  "train": [
+   "sc01",
+   "sc02",
+   "sc03",
+   "sc04",
+   "sc05",
+   "sc06",
+   "sc07",
+   "sc09",
+   "sc10",
+   "sb03",
+   "sc13",
+   "sc15",
+   "sc16"
+  ],
+  "held_out": [
+   "sb01",
+   "sb02",
+   "sc11",
+   "sc12",
+   "sc14",
+   "sc17",
+   "sb04",
+   "sb05"
+  ]
+ },
+ "api_cost_usd": {
+  "build": 1.13,
+  "masking": 6.27,
+  "fresh_guessers": 0.12,
+  "train": 4.0,
+  "evaluate_untrained": 1.35,
+  "evaluate_trained": 2.15,
+  "total": 15.02
+ }
+}

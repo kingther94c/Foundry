@@ -104,6 +104,13 @@ pipeline, all fixed (v15-v18); after the fixes redaction still hid none of
 eleven cases and abstraction two of eleven, so there was no training. Small
 banks come close to hidden; a company with a business of its own does not.
 
+[runs/2026-10-smallbank-run](runs/2026-10-smallbank-run/README.md): five
+more banks, two hidden from two guessers in a row; then the whole loop on
+all 21 post-cutoff cases (13 trained walk-forward, 8 held out). The trained
+playbook scored like the untrained one (Brier 0.189 against 0.193, interval
+-0.023 to +0.011): the loop runs end to end; eight cases cannot show it
+learning.
+
 ## How it was built
 
 Foundry wrote the package from SPEC.md and FOUNDRY.md alone, in a fresh

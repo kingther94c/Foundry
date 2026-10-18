@@ -1,0 +1,252 @@
+{
+  "cases": [
+    {
+      "case_id": "sb01",
+      "split": "eval",
+      "event_date": "2026-07-30",
+      "actual_up": false,
+      "brier_weighted": 0.16229387755102045,
+      "brier_judge": 0.16000000000000003,
+      "brier_by_perspective": {
+        "growth": 0.22089999999999999,
+        "profitability": 0.18489999999999998,
+        "guidance": 0.1444,
+        "cash_flow": 0.16000000000000003,
+        "management_tone": 0.16000000000000003,
+        "expectations_gap": 0.1444,
+        "risks": 0.1296
+      },
+      "prob_by_perspective": {
+        "growth": 0.47,
+        "profitability": 0.43,
+        "guidance": 0.38,
+        "cash_flow": 0.4,
+        "management_tone": 0.4,
+        "expectations_gap": 0.38,
+        "risks": 0.36
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.1622938775510204,
+      "identifiable": false
+    },
+    {
+      "case_id": "sb02",
+      "split": "eval",
+      "event_date": "2026-07-30",
+      "actual_up": true,
+      "brier_weighted": 0.2615591836734693,
+      "brier_judge": 0.25,
+      "brier_by_perspective": {
+        "growth": 0.30250000000000005,
+        "profitability": 0.2916,
+        "guidance": 0.27040000000000003,
+        "cash_flow": 0.25,
+        "management_tone": 0.2304,
+        "expectations_gap": 0.21159999999999995,
+        "risks": 0.28090000000000004
+      },
+      "prob_by_perspective": {
+        "growth": 0.45,
+        "profitability": 0.46,
+        "guidance": 0.48,
+        "cash_flow": 0.5,
+        "management_tone": 0.52,
+        "expectations_gap": 0.54,
+        "risks": 0.47
+      },
+      "correct_weighted": false,
+      "correct_judge": false,
+      "brier_uniform": 0.2615591836734694,
+      "identifiable": true
+    },
+    {
+      "case_id": "sc11",
+      "split": "eval",
+      "event_date": "2026-07-30",
+      "actual_up": true,
+      "brier_weighted": 0.21291632653061213,
+      "brier_judge": 0.17640000000000003,
+      "brier_by_perspective": {
+        "growth": 0.16000000000000003,
+        "profitability": 0.16000000000000003,
+        "guidance": 0.30250000000000005,
+        "cash_flow": 0.27040000000000003,
+        "management_tone": 0.19359999999999997,
+        "expectations_gap": 0.19359999999999997,
+        "risks": 0.2304
+      },
+      "prob_by_perspective": {
+        "growth": 0.6,
+        "profitability": 0.6,
+        "guidance": 0.45,
+        "cash_flow": 0.48,
+        "management_tone": 0.56,
+        "expectations_gap": 0.56,
+        "risks": 0.52
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.21291632653061224,
+      "identifiable": true
+    },
+    {
+      "case_id": "sc12",
+      "split": "eval",
+      "event_date": "2026-07-30",
+      "actual_up": false,
+      "brier_weighted": 0.17400816326530621,
+      "brier_judge": 0.1296,
+      "brier_by_perspective": {
+        "growth": 0.2116,
+        "profitability": 0.1444,
+        "guidance": 0.1369,
+        "cash_flow": 0.17639999999999997,
+        "management_tone": 0.22089999999999999,
+        "expectations_gap": 0.2025,
+        "risks": 0.1369
+      },
+      "prob_by_perspective": {
+        "growth": 0.46,
+        "profitability": 0.38,
+        "guidance": 0.37,
+        "cash_flow": 0.42,
+        "management_tone": 0.47,
+        "expectations_gap": 0.45,
+        "risks": 0.37
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.17400816326530613,
+      "identifiable": true
+    },
+    {
+      "case_id": "sc14",
+      "split": "eval",
+      "event_date": "2026-07-30",
+      "actual_up": false,
+      "brier_weighted": 0.18123265306122455,
+      "brier_judge": 0.18489999999999998,
+      "brier_by_perspective": {
+        "growth": 0.16000000000000003,
+        "profitability": 0.2304,
+        "guidance": 0.1369,
+        "cash_flow": 0.2304,
+        "management_tone": 0.17639999999999997,
+        "expectations_gap": 0.17639999999999997,
+        "risks": 0.16809999999999997
+      },
+      "prob_by_perspective": {
+        "growth": 0.4,
+        "profitability": 0.48,
+        "guidance": 0.37,
+        "cash_flow": 0.48,
+        "management_tone": 0.42,
+        "expectations_gap": 0.42,
+        "risks": 0.41
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.1812326530612245,
+      "identifiable": true
+    },
+    {
+      "case_id": "sc17",
+      "split": "eval",
+      "event_date": "2026-07-30",
+      "actual_up": true,
+      "brier_weighted": 0.17163265306122447,
+      "brier_judge": 0.16000000000000003,
+      "brier_by_perspective": {
+        "growth": 0.16000000000000003,
+        "profitability": 0.16000000000000003,
+        "guidance": 0.17640000000000003,
+        "cash_flow": 0.16000000000000003,
+        "management_tone": 0.17640000000000003,
+        "expectations_gap": 0.16000000000000003,
+        "risks": 0.21159999999999995
+      },
+      "prob_by_perspective": {
+        "growth": 0.6,
+        "profitability": 0.6,
+        "guidance": 0.58,
+        "cash_flow": 0.6,
+        "management_tone": 0.58,
+        "expectations_gap": 0.6,
+        "risks": 0.54
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.17163265306122455,
+      "identifiable": true
+    },
+    {
+      "case_id": "sb04",
+      "split": "eval",
+      "event_date": "2026-07-31",
+      "actual_up": true,
+      "brier_weighted": 0.2900591836734693,
+      "brier_judge": 0.3364000000000001,
+      "brier_by_perspective": {
+        "growth": 0.30250000000000005,
+        "profitability": 0.30250000000000005,
+        "guidance": 0.2304,
+        "cash_flow": 0.2304,
+        "management_tone": 0.28090000000000004,
+        "expectations_gap": 0.36,
+        "risks": 0.3364000000000001
+      },
+      "prob_by_perspective": {
+        "growth": 0.45,
+        "profitability": 0.45,
+        "guidance": 0.52,
+        "cash_flow": 0.52,
+        "management_tone": 0.47,
+        "expectations_gap": 0.4,
+        "risks": 0.42
+      },
+      "correct_weighted": false,
+      "correct_judge": false,
+      "brier_uniform": 0.2900591836734694,
+      "identifiable": true
+    },
+    {
+      "case_id": "sb05",
+      "split": "eval",
+      "event_date": "2026-08-07",
+      "actual_up": false,
+      "brier_weighted": 0.08829387755102042,
+      "brier_judge": 0.07840000000000001,
+      "brier_by_perspective": {
+        "growth": 0.12249999999999998,
+        "profitability": 0.09,
+        "guidance": 0.0625,
+        "cash_flow": 0.09,
+        "management_tone": 0.09,
+        "expectations_gap": 0.09,
+        "risks": 0.07840000000000001
+      },
+      "prob_by_perspective": {
+        "growth": 0.35,
+        "profitability": 0.3,
+        "guidance": 0.25,
+        "cash_flow": 0.3,
+        "management_tone": 0.3,
+        "expectations_gap": 0.3,
+        "risks": 0.28
+      },
+      "correct_weighted": true,
+      "correct_judge": true,
+      "brier_uniform": 0.08829387755102042,
+      "identifiable": true
+    }
+  ],
+  "n": 8,
+  "brier_weighted": 0.19274948979591836,
+  "brier_judge": 0.18446250000000003,
+  "brier_uniform": 0.19274948979591838,
+  "brier_coin": 0.25,
+  "accuracy_weighted": 0.75,
+  "accuracy_judge": 0.75,
+  "n_identifiable": 7
+}
