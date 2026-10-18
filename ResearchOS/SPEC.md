@@ -926,3 +926,38 @@ the rounds are now applied in that order.
   Tests that pinned the rewriting change accordingly.
 - `save_masked` writes `redaction_rounds` into `mask_key.json`;
   `load_masked` reads it back (`[]` when absent).
+
+## Do the perspectives disagree? (v19)
+
+On 21 real cases every combination rule `blend` replays scored the same
+(Brier 0.233-0.235), because the seven perspectives say nearly the same
+thing: their probabilities correlated at 0.86 on average across the cases.
+No weighting can add what seven views that move together do not have, so
+whether the perspectives disagree has to be measured before any rule is
+tuned. In `researchos.blend`:
+
+- `agreement(records) -> dict`: over the scored records `replay` accepts,
+  checked the same way (a ValueError for every reason `replay` gives one),
+  in the order given, each perspective's probability as `perspective_probs`
+  gives it and `y` 1.0 when the stock went up, else 0.0. Returns:
+  - `"n"`: the number of scored records;
+  - `"perspectives"`: for every name in `PERSPECTIVES`, in that order,
+    `{"mean_prob", "sd_prob", "brier", "calls", "hits"}`: the mean
+    probability, its population standard deviation
+    (`statistics.pstdev`), the mean Brier score `(p - y) ** 2`, the number
+    of records whose probability is not exactly 0.5 (`calls`), and how many
+    of those had the direction right (`p > 0.5` exactly when the stock went
+    up: `hits`). With no records the three means are None and both counts
+    0;
+  - `"pairs"`: for every two perspectives `a` before `b` in `PERSPECTIVES`
+    order, in that order (21 pairs), `{"a", "b", "correlation"}`: the
+    Pearson correlation of their probabilities over the records, None when
+    there are fewer than two records or either has a population standard
+    deviation of 0;
+  - `"mean_correlation"` and `"min_correlation"`: the mean and the smallest
+    of the pairs' correlations that are not None; None when every one is.
+- CLI: `python -m researchos agreement FILE [FILE ...] [--out FILE]`: the
+  files are merged as `blend` merges them and the result printed as JSON
+  (or written to `--out`); an unreadable file or a record `agreement`
+  refuses exits 1 with the message on stderr, as for `blend`. Files after
+  an option are still files, as for `blend`.

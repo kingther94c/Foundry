@@ -1,0 +1,163 @@
+{
+  "n": 21,
+  "perspectives": {
+    "growth": {
+      "mean_prob": 0.5095238095238095,
+      "sd_prob": 0.07518081001832408,
+      "brier": 0.23764761904761908,
+      "calls": 20,
+      "hits": 11
+    },
+    "profitability": {
+      "mean_prob": 0.48142857142857143,
+      "sd_prob": 0.08935140440635365,
+      "brier": 0.23880476190476194,
+      "calls": 21,
+      "hits": 12
+    },
+    "guidance": {
+      "mean_prob": 0.48428571428571426,
+      "sd_prob": 0.0954473890770861,
+      "brier": 0.2265,
+      "calls": 20,
+      "hits": 13
+    },
+    "cash_flow": {
+      "mean_prob": 0.4823809523809524,
+      "sd_prob": 0.07050192580313047,
+      "brier": 0.23004285714285716,
+      "calls": 19,
+      "hits": 12
+    },
+    "management_tone": {
+      "mean_prob": 0.4961904761904762,
+      "sd_prob": 0.08243185875538948,
+      "brier": 0.23395238095238097,
+      "calls": 20,
+      "hits": 13
+    },
+    "expectations_gap": {
+      "mean_prob": 0.48619047619047623,
+      "sd_prob": 0.08763974910725593,
+      "brier": 0.23453809523809524,
+      "calls": 19,
+      "hits": 12
+    },
+    "risks": {
+      "mean_prob": 0.4519047619047619,
+      "sd_prob": 0.07889830993536931,
+      "brier": 0.23806190476190475,
+      "calls": 21,
+      "hits": 12
+    }
+  },
+  "pairs": [
+    {
+      "a": "growth",
+      "b": "profitability",
+      "correlation": 0.8174391520393384
+    },
+    {
+      "a": "growth",
+      "b": "guidance",
+      "correlation": 0.817845766108195
+    },
+    {
+      "a": "growth",
+      "b": "cash_flow",
+      "correlation": 0.6919866549152073
+    },
+    {
+      "a": "growth",
+      "b": "management_tone",
+      "correlation": 0.8464670326579372
+    },
+    {
+      "a": "growth",
+      "b": "expectations_gap",
+      "correlation": 0.8164029886460027
+    },
+    {
+      "a": "growth",
+      "b": "risks",
+      "correlation": 0.8495126549315339
+    },
+    {
+      "a": "profitability",
+      "b": "guidance",
+      "correlation": 0.8010888590823296
+    },
+    {
+      "a": "profitability",
+      "b": "cash_flow",
+      "correlation": 0.809810970092468
+    },
+    {
+      "a": "profitability",
+      "b": "management_tone",
+      "correlation": 0.8670802023309128
+    },
+    {
+      "a": "profitability",
+      "b": "expectations_gap",
+      "correlation": 0.8672438479272624
+    },
+    {
+      "a": "profitability",
+      "b": "risks",
+      "correlation": 0.9452841115606581
+    },
+    {
+      "a": "guidance",
+      "b": "cash_flow",
+      "correlation": 0.8780868173148477
+    },
+    {
+      "a": "guidance",
+      "b": "management_tone",
+      "correlation": 0.896002079492351
+    },
+    {
+      "a": "guidance",
+      "b": "expectations_gap",
+      "correlation": 0.8450352615376626
+    },
+    {
+      "a": "guidance",
+      "b": "risks",
+      "correlation": 0.8999969594971976
+    },
+    {
+      "a": "cash_flow",
+      "b": "management_tone",
+      "correlation": 0.8111068061322139
+    },
+    {
+      "a": "cash_flow",
+      "b": "expectations_gap",
+      "correlation": 0.7837163018980323
+    },
+    {
+      "a": "cash_flow",
+      "b": "risks",
+      "correlation": 0.8843666685240723
+    },
+    {
+      "a": "management_tone",
+      "b": "expectations_gap",
+      "correlation": 0.9629872727644154
+    },
+    {
+      "a": "management_tone",
+      "b": "risks",
+      "correlation": 0.9280556905116771
+    },
+    {
+      "a": "expectations_gap",
+      "b": "risks",
+      "correlation": 0.9355761315954452
+    }
+  ],
+  "mean_correlation": 0.8550043918837981,
+  "min_correlation": 0.6919866549152073
+}

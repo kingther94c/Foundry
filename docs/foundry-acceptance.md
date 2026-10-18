@@ -27,7 +27,7 @@ A change counts as accepted when all of these hold:
 6. **Honest finish**: it ends with `finish` reporting completion, and the
    validation it claims is a test run it actually made.
 
-## Scorecard: the last fifteen changes
+## Scorecard: the last sixteen changes
 
 | Change | Hidden tests | Rounds | Tokens (~$) | Review |
 |---|---|---|---|---|
@@ -43,6 +43,7 @@ A change counts as accepted when all of these hold:
 | v16 tables, years long past | 211/211 | 14 | 1.95 | as written |
 | v17 any layout | 214/214 | 12 | 1.16 | as written |
 | v18 rounds in order (real API) | 220/220 | 20 | 0.89 | as written |
+| v19 perspective agreement (real API) | 230/230 | 11 | 0.50 | as written; 2,000 random record sets and the 21 real cases, no mismatch; it also handles an underflow the reference let through |
 | tools v2 | 111/111 | 10 | 0.63 | as written |
 | tools v3 | 135/135 | 6 | 0.31 | as written; 20,000 fuzzed inputs, no mismatch |
 | tools v4 | 177/177 | 7 | 0.49 | as written; 30,000 fuzzed inputs, no mismatch |
@@ -50,10 +51,10 @@ A change counts as accepted when all of these hold:
 Hidden-test counts were re-run against each attempt's workspace for this
 table. v7-v17 and tools v2-v4 ran with a subagent playing the model behind
 a local relay while the API key had no credit; their costs are what those
-tokens would cost on the API without caching. v18 ran on the real API and
-cost $0.89, its prompt cache serving 92% of the input (about $3.60
-uncached).
-The leak audit at exit was clean for fourteen. In v8 it found compiled
+tokens would cost on the API without caching. v18 and v19 ran on the real
+API and cost $0.89 and $0.50, the prompt cache serving 92% and 84% of the
+input (about $3.60 and $1.32 uncached).
+The leak audit at exit was clean for fifteen. In v8 it found compiled
 copies of the scaffold's own modules (`__pycache__` left by a test run on
 the spec directory; nothing from the hidden tests or the reference), and
 the runner has stripped `__pycache__` from every scaffold since. Every relay
@@ -61,10 +62,10 @@ agent's tool calls stayed inside its relay.
 
 ## Verdict
 
-Every criterion holds for fifteen changes in a row (v8's audit finding was
-the runner's doing, not Foundry's, and carried no answers). The four
-disagreements the differential checks found were all bugs in the
-hand-written references, which Foundry's versions did not have; the one
+Every criterion holds for sixteen changes in a row (v8's audit finding was
+the runner's doing, not Foundry's, and carried no answers). The five
+disagreements the differential checks found were all in the hand-written
+references, which Foundry's versions did not have; the one
 review change came from a gap in the spec, not from Foundry's code. For
 changes of this kind -- one well-specified section, a module or two, up
 to a few hundred lines with their tests -- Foundry is good enough to merge

@@ -13,6 +13,7 @@
     python -m researchos compare -a FILE [-a FILE ...] -b FILE [-b FILE ...] [--metric NAME]
                                  [--resamples N] [--seed S] [--out FILE]
     python -m researchos blend FILE [FILE ...] [--rule NAME] [--eta X] [--out FILE]
+    python -m researchos agreement FILE [FILE ...] [--out FILE]
 
 Each command prints its result as JSON; with --out FILE it writes the result to
 FILE instead (researchos.jsonio.write_json) and prints nothing.
@@ -35,6 +36,9 @@ order given (researchos.compare.merge_reports).
 blend reads such files the same way, merges them in the order given, and prints
 researchos.blend.replay of their cases: a rule for combining the perspectives
 (uniform, median, hedge, leader) replayed walk-forward over the scored records.
+
+agreement reads and merges files as blend does and prints
+researchos.blend.agreement of their cases: how far the perspectives disagree.
 """
 
 from __future__ import annotations
@@ -49,7 +53,7 @@ from pathlib import Path
 
 from tools.stats import is_number
 
-from researchos.blend import RULES, replay
+from researchos.blend import RULES, agreement, replay
 from researchos.cases import CASE_FILE, load_outcome
 from researchos.compare import compare, load_report, merge_reports
 from researchos.jsonio import write_json
@@ -199,6 +203,11 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--eta", type=_positive_number, default=0.5,
                    help="learning rate of the hedge rule, a positive number (default 0.5)")
     _add_out(p)
+    p = sub.add_parser("agreement", help="do the perspectives disagree? their spread, "
+                                         "accuracy and pairwise correlations")
+    p.add_argument("files", nargs="+", metavar="FILE",
+                   help="evaluate or train output; several files are merged in the order given")
+    _add_out(p)
     return parser
 
 
@@ -221,9 +230,9 @@ def main(argv=None, *, client_factory=None) -> int:
             # A nargs="*" (or "+") positional takes only the first run of strings, so in
             # `compare A.json --seed 5 B.json` B.json comes back here; it is still one of
             # compare's files, as it was when A and B were two positionals (likewise for
-            # blend's files). Anything else is an unrecognized argument, reported exactly
-            # as parse_args reports it.
-            if (args.command not in ("compare", "blend")
+            # blend's and agreement's files). Anything else is an unrecognized argument,
+            # reported exactly as parse_args reports it.
+            if (args.command not in ("compare", "blend", "agreement")
                     or any(s.startswith("-") for s in extras)):
                 parser.error(f"unrecognized arguments: {' '.join(extras)}")
             args.files = [*args.files, *extras]
@@ -235,6 +244,8 @@ def main(argv=None, *, client_factory=None) -> int:
         return _compare(args)
     if args.command == "blend":
         return _blend(args)
+    if args.command == "agreement":
+        return _agreement(args)
     ids = [i.strip() for i in args.ids.split(",") if i.strip()]
     if not ids:
         print("error: --ids needs at least one case id", file=sys.stderr)
@@ -334,6 +345,19 @@ def _blend(args) -> int:
         print(f"error: cannot read report: {exc}", file=sys.stderr)
         return 1
     except ValueError as exc:  # not JSON, not a report, or a record replay refuses
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return _emit(result, args.out)
+
+
+def _agreement(args) -> int:
+    try:
+        merged = merge_reports([load_report(path) for path in args.files])
+        result = agreement(merged["cases"])
+    except OSError as exc:  # missing file, a directory, unreadable
+        print(f"error: cannot read report: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:  # not JSON, not a report, or a record agreement refuses
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return _emit(result, args.out)

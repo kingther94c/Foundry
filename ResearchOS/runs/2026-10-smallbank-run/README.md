@@ -92,7 +92,8 @@ combination rule of `researchos blend`, nothing tuned.
 The rule does not matter, because the seven perspectives say nearly the
 same thing: across the cases their probabilities correlate at 0.86 on
 average (0.69 at the least), and each stays within a narrow band around
-one half (standard deviation 0.07-0.10). Seven views that move together
+one half (standard deviation 0.07-0.10). (`researchos agreement`, v19, writes this report:
+[agreement.json](agreement.json).) Seven views that move together
 are one view; weighting them differently cannot add what is not there.
 Guidance was the best single perspective (0.227, the direction right on
 13 of 20), as the expectations gap was for the megacaps. The lever is

@@ -276,6 +276,15 @@ tools v4); and each round's redactions apply, in order, to the text the
 earlier rounds left (v18, 20 rounds, the first of these built on the real
 API, for about $0.89). Every attempt passed all of its hidden tests.
 
+`agreement` (v19) measures whether the perspectives disagree at all -- each
+one's spread and hit rate and the 21 pairwise correlations of their
+probabilities -- because on the 21 small-cap and bank cases every
+combination rule scored the same: the perspectives correlate at 0.86.
+Foundry made it in 11 rounds on the real API ($0.50), and it agrees with
+the hand-written version on 2,000 random record sets and on the real cases.
+[docs/foundry-acceptance.md](../docs/foundry-acceptance.md) scores this
+and the fifteen changes before it against fixed acceptance criteria.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

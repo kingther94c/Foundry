@@ -13,6 +13,9 @@ reacted on the same day could not have taught one another anything.
 
 Each replayed case carries `brier_blend`, so two replays (or a replay and
 anything else carrying that metric) compare with `compare --metric brier_blend`.
+
+`agreement` (SPEC.md v19) measures whether the perspectives disagree at all:
+no weighting can add what seven views that move together do not have.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from __future__ import annotations
 import math
 import statistics
 from datetime import date
-from itertools import groupby
+from itertools import combinations, groupby
 from typing import NamedTuple
 
 from tools.dates import parse_iso_date
@@ -172,4 +175,60 @@ def replay(records, rule="hedge", *, eta=0.5) -> dict:
         "n": n,
         "brier_blend": sum(c["brier_blend"] for c in cases) / n if n else None,
         "cases": cases,
+    }
+
+
+def _correlation(xs: list[float], ys: list[float], sd_x, sd_y) -> float | None:
+    """Pearson correlation; None for fewer than two values or a population sd of 0."""
+    if len(xs) < 2 or not sd_x or not sd_y:
+        return None
+    try:
+        return statistics.correlation(xs, ys)
+    except statistics.StatisticsError:  # deviations so small their product underflows
+        return None
+
+
+def agreement(records) -> dict:
+    """Do the perspectives disagree? Their spread, accuracy and pairwise correlations.
+
+    Over the scored records `replay` accepts (checked the same way, so the same
+    ValueErrors), in the order given. Returns {"n", "perspectives": {name:
+    {"mean_prob", "sd_prob", "brier", "calls", "hits"}}, "pairs": [{"a", "b",
+    "correlation"}, ...], "mean_correlation", "min_correlation"} with the
+    perspectives in PERSPECTIVES order and the 21 pairs a-before-b in that order.
+    """
+    scored = _scored_cases(records)
+    n = len(scored)
+    ys = [1.0 if case.actual_up else 0.0 for case in scored]
+    series = {name: [case.probs[name] for case in scored] for name in PERSPECTIVES}
+
+    perspectives: dict[str, dict] = {}
+    for name in PERSPECTIVES:
+        probs = series[name]
+        calls = hits = 0
+        for p, case in zip(probs, scored):
+            if p != 0.5:
+                calls += 1
+                if (p > 0.5) == case.actual_up:
+                    hits += 1
+        perspectives[name] = {
+            "mean_prob": statistics.fmean(probs) if n else None,
+            "sd_prob": statistics.pstdev(probs) if n else None,
+            "brier": statistics.fmean((p - y) ** 2 for p, y in zip(probs, ys)) if n else None,
+            "calls": calls,
+            "hits": hits,
+        }
+
+    pairs = [{"a": a, "b": b,
+              "correlation": _correlation(series[a], series[b],
+                                          perspectives[a]["sd_prob"],
+                                          perspectives[b]["sd_prob"])}
+             for a, b in combinations(PERSPECTIVES, 2)]
+    found = [pair["correlation"] for pair in pairs if pair["correlation"] is not None]
+    return {
+        "n": n,
+        "perspectives": perspectives,
+        "pairs": pairs,
+        "mean_correlation": statistics.fmean(found) if found else None,
+        "min_correlation": min(found) if found else None,
     }
