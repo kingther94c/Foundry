@@ -55,3 +55,40 @@ evaluated (`researchos evaluate`) with the untrained and the trained
 playbook, and the two are compared with `researchos compare`. With at most
 twelve cases this is underpowered and is reported as such, whatever it
 shows. If fewer than eight cases end masked, only the masking is reported.
+
+## Amendment 1, 2026-10-18: five banks, and a training analysis on all cases
+
+Written after the selection rule was applied and before any bank was
+built or masked; no outcome opened.
+
+Of the 610 candidates with a Motley Fool transcript only ten are banks
+(Fool transcribes few small banks), and five of them were in the small-cap
+run. That leaves five: GBFH, ALRS, BANC, TBBK and NEWT, in filing order.
+Twelve masked, or eight, cannot be reached from five, so the masking above
+runs on these five and is reported as it stands, and the training section
+above cannot apply.
+
+Training then follows the rule the first real run used: every case here
+was reported after the model's knowledge cutoff (2026-06-30), so
+recognizing the company gives the analyst priors but cannot tell it the
+reaction. The training analysis pools the sixteen small-cap cases and the
+five banks (21 cases, all Q2 2026), each with its abstraction mask (the
+eleven made in the small-cap run; the five small caps that run did not
+reach and the five banks are masked the same way here, without the futility
+stop), and records for every case whether it was masked.
+
+1. Order the 21 cases by event date (then case id). The earliest 14 train
+   a playbook from the initial one, walk-forward in event-date batches
+   (`researchos train --knowledge-cutoff 2026-06-30`); the last 7 are held
+   out.
+2. Evaluate the 7 with the initial and with the trained playbook
+   (`researchos evaluate`, same masks, same seed) and compare them
+   (`researchos compare`, Brier score of the weighted forecast, bootstrap
+   interval). Report the judge's and each perspective's Brier score as
+   well, and the masked and identifiable cases separately.
+3. Seven held-out cases cannot show a training effect of any plausible
+   size; this is a test that the loop runs end to end on blind-ish data,
+   and it is reported as underpowered whatever it shows.
+
+Cost: about $1 a case to build and mask, $0.35 a case to train, $0.20 a
+case per evaluation; the $25 cap above stands for the whole run.
