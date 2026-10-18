@@ -73,6 +73,33 @@ at 2026-07-29: 13 trained (through 07-29), 8 held out (07-30 to 08-07).
   to 0.185), cash flow got worse (0.196 to 0.203). The one masked held-out
   case, GBFH, scored a little worse after training (0.162 to 0.174).
 
+## Which perspectives, and how to combine them (exploratory)
+
+Not in the plan, and computed from the records already scored, with no
+model call: the 21 cases' forecasts (13 walk-forward training forecasts,
+8 held-out forecasts with the initial playbook) replayed with each fixed
+combination rule of `researchos blend`, nothing tuned.
+
+| | Brier score |
+|---|---|
+| uniform mean | 0.233 |
+| median | 0.233 |
+| hedge (eta 0.5) | 0.233 |
+| leader (best so far) | 0.235 |
+| the judge | 0.227 |
+| a coin | 0.250 |
+
+The rule does not matter, because the seven perspectives say nearly the
+same thing: across the cases their probabilities correlate at 0.86 on
+average (0.69 at the least), and each stays within a narrow band around
+one half (standard deviation 0.07-0.10). Seven views that move together
+are one view; weighting them differently cannot add what is not there.
+Guidance was the best single perspective (0.227, the direction right on
+13 of 20), as the expectations gap was for the megacaps. The lever is
+then not the weights but the perspectives themselves: views built to
+disagree -- each reading only its part of the documents, or arguing one
+side -- before any combination rule can help.
+
 ## Cost
 
 API spend for the run: $1.13 to build, $6.27 to mask (ten cases), $0.12
