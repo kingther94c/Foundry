@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -338,7 +339,7 @@ def test_verbatim_replay_into_the_follow_up_round(server):
         Message(role=Role.TOOL, blocks=(ToolResultBlock(call_id=call.call_id,
                                                         content="def run(): return 1"),)),
     )
-    second = collect_turn(backend.stream_turn(request.with_messages(history)))
+    second = collect_turn(backend.stream_turn(replace(request, messages=history)))
 
     body = server.bodies[1]
     assert body["system"] == server.bodies[0]["system"]

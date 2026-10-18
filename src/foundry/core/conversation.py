@@ -10,7 +10,7 @@ Frozen at M0 (design.md section 2). Additive changes only.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
@@ -193,6 +193,3 @@ class TurnRequest:
     model: str
     max_output_tokens: int | None = None
     temperature: float | None = None
-
-    def with_messages(self, messages: tuple[Message, ...]) -> TurnRequest:
-        return replace(self, messages=messages)

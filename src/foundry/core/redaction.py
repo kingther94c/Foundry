@@ -49,11 +49,6 @@ class Redactor:
         with self._lock:
             self._values.clear()
 
-    @property
-    def registered_count(self) -> int:
-        with self._lock:
-            return len(self._values)
-
     def registered_values(self) -> tuple[str, ...]:
         """The exact values, so a streaming sink can avoid cutting through one."""
         with self._lock:

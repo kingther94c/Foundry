@@ -36,11 +36,6 @@ class SessionReport:
     # A subset of input_tokens: the part the provider served from its cache.
     cached_input_tokens: int = 0
 
-    @property
-    def patch_first_try_rate(self) -> float | None:
-        total = self.patches_applied + self.patches_rejected
-        return (self.patches_applied / total) if total else None
-
 
 def analyse(journal: Path) -> SessionReport:
     report = SessionReport(session_id=journal.parent.name,

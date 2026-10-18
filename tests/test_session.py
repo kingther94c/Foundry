@@ -91,7 +91,7 @@ def test_credential_scrubbed_from_utf16_command_output(redactor):
 
 def test_short_values_are_not_registered(redactor):
     redactor.register("abc")
-    assert redactor.registered_count == 0
+    assert redactor.registered_values() == ()
     assert redactor.scrub("abc def") == "abc def"
 
 
