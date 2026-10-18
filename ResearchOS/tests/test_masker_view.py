@@ -1,4 +1,9 @@
-"""Redacting what the masker sees (SPEC v15)."""
+"""Redacting what the masker sees (SPEC v15), with the rounds applied in order (SPEC v18).
+
+v18 replaced v15's rewriting of earlier replacements: the tests that pinned it now check
+that each round is applied, in order, to the text the earlier rounds left, and that every
+replacement stays exactly as the masker gave it.
+"""
 
 import json
 import random
@@ -26,8 +31,12 @@ def pre(case):
     return base, factor, offset
 
 
-def round_text(original, base, mapping, factor, offset):
-    return redact(shift_years(scale_money(redact(original, base), factor), offset), mapping)
+def round_text(original, base, rounds, factor, offset):
+    """v15's masking with base, then each round's redactions in order (v18)."""
+    text = shift_years(scale_money(redact(original, base), factor), offset)
+    for redactions in rounds:
+        text = redact(text, redactions)
+    return text
 
 
 def run(case, masker_outputs, guesses, **config):
@@ -46,9 +55,10 @@ def test_round_documents_are_redacted_after_scaling_and_shifting(case):
     m, _ = run(case, [redactions(("Zephyr", "flagship"))], [GUESS_MISS])
     assert (m.factor, m.year_offset) == (factor, offset)
     assert [d.kind for d in m.documents] == [d.kind for d in case.documents]
+    assert m.redaction_rounds == [{"Zephyr": "flagship"}]
     for masked, orig in zip(m.documents, case.documents):
-        assert masked.title == round_text(orig.title, base, m.mapping, factor, offset)
-        assert masked.text == round_text(orig.text, base, m.mapping, factor, offset)
+        assert masked.title == round_text(orig.title, base, m.redaction_rounds, factor, offset)
+        assert masked.text == round_text(orig.text, base, m.redaction_rounds, factor, offset)
         assert masked.source == ""
     assert "demand for the flagship line was strong" in m.documents[0].text
 
@@ -85,77 +95,98 @@ def test_identity_names_holding_a_year_are_redacted_before_shifting(case):
     assert "the Company is on track." in m.documents[1].text
 
 
-REWRITE_ROUNDS = [
+INNER_ROUNDS = [
     redactions(("Zephyr", "Orion product"), ("a record quarter", "an Orionis quarter")),
     redactions(("orion", "flagship")),
 ]
 
 
-def test_a_new_term_rewrites_earlier_replacements_that_contain_it(case):
+def test_a_term_inside_an_earlier_replacement_is_redacted_by_its_round(case):
     base, factor, offset = pre(case)
-    m, masker = run(case, REWRITE_ROUNDS, [GUESS_HIT, GUESS_MISS])
+    m, masker = run(case, INNER_ROUNDS, [GUESS_HIT, GUESS_MISS])
     assert m.status == "masked" and m.rounds == 2
     # the masker was shown the earlier replacement and named a term inside it
     assert "demand for the Orion product line" in masker.calls[1]["prompt"]
-    assert m.mapping == {**base, "Zephyr": "flagship product",
+    # every replacement is kept exactly as given (v18: no rewriting)
+    assert m.mapping == {**base, "Zephyr": "Orion product",
                          "a record quarter": "an Orionis quarter", "orion": "flagship"}
     assert list(m.mapping) == [*base, "Zephyr", "a record quarter", "orion"]
+    assert m.redaction_rounds == [{"Zephyr": "Orion product",
+                                   "a record quarter": "an Orionis quarter"},
+                                  {"orion": "flagship"}]
     assert "demand for the flagship product line was strong" in m.documents[0].text
     assert "delivered an Orionis quarter" in m.documents[1].text  # whole words only
     assert not find_terms(all_text(m.documents), ["Orion"])
-    # one redact pass with the final mapping still gives the final text
+    # the rounds applied in order give the final text
     for masked, orig in zip(m.documents, case.documents):
-        assert masked.text == round_text(orig.text, base, m.mapping, factor, offset)
+        assert masked.text == round_text(orig.text, base, m.redaction_rounds, factor, offset)
 
 
 def test_own_replacement_is_kept_and_does_not_grow(case):
     m, masker = run(case, [redactions(("Zephyr", "Zephyr-like"))], [GUESS_HIT], max_rounds=3)
     assert m.rounds == 3 and len(masker.calls) == 3
     assert m.mapping["Zephyr"] == "Zephyr-like"
+    # later rounds propose the same term again; it is already in the mapping
+    assert m.redaction_rounds == [{"Zephyr": "Zephyr-like"}, {}, {}]
     assert "demand for the Zephyr-like line was strong" in m.documents[0].text
 
 
 def test_redactions_of_one_output_are_added_in_order(case):
     m, _ = run(case, [redactions(("Zephyr", "Nova product"), ("Nova", "flagship"),
                                  ("NOVA", "ignored"))], [GUESS_MISS])
-    assert m.mapping["Zephyr"] == "flagship product"
+    assert m.mapping["Zephyr"] == "Nova product"
     assert m.mapping["Nova"] == "flagship" and "NOVA" not in m.mapping
-    assert "demand for the flagship product line was strong" in m.documents[0].text
+    assert list(m.redaction_rounds[0].items()) == [("Zephyr", "Nova product"),
+                                                   ("Nova", "flagship")]
+    # one round is one redact pass: "Nova" was not in the text the masker saw
+    assert "demand for the Nova product line was strong" in m.documents[0].text
 
 
-def test_an_existing_term_is_skipped_but_its_replacement_can_be_rewritten(case):
+def test_an_existing_term_is_skipped_and_its_replacement_kept(case):
     base, _, _ = pre(case)
     m, _ = run(case, [redactions(("Zephyr", "Nova product")),
                       redactions(("zephyr", "other"), ("Nova", "flagship"))],
                [GUESS_HIT, GUESS_MISS])
     assert list(m.mapping) == [*base, "Zephyr", "Nova"]
-    assert m.mapping["Zephyr"] == "flagship product"
+    assert m.mapping["Zephyr"] == "Nova product"
+    assert m.redaction_rounds == [{"Zephyr": "Nova product"}, {"Nova": "flagship"}]
+    assert "demand for the flagship product line was strong" in m.documents[0].text
 
 
-def test_rewrites_reach_the_pre_mask_replacements(case):
+def test_a_round_reaches_the_pre_mask_replacements_in_the_text(case):
     m, _ = run(case, [redactions(("Company", "business"))], [GUESS_MISS])
-    assert m.mapping["Acme"] == "the business"
-    assert m.mapping["Acme Widgets Inc."] == "the business"
+    # pre_mask's replacements stay as they were ...
+    assert m.mapping["Acme"] == "the Company"
+    assert m.mapping["Acme Widgets Inc."] == "the Company"
     assert m.mapping["ACMW"] == "TICKER"
+    # ... while the round redacts the text they put in
     assert "the business (NASDAQ: TICKER) reported" in m.documents[0].text
+    assert "Company" not in all_text(m.documents)
 
 
-def test_mask_key_holds_the_rewritten_mapping(tmp_path, case):
-    m, _ = run(case, REWRITE_ROUNDS, [GUESS_HIT, GUESS_MISS])
+def test_mask_key_holds_the_mapping_as_given_and_the_rounds(tmp_path, case):
+    m, _ = run(case, INNER_ROUNDS, [GUESS_HIT, GUESS_MISS])
     save_masked(tmp_path, m)
     key = json.loads((tmp_path / case.case_id / "mask_key.json").read_text(encoding="utf-8"))
-    assert key["mapping"]["Zephyr"] == "flagship product"
-    assert load_masked(tmp_path, case.case_id).mapping == m.mapping
+    assert key["mapping"]["Zephyr"] == "Orion product"
+    assert key["redaction_rounds"] == [{"Zephyr": "Orion product",
+                                        "a record quarter": "an Orionis quarter"},
+                                       {"orion": "flagship"}]
+    loaded = load_masked(tmp_path, case.case_id)
+    assert loaded.mapping == m.mapping
+    assert loaded.redaction_rounds == m.redaction_rounds
 
 
-def test_abstraction_mode_redacts_the_briefs_and_rewrites_too(case):
+def test_abstraction_mode_applies_the_rounds_to_the_briefs_in_order(case):
     brief = "Demand for Zephyr was strong; revenue grew 12% to $40 million in 2019."
     masker = FakeLLM(responses=[redactions(("Zephyr", "Orion")), redactions(("Orion", "flagship"))])
     m = mask_case(case, masker, FakeLLM(responses=[GUESS_HIT, GUESS_MISS]), random.Random(SEED),
                   MaskConfig(abstract=True), abstractor=FakeLLM(responses=[{"brief": brief}]))
     assert m.abstracted and m.status == "masked" and m.rounds == 2
-    assert m.mapping["Zephyr"] == "flagship" and m.mapping["Orion"] == "flagship"
+    assert m.mapping["Zephyr"] == "Orion" and m.mapping["Orion"] == "flagship"
+    assert m.redaction_rounds == [{"Zephyr": "Orion"}, {"Orion": "flagship"}]
     for doc in m.documents:
-        assert doc.text == redact(brief, m.mapping)       # briefs are not scaled or shifted again
+        # briefs are not scaled or shifted again
+        assert doc.text == redact(redact(brief, {"Zephyr": "Orion"}), {"Orion": "flagship"})
         assert "Demand for flagship was strong" in doc.text
         assert "$40 million in 2019" in doc.text

@@ -238,6 +238,8 @@ def test_save_and_load_masked_keep_key_separate(tmp_path, case):
     key = json.loads((tmp_path / case.case_id / "mask_key.json").read_text(encoding="utf-8"))
     assert set(public) == {"documents", "status", "rounds", "final_guesses", "abstracted"}
     assert public["abstracted"] is False
-    assert set(key) == {"mapping", "factor", "year_offset"}
+    # v18: the rounds' redactions are part of the key, never of the public file
+    assert set(key) == {"mapping", "factor", "year_offset", "redaction_rounds"}
+    assert key["redaction_rounds"] == [{"Zephyr": "the product line"}]
     assert "Acme" not in json.dumps(public["documents"])
     assert load_masked(tmp_path, case.case_id) == m

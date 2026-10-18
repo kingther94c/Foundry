@@ -51,6 +51,8 @@ class MaskedCase:
     year_offset: int
     final_guesses: list[dict] = field(default_factory=list)
     abstracted: bool = False  # True when the documents are abstractor briefs
+    # The redactions each masker round added, one dict per round in round order (v18).
+    redaction_rounds: list[dict[str, str]] = field(default_factory=list)
 
 
 MASKER_SYSTEM = """\
@@ -219,26 +221,37 @@ def _mask_documents(documents: list[Document], mapping: dict[str, str], factor: 
     ]
 
 
-def _round_text(text: str, base: dict[str, str], mapping: dict[str, str], factor: float,
+def _apply_rounds(text: str, rounds: list[dict[str, str]]) -> str:
+    """Apply the masker rounds in order, one redact pass each (v18).
+
+    Each round's terms were proposed against the text the earlier rounds left, so a term
+    inside an earlier replacement, or one wrapping around it, matches.
+    """
+    for redactions in rounds:
+        text = redact(text, redactions)
+    return text
+
+
+def _round_text(text: str, base: dict[str, str], rounds: list[dict[str, str]], factor: float,
                 year_offset: int, cutoff: int | None = None) -> str:
-    """A redaction-mode round's text: pre_mask's masking with `base`, then `mapping`.
+    """A redaction-mode round's text: pre_mask's masking with `base`, then the rounds in order.
 
     `base` (company, aliases, ticker) is redacted before anything else, so a name that holds
     a year or an amount is still caught. The masker writes its terms as it saw them --
     years long past dropped, money and every other amount scaled, years shifted, earlier
-    replacements in place -- so the full mapping is matched against that masked text only.
+    rounds' replacements in place -- so each round is matched against that text only.
     """
-    return redact(_mask_text(text, base, factor, year_offset, cutoff), mapping)
+    return _apply_rounds(_mask_text(text, base, factor, year_offset, cutoff), rounds)
 
 
-def _round_documents(documents: list[Document], base: dict[str, str], mapping: dict[str, str],
-                     factor: float, year_offset: int,
+def _round_documents(documents: list[Document], base: dict[str, str],
+                     rounds: list[dict[str, str]], factor: float, year_offset: int,
                      cutoff: int | None = None) -> list[Document]:
     return [
         Document(
             kind=doc.kind,
-            title=_round_text(doc.title, base, mapping, factor, year_offset, cutoff),
-            text=_round_text(doc.text, base, mapping, factor, year_offset, cutoff),
+            title=_round_text(doc.title, base, rounds, factor, year_offset, cutoff),
+            text=_round_text(doc.text, base, rounds, factor, year_offset, cutoff),
             source="",
         )
         for doc in documents
@@ -345,21 +358,15 @@ def _guesser_prompt(documents: list[Document]) -> str:
             + "\nWhich company is this? Give your guesses and the clues.")
 
 
-def _rewrite_replacements(mapping: dict[str, str], term: str, replacement: str) -> None:
-    """Redact `term` inside every replacement already in mapping (whole word, any case)."""
-    single = {term: replacement}
-    for key, value in list(mapping.items()):
-        if find_terms(value, [term]):
-            mapping[key] = redact(value, single)
+def _add_redactions(mapping: dict[str, str], output: dict) -> dict[str, str]:
+    """Add the masker's redactions to mapping, in order; return the ones this round added.
 
-
-def _add_redactions(mapping: dict[str, str], output: dict) -> None:
-    """Add the masker's redactions to mapping, in order; a term already there is skipped.
-
-    Adding a term first rewrites every replacement already in the mapping that contains it,
-    so text an earlier redaction put in is redacted too and one redact pass with the mapping
-    still gives the final text. The new term's own replacement is kept as given.
+    A term already in the mapping (ignoring case) -- from pre_mask, the identity guard, an
+    earlier round or earlier in this output -- is skipped and keeps its place. Every
+    replacement is kept exactly as given: the rounds are applied in order (v18), so nothing
+    already in the mapping is rewritten.
     """
+    added: dict[str, str] = {}
     existing = {k.casefold() for k in mapping}
     redactions = output.get("redactions") if isinstance(output, dict) else None
     for item in redactions or []:
@@ -370,14 +377,14 @@ def _add_redactions(mapping: dict[str, str], output: dict) -> None:
             continue
         term = term.strip()
         if term.casefold() in existing:
-            # An existing term keeps its place (its replacement may have been rewritten).
             continue
         replacement = item.get("replacement")
         if not isinstance(replacement, str):
             replacement = DEFAULT_REPLACEMENT
-        _rewrite_replacements(mapping, term, replacement)
         mapping[term] = replacement
+        added[term] = replacement
         existing.add(term.casefold())
+    return added
 
 
 def _abstractor_prompt(document: Document) -> str:
@@ -398,10 +405,11 @@ def _abstract_documents(documents: list[Document], abstractor) -> list[Document]
     return briefs
 
 
-def _redact_documents(documents: list[Document], mapping: dict[str, str]) -> list[Document]:
+def _redact_documents(documents: list[Document],
+                      rounds: list[dict[str, str]]) -> list[Document]:
     return [
-        Document(kind=doc.kind, title=redact(doc.title, mapping),
-                 text=redact(doc.text, mapping), source=doc.source)
+        Document(kind=doc.kind, title=_apply_rounds(doc.title, rounds),
+                 text=_apply_rounds(doc.text, rounds), source=doc.source)
         for doc in documents
     ]
 
@@ -427,17 +435,19 @@ def mask_case(case: Case, masker, guesser, rng: random.Random,
     rounds = 0
     clues: list[str] = []
     final_guesses: list[dict] = []
+    redaction_rounds: list[dict[str, str]] = []
     for round_no in range(1, config.max_rounds + 1):
         output = masker.json(MASKER_SYSTEM, _masker_prompt(documents, clues if round_no > 1 else []),
                              MASKER_SCHEMA)
-        _add_redactions(mapping, output)
+        redaction_rounds.append(_add_redactions(mapping, output))
         if briefs is None:
-            # Re-mask the originals; the masker's terms match the scaled, shifted text it saw.
-            documents = _round_documents(case.documents, base, mapping, factor, year_offset,
-                                         cutoff)
+            # Re-mask the originals, then apply the rounds in order: each round's terms match
+            # the scaled, shifted text the earlier rounds left, as the masker saw it.
+            documents = _round_documents(case.documents, base, redaction_rounds, factor,
+                                         year_offset, cutoff)
         else:
             # The briefs were written from text already scaled and shifted: redact only.
-            documents = _redact_documents(briefs, mapping)
+            documents = _redact_documents(briefs, redaction_rounds)
         documents = guard_documents(documents, terms, mapping)
         result = guesser.json(GUESSER_SYSTEM, _guesser_prompt(documents), GUESSER_SCHEMA)
         rounds += 1
@@ -463,6 +473,7 @@ def mask_case(case: Case, masker, guesser, rng: random.Random,
         year_offset=year_offset,
         final_guesses=final_guesses,
         abstracted=briefs is not None,
+        redaction_rounds=redaction_rounds,
     )
 
 
@@ -476,7 +487,8 @@ def save_masked(root, masked: MaskedCase) -> None:
         "final_guesses": masked.final_guesses,
         "abstracted": bool(masked.abstracted),
     }
-    key = {"mapping": masked.mapping, "factor": masked.factor, "year_offset": masked.year_offset}
+    key = {"mapping": masked.mapping, "factor": masked.factor, "year_offset": masked.year_offset,
+           "redaction_rounds": [dict(r) for r in masked.redaction_rounds]}
     write_json(case_dir / MASKED_FILE, public)
     write_json(case_dir / MASK_KEY_FILE, key)
 
@@ -495,4 +507,5 @@ def load_masked(root, case_id: str) -> MaskedCase:
         year_offset=key.get("year_offset", 0),
         final_guesses=list(public.get("final_guesses", [])),
         abstracted=bool(public.get("abstracted", False)),
+        redaction_rounds=[dict(r) for r in key.get("redaction_rounds", [])],
     )

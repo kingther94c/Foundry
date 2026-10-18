@@ -809,7 +809,8 @@ kept naming the company from them.
 
 - In redaction mode (`MaskConfig.abstract` False), a round's documents are
   made from the case's original documents: each title and text becomes
-  `redact(shift_years(scale_money(redact(original, base), factor), year_offset), mapping)`,
+  `redact(shift_years(scale_money(redact(original, base), factor), year_offset), mapping)`
+  (v18 applies `mapping` round by round instead),
   where `base` is the mapping `pre_mask` returned (company, aliases and
   ticker, redacted before scaling and shifting so that a name containing a
   year or an amount is still caught) and `mapping` is the full mapping. A
@@ -818,8 +819,9 @@ kept naming the company from them.
   from, nor a different original year that shifting happens to turn into
   it. `source` stays `""`; the identity guard runs afterwards as before.
   `pre_mask` itself is unchanged.
-- In both modes, when a redaction is added to the mapping, every replacement
-  already in the mapping that contains its term as a whole word (matched as
+- (Replaced by "Redaction rounds in order (v18)".) In both modes, when a
+  redaction is added to the mapping, every replacement already in the
+  mapping that contains its term as a whole word (matched as
   `redact` matches, ignoring case) is rewritten to `redact(replacement,
   {term: new_replacement})`, so text an earlier redaction put in is redacted too and
   one `redact` pass with the mapping still produces the final text. The new
@@ -893,3 +895,34 @@ it in place of `scale_table_numbers`.
   v16 with the last step changed: `scale_numbers(..., factor)` instead of
   `scale_table_numbers(..., factor)`, still after `shift_years` and before
   the round's `redact(..., mapping)`. Nothing else changes.
+
+## Redaction rounds in order (v18)
+
+v15 matched every term against the scaled and shifted text, and rewrote
+earlier replacements that contain a new term. That still misses a term
+that wraps around an earlier replacement: after round 1 replaced "ClearPath"
+with "the platform", a round-2 term "the platform Forward revenue" occurs
+in the text the masker saw but nowhere in the text the mapping is applied
+to. On ten small-cap cases 158 of the maskers' 1,668 terms changed nothing,
+136 of them for this reason, and two maskers reported it. The masker
+proposes each round's terms against the text the earlier rounds left, so
+the rounds are now applied in that order.
+
+- `MaskedCase.redaction_rounds: list[dict[str, str]]` (default empty): the
+  redactions each masker round added, one dict per round in round order,
+  each in the order the masker gave them. A term already in the mapping
+  (ignoring case) -- from `pre_mask`, the identity guard or an earlier round
+  or earlier in the same output -- is not added again, as before; a round
+  that adds nothing still has its (empty) dict. `mapping` still holds every
+  redaction (base, guard and all rounds), each replacement exactly as given.
+- A round's documents apply the rounds so far in order, each with one
+  `redact` pass: with `R1 ... Rk` the dicts of rounds 1 to k,
+  `redact(...redact(redact(masked, R1), R2)..., Rk)`, where `masked` is the
+  original text masked with the base mapping as in v17 (redaction mode) or
+  the brief (abstraction mode). The identity guard runs afterwards as before.
+- The rewriting of earlier replacements (v15) is gone: applying the rounds
+  in order covers the term inside an earlier replacement as well as the term
+  around one, and a replacement is never changed after the masker gives it.
+  Tests that pinned the rewriting change accordingly.
+- `save_masked` writes `redaction_rounds` into `mask_key.json`;
+  `load_masked` reads it back (`[]` when absent).

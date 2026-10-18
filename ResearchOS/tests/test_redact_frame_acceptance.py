@@ -87,7 +87,8 @@ def test_a_scaled_amount_is_redacted():
     assert "$300 million" not in g.calls[0]["prompt"]
 
 
-def test_an_earlier_replacement_is_redacted_and_the_mapping_rewritten(tmp_path):
+def test_an_earlier_replacement_is_redacted_round_by_round(tmp_path):
+    # v18: the round-2 term applies to the text round 1 left; replacements stay as given
     g = guesser(1)
     masked = masking.mask_case(
         case(),
@@ -98,11 +99,11 @@ def test_an_earlier_replacement_is_redacted_and_the_mapping_rewritten(tmp_path):
     assert "an automotive partner" in g.calls[0]["prompt"]
     assert "automotive" not in g.calls[1]["prompt"]
     assert "Our partner a partner renewed" in body(masked)
-    assert masked.mapping["Fordham Motors"] == "a partner"
+    assert masked.mapping["Fordham Motors"] == "an automotive partner"
     assert masked.mapping["an automotive partner"] == "a partner"
     masking.save_masked(tmp_path, masked)
     key = json.loads((tmp_path / "q1" / "mask_key.json").read_text(encoding="utf-8"))
-    assert key["mapping"]["Fordham Motors"] == "a partner"
+    assert key["mapping"]["Fordham Motors"] == "an automotive partner"
 
 
 def test_a_replacement_containing_its_term_does_not_grow():
@@ -117,12 +118,15 @@ def test_a_replacement_containing_its_term_does_not_grow():
 
 
 def test_redactions_of_one_output_are_added_in_order():
+    # v18: one output is one redact pass over the text before it; a later term in the same
+    # output does not reach into an earlier term's replacement
     masked = masking.mask_case(
         case(),
         masker_rounds([("Fordham Motors", "an automotive partner"), ("automotive", "industrial")]),
         guesser(0), random.Random(1), config(1))
-    assert masked.mapping["Fordham Motors"] == "an industrial partner"
-    assert "Our partner an industrial partner renewed" in body(masked)
+    assert list(masked.mapping)[-2:] == ["Fordham Motors", "automotive"]
+    assert masked.mapping["Fordham Motors"] == "an automotive partner"
+    assert "Our partner an automotive partner renewed" in body(masked)
 
 
 def test_an_existing_term_keeps_its_place():
