@@ -1,0 +1,685 @@
+{
+ "cases": [
+  {
+   "case_id": "sc01",
+   "ticker": "UCB",
+   "company": "UNITED COMMUNITY BANKS INC",
+   "event_date": "2026-07-21"
+  },
+  {
+   "case_id": "sc02",
+   "ticker": "IBCP",
+   "company": "INDEPENDENT BANK CORP /MI/",
+   "event_date": "2026-07-23"
+  },
+  {
+   "case_id": "sc03",
+   "ticker": "VLY",
+   "company": "VALLEY NATIONAL BANCORP",
+   "event_date": "2026-07-23"
+  },
+  {
+   "case_id": "sc04",
+   "ticker": "STBA",
+   "company": "S&T BANCORP INC",
+   "event_date": "2026-07-23"
+  },
+  {
+   "case_id": "sc05",
+   "ticker": "BFH",
+   "company": "BREAD FINANCIAL HOLDINGS, INC.",
+   "event_date": "2026-07-23"
+  },
+  {
+   "case_id": "sc06",
+   "ticker": "BYD",
+   "company": "BOYD GAMING CORP",
+   "event_date": "2026-07-24"
+  },
+  {
+   "case_id": "sc07",
+   "ticker": "HFWA",
+   "company": "HERITAGE FINANCIAL CORP /WA/",
+   "event_date": "2026-07-24"
+  },
+  {
+   "case_id": "sc09",
+   "ticker": "CURB",
+   "company": "Curbline Properties Corp.",
+   "event_date": "2026-07-28"
+  },
+  {
+   "case_id": "sc10",
+   "ticker": "PII",
+   "company": "Polaris Inc.",
+   "event_date": "2026-07-28"
+  },
+  {
+   "case_id": "sc11",
+   "ticker": "MYRG",
+   "company": "MYR GROUP INC.",
+   "event_date": "2026-07-30"
+  },
+  {
+   "case_id": "sc12",
+   "ticker": "UIS",
+   "company": "UNISYS CORP",
+   "event_date": "2026-07-30"
+  },
+  {
+   "case_id": "sc13",
+   "ticker": "AXGN",
+   "company": "Axogen, Inc.",
+   "event_date": "2026-07-29"
+  },
+  {
+   "case_id": "sc14",
+   "ticker": "MTH",
+   "company": "Meritage Homes CORP",
+   "event_date": "2026-07-30"
+  },
+  {
+   "case_id": "sc15",
+   "ticker": "MGPI",
+   "company": "MGP INGREDIENTS INC",
+   "event_date": "2026-07-29"
+  },
+  {
+   "case_id": "sc16",
+   "ticker": "WNC",
+   "company": "WABASH NATIONAL Corp",
+   "event_date": "2026-07-29"
+  },
+  {
+   "case_id": "sc17",
+   "ticker": "BHC",
+   "company": "Bausch Health Companies Inc.",
+   "event_date": "2026-07-30"
+  }
+ ],
+ "excluded": [
+  {
+   "case_id": "sc08",
+   "ticker": "AMR",
+   "reason": "release (2026-07-27, preliminary) and call (2026-08-07) are different events"
+  }
+ ],
+ "redaction_v14_first_eight": [
+  {
+   "case": "sc01",
+   "ticker": "UCB",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.88,
+    0.82,
+    0.72,
+    0.66
+   ]
+  },
+  {
+   "case": "sc02",
+   "ticker": "IBCP",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.88,
+    0.85,
+    0.65,
+    0.5
+   ]
+  },
+  {
+   "case": "sc03",
+   "ticker": "VLY",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.92,
+    0.85,
+    0.78,
+    0.75
+   ]
+  },
+  {
+   "case": "sc04",
+   "ticker": "STBA",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.85,
+    0.7,
+    0.45,
+    0.3
+   ]
+  },
+  {
+   "case": "sc05",
+   "ticker": "BFH",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.93,
+    0.86,
+    0.82,
+    0.8
+   ]
+  },
+  {
+   "case": "sc06",
+   "ticker": "BYD",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.95,
+    0.9,
+    0.85,
+    0.78
+   ]
+  },
+  {
+   "case": "sc07",
+   "ticker": "HFWA",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.88,
+    0.8,
+    0.65,
+    0.75
+   ]
+  },
+  {
+   "case": "sc09",
+   "ticker": "CURB",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.9,
+    0.82,
+    0.7,
+    0.6
+   ]
+  }
+ ],
+ "redaction_v17": [
+  {
+   "case": "sc01",
+   "ticker": "UCB",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.85,
+    0.7,
+    0.55,
+    0.5
+   ]
+  },
+  {
+   "case": "sc02",
+   "ticker": "IBCP",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.85,
+    0.75,
+    0.7,
+    0.6
+   ]
+  },
+  {
+   "case": "sc03",
+   "ticker": "VLY",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.92,
+    0.85,
+    0.72,
+    0.6
+   ]
+  },
+  {
+   "case": "sc04",
+   "ticker": "STBA",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.88,
+    0.7,
+    0.55,
+    0.42
+   ]
+  },
+  {
+   "case": "sc05",
+   "ticker": "BFH",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.94,
+    0.92,
+    0.88,
+    0.82
+   ]
+  },
+  {
+   "case": "sc06",
+   "ticker": "BYD",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.93,
+    0.88,
+    0.82,
+    0.8
+   ]
+  },
+  {
+   "case": "sc07",
+   "ticker": "HFWA",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.85,
+    0.8,
+    0.6,
+    0.55
+   ]
+  },
+  {
+   "case": "sc09",
+   "ticker": "CURB",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.9,
+    0.8,
+    0.7,
+    0.6
+   ]
+  },
+  {
+   "case": "sc10",
+   "ticker": "PII",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.96,
+    0.93,
+    0.88,
+    0.85
+   ]
+  },
+  {
+   "case": "sc11",
+   "ticker": "MYRG",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.93,
+    0.9,
+    0.85,
+    0.83
+   ]
+  },
+  {
+   "case": "sc12",
+   "ticker": "UIS",
+   "status": "identifiable",
+   "true_company_confidence_by_round": [
+    0.95,
+    0.9,
+    0.85,
+    0.85
+   ]
+  },
+  {
+   "case": "sc13",
+   "ticker": "AXGN",
+   "status": "interrupted (usage limit)",
+   "true_company_confidence_by_round": [
+    0.95,
+    0.93,
+    0.85
+   ]
+  },
+  {
+   "case": "sc14",
+   "ticker": "MTH",
+   "status": "interrupted (usage limit)",
+   "true_company_confidence_by_round": [
+    0.93,
+    0.85,
+    0.78
+   ]
+  },
+  {
+   "case": "sc15",
+   "ticker": "MGPI",
+   "status": "interrupted (usage limit)",
+   "true_company_confidence_by_round": [
+    0.96,
+    0.93,
+    0.88
+   ]
+  },
+  {
+   "case": "sc16",
+   "ticker": "WNC",
+   "status": "interrupted (usage limit)",
+   "true_company_confidence_by_round": [
+    0.95,
+    0.85,
+    0.8
+   ]
+  },
+  {
+   "case": "sc17",
+   "ticker": "BHC",
+   "status": "interrupted (usage limit)",
+   "true_company_confidence_by_round": [
+    0.96,
+    0.95
+   ]
+  }
+ ],
+ "abstraction_v18": [
+  {
+   "case": "sc01",
+   "status": "masked",
+   "rounds": 2,
+   "final_top_guesses": [
+    [
+     "PEBO",
+     0.06
+    ],
+    [
+     "TOWN",
+     0.05
+    ],
+    [
+     "UVSP",
+     0.04
+    ]
+   ],
+   "fresh_guesser_named_it": true,
+   "fresh_top_guesses": [
+    [
+     "UCB",
+     0.3
+    ],
+    [
+     "ABCB",
+     0.15
+    ],
+    [
+     "AUB",
+     0.08
+    ]
+   ],
+   "usd": 0.548
+  },
+  {
+   "case": "sc02",
+   "status": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "IBCP",
+     0.45
+    ],
+    [
+     "OSBC",
+     0.15
+    ],
+    [
+     "COFS",
+     0.08
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.634
+  },
+  {
+   "case": "sc03",
+   "status": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "VLY",
+     0.3
+    ],
+    [
+     "FNB",
+     0.12
+    ],
+    [
+     "PFS",
+     0.1
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.916
+  },
+  {
+   "case": "sc04",
+   "status": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "STBA",
+     0.35
+    ],
+    [
+     "THFF",
+     0.1
+    ],
+    [
+     "BANR",
+     0.08
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.82
+  },
+  {
+   "case": "sc05",
+   "status": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "BFH",
+     0.85
+    ],
+    [
+     "SYF",
+     0.1
+    ],
+    [
+     "DFS",
+     0.02
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.498
+  },
+  {
+   "case": "sc06",
+   "status": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "BYD",
+     0.85
+    ],
+    [
+     "RRR",
+     0.04
+    ],
+    [
+     "PENN",
+     0.03
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.576
+  },
+  {
+   "case": "sc07",
+   "status": "masked",
+   "rounds": 1,
+   "final_top_guesses": [
+    [
+     "CZNC",
+     0.08
+    ],
+    [
+     "ACNB",
+     0.07
+    ],
+    [
+     "GABC",
+     0.06
+    ]
+   ],
+   "fresh_guesser_named_it": false,
+   "fresh_top_guesses": [
+    [
+     "GABC",
+     0.2
+    ],
+    [
+     "COFS",
+     0.1
+    ],
+    [
+     "EQBK",
+     0.07
+    ]
+   ],
+   "usd": 0.583
+  },
+  {
+   "case": "sc09",
+   "status": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "CURB",
+     0.8
+    ],
+    [
+     "SITC",
+     0.05
+    ],
+    [
+     "PECO",
+     0.04
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.561
+  },
+  {
+   "case": "sc10",
+   "status": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "PII",
+     0.82
+    ],
+    [
+     "DOOO",
+     0.06
+    ],
+    [
+     "HOG",
+     0.03
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.645
+  },
+  {
+   "case": "sc11",
+   "status": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "MYRG",
+     0.85
+    ],
+    [
+     "IESC",
+     0.04
+    ],
+    [
+     "PRIM",
+     0.03
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.548
+  },
+  {
+   "case": "sc12",
+   "status": "identifiable",
+   "rounds": 4,
+   "final_top_guesses": [
+    [
+     "UIS",
+     0.9
+    ],
+    [
+     "DXC",
+     0.04
+    ],
+    [
+     "KD",
+     0.03
+    ]
+   ],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": 0.609
+  },
+  {
+   "case": "sc13",
+   "status": "not run (futility: nine identifiable)",
+   "rounds": null,
+   "final_top_guesses": [],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": null
+  },
+  {
+   "case": "sc14",
+   "status": "not run (futility: nine identifiable)",
+   "rounds": null,
+   "final_top_guesses": [],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": null
+  },
+  {
+   "case": "sc15",
+   "status": "not run (futility: nine identifiable)",
+   "rounds": null,
+   "final_top_guesses": [],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": null
+  },
+  {
+   "case": "sc16",
+   "status": "not run (futility: nine identifiable)",
+   "rounds": null,
+   "final_top_guesses": [],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": null
+  },
+  {
+   "case": "sc17",
+   "status": "not run (futility: nine identifiable)",
+   "rounds": null,
+   "final_top_guesses": [],
+   "fresh_guesser_named_it": null,
+   "fresh_top_guesses": [],
+   "usd": null
+  }
+ ],
+ "abstraction_spent_usd": 6.936
+}

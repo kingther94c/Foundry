@@ -98,6 +98,12 @@ large-cap Q2 2026 reports, all after the models' knowledge cutoff. Every mask
 ended identifiable, ten cases trained the playbook, and five were held out.
 Read its caveats before its numbers.
 
+[runs/2026-10-smallcap-run](runs/2026-10-smallcap-run/README.md): 16 small
+and mid caps, pre-registered. Masking them exposed five leaks in the
+pipeline, all fixed (v15-v18); after the fixes redaction still hid none of
+eleven cases and abstraction two of eleven, so there was no training. Small
+banks come close to hidden; a company with a business of its own does not.
+
 ## How it was built
 
 Foundry wrote the package from SPEC.md and FOUNDRY.md alone, in a fresh
@@ -252,6 +258,16 @@ without the API's web tools. Foundry made it in 13 rounds and passed all 192
 acceptance tests. On a real page its HTML-to-text agrees with the
 hand-written version line for line, and gets the title right where the
 hand-written one swallowed the tooltips of the page's SVG icons.
+
+The small-cap run turned up leaks in masking itself, each fixed by Foundry
+from a spec section, behind hidden acceptance tests: masker terms are
+matched against the text the masker saw (v15, 10 rounds; on review the
+rewriting of earlier replacements was extended to abstraction mode); table
+numbers are scaled and years long past dropped (`--mask-history-years N`,
+v16, 14 rounds); amounts are scaled in any layout (v17, 12 rounds, on
+tools v4); and each round's redactions apply, in order, to the text the
+earlier rounds left (v18, 20 rounds, the first of these built on the real
+API, for about $0.89). Every attempt passed all of its hidden tests.
 
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
