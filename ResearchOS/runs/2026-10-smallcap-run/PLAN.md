@@ -105,3 +105,25 @@ that never sees the documents, a fresh guesser on each final mask, the
 same seeds. Both arms are reported. Training follows the plan's rule on
 whichever arm masks at least eight cases (abstraction if both do, since its
 briefs carry less of the company); if neither does, there is no training.
+
+## Amendment 3, 2026-10-18: cost rules, before the abstraction arm runs
+
+Written with eleven of the sixteen redaction cases finished on the fixed
+pipeline (all eleven identifiable; the other five were cut off by a usage
+limit mid-run), no abstraction result, and no outcome opened.
+
+1. The redaction arm stops at eleven cases. With eleven identifiable, at
+   most five could end masked, fewer than the eight that training needs,
+   so the remaining five cannot change what the plan does next. Running
+   them through the API would cost about $7; the arm is reported as 11 of
+   11 identifiable, 5 not run.
+2. The abstraction arm runs through the Claude API (claude-opus-5-5; the
+   masker and abstractor at effort medium and high, the guesser at medium,
+   each role its own client with nothing shared but the masked text), on
+   the current code (v18), in case order, four rounds as planned. A live
+   test on one megacap case cost $0.51 including the analysis, so an
+   abstraction mask is about $0.5 a case. The arm stops as soon as nine
+   cases are identifiable (eight masked is then impossible), or at a $10
+   cap.
+3. The fresh-guesser check runs on every case that ends masked, which is
+   what it is for; identifiable masks need no second opinion.
