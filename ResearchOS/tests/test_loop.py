@@ -181,7 +181,8 @@ def test_evaluate_with_nothing_scored(tmp_path):
     result = evaluate(root, ["a"], pb_path, make_roles(guesser=FakeLLM(responses=[hit])))
     assert result == {"cases": [], "n": 0, "brier_weighted": None, "brier_judge": None,
                       "brier_uniform": None, "brier_coin": None, "accuracy_weighted": None,
-                      "accuracy_judge": None, "n_identifiable": 0}
+                      "accuracy_judge": None, "n_identifiable": 0,
+                      "perspective_mode": "holistic"}  # SPEC.md v20
     assert not pb_path.exists()
     assert evaluate(root, [], pb_path, make_roles())["n"] == 0
 

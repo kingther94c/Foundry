@@ -61,8 +61,9 @@ Either side can be several files (`-a`/`-b`), each what `evaluate` or `train`
 printed; a side's files are merged in the order given.
 
 `blend` replays a rule for combining the perspectives (`uniform`, `median`,
-`hedge` with `--eta`, or `leader`: the best perspective so far) walk-forward
-over scored records, so rules can be compared without calling a model again:
+`hedge` with `--eta`, `leader`: the best perspective so far, or `pool`: their
+log-odds added) walk-forward over scored records, so rules can be compared
+without calling a model again:
 
 ```
 .venv\Scripts\python -m researchos blend train.json eval.json --rule leader --out leader.json
@@ -283,7 +284,17 @@ combination rule scored the same: the perspectives correlate at 0.86.
 Foundry made it in 11 rounds on the real API ($0.50), and it agrees with
 the hand-written version on 2,000 random record sets and on the real cases.
 [docs/foundry-acceptance.md](../docs/foundry-acceptance.md) scores this
-and the fifteen changes before it against fixed acceptance criteria.
+and the changes before it against fixed acceptance criteria.
+
+`--perspective-mode isolated` (v20) asks each perspective a narrower
+question -- how its factor alone would move the stock if everything else in
+the report had come in as expected -- and adds the views' evidence in
+log-odds (`tools.stats.pool_log_odds`, tools v5) instead of averaging it;
+the judge is told the views add up. The default, `holistic`, is what the
+analyst did before. Foundry made it in 24 rounds on the real API ($0.94);
+it passed all 275 hidden tests, and on 3,000 random analyses it made the
+same calls with the same prompts and returned the same forecasts as the
+hand-written version.
 
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.

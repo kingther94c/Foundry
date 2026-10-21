@@ -119,7 +119,7 @@ def test_perspective_probs_derivation_formula():
 # --- replay -----------------------------------------------------------------------
 
 def test_rules():
-    assert RULES == ("uniform", "median", "hedge", "leader")
+    assert RULES == ("uniform", "median", "hedge", "leader", "pool")  # pool: SPEC.md v20
 
 
 def test_uniform_and_median():

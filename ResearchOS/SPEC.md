@@ -48,7 +48,11 @@ becomes `replacement`; a year right after a letter, as in "FY2019", stays),
 `tools.stats.brier_score(probs, outcomes)`, `tools.stats.log_loss(probs,
 outcomes)`, `tools.stats.directional_accuracy(predicted, actual)`,
 `tools.stats.hedge_update(weights, losses, eta)`,
-`tools.stats.combine_probabilities(probs, weights)`.
+`tools.stats.combine_probabilities(probs, weights)`,
+`tools.stats.pool_log_odds(probs, weights=None, eps=1e-6)` (the probabilities
+taken as independent evidence: the sigmoid of the sum of their log-odds,
+each weighted by its weight scaled so the weights used average 1; None
+when no key has a number and a positive weight).
 
 ## researchos.cases
 
@@ -961,3 +965,77 @@ tuned. In `researchos.blend`:
   (or written to `--out`); an unreadable file or a record `agreement`
   refuses exits 1 with the message on stderr, as for `blend`. Files after
   an option are still files, as for `blend`.
+
+## Perspectives built to disagree (v20)
+
+On the 21 real cases of v19 the seven perspectives' probabilities
+correlated at 0.86. Every analyst reads the whole report and answers the
+same question -- will the stock beat the market? -- so each gives its
+overall impression, tinted by its angle, and no rule for combining them can
+add what they do not have. An "isolated" mode asks each perspective a
+narrower question: how its factor alone would move the stock if everything
+else in the report had come in as the market expected. Views like that can
+disagree, and they combine by adding their evidence in log-odds
+(`tools.stats.pool_log_odds`) rather than by averaging. What `analyze` has
+done so far is the "holistic" mode, and it stays the default.
+
+In `researchos.perspectives`:
+
+- `MODES = ("holistic", "isolated")`.
+- `analyze(masked, playbook, analyst, judge, mode="holistic") -> Analysis`.
+  A mode not in `MODES` raises ValueError naming it, before any call.
+  "holistic" is exactly what `analyze` did before. "isolated" makes the same
+  calls in the same order, with the same `prefix`, schemas and parsing of
+  the replies, and differs only in:
+  - the analysts' system prompt: `ISOLATED_ANALYST_SYSTEM` (below);
+  - each perspective's prompt: the first line is still
+    `Perspective: <name>`; the second is `Your factor: <focus>`, where
+    `<focus>` is the text the holistic prompt gives for what the perspective
+    looks at; then this paragraph, verbatim, and then
+    `render_for_prompt(playbook)` as in the holistic prompt:
+
+    ```text
+    Judge only this factor, as if everything else in the report had come in exactly as the market expected. Give your stance on this factor, the probability that the stock beats the market on the first session that can react from this factor alone (0.50 if it gives no signal), your conviction, and the key points behind it.
+    ```
+  - `prob_weighted`: `pool_log_odds` of the views' probabilities
+    (`{name: view.prob_up}`) with the playbook's weights; when that is None
+    (no perspective has a positive weight), `pool_log_odds` of the views'
+    probabilities with no weights; then clamped to [0.01, 0.99] as every
+    probability is;
+  - the judge's system prompt: `ISOLATED_JUDGE_SYSTEM` (below);
+  - in the judge's prompt, the line giving `prob_weighted` reads
+    `Evidence-pooled probability of the views (their log-odds added): <p>`
+    (`<p>` to three decimals) instead of
+    `Playbook-weighted probability of the views: <p>`. The rest of the
+    judge's prompt is unchanged.
+
+`ISOLATED_ANALYST_SYSTEM`, verbatim (one paragraph):
+
+```text
+You are an equity analyst judging how a stock will react to a quarterly earnings report. The company's identity is hidden: names are replaced, money amounts are multiplied by a secret factor (absolute sizes are meaningless; ratios, growth rates and margins are intact) and years are shifted. Do not try to identify the company; reason only from the documents. You judge one factor in isolation. Assume that everything in the report outside your factor came in exactly as the market expected, and estimate the probability that the stock beats the market (positive abnormal return, stock minus market) on the first trading session that can react to the report, from your factor alone. 0.50 means your factor gives no signal either way; move away from 0.50 only as far as this factor by itself would move the stock. Do not give an overall view of the report: another analyst combines the factors.
+```
+
+`ISOLATED_JUDGE_SYSTEM`, verbatim (one paragraph):
+
+```text
+You are the chief analyst. Several analysts have each judged one factor of a quarterly earnings report in isolation, each as if everything else in the report had come in as the market expected. The company's identity is hidden (names replaced, money scaled, years shifted). Their probabilities are evidence from different factors: they add up rather than average, and a view at 0.50 is a factor that gives no signal. Weigh them against the documents and the playbook, and give your own probability that the stock beats the market (positive abnormal return) on the first trading session that can react, with a short thesis.
+```
+
+In `researchos.loop`, `train` and `evaluate` take a keyword
+`perspective_mode="holistic"` (after `knowledge_cutoff`) and analyze every
+case in that mode. A mode not in `MODES` raises ValueError before anything
+is masked, called or written. `evaluate`'s result gains
+`"perspective_mode"`: the mode it used. Nothing in the records changes; in
+"isolated" mode `brier_weighted` scores the pooled forecast, and
+`brier_uniform` still scores the plain mean of the views.
+
+In `researchos.blend`, `RULES` becomes `("uniform", "median", "hedge",
+"leader", "pool")`. `pool` forecasts `pool_log_odds` of the seven
+probabilities with no weights, clamped to [0.01, 0.99]; it learns nothing
+from earlier cases, and its `eta` is None. `agreement` is unchanged.
+
+CLI: `train` and `evaluate` take `--perspective-mode {holistic,isolated}`.
+When it is given, `perspective_mode=` is passed to `train` or `evaluate`;
+when it is not, nothing is passed and their default holds (as for the
+masking options). Any other value exits 2, as argparse does.
+`blend --rule pool` replays the new rule.

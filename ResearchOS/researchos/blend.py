@@ -27,11 +27,11 @@ from itertools import combinations, groupby
 from typing import NamedTuple
 
 from tools.dates import parse_iso_date
-from tools.stats import combine_probabilities, hedge_update, is_number
+from tools.stats import combine_probabilities, hedge_update, is_number, pool_log_odds
 
-from researchos.perspectives import PERSPECTIVES
+from researchos.perspectives import PERSPECTIVES, PROB_MAX, PROB_MIN
 
-RULES = ("uniform", "median", "hedge", "leader")
+RULES = ("uniform", "median", "hedge", "leader", "pool")
 
 
 def perspective_probs(record) -> dict[str, float]:
@@ -117,6 +117,10 @@ def _forecast(rule: str, probs: dict[str, float], weights: dict[str, float],
     if rule == "hedge":
         combined = combine_probabilities(probs, weights)
         return uniform if combined is None else combined
+    if rule == "pool":
+        # Evidence added in log-odds (SPEC.md v20); learns nothing from earlier cases.
+        pooled = pool_log_odds({name: probs[name] for name in PERSPECTIVES})
+        return min(max(float(pooled), PROB_MIN), PROB_MAX)
     # leader: the perspective with the lowest mean Brier so far; min keeps the first
     # in PERSPECTIVES order among equals.
     if n_seen == 0:

@@ -3,6 +3,7 @@
     python -m researchos {train,evaluate} --root DIR --playbook FILE --ids ID[,ID...] [--seed N]
                                           [--knowledge-cutoff YYYY-MM-DD] [--mask-give-up CONF]
                                           [--mask-abstract] [--mask-history-years N]
+                                          [--perspective-mode {holistic,isolated}]
                                           [--out FILE]
     python -m researchos build --root DIR --spec FILE --closes FILE --market-closes FILE
                                [--release-url URL] [--transcript-url URL]
@@ -21,6 +22,9 @@ FILE instead (researchos.jsonio.write_json) and prints nothing.
 train and evaluate refuse a case whose event date is not an ISO date, or is on or
 before the latest event date the playbook has learned from (its forecast would use
 reactions it could not have known): exit 1, with the reason on stderr.
+--perspective-mode isolated asks each perspective for its factor alone and pools
+the views in log-odds (researchos.perspectives.analyze); without the option the
+default ("holistic") holds.
 
 build finds the case's documents through the API's server-side web search and
 fetch. Given any --release-url, --transcript-url or --expectations-url (each may
@@ -35,7 +39,7 @@ order given (researchos.compare.merge_reports).
 
 blend reads such files the same way, merges them in the order given, and prints
 researchos.blend.replay of their cases: a rule for combining the perspectives
-(uniform, median, hedge, leader) replayed walk-forward over the scored records.
+(uniform, median, hedge, leader, pool) replayed walk-forward over the scored records.
 
 agreement reads and merges files as blend does and prints
 researchos.blend.agreement of their cases: how far the perspectives disagree.
@@ -60,6 +64,7 @@ from researchos.jsonio import write_json
 from researchos.llm import ClaudeJSON, LLMError, anthropic_client
 from researchos.loop import Roles, evaluate, parse_cutoff, train
 from researchos.masking import MaskConfig
+from researchos.perspectives import MODES
 from researchos.sources import build_case, fetch_pages, load_case_spec, load_closes, url_fetcher
 
 USER_AGENT_ENV = "RESEARCHOS_USER_AGENT"
@@ -156,6 +161,11 @@ def _parser() -> argparse.ArgumentParser:
                        default=None, metavar="N",
                        help="replace every year more than N years before the case's event "
                             "year with 'an earlier year' when masking (N >= 0)")
+        p.add_argument("--perspective-mode", dest="perspective_mode", choices=MODES,
+                       default=None,
+                       help="holistic (default): each perspective gives its overall view; "
+                            "isolated: each judges its factor alone and the views are pooled "
+                            "in log-odds")
         _add_out(p)
     p = sub.add_parser("build")
     p.add_argument("--root", required=True)
@@ -266,6 +276,8 @@ def main(argv=None, *, client_factory=None) -> int:
             kwargs["mask_config"] = MaskConfig(give_up_confidence=args.mask_give_up,
                                                abstract=args.mask_abstract,
                                                history_years=args.mask_history_years)
+        if args.perspective_mode is not None:
+            kwargs["perspective_mode"] = args.perspective_mode
         result = run(args.root, ids, args.playbook, roles, **kwargs)
     except LLMError as exc:
         print(f"error: LLM call failed: {exc}", file=sys.stderr)

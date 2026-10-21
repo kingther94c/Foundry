@@ -17,7 +17,7 @@ from researchos.cases import identity_terms, load_case, load_outcome
 from researchos.jsonio import write_json
 from researchos.masking import (MASKED_FILE, MaskConfig, guard_documents, load_masked,
                                 mask_case, save_masked)
-from researchos.perspectives import Analysis, analyze
+from researchos.perspectives import Analysis, analyze, check_mode
 from researchos.playbook import (Playbook, add_lessons, learned_through, lesson_is_clean,
                                  load_playbook, save_playbook, update_weights)
 from researchos.reflect import reflect
@@ -114,7 +114,8 @@ def _after_cutoff(case, cutoff: date | None) -> bool:
     return event > cutoff
 
 
-def _predict(root, case_id, case, playbook, roles, seed, mask_config, split, cutoff=None):
+def _predict(root, case_id, case, playbook, roles, seed, mask_config, split, cutoff=None,
+             perspective_mode="holistic"):
     """Mask, analyze and seal one case. Returns (masked, analysis); analysis None if skipped."""
     rng = random.Random(f"{seed}:{case_id}")
     masked = _get_masked(root, case, roles, rng, mask_config)
@@ -124,7 +125,8 @@ def _predict(root, case_id, case, playbook, roles, seed, mask_config, split, cut
             return masked, None
         log.warning("%s: %s is identifiable but its event date %s is after the knowledge "
                     "cutoff %s; analyzing it", split, case_id, case.event_date, cutoff)
-    analysis = analyze(masked, _analysis_playbook(playbook, case), roles.analyst, roles.judge)
+    analysis = analyze(masked, _analysis_playbook(playbook, case), roles.analyst, roles.judge,
+                       mode=perspective_mode)
     _seal(root, analysis)
     return masked, analysis
 
@@ -175,7 +177,9 @@ def _requested_cases(root, case_ids, playbook: Playbook, playbook_path, command:
 
 
 def train(root, case_ids, playbook_path, roles: Roles, seed=0,
-          mask_config: MaskConfig = MaskConfig(), knowledge_cutoff=None) -> list[dict]:
+          mask_config: MaskConfig = MaskConfig(), knowledge_cutoff=None,
+          perspective_mode="holistic") -> list[dict]:
+    check_mode(perspective_mode)  # before anything is masked, called or written
     cutoff = parse_cutoff(knowledge_cutoff)
     playbook = _open_playbook(playbook_path)
     requested = _requested_cases(root, case_ids, playbook, playbook_path, "train")
@@ -190,7 +194,7 @@ def train(root, case_ids, playbook_path, roles: Roles, seed=0,
         forecasts = []
         for case_id, case, _ in batch:
             masked, analysis = _predict(root, case_id, case, playbook, roles, seed, mask_config,
-                                        "train", cutoff)
+                                        "train", cutoff, perspective_mode)
             forecasts.append((case_id, case, masked, analysis))
         # Only then are the outcomes opened, one case at a time in batch order.
         for case_id, case, masked, analysis in forecasts:
@@ -220,7 +224,9 @@ def _mean(values: list[float]) -> float | None:
 
 
 def evaluate(root, case_ids, playbook_path, roles: Roles, seed=0,
-             mask_config: MaskConfig = MaskConfig(), knowledge_cutoff=None) -> dict:
+             mask_config: MaskConfig = MaskConfig(), knowledge_cutoff=None,
+             perspective_mode="holistic") -> dict:
+    check_mode(perspective_mode)  # before anything is masked, called or written
     cutoff = parse_cutoff(knowledge_cutoff)
     if Path(playbook_path).is_file():
         playbook = load_playbook(playbook_path)
@@ -232,7 +238,7 @@ def evaluate(root, case_ids, playbook_path, roles: Roles, seed=0,
     records: list[dict] = []
     for case_id, case, _ in requested:
         masked, analysis = _predict(root, case_id, case, playbook, roles, seed, mask_config,
-                                    "eval", cutoff)
+                                    "eval", cutoff, perspective_mode)
         if analysis is None:
             continue
         outcome = load_outcome(root, case_id)  # only after the prediction is sealed
@@ -255,4 +261,5 @@ def evaluate(root, case_ids, playbook_path, roles: Roles, seed=0,
         "accuracy_weighted": _mean([1.0 if r["correct_weighted"] else 0.0 for r in records]),
         "accuracy_judge": _mean([1.0 if r["correct_judge"] else 0.0 for r in records]),
         "n_identifiable": sum(1 for r in records if r["identifiable"]),
+        "perspective_mode": perspective_mode,
     }
