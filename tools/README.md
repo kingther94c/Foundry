@@ -65,3 +65,14 @@ v3 does not read as tables (a cell per line, a negative split as `(22` and
 than money whatever the layout, leaving 29. Foundry made it in 7 rounds;
 it passes all 42 new acceptance cases (`test_v4_acceptance.py`) and agrees
 with a hand-written reference on 30,000 fuzzed inputs.
+
+v5 added `stats.logit`, `stats.sigmoid` and `stats.pool_log_odds`.
+`combine_probabilities` averages forecasts, which suits views that read the
+same evidence; views that each judge a different factor should add their
+evidence in log-odds instead (ResearchOS v20). Foundry made them in 8
+rounds on the API (about $0.32); they pass all 74 new acceptance cases
+(`test_v5_acceptance.py`). Against a hand-written reference, 1,037 of
+30,000 fuzzed calls disagreed, every one with weights near the float limit
+(`1e308`, `10 ** 400`): the reference overflowed, while Foundry's version
+scales such weights exactly with `Fraction` and gets the right answer. On
+60,000 more calls without such weights the two agree.

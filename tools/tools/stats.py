@@ -2,6 +2,7 @@
 
 import math
 from collections.abc import Mapping, Sequence
+from fractions import Fraction
 
 Number = int | float
 
@@ -220,3 +221,71 @@ def is_number(value: object) -> bool:
     if isinstance(value, float):
         return math.isfinite(value)
     return False
+
+
+def _check_eps(eps: object) -> None:
+    """Raise ValueError unless eps is a number with 0 < eps < 0.5."""
+    if not is_number(eps) or not 0 < eps < 0.5:
+        raise ValueError(f"eps must be a number with 0 < eps < 0.5, got {eps!r}")
+
+
+def logit(p: Number, eps: Number = 1e-6) -> float:
+    """Return the log-odds of p clipped to [eps, 1 - eps]; never None (bad input raises ValueError)."""
+    if not is_number(p) or not 0 <= p <= 1:
+        raise ValueError(f"p must be a number within [0, 1], got {p!r}")
+    _check_eps(eps)
+    q = min(max(p, eps), 1 - eps)
+    return math.log(q / (1 - q))
+
+
+def sigmoid(x: Number) -> float:
+    """Return 1 / (1 + exp(-x)) without overflow; never None (a non-number raises ValueError)."""
+    if not is_number(x):
+        raise ValueError(f"x must be a number, got {x!r}")
+    try:
+        x = float(x)
+    except OverflowError:
+        # An int too large for a float: the sigmoid has saturated.
+        return 1.0 if x > 0 else 0.0
+    if x < 0:
+        e = math.exp(x)
+        return e / (1 + e)
+    return 1 / (1 + math.exp(-x))
+
+
+def pool_log_odds(
+    probs: Mapping[str, object],
+    weights: Mapping[str, object] | None = None,
+    eps: Number = 1e-6,
+) -> float | None:
+    """Return the sigmoid of the (weighted) sum of log-odds of the usable probabilities; None if no key is used."""
+    _check_eps(eps)
+    if weights is None:
+        used = [p for p in probs.values() if is_number(p)]
+        if not used:
+            return None
+        return sigmoid(sum(logit(p, eps) for p in used))
+    pairs = []
+    for key, p in probs.items():
+        if not is_number(p):
+            continue
+        w = weights.get(key)
+        if not is_number(w) or w <= 0:
+            continue
+        pairs.append((p, w))
+    if not pairs:
+        return None
+    m = len(pairs)
+    coefs: list[float]
+    try:
+        total = sum(w for _, w in pairs)
+        if not math.isfinite(total):
+            raise OverflowError("total weight overflows a float")
+        coefs = [m * w / total for _, w in pairs]
+        if not all(math.isfinite(c) for c in coefs):
+            raise OverflowError("coefficient overflows a float")
+    except OverflowError:
+        # Weights too large for float arithmetic: scale them exactly instead.
+        exact_total = sum(Fraction(w) for _, w in pairs)
+        coefs = [float(m * Fraction(w) / exact_total) for _, w in pairs]
+    return sigmoid(sum(c * logit(p, eps) for c, (p, _) in zip(coefs, pairs)))

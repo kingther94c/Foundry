@@ -231,3 +231,42 @@ handles; it is meant to run after `scale_money` and to take the place of
     `"Loss | (22 | )"` -> `"Loss | (11 | )"`; `"Q2 | Sales 2,000 and 3"` ->
     `"Q2 | Sales 1,000 and 3"`; the lines `"(1,000)"` and `"  64"` become
     `"(500)"` and `"  32"`; the line `"2026"` is unchanged.
+
+## v5: independent evidence
+
+`combine_probabilities` averages, which is right when every forecast reads
+the same evidence. When each forecast judges a different factor -- "the
+probability the stock beats the market if this factor were the only thing
+that differed from expectations" -- the factors' evidence adds up instead,
+in log-odds. In `tools.stats`:
+
+- `logit(p, eps=1e-6) -> float`: `math.log(q / (1 - q))` with
+  `q = min(max(p, eps), 1 - eps)`. Raises ValueError if `p` is not a number
+  (`is_number`) or is outside `[0, 1]`, or if `eps` is not a number with
+  `0 < eps < 0.5`. `logit(0.5) == 0.0` exactly.
+- `sigmoid(x) -> float`: `1 / (1 + math.exp(-x))`, computed so that no
+  number overflows: for `x < 0`, `math.exp(x) / (1 + math.exp(x))`; an
+  int too large for a float gives `1.0` if it is positive and `0.0` if it
+  is negative. `sigmoid(0) == 0.5` exactly. Raises ValueError if `x` is not
+  a number (`is_number`).
+- `pool_log_odds(probs, weights=None, eps=1e-6) -> float | None`: the
+  probabilities in `probs` (a mapping) taken as independent evidence
+  against an even prior: `sigmoid(sum(c[k] * logit(probs[k], eps)))`, the
+  terms summed in the order of `probs`.
+  - With `weights` None, every key whose probability is a number
+    (`is_number`) is used, with `c[k] = 1`.
+  - With `weights` (a mapping), a key is used only if its probability is a
+    number and `weights[k]` is a number greater than 0 (a key missing from
+    `weights`, or whose weight is None, 0, negative, a bool or NaN, is left
+    out, as `combine_probabilities` leaves it out). Then
+    `c[k] = m * weights[k] / W`, where `m` is the number of keys used and
+    `W` their total weight: the weights are scaled to average 1, so equal
+    weights of any size give the plain sum.
+  - `None` if no key is used. A probability that is a number outside
+    `[0, 1]` raises ValueError (as `logit` does), as does a bad `eps`.
+  - Examples: `pool_log_odds({"a": 0.5, "b": 0.5}) == 0.5`;
+    `pool_log_odds({"a": 0.6, "b": 0.6})` is about 0.692 (two
+    independent 0.6s are stronger than one); `pool_log_odds({"a": 0.7,
+    "b": 0.3}) == 0.5` up to rounding; `pool_log_odds({"a": 0.8, "b": 0.6},
+    {"a": 3, "b": 1})` is `sigmoid(1.5 * logit(0.8) + 0.5 * logit(0.6))`;
+    `pool_log_odds({"a": None}) is None`.
