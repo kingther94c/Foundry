@@ -1,0 +1,27 @@
+{
+ "primary": {
+  "n": 21,
+  "mean_corr_holistic": 0.8546959776660072,
+  "mean_corr_isolated": 0.38692261543454654,
+  "diff_isolated_minus_holistic": -0.4677733622314607,
+  "ci95": [
+   -0.5918120403301343,
+   -0.37156282142312924
+  ],
+  "resamples_used": 2000
+ },
+ "noise_floor": {
+  "n": 8,
+  "judge_corr": 0.9830162697653497,
+  "judge_mean_abs_diff": 0.016249999999999994,
+  "perspective_corr": {
+   "growth": 0.9742880374148966,
+   "profitability": 0.977954305431194,
+   "guidance": 0.9828883615061824,
+   "cash_flow": 0.9925010798023141,
+   "management_tone": 0.9920035769332707,
+   "expectations_gap": 0.9625434536691897,
+   "risks": 0.9870004241921861
+  }
+ }
+}

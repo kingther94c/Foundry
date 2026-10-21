@@ -112,6 +112,12 @@ playbook scored like the untrained one (Brier 0.189 against 0.193, interval
 -0.023 to +0.011): the loop runs end to end; eight cases cannot show it
 learning.
 
+[runs/2026-10-perspectives-run](runs/2026-10-perspectives-run/README.md):
+the same 21 cases, holistic against isolated perspectives (v20),
+pre-registered. Isolated views disagree: their mean correlation fell from
+0.85 to 0.39 (interval -0.59 to -0.37 for the difference), and on them the
+combination rule starts to matter, pooling log-odds beating averaging.
+
 ## How it was built
 
 Foundry wrote the package from SPEC.md and FOUNDRY.md alone, in a fresh
