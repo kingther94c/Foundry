@@ -329,6 +329,16 @@ it was public on the date; and the events scheduled after it. Foundry
 made it in 6 rounds; it passed all 715 hidden tests and agreed with the
 hand-written version on 21,000 fuzzed calls.
 
+`snapshot` (v24) builds the macro case of one date from a configuration
+that serves every snapshot of a run (`macro-config.json`: the targets and
+horizons, the economic series, the positioning, the official texts with
+the dates they were published, and the calendar). It uses only what was
+known on the date: the stored series cut at it, of each kind of text the
+latest published by then, and the events scheduled after it. It never
+rebuilds a case whose forecast is sealed or whose outcome is written.
+Foundry made it in 10 rounds; it passed all 790 hidden tests, and where
+it differed from the hand-written version it was the better of the two.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

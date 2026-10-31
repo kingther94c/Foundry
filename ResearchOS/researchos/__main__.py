@@ -15,6 +15,8 @@
                                  [--resamples N] [--seed S] [--out FILE]
     python -m researchos blend FILE [FILE ...] [--rule NAME] [--eta X] [--out FILE]
     python -m researchos agreement FILE [FILE ...] [--out FILE]
+    python -m researchos snapshot --root DIR --config FILE --as-of YYYY-MM-DD --series-dir DIR
+                                  [--user-agent TEXT] [--out FILE]
     python -m researchos fetch-series --source {fred,cftc} --id ID --file FILE
                                       [--start YYYY-MM-DD] [--vintage YYYY-MM-DD] [--limit N]
                                       [--oi-file FILE] [--user-agent TEXT] [--out FILE]
@@ -54,6 +56,13 @@ contract --id (the newest --limit reports, default 600) and saves the net non-co
 position to --file, and the open interest to --oi-file when given. The user agent is
 chosen as for build. Every series is parsed before the first file is written, so a
 failed fetch writes nothing: exit 1, with the reason on stderr.
+
+snapshot builds the macro case of --as-of (researchos.snapshot.build_snapshot) from the
+snapshot configuration --config (researchos.snapshot.load_macro_config) and the series
+files fetch-series stored under --series-dir: the tables, and of each kind of official
+text the latest published by then, fetched by address with the user agent chosen as for
+build. No outcome is written and no client is built. A case whose forecast is sealed or
+whose outcome is written is never rebuilt: exit 1, with the reason on stderr.
 """
 
 from __future__ import annotations
@@ -76,7 +85,9 @@ from researchos.loop import Roles, evaluate, parse_cutoff, train
 from researchos.masking import MaskConfig
 from researchos.perspectives import MODES
 from researchos.series import MAX_CFTC_LIMIT, fetch_cftc, fetch_fred, save_series
-from researchos.sources import build_case, fetch_pages, load_case_spec, load_closes, url_fetcher
+from researchos.snapshot import build_snapshot, load_macro_config
+from researchos.sources import (build_case, fetch_pages, get_page, load_case_spec, load_closes,
+                                url_fetcher)
 
 USER_AGENT_ENV = "RESEARCHOS_USER_AGENT"
 DEFAULT_USER_AGENT = "ResearchOS/0.1 (research use)"
@@ -264,6 +275,21 @@ def _parser() -> argparse.ArgumentParser:
                    help=f"User-Agent sent when fetching (default: the {USER_AGENT_ENV} "
                         f"environment variable, else {DEFAULT_USER_AGENT!r})")
     _add_out(p)
+    p = sub.add_parser("snapshot", help="build the macro case of one date from a snapshot "
+                                        "configuration and stored series")
+    p.add_argument("--root", required=True)
+    p.add_argument("--config", required=True, metavar="FILE",
+                   help="JSON file describing the run's snapshots")
+    p.add_argument("--as-of", dest="as_of", required=True, type=_iso_date,
+                   metavar="YYYY-MM-DD", help="the snapshot's date: only what was known on it "
+                                              "is used")
+    p.add_argument("--series-dir", dest="series_dir", required=True, metavar="DIR",
+                   help="the directory fetch-series stored the series in")
+    p.add_argument("--user-agent", dest="user_agent", default=None, metavar="TEXT",
+                   help=f"User-Agent sent when fetching the documents' addresses (default: "
+                        f"the {USER_AGENT_ENV} environment variable, else "
+                        f"{DEFAULT_USER_AGENT!r})")
+    _add_out(p)
     return parser
 
 
@@ -302,6 +328,8 @@ def main(argv=None, *, client_factory=None) -> int:
         return _build(args, client_factory)
     if args.command == "fetch-series":
         return _fetch_series(args)
+    if args.command == "snapshot":
+        return _snapshot(args)
     if args.command == "compare":
         return _compare(args)
     if args.command == "blend":
@@ -465,6 +493,18 @@ def _fetch_series(args) -> int:
               "file": args.file}
     if args.source == "cftc":
         result["oi_file"] = args.oi_file
+    return _emit(result, args.out)
+
+
+def _snapshot(args) -> int:
+    user_agent = _user_agent(args.user_agent)
+    try:
+        config = load_macro_config(args.config)
+        result = build_snapshot(args.root, config, args.as_of, series_dir=args.series_dir,
+                                fetch_page=lambda url: get_page(url, user_agent=user_agent))
+    except (OSError, ValueError) as exc:  # a missing or malformed file, a sealed case, ...
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     return _emit(result, args.out)
 
 

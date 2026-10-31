@@ -6,18 +6,33 @@ the economic data (``context_table``), speculative positioning (``positioning_ta
 and what was scheduled next (``calendar_list``). Every function ignores observations
 dated after ``as_of``, and the same series give the same text byte for byte. Each text
 is its lines joined by newlines, with a final newline.
+
+Building a snapshot (v24): ``load_macro_config`` reads and checks the configuration of a
+run's snapshots, and ``build_snapshot`` saves the macro case of one date from it -- the
+tables above and, for each kind of official text, the latest one published by then --
+with its resolution manifest and no outcome.
 """
 
 from __future__ import annotations
 
+import logging
+import re
 from datetime import date
+from pathlib import Path
 
-from tools.dates import last_on_or_before, parse_horizon, parse_iso_date, shift_date
+from tools.dates import (horizon_end, last_on_or_before, parse_horizon, parse_iso_date,
+                         shift_date)
 from tools.finance import level_change
 from tools.stats import is_number, percentile_rank
 
-from researchos.cases import KINDS
-from researchos.series import _date_argument
+from researchos.cases import (KINDS, OUTCOME_FILE, Document, Target, check_targets, macro_case,
+                              resolution_manifest, save_case, save_resolution, target_key,
+                              target_keys)
+from researchos.jsonio import read_json
+from researchos.loop import PREDICTION_FILE
+from researchos.series import _check_series_id, _date_argument, load_series
+
+log = logging.getLogger("researchos")
 
 LOOKBACKS = ("1w", "1m", "3m", "1y")
 
@@ -245,3 +260,314 @@ def calendar_list(as_of, events, through) -> str:
     lines = [f"Scheduled after {when.isoformat()}, through {last.isoformat()}:", ""]
     lines += [f"- {day.isoformat()}: {text}" for day, text in listed] or ["- none listed"]
     return "\n".join(lines) + "\n"
+
+
+# ---- the configuration (v24) ----------------------------------------------------------
+
+_CASE_PREFIX = re.compile(r"[A-Za-z0-9_-]+")
+_HORIZON_RULE = "a count and d, w, m or y, such as '3m', with no whitespace around it"
+
+
+def _is_series_id(value) -> bool:
+    try:
+        _check_series_id(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _is_iso_date(value) -> bool:
+    return isinstance(value, str) and parse_iso_date(value) is not None
+
+
+def _objects(data: dict, name: str, path, *, required: bool = False) -> list:
+    """data[name], checked to be a list of JSON objects; [] when absent and not required."""
+    if name not in data and not required:
+        return []
+    items = data.get(name)
+    if not isinstance(items, list):
+        raise ValueError(f"{path}: {name} must be a list of objects, got "
+                         f"{type(items).__name__}")
+    for number, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError(f"{path}: {name}[{number}] must be an object, got "
+                             f"{type(item).__name__}")
+    return items
+
+
+def _require_strings(item: dict, names, where: str) -> None:
+    for name in names:
+        if not isinstance(item.get(name), str):
+            raise ValueError(f"{where}: {name} must be a string, got {item.get(name)!r}")
+
+
+def _config_horizons(horizons, path) -> list[str]:
+    if not isinstance(horizons, list) or not horizons:
+        raise ValueError(f"{path}: horizons must be a non-empty list of horizons, got "
+                         f"{horizons!r}")
+    seen: set[str] = set()
+    for horizon in horizons:
+        try:
+            target_key("target", horizon)
+        except ValueError:
+            raise ValueError(f"{path}: horizon {horizon!r} is not a valid horizon "
+                             f"({_HORIZON_RULE})") from None
+        if horizon in seen:
+            raise ValueError(f"{path}: horizon {horizon!r} is given twice")
+        seen.add(horizon)
+    return list(horizons)
+
+
+def _config_targets(data: dict, horizons: list[str], path) -> list[dict]:
+    items = _objects(data, "targets", path, required=True)
+    if not items:
+        raise ValueError(f"{path}: targets is empty; a snapshot forecasts at least one target")
+    targets: list[dict] = []
+    seen: set[str] = set()
+    for number, item in enumerate(items):
+        target_id = item.get("id")
+        try:
+            target_key(target_id, horizons[0])
+        except ValueError:
+            raise ValueError(f"{path}: targets[{number}]: id {target_id!r} is not ASCII "
+                             f"letters, digits and underscores only") from None
+        where = f"{path}: target {target_id}"
+        if target_id in seen:
+            raise ValueError(f"{where}: two targets have this id (the second is "
+                             f"targets[{number}])")
+        seen.add(target_id)
+        _require_strings(item, ("name", "unit"), where)
+        if item.get("kind") not in KINDS:
+            raise ValueError(f"{where}: kind {item.get('kind')!r} is not one of "
+                             f"{', '.join(KINDS)}")
+        optional = item.get("optional", False)
+        if not isinstance(optional, bool):
+            raise ValueError(f"{where}: optional must be true or false, got {optional!r}")
+        targets.append({**item, "optional": optional})
+    return targets
+
+
+def _config_context(data: dict, path) -> list[dict]:
+    entries: list[dict] = []
+    for number, item in enumerate(_objects(data, "context", path)):
+        where = f"{path}: context[{number}]"
+        if not _is_series_id(item.get("id")):
+            raise ValueError(f"{where}: id {item.get('id')!r} is not a series id (letters, "
+                             f"digits and '_')")
+        _require_strings(item, ("name", "unit"), where)
+        entries.append(dict(item))
+    return entries
+
+
+def _config_positioning(data: dict, path) -> list[dict]:
+    entries: list[dict] = []
+    for number, item in enumerate(_objects(data, "positioning", path)):
+        where = f"{path}: positioning[{number}]"
+        for name in ("id", "net"):
+            if not _is_series_id(item.get(name)):
+                raise ValueError(f"{where}: {name} {item.get(name)!r} is not a series id "
+                                 f"(letters, digits and '_')")
+        _require_strings(item, ("name",), where)
+        open_interest = item.get("open_interest")
+        if open_interest is not None and not _is_series_id(open_interest):
+            raise ValueError(f"{where}: open_interest {open_interest!r} is neither a series "
+                             f"id nor null")
+        lag = item.get("release_lag_days")
+        if isinstance(lag, bool) or not isinstance(lag, int) or lag < 0:
+            raise ValueError(f"{where}: release_lag_days must be an int of at least 0, got "
+                             f"{lag!r}")
+        entries.append({**item, "open_interest": open_interest})
+    return entries
+
+
+def _config_documents(data: dict, path) -> list[dict]:
+    entries: list[dict] = []
+    for number, item in enumerate(_objects(data, "documents", path)):
+        where = f"{path}: documents[{number}]"
+        kind = item.get("kind")
+        if not isinstance(kind, str) or not kind:
+            raise ValueError(f"{where}: kind must be a non-empty string, got {kind!r}")
+        _require_strings(item, ("title",), where)
+        if not _is_iso_date(item.get("dated")):
+            raise ValueError(f"{where}: dated {item.get('dated')!r} is not an ISO date "
+                             f"(YYYY-MM-DD)")
+        given = [name for name in ("url", "text") if name in item]
+        if len(given) != 1:
+            raise ValueError(f"{where}: give exactly one of url and text, got "
+                             f"{' and '.join(given) or 'neither'}")
+        _require_strings(item, given, where)
+        entries.append(dict(item))
+    return entries
+
+
+def _config_calendar(data: dict, path) -> list[dict]:
+    entries: list[dict] = []
+    for number, item in enumerate(_objects(data, "calendar", path)):
+        where = f"{path}: calendar[{number}]"
+        if not _is_iso_date(item.get("date")):
+            raise ValueError(f"{where}: date {item.get('date')!r} is not an ISO date "
+                             f"(YYYY-MM-DD)")
+        _require_strings(item, ("event",), where)
+        entries.append(dict(item))
+    return entries
+
+
+def load_macro_config(path) -> dict:
+    """The configuration of a run's snapshots, read with read_json and checked.
+
+    ``context``, ``positioning``, ``documents`` and ``calendar`` default to [], a target's
+    ``optional`` to False and a positioning entry's ``open_interest`` to None. Anything
+    malformed raises ValueError naming ``path``; keys not named in SPEC.md are ignored.
+    OSError (a missing file) passes through.
+    """
+    data = read_json(path)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: a macro config must be a JSON object, got "
+                         f"{type(data).__name__}")
+    prefix = data.get("case_prefix")
+    if not isinstance(prefix, str) or _CASE_PREFIX.fullmatch(prefix) is None:
+        raise ValueError(f"{path}: case_prefix must be ASCII letters, digits, '_' and '-', "
+                         f"got {prefix!r}")
+    horizons = _config_horizons(data.get("horizons"), path)
+    # Checked in this order: the values of a dict display are evaluated left to right.
+    return {**data,
+            "horizons": horizons,
+            "targets": _config_targets(data, horizons, path),
+            "context": _config_context(data, path),
+            "positioning": _config_positioning(data, path),
+            "documents": _config_documents(data, path),
+            "calendar": _config_calendar(data, path)}
+
+
+# ---- building a snapshot (v24) --------------------------------------------------------
+
+def _stored(series_dir, series_id, when: date) -> list:
+    """load_series(series_dir, series_id, when); no observations when there is no file."""
+    try:
+        return load_series(series_dir, series_id, when)
+    except OSError:
+        return []
+
+
+def _horizon_end(when: date, horizon: str, case_id: str) -> date:
+    try:
+        return horizon_end(when, horizon)
+    except (ValueError, OverflowError) as exc:
+        raise ValueError(f"snapshot {case_id}: the {horizon} horizon from {when.isoformat()} "
+                         f"does not end on a date: {exc}") from None
+
+
+def _latest_of_each_kind(entries, when: date) -> list[tuple[date, dict]]:
+    """(date, entry) per kind, in the order the kinds first appear in ``entries``.
+
+    Each is the entry dated latest on or before ``when`` (of two on the same date, the
+    later entry); a kind with no such entry gives nothing.
+    """
+    taken: dict[str, tuple[date, dict] | None] = {}
+    for entry in entries:
+        best = taken.setdefault(entry["kind"], None)
+        dated = parse_iso_date(entry["dated"])
+        if dated <= when and (best is None or dated >= best[0]):
+            taken[entry["kind"]] = (dated, entry)
+    return [chosen for chosen in taken.values() if chosen is not None]
+
+
+def build_snapshot(root, config, as_of, *, series_dir, fetch_page) -> dict:
+    """Build and save the macro case of ``as_of`` from a config load_macro_config returned.
+
+    Only what was known on ``as_of`` is used: the stored series cut at it, and of each kind
+    of document the latest dated on or before it (``fetch_page(url).text`` for one given by
+    address; a fetch raising OSError or ValueError leaves it out, with a warning). A case
+    whose prediction.json or outcome.json exists is refused before anything is read or
+    written; a missing target that is not optional, before anything is written. The case
+    is saved without an outcome, with its resolution manifest, nothing resolved. Returns
+    the summary {"case_id", "as_of", "targets", "left_out", "documents", "keys"}.
+    """
+    when = _date_argument(as_of, "as_of")
+    day = when.isoformat()
+    case_id = f"{config['case_prefix']}-{day}"
+    case_dir = Path(root) / case_id
+    for name, reason in ((PREDICTION_FILE, "its forecast is already sealed"),
+                         (OUTCOME_FILE, "its outcome is already written")):
+        if (case_dir / name).exists():
+            raise ValueError(f"snapshot {case_id}: {case_dir / name} exists ({reason}); a "
+                             f"case is never rebuilt under it")
+    horizons = list(config["horizons"])
+    through = max(_horizon_end(when, horizon, case_id) for horizon in horizons)
+
+    kept: list[dict] = []
+    series: dict[str, list] = {}
+    left_out: list[str] = []
+    missing: list[str] = []
+    for entry in config["targets"]:
+        observations = _stored(series_dir, entry["id"], when)
+        if last_on_or_before(observations, when) is not None:
+            kept.append(entry)
+            series[entry["id"]] = observations
+        elif entry.get("optional", False):
+            left_out.append(entry["id"])
+        else:
+            missing.append(entry["id"])
+    if missing:
+        raise ValueError(f"snapshot {case_id}: no observation on or before {day} under "
+                         f"{series_dir} for the target(s) {', '.join(missing)}")
+    if not kept:
+        raise ValueError(f"snapshot {case_id}: no target has an observation on or before "
+                         f"{day} (left out: {', '.join(left_out)}); a macro case forecasts "
+                         f"at least one target")
+    for target_id in left_out:
+        log.warning("snapshot %s: optional target %s has no observation on or before %s; "
+                    "it is left out", case_id, target_id, day)
+
+    targets: list[Target] = []
+    for entry in kept:
+        observations = series[entry["id"]]
+        level_day, level = last_on_or_before(observations, when)
+        targets.append(Target(
+            id=entry["id"], name=entry["name"], kind=entry["kind"], horizons=list(horizons),
+            as_of_date=level_day.isoformat(), as_of_value=level,
+            trailing={horizon: trailing_change(observations, when, horizon, entry["kind"])
+                      for horizon in horizons}))
+    check_targets(targets)  # what macro_case would refuse, refused before anything is fetched
+
+    documents = [Document("dashboard", f"Markets as of {day}",
+                          target_table(when, kept, series))]
+    context = config.get("context", [])
+    if context:
+        stored = {entry["id"]: _stored(series_dir, entry["id"], when) for entry in context}
+        published = {entry["id"] for entry in context
+                     if (Path(series_dir) / f"{entry['id']}@{day}.json").exists()}
+        documents.append(Document("economy", f"Economic data as of {day}",
+                                  context_table(when, context, stored, published)))
+    positioning = config.get("positioning", [])
+    if positioning:
+        ids = [entry[name] for entry in positioning for name in ("net", "open_interest")
+               if entry.get(name) is not None]
+        stored = {series_id: _stored(series_dir, series_id, when) for series_id in ids}
+        documents.append(Document("positioning", f"Positioning as of {day}",
+                                  positioning_table(when, positioning, stored)))
+    calendar = config.get("calendar", [])
+    if calendar:
+        documents.append(Document("calendar", f"Calendar after {day}",
+                                  calendar_list(when, calendar, through)))
+    for dated, entry in _latest_of_each_kind(config.get("documents", []), when):
+        title = f"{entry['title']} ({dated.isoformat()})"
+        if "url" not in entry:
+            documents.append(Document(entry["kind"], title, entry["text"]))
+            continue
+        url = entry["url"]
+        try:
+            page = fetch_page(url)
+        except (OSError, ValueError) as exc:  # a dead link, a page that is not text
+            log.warning("snapshot %s: %s is left out: cannot fetch %s (%s)", case_id, title,
+                        url, exc)
+            continue
+        documents.append(Document(entry["kind"], title, page.text, source=url))
+
+    case = macro_case(case_id, day, targets, documents)
+    manifest = resolution_manifest(case)  # nothing resolved; ready before anything is written
+    save_case(root, case)
+    save_resolution(root, case_id, manifest)
+    return {"case_id": case_id, "as_of": day, "targets": [target.id for target in targets],
+            "left_out": left_out, "documents": [document.kind for document in documents],
+            "keys": target_keys(case)}
