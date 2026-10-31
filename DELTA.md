@@ -69,6 +69,12 @@ one word of a docstring).
   the `snapshot` command), 75 hidden tests, a reference written by hand
   (appended to the landed `snapshot.py`, so it imports what it uses and
   prefixes its private names) and `check.py`.
+- **Draft of v25** (`docs/drafts/researchos-v25/`): the SPEC section
+  "Resolving a snapshot (v25)" (`resolve_cases`, `resolve_case` and the
+  `resolve` command: a key resolves once its series has an observation on
+  or after the horizon's end, from the level the case recorded; outcomes
+  once written never change; `prediction.json` is never opened), 44 hidden
+  tests, a reference and `check.py`.
 
 ## Decisions and open points
 
@@ -171,6 +177,10 @@ one word of a docstring).
   changed one word of a docstring (`_observed` returns `[]`, not None).
   After landing: ResearchOS 1461 passed, and v24's suite passes against
   its reference appended to Foundry's `snapshot.py` (1536).
+- v25 draft: its suite passes against its reference (1580, with v24's
+  reference and suite) and fails 17 against a copy with two deliberate
+  bugs; its fuzzer finds 1,443 mismatches in 3,000 calls there and none
+  between the reference and itself.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -207,6 +217,11 @@ Files that differ from main (the working tree; this file left out):
 | A | `docs/drafts/researchos-v24/reference/main_patch.py` |
 | A | `docs/drafts/researchos-v24/reference/snapshot_append.py` |
 | A | `docs/drafts/researchos-v24/test_build_snapshot_acceptance.py` |
+| A | `docs/drafts/researchos-v25/SPEC-section.md` |
+| A | `docs/drafts/researchos-v25/check.py` |
+| A | `docs/drafts/researchos-v25/reference/main_patch.py` |
+| A | `docs/drafts/researchos-v25/reference/snapshot_append.py` |
+| A | `docs/drafts/researchos-v25/test_resolve_snapshot_acceptance.py` |
 | M | `docs/foundry-acceptance.md` |
 | M | `docs/open-questions.md` |
 | M | `docs/threat-model.md` |
