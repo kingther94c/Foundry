@@ -347,6 +347,16 @@ observation). An outcome once written is never changed, and the forecast
 is never opened. Foundry made it in 7 rounds; it passed all 834 hidden
 tests and agreed with the hand-written version on 3,000 fuzzed calls.
 
+`researchos.targets` (v26) analyzes a snapshot the way an earnings report
+is analyzed, through ten macro perspectives (growth, inflation, labor,
+monetary policy, fiscal policy and supply, liquidity, positioning, the
+rest of the world, commodities, politics) and a judge. Each call covers
+every target and horizon at once, under a strict schema built from the
+snapshot's targets, so a snapshot of ten targets costs eleven calls.
+Foundry made it in 7 rounds; it passed all 893 hidden tests and, on 3,000
+random analyses, made the same calls with the same prompts and forecasts
+as the hand-written version.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name
