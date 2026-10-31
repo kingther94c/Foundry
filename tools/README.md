@@ -76,3 +76,11 @@ rounds on the API (about $0.32); they pass all 74 new acceptance cases
 (`1e308`, `10 ** 400`): the reference overflowed, while Foundry's version
 scales such weights exactly with `Fraction` and gets the right answer. On
 60,000 more calls without such weights the two agree.
+
+v6 added horizons and level changes for macro views (ResearchOS v21 on):
+`dates.add_months`, `parse_horizon`, `shift_date`, `horizon_end`,
+`last_on_or_before` and `first_on_or_after`, and `finance.level_change`
+(basis points of a level quoted in percent, a simple return, or points)
+and `finance.direction`. Foundry made them in 5 rounds through the relay;
+they pass all 227 new acceptance cases (`test_v6_acceptance.py`) and agree
+with a hand-written reference on 20,000 fuzzed calls.

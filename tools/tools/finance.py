@@ -1,6 +1,10 @@
-"""Financial ratios and growth calculations."""
+"""Financial ratios, growth calculations and level changes."""
 
+import math
 from collections.abc import Sequence
+
+from .returns import simple_return
+from .stats import is_number
 
 Number = int | float
 
@@ -86,3 +90,41 @@ def beat_miss(actual: Number | None, estimate: Number | None, tolerance: Number 
     if s < -tolerance:
         return "miss"
     return "in_line"
+
+
+_LEVEL_KINDS = ("bp", "return", "points")
+
+
+def level_change(start: object, end: object, kind: str) -> float | None:
+    """Return the change from start to end in bp, as a simple return, or in points; None if either is not a number or the result overflows."""
+    if not isinstance(kind, str) or kind not in _LEVEL_KINDS:
+        raise ValueError(f"kind must be one of 'bp', 'return', 'points', got {kind!r}")
+    if not is_number(start) or not is_number(end):
+        return None
+    try:
+        if kind == "bp":
+            # A level quoted in percent: one basis point is 0.01.
+            result = (end - start) * 100
+        elif kind == "return":
+            result = simple_return(start, end)
+        else:
+            result = end - start
+    except OverflowError:
+        # An int too large to mix with a float, or a quotient too large for a float.
+        return None
+    if isinstance(result, float) and not math.isfinite(result):
+        return None
+    return result
+
+
+def direction(change: object, dead_band: Number = 0.0) -> str | None:
+    """Return "up", "down" or "flat" for change against the dead band (its edges are flat); None if change is not a number."""
+    if not is_number(dead_band) or dead_band < 0:
+        raise ValueError(f"dead_band must be a number at least 0, got {dead_band!r}")
+    if not is_number(change):
+        return None
+    if change > dead_band:
+        return "up"
+    if change < -dead_band:
+        return "down"
+    return "flat"

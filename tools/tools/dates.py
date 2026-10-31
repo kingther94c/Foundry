@@ -1,8 +1,9 @@
-"""Fiscal calendar and business-day arithmetic."""
+"""Fiscal calendar, business-day and horizon arithmetic."""
 
 import calendar
 import datetime
-from collections.abc import Iterable
+import re
+from collections.abc import Iterable, Sequence
 
 
 def _check_month(month: int) -> None:
@@ -81,3 +82,94 @@ def parse_iso_date(value: object) -> datetime.date | None:
         except ValueError:
             return None
     return None
+
+
+_HORIZON_PATTERN = re.compile(r"[1-9][0-9]*[dwmy]")
+_HORIZON_UNITS = ("d", "w", "m", "y")
+# int() refuses digit strings longer than about 4300 characters, so long counts are converted in chunks.
+_DIGIT_CHUNK = 1000
+_OUT_OF_RANGE = "the result is outside the dates Python can represent (datetime.date.min to datetime.date.max)"
+
+
+def _check_int(value: object, name: str) -> None:
+    """Raise ValueError unless value is an int that is not a bool."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an int (not a bool), got {value!r}")
+
+
+def add_months(d: datetime.date, months: int) -> datetime.date:
+    """Return d moved by months calendar months, clipped to the end of a shorter month; never None (bad input raises ValueError)."""
+    _check_int(months, "months")
+    year, month_index = divmod(d.year * 12 + (d.month - 1) + months, 12)
+    if not datetime.MINYEAR <= year <= datetime.MAXYEAR:
+        raise ValueError(_OUT_OF_RANGE)
+    month = month_index + 1
+    day = min(d.day, calendar.monthrange(year, month)[1])
+    return d.replace(year=year, month=month, day=day)
+
+
+def parse_horizon(text: str) -> tuple[int, str]:
+    """Return (count, unit) for a horizon such as "3m"; never None (bad input raises ValueError)."""
+    if not isinstance(text, str):
+        raise ValueError(f"horizon must be a str, got {type(text).__name__}")
+    stripped = text.strip()
+    if _HORIZON_PATTERN.fullmatch(stripped) is None:
+        raise ValueError(
+            f"horizon must be a count with no leading 0 followed by d, w, m or y (such as '3m'), got {text!r}"
+        )
+    digits = stripped[:-1]
+    count = 0
+    for start in range(0, len(digits), _DIGIT_CHUNK):
+        chunk = digits[start : start + _DIGIT_CHUNK]
+        count = count * 10 ** len(chunk) + int(chunk)
+    return count, stripped[-1]
+
+
+def _add_days(d: datetime.date, days: int) -> datetime.date:
+    """Return d plus days days; raise ValueError if that leaves the representable dates."""
+    if not 1 <= d.toordinal() + days <= datetime.date.max.toordinal():
+        raise ValueError(_OUT_OF_RANGE)
+    return d + datetime.timedelta(days=days)
+
+
+def shift_date(d: datetime.date, n: int, unit: str) -> datetime.date:
+    """Return d moved by n days ("d"), weeks ("w"), months ("m") or years ("y"); never None (bad input raises ValueError)."""
+    _check_int(n, "n")
+    if not isinstance(unit, str) or unit not in _HORIZON_UNITS:
+        raise ValueError(f"unit must be one of 'd', 'w', 'm', 'y', got {unit!r}")
+    if unit == "d":
+        return _add_days(d, n)
+    if unit == "w":
+        return _add_days(d, 7 * n)
+    if unit == "m":
+        return add_months(d, n)
+    return add_months(d, 12 * n)
+
+
+def horizon_end(d: datetime.date, horizon: str) -> datetime.date:
+    """Return the date on which a horizon such as "1m" counted from d ends; never None (bad input raises ValueError)."""
+    return shift_date(d, *parse_horizon(horizon))
+
+
+def last_on_or_before(
+    observations: Sequence[tuple[datetime.date, object]], day: datetime.date
+) -> tuple[datetime.date, object] | None:
+    """Return (date, value) for the latest date on or before day, the last such pair on a tie; None if no pair qualifies."""
+    best: tuple[datetime.date, object] | None = None
+    for when, value in observations:
+        # >= rather than >: of several pairs with the same date, the later one wins.
+        if when <= day and (best is None or when >= best[0]):
+            best = (when, value)
+    return best
+
+
+def first_on_or_after(
+    observations: Sequence[tuple[datetime.date, object]], day: datetime.date
+) -> tuple[datetime.date, object] | None:
+    """Return (date, value) for the earliest date on or after day, the last such pair on a tie; None if no pair qualifies."""
+    best: tuple[datetime.date, object] | None = None
+    for when, value in observations:
+        # <= rather than <: of several pairs with the same date, the later one wins.
+        if when >= day and (best is None or when <= best[0]):
+            best = (when, value)
+    return best
