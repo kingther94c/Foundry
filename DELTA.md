@@ -170,6 +170,13 @@ domains.
   to $1.05 an arm) and how the cap is kept, since the CLI does not report
   spend (three snapshots per call, the arms alternating, the spend read
   between calls).
+- **Draft of v31** (`docs/drafts/researchos-v31/`): the SPEC section "The
+  main text of a fetched page (v31)". `html_to_text` and `get_page` take
+  `main_only`: the text of the page's one main element (`<main>` or
+  `role="main"`), else the whole text as before; `snapshot` asks for it,
+  `build` does not. 63 hidden tests, a reference appended to `sources.py`,
+  and `check.py`, whose fuzzer also checks that the whole text does not
+  change.
 
 ## Decisions and open points
 
@@ -226,10 +233,10 @@ domains.
   403 to automated requests, which is not worked around, so the run has no
   BLS texts or release dates (their figures come through the economic
   series).
-- Open: a fetched page's text is all of its visible text, so each of the
-  Fed's pages brings about 8,500 characters of site navigation. A later
-  version could keep only a page's main element (`role="main"`) for
-  snapshot documents.
+- A fetched page's text was all of its visible text, so each of the Fed's
+  pages brought about 8,300 characters of site navigation into a
+  snapshot. v31 keeps only a page's main element there. The first macro
+  run keeps its snapshots as they were hashed, built before v31.
 
 ## Verification
 
@@ -391,6 +398,12 @@ domains.
   on or before that date and one with an unresolved key. It refuses an
   output folder inside the run's. The run's own `cases/` were not
   touched. Foundry 1589 passed, tools 813, ResearchOS 2164.
+- v31 draft: its suite passes against its reference (2227) and fails 9
+  against a copy with four deliberate bugs; its fuzzer finds 4,285
+  mismatches in 20,000 random pages there and none between the reference
+  and itself. On the two Fed pages of the 2026-10-30 snapshot, fetched
+  again, the main text keeps 1,389 of the statement's 9,710 characters
+  and 36,015 of the minutes' 44,336.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -448,6 +461,10 @@ Files that differ from main (the working tree; this file left out):
 | A | `ResearchOS/tests/test_walk_by_resolution.py` |
 | A | `ResearchOS/tests/test_walk_forward_acceptance.py` |
 | M | `docs/decision-log.md` |
+| A | `docs/drafts/researchos-v31/SPEC-section.md` |
+| A | `docs/drafts/researchos-v31/check.py` |
+| A | `docs/drafts/researchos-v31/reference/sources_append.py` |
+| A | `docs/drafts/researchos-v31/test_main_text_acceptance.py` |
 | M | `docs/foundry-acceptance.md` |
 | M | `docs/open-questions.md` |
 | M | `docs/threat-model.md` |
