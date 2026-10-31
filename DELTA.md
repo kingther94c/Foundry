@@ -77,6 +77,13 @@ landed as written (v23 but for one word of a docstring).
   or after the horizon's end, from the level the case recorded; outcomes
   once written never change; `prediction.json` is never opened), 44 hidden
   tests, a reference and `check.py`.
+- **Draft of v26, the first part of S5** (`docs/drafts/researchos-v26/`):
+  the SPEC section "Many targets, one analysis (v26)": a new module
+  `researchos/targets.py` with ten macro perspectives and what each looks
+  at, the prompts, strict schemas built from a case's targets, and
+  `analyze_targets` (one call per perspective covering every target and
+  horizon, then a judge; holistic or isolated, as v20). 59 hidden tests, a
+  reference and `check.py`. S5 is split in two: v27 will score and reflect.
 
 ## Decisions and open points
 
@@ -194,6 +201,10 @@ landed as written (v23 but for one word of a docstring).
   `loop`; if `loop` ever imports `snapshot`, that constant moves to
   `cases`. After landing: ResearchOS 1665 passed, and v25's suite passes
   against its reference appended to Foundry's `snapshot.py` (1709).
+- v26 draft: its suite passes against its reference (1724) and fails 3
+  against a copy with two deliberate bugs; its fuzzer finds 2,619
+  mismatches in 9,000 calls there and none between the reference and
+  itself.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -233,6 +244,7 @@ Files that differ from main (the working tree; this file left out):
 | A | `docs/drafts/researchos-v25/reference/snapshot_append.py` |
 | A | `docs/drafts/researchos-v25/test_resolve_snapshot_acceptance.py` |
 | A | `docs/drafts/researchos-v26/SPEC-section.md` |
+| A | `docs/drafts/researchos-v26/check.py` |
 | A | `docs/drafts/researchos-v26/reference/targets.py` |
 | A | `docs/drafts/researchos-v26/test_targets_acceptance.py` |
 | M | `docs/foundry-acceptance.md` |
