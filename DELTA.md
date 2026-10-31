@@ -97,6 +97,16 @@ landed as written (v23 but for one word of a docstring).
   `reflect_targets` (one reflector call over the resolved keys, the
   lessons read as `reflect` reads its own). 27 hidden tests, a reference
   appended to `targets.py` and `check.py`.
+- **Draft of v28, the first part of S6** (`docs/drafts/researchos-v28/`):
+  the SPEC section "Forecast now, score later (v28)". `loop.forecast` seals
+  forecasts and opens no outcome: a macro case needs a date after the
+  knowledge cutoff, and a forecast is sealed once. `loop.score_sealed`
+  scores what was sealed against what has resolved and calls no model.
+  Also `loop.load_prediction`, `Playbook.initial(perspectives)`,
+  `PREDICTION_FILE` moved to `cases` (so `loop` can import `targets`),
+  `train` and `evaluate` refusing a macro case, and the `forecast` and
+  `score` commands. 58 hidden tests, a reference written as edits to the
+  package, and `check.py`.
 
 ## Decisions and open points
 
@@ -120,7 +130,10 @@ landed as written (v23 but for one word of a docstring).
   25-round budget), so it is three SPEC sections: v23 the snapshot tables,
   v24 building a snapshot (`snapshot`), v25 resolving it (`resolve`). S5 is
   two as well: v26 the analysis, v27 scoring and reflecting. The later
-  stages keep their scope and take the next numbers: S6 is v28, S7 v29. Views are 1 week, 1 month and 3 months ahead on UST 10y and 2y,
+  stages keep their scope and take the next numbers. S6 is two as well: v28
+  forecast now and score later, v29 blend and agreement over the macro
+  perspectives. S7, walking forward by the date each outcome resolves, is
+  v30. Views are 1 week, 1 month and 3 months ahead on UST 10y and 2y,
   2s10s, the broad dollar, the S&P 500, WTI, gold, the HY spread, the 10y
   breakeven and VIX.
 - The stages land as commits on this branch, not one branch each as
@@ -241,6 +254,10 @@ landed as written (v23 but for one word of a docstring).
   reference and suite) and fails 4 against a copy with three deliberate
   bugs; its fuzzer finds 2,815 mismatches in 9,000 calls there and none
   between the reference and itself.
+- v28 draft: its suite passes against its reference (1939, on Foundry's
+  v26 and v27's reference) and fails 6 against a copy with three
+  deliberate bugs; its fuzzer finds 231 mismatches in 1,200 calls there
+  and none between the reference and itself.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
