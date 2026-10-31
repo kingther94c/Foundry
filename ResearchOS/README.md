@@ -339,6 +339,14 @@ rebuilds a case whose forecast is sealed or whose outcome is written.
 Foundry made it in 10 rounds; it passed all 790 hidden tests, and where
 it differed from the hand-written version it was the better of the two.
 
+`resolve` (v25) records, once a horizon has ended, how far each target of
+a snapshot moved: from the level the case recorded to the last
+observation on or before the horizon's end, once the series has one on or
+after it (a horizon that ends on a holiday waits for the next
+observation). An outcome once written is never changed, and the forecast
+is never opened. Foundry made it in 7 rounds; it passed all 834 hidden
+tests and agreed with the hand-written version on 3,000 fuzzed calls.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

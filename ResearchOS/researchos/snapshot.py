@@ -11,23 +11,30 @@ Building a snapshot (v24): ``load_macro_config`` reads and checks the configurat
 run's snapshots, and ``build_snapshot`` saves the macro case of one date from it -- the
 tables above and, for each kind of official text, the latest one published by then --
 with its resolution manifest and no outcome.
+
+Resolving a snapshot (v25): ``resolve_cases`` reads each target's series as it stands now
+and, for each horizon that has ended, records in outcome.json how far the target moved
+from the level the case started from, and marks that key resolved in the manifest. The
+forecast (prediction.json) is never opened.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 from datetime import date
 from pathlib import Path
 
-from tools.dates import (horizon_end, last_on_or_before, parse_horizon, parse_iso_date,
-                         shift_date)
+from tools.dates import (first_on_or_after, horizon_end, last_on_or_before, parse_horizon,
+                         parse_iso_date, shift_date)
 from tools.finance import level_change
 from tools.stats import is_number, percentile_rank
 
-from researchos.cases import (KINDS, OUTCOME_FILE, Document, Target, check_targets, macro_case,
-                              resolution_manifest, save_case, save_resolution, target_key,
-                              target_keys)
+from researchos.cases import (KINDS, OUTCOME_FILE, Document, Outcome, Target, TargetOutcome,
+                              check_targets, load_case, load_outcome, macro_case,
+                              resolution_manifest, save_case, save_outcome, save_resolution,
+                              target_key, target_keys)
 from researchos.jsonio import read_json
 from researchos.loop import PREDICTION_FILE
 from researchos.series import _check_series_id, _date_argument, load_series
@@ -571,3 +578,109 @@ def build_snapshot(root, config, as_of, *, series_dir, fetch_page) -> dict:
     return {"case_id": case_id, "as_of": day, "targets": [target.id for target in targets],
             "left_out": left_out, "documents": [document.kind for document in documents],
             "keys": target_keys(case)}
+
+
+# ---- resolving a snapshot (v25) -------------------------------------------------------
+
+def _current_series(series_dir, series_id) -> list:
+    """load_series(series_dir, series_id): the current file, not cut at any date.
+
+    No observations when there is no file (OSError); a malformed file's ValueError passes
+    through.
+    """
+    try:
+        return load_series(series_dir, series_id)
+    except OSError:
+        return []
+
+
+def _checked(root, case_id: str) -> tuple:
+    """Step 1 of resolve_cases for one case: (the case, its outcome so far)."""
+    case = load_case(root, case_id)  # OSError: no such case
+    if case.domain != "macro":
+        raise ValueError(f"case {case_id}: domain {case.domain!r} is not 'macro'; only a "
+                         f"snapshot's targets resolve")
+    resolution_manifest(case)  # checks the case's targets and date
+    keys = target_keys(case)
+    if (Path(root) / case_id / OUTCOME_FILE).exists():
+        outcome = load_outcome(root, case_id)
+    else:
+        outcome = Outcome()
+    for key in outcome.targets:
+        if key not in keys:
+            raise ValueError(f"case {case_id}: {OUTCOME_FILE} has an outcome for {key!r}, "
+                             f"which is not one of its target keys ({', '.join(keys)})")
+    return case, outcome
+
+
+def _resolve_key(target: Target, horizon: str, as_of: date, series_dir):
+    """The TargetOutcome of a key not resolved yet; else "pending" or "unmeasurable"."""
+    observations = _current_series(series_dir, target.id)
+    end_day = horizon_end(as_of, horizon)
+    if first_on_or_after(observations, end_day) is None:
+        return "pending"  # a later observation could still fall inside the horizon
+    end = last_on_or_before(observations, end_day)
+    if end is None or end[0] < parse_iso_date(target.as_of_date):
+        return "unmeasurable"  # the file no longer holds the window
+    change = level_change(target.as_of_value, end[1], target.kind)
+    if change is None:
+        return "unmeasurable"  # a return from a level at or below zero
+    # The start is the level the case recorded, not what the series now holds for that date.
+    return TargetOutcome(target=target.id, horizon=horizon, kind=target.kind,
+                         start_date=target.as_of_date, start=target.as_of_value,
+                         end_date=end[0].isoformat(), end=end[1], change=change,
+                         up=change > 0)
+
+
+def resolve_cases(root, case_ids, *, series_dir) -> list[dict]:
+    """Resolve each horizon of the snapshots' targets that has ended; one summary per case.
+
+    Every case is checked first (an id given twice, no such case (OSError), a case that is
+    not a macro case, a manifest that cannot be made, an outcome key the case does not
+    have); then each key is found resolved, pending or unmeasurable from the current
+    series files under ``series_dir``; only then, case by case, is outcome.json written
+    (when any key is resolved) and resolution.json. A key already in outcome.json is kept
+    exactly and its series is not read for it. prediction.json is never opened. Each
+    summary is {"case_id", "resolved", "new", "pending", "unmeasurable"}, every list in
+    the order of target_keys(case).
+    """
+    checked = []
+    seen: set[str] = set()
+    for case_id in case_ids:
+        if case_id in seen:
+            raise ValueError(f"case {case_id} is named twice; a call resolves each case once")
+        seen.add(case_id)
+        checked.append((case_id, *_checked(root, case_id)))
+
+    planned = []
+    for case_id, case, outcome in checked:
+        as_of = parse_iso_date(case.event_date)
+        resolved: dict[str, TargetOutcome] = {}
+        states: dict[str, list[str]] = {"new": [], "pending": [], "unmeasurable": []}
+        for target in case.targets:  # in the order of target_keys(case)
+            for horizon in target.horizons:
+                key = target_key(target.id, horizon)
+                if key in outcome.targets:  # kept exactly, even when the series has changed
+                    resolved[key] = outcome.targets[key]
+                    continue
+                state = _resolve_key(target, horizon, as_of, series_dir)
+                if isinstance(state, TargetOutcome):
+                    resolved[key] = state
+                    states["new"].append(key)
+                else:
+                    states[state].append(key)
+        planned.append((case_id, outcome, resolved, resolution_manifest(case, resolved),
+                        states))
+
+    summaries = []
+    for case_id, outcome, resolved, manifest, states in planned:
+        if resolved:
+            save_outcome(root, case_id, dataclasses.replace(outcome, targets=resolved))
+        save_resolution(root, case_id, manifest)
+        summaries.append({"case_id": case_id, "resolved": list(resolved), **states})
+    return summaries
+
+
+def resolve_case(root, case_id, *, series_dir) -> dict:
+    """resolve_cases(root, [case_id], series_dir=series_dir)[0]."""
+    return resolve_cases(root, [case_id], series_dir=series_dir)[0]

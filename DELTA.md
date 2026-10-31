@@ -12,9 +12,9 @@ straight from a clone, every branch records its changes from main in this
 file, and ResearchOS turns macro-first. This branch does the first two and
 carries the stages of the third as they are accepted. S1 (tools v6, horizons
 and level changes), S2 (ResearchOS v21, macro cases), S3 (v22, series
-from free sources), v23 (snapshot tables) and v24 (building a snapshot),
-the first two parts of S4, were built by Foundry in isolated workspaces and
-landed as written (v23 but for one word of a docstring).
+from free sources) and S4 in three parts (v23 snapshot tables, v24
+building a snapshot, v25 resolving it) were built by Foundry in isolated
+workspaces and landed as written (v23 but for one word of a docstring).
 
 ## Changes
 
@@ -71,19 +71,30 @@ landed as written (v23 but for one word of a docstring).
   `tests/test_build_snapshot_acceptance.py`, a scorecard row and a README
   paragraph. The SPEC gained one sentence: when every target is left out,
   the snapshot is refused before anything is fetched.
-- **Draft of v25** (`docs/drafts/researchos-v25/`): the SPEC section
-  "Resolving a snapshot (v25)" (`resolve_cases`, `resolve_case` and the
-  `resolve` command: a key resolves once its series has an observation on
-  or after the horizon's end, from the level the case recorded; outcomes
-  once written never change; `prediction.json` is never opened), 44 hidden
-  tests, a reference and `check.py`.
+- **v25, the last part of S4** (`ResearchOS/SPEC.md` "Resolving a
+  snapshot (v25)"): `resolve_cases` and `resolve_case` in
+  `researchos/snapshot.py` and the `resolve` command in `__main__.py`
+  (a key resolves once its series has an observation on or after the
+  horizon's end, from the level the case recorded; outcomes once written
+  never change; `prediction.json` is never opened). Foundry's
+  `tests/test_resolve_snapshot.py`, the hidden suite as
+  `tests/test_resolve_snapshot_acceptance.py`, a scorecard row and a
+  README paragraph.
 - **Draft of v26, the first part of S5** (`docs/drafts/researchos-v26/`):
   the SPEC section "Many targets, one analysis (v26)": a new module
   `researchos/targets.py` with ten macro perspectives and what each looks
   at, the prompts, strict schemas built from a case's targets, and
   `analyze_targets` (one call per perspective covering every target and
   horizon, then a judge; holistic or isolated, as v20). 59 hidden tests, a
-  reference and `check.py`. S5 is split in two: v27 will score and reflect.
+  reference and `check.py`.
+- **Draft of v27, the second part of S5** (`docs/drafts/researchos-v27/`):
+  the SPEC section "Scoring and reflecting on many targets (v27)":
+  `score_targets` (one record per resolved key, with `case_id`
+  `<case>/<key>` and the keys `compare`, `blend` and `agreement` read,
+  plus the combined probabilities and what the target did) and
+  `reflect_targets` (one reflector call over the resolved keys, the
+  lessons read as `reflect` reads its own). 27 hidden tests, a reference
+  appended to `targets.py` and `check.py`.
 
 ## Decisions and open points
 
@@ -105,9 +116,9 @@ landed as written (v23 but for one word of a docstring).
   and score later, S7 walk-forward by resolution date, S8 a pre-registered
   first run. S4 was too big for one build (about 320 lines, near the
   25-round budget), so it is three SPEC sections: v23 the snapshot tables,
-  v24 building a snapshot (`snapshot`), v25 resolving it (`resolve`). The
-  later stages keep their scope and take the next numbers: S5 is v26, S6
-  v27, S7 v28. Views are 1 week, 1 month and 3 months ahead on UST 10y and 2y,
+  v24 building a snapshot (`snapshot`), v25 resolving it (`resolve`). S5 is
+  two as well: v26 the analysis, v27 scoring and reflecting. The later
+  stages keep their scope and take the next numbers: S6 is v28, S7 v29. Views are 1 week, 1 month and 3 months ahead on UST 10y and 2y,
   2s10s, the broad dollar, the S&P 500, WTI, gold, the HY spread, the 10y
   breakeven and VIX.
 - The stages land as commits on this branch, not one branch each as
@@ -205,6 +216,19 @@ landed as written (v23 but for one word of a docstring).
   against a copy with two deliberate bugs; its fuzzer finds 2,619
   mismatches in 9,000 calls there and none between the reference and
   itself.
+- v25: Foundry's build (7 rounds, 28 tool calls, finish "completed"
+  citing its own run, 1679 passed) passes all 834 hidden ResearchOS tests
+  and agrees with the reference on 3,000 fuzzed calls. The workspace
+  holds no path from outside it; to read `tools`' sources it added a
+  test that printed them and deleted it in its next patch. The relay
+  agent's 22 calls were 8 relay commands, 10 writes to its replies, 3
+  reads of the relay's saved output and its report. After landing:
+  ResearchOS 1723 passed; v26's suite passes against its reference on
+  top (1782).
+- v27 draft: its suite passes against its reference (1809, with v26's
+  reference and suite) and fails 4 against a copy with three deliberate
+  bugs; its fuzzer finds 2,815 mismatches in 9,000 calls there and none
+  between the reference and itself.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -233,20 +257,21 @@ Files that differ from main (the working tree; this file left out):
 | A | `ResearchOS/tests/test_build_snapshot_acceptance.py` |
 | A | `ResearchOS/tests/test_macro_cases.py` |
 | A | `ResearchOS/tests/test_macro_cases_acceptance.py` |
+| A | `ResearchOS/tests/test_resolve_snapshot.py` |
+| A | `ResearchOS/tests/test_resolve_snapshot_acceptance.py` |
 | A | `ResearchOS/tests/test_series.py` |
 | A | `ResearchOS/tests/test_series_acceptance.py` |
 | A | `ResearchOS/tests/test_snapshot.py` |
 | A | `ResearchOS/tests/test_snapshot_tables_acceptance.py` |
 | M | `docs/decision-log.md` |
-| A | `docs/drafts/researchos-v25/SPEC-section.md` |
-| A | `docs/drafts/researchos-v25/check.py` |
-| A | `docs/drafts/researchos-v25/reference/main_patch.py` |
-| A | `docs/drafts/researchos-v25/reference/snapshot_append.py` |
-| A | `docs/drafts/researchos-v25/test_resolve_snapshot_acceptance.py` |
 | A | `docs/drafts/researchos-v26/SPEC-section.md` |
 | A | `docs/drafts/researchos-v26/check.py` |
 | A | `docs/drafts/researchos-v26/reference/targets.py` |
 | A | `docs/drafts/researchos-v26/test_targets_acceptance.py` |
+| A | `docs/drafts/researchos-v27/SPEC-section.md` |
+| A | `docs/drafts/researchos-v27/check.py` |
+| A | `docs/drafts/researchos-v27/reference/targets_append.py` |
+| A | `docs/drafts/researchos-v27/test_target_scoring_acceptance.py` |
 | M | `docs/foundry-acceptance.md` |
 | M | `docs/open-questions.md` |
 | M | `docs/threat-model.md` |

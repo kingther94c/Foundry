@@ -20,6 +20,7 @@
     python -m researchos fetch-series --source {fred,cftc} --id ID --file FILE
                                       [--start YYYY-MM-DD] [--vintage YYYY-MM-DD] [--limit N]
                                       [--oi-file FILE] [--user-agent TEXT] [--out FILE]
+    python -m researchos resolve --root DIR --ids ID[,ID...] --series-dir DIR [--out FILE]
 
 Each command prints its result as JSON; with --out FILE it writes the result to
 FILE instead (researchos.jsonio.write_json) and prints nothing.
@@ -63,6 +64,13 @@ files fetch-series stored under --series-dir: the tables, and of each kind of of
 text the latest published by then, fetched by address with the user agent chosen as for
 build. No outcome is written and no client is built. A case whose forecast is sealed or
 whose outcome is written is never rebuilt: exit 1, with the reason on stderr.
+
+resolve records how far each target of the snapshots --ids (read as train reads them)
+moved over each horizon that has ended (researchos.snapshot.resolve_cases), from the
+series files under --series-dir as they stand now, and prints {"cases": [...]}: each
+case's resolved, new, pending and unmeasurable keys. No forecast is opened and no client
+is built. With no id it exits 2; a case that fails its checks stops the command before
+anything is written: exit 1, with the reason on stderr.
 """
 
 from __future__ import annotations
@@ -85,7 +93,7 @@ from researchos.loop import Roles, evaluate, parse_cutoff, train
 from researchos.masking import MaskConfig
 from researchos.perspectives import MODES
 from researchos.series import MAX_CFTC_LIMIT, fetch_cftc, fetch_fred, save_series
-from researchos.snapshot import build_snapshot, load_macro_config
+from researchos.snapshot import build_snapshot, load_macro_config, resolve_cases
 from researchos.sources import (build_case, fetch_pages, get_page, load_case_spec, load_closes,
                                 url_fetcher)
 
@@ -290,6 +298,14 @@ def _parser() -> argparse.ArgumentParser:
                         f"the {USER_AGENT_ENV} environment variable, else "
                         f"{DEFAULT_USER_AGENT!r})")
     _add_out(p)
+    p = sub.add_parser("resolve", help="record how far each snapshot target moved over each "
+                                       "horizon that has ended")
+    p.add_argument("--root", required=True)
+    p.add_argument("--ids", required=True, help="comma-separated case ids")
+    p.add_argument("--series-dir", dest="series_dir", required=True, metavar="DIR",
+                   help="the directory fetch-series stored the series in, read as it "
+                        "stands now")
+    _add_out(p)
     return parser
 
 
@@ -330,13 +346,15 @@ def main(argv=None, *, client_factory=None) -> int:
         return _fetch_series(args)
     if args.command == "snapshot":
         return _snapshot(args)
+    if args.command == "resolve":
+        return _resolve(args)
     if args.command == "compare":
         return _compare(args)
     if args.command == "blend":
         return _blend(args)
     if args.command == "agreement":
         return _agreement(args)
-    ids = [i.strip() for i in args.ids.split(",") if i.strip()]
+    ids = _case_ids(args.ids)
     if not ids:
         print("error: --ids needs at least one case id", file=sys.stderr)
         return 2
@@ -369,6 +387,11 @@ def main(argv=None, *, client_factory=None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return _emit(result, args.out)
+
+
+def _case_ids(text: str) -> list[str]:
+    """--ids: comma-separated case ids, each stripped, blanks dropped."""
+    return [i.strip() for i in text.split(",") if i.strip()]
 
 
 def _user_agent(given: str | None) -> str:
@@ -506,6 +529,19 @@ def _snapshot(args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return _emit(result, args.out)
+
+
+def _resolve(args) -> int:
+    ids = _case_ids(args.ids)
+    if not ids:
+        print("error: --ids needs at least one case id", file=sys.stderr)
+        return 2
+    try:
+        cases = resolve_cases(args.root, ids, series_dir=args.series_dir)
+    except (OSError, ValueError) as exc:  # no such case, a case that fails its checks, ...
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return _emit({"cases": cases}, args.out)
 
 
 def _compare_sides(args) -> tuple[list[str], list[str]] | None:
