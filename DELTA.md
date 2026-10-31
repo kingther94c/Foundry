@@ -57,6 +57,12 @@ as written.
   `fetch_cftc`) and the `fetch-series` command in `__main__.py`. Foundry's
   `tests/test_series.py`, the hidden suite as
   `tests/test_series_acceptance.py`, a scorecard row and a README paragraph.
+- **Drafts of S4** (`docs/drafts/researchos-v23/`, `researchos-v24/`): the
+  SPEC sections "Snapshot tables (v23)" (the dashboard, economy,
+  positioning and calendar tables, 79 hidden tests) and "Building a
+  snapshot (v24)" (`load_macro_config`, `build_snapshot` and the `snapshot`
+  command, 75 hidden tests), each with a reference written by hand and
+  `check.py`.
 
 ## Decisions and open points
 
@@ -76,7 +82,11 @@ as written.
   level changes), S2 macro cases, S3 free series (FRED/ALFRED, stooq, CFTC),
   S4 snapshots and their resolution, S5 many-target analysis, S6 forecast now
   and score later, S7 walk-forward by resolution date, S8 a pre-registered
-  first run. Views are 1 week, 1 month and 3 months ahead on UST 10y and 2y,
+  first run. S4 was too big for one build (about 320 lines, near the
+  25-round budget), so it is three SPEC sections: v23 the snapshot tables,
+  v24 building a snapshot (`snapshot`), v25 resolving it (`resolve`). The
+  later stages keep their scope and take the next numbers: S5 is v26, S6
+  v27, S7 v28. Views are 1 week, 1 month and 3 months ahead on UST 10y and 2y,
   2s10s, the broad dollar, the S&P 500, WTI, gold, the HY spread, the 10y
   breakeven and VIX.
 - The stages land as commits on this branch, not one branch each as
@@ -139,6 +149,11 @@ as written.
   agrees with the reference on 17,266 fuzzed calls. The workspace holds no
   path from outside it, and the relay agent's 23 tool calls named only
   workspace paths. After landing: ResearchOS 1303 passed, tools 813.
+- S4 drafts, on top of S3: v23's suite passes against its reference
+  (1382) and fails 5 tests against a copy with two deliberate bugs (2,461
+  fuzz mismatches); v24's passes against its reference (1457), fails 20
+  against a copy with three deliberate bugs, and its fuzzer finds 344
+  mismatches there and none between the reference and itself.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
