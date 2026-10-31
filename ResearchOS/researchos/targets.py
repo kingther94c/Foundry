@@ -7,19 +7,27 @@ the target's level is higher at the end of the horizon than the level the case s
 from. The views are combined key by key -- averaged with the playbook's weights in the
 "holistic" mode, their evidence added in log-odds in the "isolated" mode. The prompts
 never show the case id, an outcome or the manifest, and no file is read or written.
+
+Scoring and reflecting on many targets (SPEC.md v27): once some of a snapshot's targets
+have resolved, ``score_targets`` gives one record per resolved target key (its case_id is
+``<case id>/<key>``, with the keys an earnings record has), and ``reflect_targets`` asks
+the reflector once for lessons about the resolved keys. Neither reads or writes a file.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tools.stats import combine_probabilities, pool_log_odds
+from tools.dates import horizon_end, parse_iso_date
+from tools.stats import brier_score, combine_probabilities, pool_log_odds
 
-from researchos.cases import check_targets, render_documents, target_key, target_keys
+from researchos.cases import (TargetOutcome, check_targets, render_documents, target_key,
+                              target_keys)
 from researchos.llm import LLMError
 from researchos.perspectives import PERSPECTIVES, PROB_MAX, PROB_MIN, check_mode, clamp_prob
-from researchos.playbook import render_for_prompt
-from researchos.snapshot import format_level
+from researchos.playbook import Lesson, render_for_prompt
+from researchos.reflect import REFLECT_SCHEMA
+from researchos.snapshot import format_change, format_level
 
 MACRO_PERSPECTIVES = ["growth", "inflation", "labor", "monetary_policy", "fiscal_supply",
                       "liquidity_conditions", "positioning_sentiment", "global_fx",
@@ -350,3 +358,196 @@ def analyze_targets(masked, case, playbook, analyst, judge, *, perspectives=MACR
         prob_judge=prob_judge,
         thesis=thesis if isinstance(thesis, str) else "",
     )
+
+
+# ---- scoring and reflecting on many targets (v27) ---------------------------------------
+
+MACRO_REFLECTOR_SYSTEM = (
+    "You are the reflector in a research pipeline that trains macro strategists to forecast "
+    "where market levels go in the weeks and months after a snapshot of the markets and the "
+    "economy. The forecasts were sealed before the outcomes were known; now you see both. "
+    "Explain why each target moved the way it did, where the forecasts went wrong or right, "
+    "and write lessons that would hold on other dates. A lesson must not make a rule of a "
+    "particular date, level or event: it is shown to the strategists on every later "
+    "snapshot. Each lesson says when it applies and which perspective it belongs to."
+)
+
+MACRO_REFLECT_REQUEST = (
+    "Why did these targets move the way they did? Where were the forecasts wrong, and where "
+    "right? Write lessons that would hold on other dates; never make a rule of a particular "
+    "date, level or event."
+)
+
+
+def _check_analysis(analysis, case) -> None:
+    """ValueError unless the analysis is of this case and of its targets, in their order."""
+    if analysis.case_id != case.case_id:
+        raise ValueError(f"the analysis is of case {analysis.case_id!r}, not of case "
+                         f"{case.case_id!r}")
+    keys = target_keys(case)  # its ValueError passes through
+    if analysis.keys != keys:
+        raise ValueError(f"the analysis of case {case.case_id!r} has the keys "
+                         f"{analysis.keys!r}, not the keys of the case's targets {keys!r}")
+
+
+def _key_targets(case) -> dict:
+    """target key -> (the Target, the horizon), for every key of the case."""
+    return {target_key(target.id, horizon): (target, horizon)
+            for target in case.targets for horizon in target.horizons}
+
+
+def _target_outcome(outcome, key):
+    """The key's TargetOutcome in outcome.targets; None when it has none (not resolved yet)."""
+    found = outcome.targets.get(key)
+    return found if isinstance(found, TargetOutcome) else None
+
+
+def _resolution_date(case, horizon: str) -> str:
+    """horizon_end(<event_date>, horizon) as YYYY-MM-DD."""
+    value = case.event_date
+    when = parse_iso_date(value) if isinstance(value, str) else None
+    if when is None:
+        raise ValueError(f"case {case.case_id}: event_date {value!r} is not an ISO date "
+                         f"(YYYY-MM-DD)")
+    return horizon_end(when, horizon).isoformat()
+
+
+def _brier(p: float, y: int) -> float:
+    return brier_score([p], [y])
+
+
+def score_targets(analysis, outcome, case) -> list[dict]:
+    """One record per key of analysis.keys, in that order, that has a TargetOutcome.
+
+    A key without one is not scored yet and gives no record. Raises ValueError when the
+    analysis is of another case, or of other targets (analysis.keys is not
+    target_keys(case)). A record holds no text from the documents or the analysis.
+    """
+    _check_analysis(analysis, case)
+    by_key = _key_targets(case)
+    names = list(analysis.perspectives)
+    records: list[dict] = []
+    for key in analysis.keys:
+        resolved = _target_outcome(outcome, key)
+        if resolved is None:
+            continue  # not scored yet
+        target, horizon = by_key[key]
+        y = 1 if resolved.up else 0
+        prob_weighted = analysis.prob_weighted[key]
+        prob_judge = analysis.prob_judge[key]
+        probs = {name: analysis.views[name].probs[key] for name in names}
+        prob_uniform = sum(probs.values()) / len(probs)
+        records.append({
+            "case_id": f"{case.case_id}/{key}",
+            "case": case.case_id,
+            "key": key,
+            "target": target.id,
+            "horizon": horizon,
+            "kind": target.kind,
+            "event_date": case.event_date,
+            "resolution_date": _resolution_date(case, horizon),
+            "start_date": resolved.start_date,
+            "start": resolved.start,
+            "end_date": resolved.end_date,
+            "end": resolved.end,
+            "change": resolved.change,
+            "trailing_change": target.trailing.get(horizon),
+            "actual_up": resolved.up,
+            "prob_weighted": prob_weighted,
+            "prob_judge": prob_judge,
+            "prob_uniform": prob_uniform,
+            "prob_by_perspective": probs,
+            "brier_weighted": _brier(prob_weighted, y),
+            "brier_judge": _brier(prob_judge, y),
+            "brier_uniform": _brier(prob_uniform, y),
+            "brier_coin": 0.25,
+            "brier_by_perspective": {name: _brier(p, y) for name, p in probs.items()},
+            "correct_weighted": (prob_weighted > 0.5) == resolved.up,
+            "correct_judge": (prob_judge > 0.5) == resolved.up,
+        })
+    return records
+
+
+def _reflect_keys(analysis, outcome, keys) -> list[str]:
+    """The keys to reflect on, in the order of analysis.keys, each once."""
+    if keys is None:
+        return [key for key in analysis.keys if _target_outcome(outcome, key) is not None]
+    if isinstance(keys, str):
+        raise ValueError(f"keys must be a list of target keys, not the string {keys!r}")
+    try:
+        wanted = list(keys)
+    except TypeError:
+        raise ValueError(f"keys must be a list of target keys, got {keys!r}") from None
+    for key in wanted:
+        if key not in analysis.keys:
+            raise ValueError(f"key {key!r} is not one of the analysis's keys "
+                             f"({', '.join(analysis.keys)})")
+        if _target_outcome(outcome, key) is None:
+            raise ValueError(f"key {key!r} has no TargetOutcome in the outcome: it has not "
+                             f"resolved yet")
+    return [key for key in analysis.keys if key in wanted]
+
+
+def _render_key(key: str, target, horizon: str, analysis, resolved) -> str:
+    direction = "up" if resolved.up else "not up"
+    return "\n".join([
+        f"### {key} ({target.name}, {horizon})",
+        "Perspectives: " + ", ".join(f"{name} {analysis.views[name].probs[key]:.2f}"
+                                     for name in analysis.perspectives),
+        f"Combined: {analysis.prob_weighted[key]:.3f}; judge: {analysis.prob_judge[key]:.3f}",
+        f"Outcome: from {format_level(resolved.start)} on {resolved.start_date} to "
+        f"{format_level(resolved.end)} on {resolved.end_date}, "
+        f"{format_change(resolved.change, resolved.kind)}: {direction}",
+    ])
+
+
+def _lessons_from_output(output, names: list[str], case_id: str) -> list[Lesson]:
+    """The reply's lessons, read as reflect.reflect reads its own."""
+    items = output.get("lessons") if isinstance(output, dict) else None
+    if not isinstance(items, list):
+        return []
+    lessons: list[Lesson] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        text = item.get("lesson")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        applies_when = item.get("applies_when")
+        perspective = item.get("perspective")
+        perspective = perspective.strip().lower() if isinstance(perspective, str) else ""
+        if perspective not in names:
+            perspective = "general"
+        lessons.append(Lesson(
+            text=text.strip(),
+            applies_when=applies_when.strip() if isinstance(applies_when, str) else "",
+            perspective=perspective,
+            case_id=case_id,
+        ))
+    return lessons
+
+
+def reflect_targets(case, analysis, outcome, reflector, *, keys=None) -> list[Lesson]:
+    """One reflector call after some of the case's targets have resolved.
+
+    `keys` are the keys to reflect on (None: every key of analysis.keys with a
+    TargetOutcome), taken in the order of analysis.keys, each once. The checks of
+    score_targets come first; a key that is not in analysis.keys, or has no TargetOutcome,
+    raises ValueError before any call. With no key to reflect on, returns [] uncalled.
+    """
+    _check_analysis(analysis, case)
+    chosen = _reflect_keys(analysis, outcome, keys)
+    if not chosen:
+        return []
+    by_key = _key_targets(case)
+    names = list(analysis.perspectives)
+    parts = [f"Snapshot as of {case.event_date}: the sealed forecasts and what happened."]
+    for key in chosen:
+        target, horizon = by_key[key]
+        parts.append(_render_key(key, target, horizon, analysis, outcome.targets[key]))
+    parts.append(f"Judge's thesis: {analysis.thesis}")
+    parts.append("Documents\n\n" + render_documents(case.documents))
+    parts.append(MACRO_REFLECT_REQUEST)
+    parts.append(f"Each lesson's perspective is one of: {', '.join(names)}, or \"general\".")
+    output = reflector.json(MACRO_REFLECTOR_SYSTEM, "\n\n".join(parts), REFLECT_SCHEMA)
+    return _lessons_from_output(output, names, case.case_id)

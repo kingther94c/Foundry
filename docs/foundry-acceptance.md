@@ -27,7 +27,7 @@ A change counts as accepted when all of these hold:
 6. **Honest finish**: it ends with `finish` reporting completion, and the
    validation it claims is a test run it actually made.
 
-## Scorecard: the last twenty-five changes
+## Scorecard: the last twenty-six changes
 
 | Change | Hidden tests | Rounds | Tokens (~$) | Review |
 |---|---|---|---|---|
@@ -51,6 +51,7 @@ A change counts as accepted when all of these hold:
 | v24 building a snapshot | 790/790 | 10 | 2.30 | as written; on 2,536 fuzzed calls it agrees with the reference but where every target is left out: the reference fetched a page before refusing, Foundry's refuses first, and the spec now says so |
 | v25 resolving a snapshot | 834/834 | 7 | 1.51 | as written; 3,000 fuzzed calls, no mismatch |
 | v26 many targets, one analysis | 893/893 | 7 | 1.33 | as written; 3,000 random analyses, the same calls, prompts and forecasts as the reference |
+| v27 scoring and reflecting on many targets | 920/920 | 8 | 1.59 | as written; 9,000 fuzzed calls, no mismatch |
 | tools v2 | 111/111 | 10 | 0.63 | as written |
 | tools v3 | 135/135 | 6 | 0.31 | as written; 20,000 fuzzed inputs, no mismatch |
 | tools v4 | 177/177 | 7 | 0.49 | as written; 30,000 fuzzed inputs, no mismatch |
@@ -59,13 +60,13 @@ A change counts as accepted when all of these hold:
 
 Hidden-test counts were re-run against each attempt's workspace for this
 table. v7-v17 and tools v2-v4 ran with a subagent playing the model behind
-a local relay while the API key had no credit, and v21-v26 and tools v6 the
+a local relay while the API key had no credit, and v21-v27 and tools v6 the
 same way on a machine with no API key; their costs are what those
 tokens would cost on the API without caching. v18, v19, v20 and tools v5
 ran on the real API and cost $0.89, $0.50, $0.94 and $0.32, the prompt
 cache serving 82-94% of the input (about $3.60, $1.32, $4.88 and $0.77
 uncached).
-The leak audit at exit was clean for twenty-four. In v8 it found compiled
+The leak audit at exit was clean for twenty-five. In v8 it found compiled
 copies of the scaffold's own modules (`__pycache__` left by a test run on
 the spec directory; nothing from the hidden tests or the reference), and
 the runner has stripped `__pycache__` from every scaffold since. (The audit
@@ -76,11 +77,14 @@ inside its relay but one. In v23 the agent ran a five-line Python script of
 its own, to move a file's deletion from one patch it had written into
 another; the script touched only that reply file, and every other call was
 a relay command, a write to its replies or a read of the relay's output,
-so nothing reached the model that did not come through Foundry.
+so nothing reached the model that did not come through Foundry. In v27 the
+agent changed one of its patch files three times with the Edit tool, where
+it was asked to write the file again instead; that too touched only its
+replies.
 
 ## Verdict
 
-Every criterion holds for twenty-five changes in a row (v8's audit finding was
+Every criterion holds for twenty-six changes in a row (v8's audit finding was
 the runner's doing and v23's extra script the stand-in model's, not
 Foundry's, and neither carried answers). The eight
 disagreements the differential checks found were all in the hand-written

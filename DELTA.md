@@ -13,9 +13,10 @@ file, and ResearchOS turns macro-first. This branch does the first two and
 carries the stages of the third as they are accepted. S1 (tools v6, horizons
 and level changes), S2 (ResearchOS v21, macro cases), S3 (v22, series
 from free sources), S4 in three parts (v23 snapshot tables, v24
-building a snapshot, v25 resolving it) and v26 (the first part of S5, the
-many-target analysis) were built by Foundry in isolated workspaces and
-landed as written (v23 but for one word of a docstring).
+building a snapshot, v25 resolving it) and S5 in two parts (v26 the
+many-target analysis, v27 scoring and reflecting on it) were built by
+Foundry in isolated workspaces and landed as written (v23 but for one word
+of a docstring).
 
 ## Changes
 
@@ -89,14 +90,16 @@ landed as written (v23 but for one word of a docstring).
   as v20). Foundry's `tests/test_targets.py`, the hidden suite as
   `tests/test_targets_acceptance.py`, a scorecard row and a README
   paragraph.
-- **Draft of v27, the second part of S5** (`docs/drafts/researchos-v27/`):
-  the SPEC section "Scoring and reflecting on many targets (v27)":
+- **v27, the second part of S5** (`ResearchOS/SPEC.md` "Scoring and
+  reflecting on many targets (v27)"), in `researchos/targets.py`:
   `score_targets` (one record per resolved key, with `case_id`
   `<case>/<key>` and the keys `compare`, `blend` and `agreement` read,
   plus the combined probabilities and what the target did) and
   `reflect_targets` (one reflector call over the resolved keys, the
-  lessons read as `reflect` reads its own). 27 hidden tests, a reference
-  appended to `targets.py` and `check.py`.
+  lessons read as `reflect` reads its own). Foundry's
+  `tests/test_score_reflect_targets.py`, the hidden suite as
+  `tests/test_target_scoring_acceptance.py`, a scorecard row and a README
+  paragraph.
 - **Draft of v28, the first part of S6** (`docs/drafts/researchos-v28/`):
   the SPEC section "Forecast now, score later (v28)". `loop.forecast` seals
   forecasts and opens no outcome: a macro case needs a date after the
@@ -254,6 +257,17 @@ landed as written (v23 but for one word of a docstring).
   reference and suite) and fails 4 against a copy with three deliberate
   bugs; its fuzzer finds 2,815 mismatches in 9,000 calls there and none
   between the reference and itself.
+- v27: Foundry's build (8 rounds, 31 tool calls, finish "completed"
+  citing its own run, 1882 passed) passes all 920 hidden ResearchOS tests
+  and agrees with the reference on 9,000 fuzzed calls. The workspace holds
+  no path from outside it. The relay agent's 25 calls were 9 relay
+  commands, 10 writes and 3 edits of its replies (one patch file changed
+  with the Edit tool, where the prompt asked it to write the file again),
+  2 reads of the relay's saved output and its report. Its workspace's
+  README lacks v26's paragraph only because the scaffold was copied
+  before that paragraph was written; the README was not taken from it.
+  After landing: ResearchOS 1909 passed; v28's suite passes against its
+  reference on top (1967).
 - v28 draft: its suite passes against its reference (1939, on Foundry's
   v26 and v27's reference) and fails 6 against a copy with three
   deliberate bugs; its fuzzer finds 231 mismatches in 1,200 calls there
@@ -289,21 +303,23 @@ Files that differ from main (the working tree; this file left out):
 | A | `ResearchOS/tests/test_macro_cases_acceptance.py` |
 | A | `ResearchOS/tests/test_resolve_snapshot.py` |
 | A | `ResearchOS/tests/test_resolve_snapshot_acceptance.py` |
+| A | `ResearchOS/tests/test_score_reflect_targets.py` |
 | A | `ResearchOS/tests/test_series.py` |
 | A | `ResearchOS/tests/test_series_acceptance.py` |
 | A | `ResearchOS/tests/test_snapshot.py` |
 | A | `ResearchOS/tests/test_snapshot_tables_acceptance.py` |
+| A | `ResearchOS/tests/test_target_scoring_acceptance.py` |
 | A | `ResearchOS/tests/test_targets.py` |
 | A | `ResearchOS/tests/test_targets_acceptance.py` |
 | M | `docs/decision-log.md` |
-| A | `docs/drafts/researchos-v27/SPEC-section.md` |
-| A | `docs/drafts/researchos-v27/check.py` |
-| A | `docs/drafts/researchos-v27/reference/targets_append.py` |
-| A | `docs/drafts/researchos-v27/test_target_scoring_acceptance.py` |
 | A | `docs/drafts/researchos-v28/SPEC-section.md` |
 | A | `docs/drafts/researchos-v28/check.py` |
 | A | `docs/drafts/researchos-v28/reference/patch.py` |
 | A | `docs/drafts/researchos-v28/test_forecast_score_acceptance.py` |
+| A | `docs/drafts/researchos-v29/SPEC-section.md` |
+| A | `docs/drafts/researchos-v29/reference/blend.py` |
+| A | `docs/drafts/researchos-v29/reference/main_patch.py` |
+| A | `docs/drafts/researchos-v29/test_blend_macro_acceptance.py` |
 | M | `docs/foundry-acceptance.md` |
 | M | `docs/open-questions.md` |
 | M | `docs/threat-model.md` |

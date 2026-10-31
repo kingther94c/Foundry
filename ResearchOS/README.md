@@ -357,6 +357,15 @@ Foundry made it in 7 rounds; it passed all 893 hidden tests and, on 3,000
 random analyses, made the same calls with the same prompts and forecasts
 as the hand-written version.
 
+`score_targets` and `reflect_targets` (v27) score and reflect on a
+snapshot once some of its targets have resolved. A record is written per
+target key, with the case id `<snapshot>/<key>` and the keys an earnings
+record has, so `compare`, `blend` and `agreement` read it as they read
+an earnings record. The reflector is asked for lessons that hold on other
+dates, never a rule of a particular date, level or event. Foundry made it
+in 8 rounds; it passed all 920 hidden tests and agreed with the
+hand-written version on 9,000 fuzzed calls.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name
