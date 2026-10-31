@@ -162,6 +162,14 @@ domains.
   version's review back after that version. SPEC.md's title drops "(v1:
   earnings)", a Domains paragraph says how the two differ, and `tools`
   is no longer said to be installed.
+- **S8 dry run**: `runs/2026-11-macro-calibration-run/dry_run.py` runs the
+  plan end to end with a fake model on copies of the hashed snapshots, so
+  every step is shown to run on them before any money is spent. PLAN.md
+  gains a dated amendment, before any forecast: what the dry run
+  measured (the prompts' lengths, so the cost per snapshot is about $0.50
+  to $1.05 an arm) and how the cap is kept, since the CLI does not report
+  spend (three snapshots per call, the arms alternating, the spend read
+  between calls).
 
 ## Decisions and open points
 
@@ -374,6 +382,15 @@ domains.
   and names a perspective that never leaves 0.50.
 - S8 docs: ResearchOS 2164 passed; every relative link in README.md and
   HISTORY.md resolves.
+- S8 dry run, 2026-11-01: the eighteen snapshots match `inputs.sha256`;
+  both arms sealed 18 in 198 calls; `primary.py`, `resolve` (330 of 540
+  keys resolved: 162 at 1w, 129 at 1m, 39 at 3m), `score`, `compare`,
+  every `blend` rule and `agreement` ran; `train` on the three fully
+  resolved snapshots learned 90 keys in 42 calls (33 forecasts, 9
+  reflections), learned through 2026-10-17, and then refused a snapshot
+  on or before that date and one with an unresolved key. It refuses an
+  output folder inside the run's. The run's own `cases/` were not
+  touched. Foundry 1589 passed, tools 813, ResearchOS 2164.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -405,6 +422,7 @@ Files that differ from main (the working tree; this file left out):
 | A | `ResearchOS/run-researchos.py` |
 | A | `ResearchOS/runs/2026-11-macro-calibration-run/.gitignore` |
 | A | `ResearchOS/runs/2026-11-macro-calibration-run/PLAN.md` |
+| A | `ResearchOS/runs/2026-11-macro-calibration-run/dry_run.py` |
 | A | `ResearchOS/runs/2026-11-macro-calibration-run/inputs.sha256` |
 | A | `ResearchOS/runs/2026-11-macro-calibration-run/macro-config.json` |
 | A | `ResearchOS/runs/2026-11-macro-calibration-run/prepare.py` |

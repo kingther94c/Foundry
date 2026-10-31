@@ -150,3 +150,35 @@ finished are reported.
 The forecasts need the Anthropic API, and the machine this plan was written
 on has no API key. Everything before the forecasts (`prepare.py fetch`,
 `build`, `hashes`) was done on 2026-11-01. The run starts at `forecast`.
+
+## Amendment, 2026-11-01, before any forecast
+
+Nothing above changes what is measured. This adds what a dry run found and
+how the cap is kept.
+
+- `dry_run.py` ran this plan end to end with a fake model, on copies of the
+  eighteen hashed snapshots. Both arms sealed all eighteen in 198 calls
+  each. `primary.py`, `resolve`, `score`, `compare`, every `blend` rule and
+  `agreement` ran. On 2026-11-01, 330 of the 540 keys had resolved (162 at
+  one week, 129 at one month, 39 at three months), and `train` learned
+  from the three snapshots whose keys had all resolved. What a fake model
+  forecasts says nothing about a model.
+- The shared prefix is 58,191 to 68,442 characters (about 15k to 17k
+  tokens). The judge's prompt is up to 7,869 characters and a
+  perspective's up to 1,884.
+  - The input side costs about $0.22 a snapshot per arm: the prefix is
+    written to the cache once and read ten times.
+  - The output, thinking included, is the rest: about $0.28 at 1,000
+    output tokens a call, and $0.83 at 3,000.
+  - The estimate of $0.60 stands, within about $0.50 to $1.05. At the top
+    of that range an arm reaches its $15 cap after fourteen snapshots.
+- The CLI does not report spend, so the cap is kept by hand:
+  - Each arm is forecast in date order, three snapshots per `forecast`
+    call, the arms alternating (H 1-3, I 1-3, H 4-6, ...).
+  - The spend is read from the Anthropic Console after each call. An arm
+    stops before a call that could take it past its cap.
+  - Alternating keeps the two arms' snapshots alike if one must stop.
+  - How the snapshots are grouped changes no forecast: the playbook is
+    frozen, and each snapshot is analyzed on its own.
+- The code is that of `50c7a37`, which lands v30. The commits after it
+  change only documentation and this folder.
