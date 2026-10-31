@@ -39,6 +39,10 @@ as written.
   `tests/test_v6_levels.py`; the hidden suite, now shipped as
   `tests/test_v6_acceptance.py`; a scorecard row in
   `docs/foundry-acceptance.md` and a paragraph in `tools/README.md`.
+- **Drafts of S2 and S3** (`docs/drafts/researchos-v21/`, `docs/drafts/researchos-v22/`):
+  the ResearchOS SPEC sections "Macro cases: as-of snapshots, per-target
+  outcomes (v21)" and "Series from free sources (v22)", their hidden suites
+  (173 and 188 tests), references written by hand and `check.py` for each.
 
 ## Decisions and open points
 
@@ -69,6 +73,16 @@ as written.
   suite would fail CI before the code exists, and a build workspace is a copy
   of `tools/` or `ResearchOS/`, which must not hold the suite or the
   reference. Neither pytest configuration collects `docs/`.
+- S3 reads every series without an account: FRED's `fredgraph.csv` for the
+  current values, ALFRED's `alfredgraph.csv?vintage_date=` for a series as
+  it was known on a date, and the CFTC's Socrata JSON for positioning. All
+  three were checked against what they returned on 2026-10-31 (an empty
+  value on a bond-market holiday, the `<ID>_<YYYYMMDD>` vintage column,
+  counts as strings, dates as `2026-10-27T00:00:00.000`) and those samples
+  are in the suite. So the plan's FRED API key is not needed: no key is
+  stored, sent or tested. stooq now answers with a JavaScript proof-of-work
+  check, which is bot detection and is not worked around; gold comes from
+  FRED's NASDAQ gold index (`NASDAQQGLDI`) instead of stooq's `XAUUSD`.
 - Builds run with a subagent playing the model behind a local relay, as
   v7-v17 did: this machine has no API key, and the OpenClaw gateway's only
   provider refuses the model it is configured with. The relay agent may run
@@ -112,6 +126,18 @@ Files that differ from main (the working tree; this file left out):
 | M | `ResearchOS/pyproject.toml` |
 | A | `ResearchOS/run-researchos.py` |
 | M | `docs/decision-log.md` |
+| A | `docs/drafts/researchos-v21/README.md` |
+| A | `docs/drafts/researchos-v21/SPEC-section.md` |
+| A | `docs/drafts/researchos-v21/check.py` |
+| A | `docs/drafts/researchos-v21/reference/cases.py` |
+| A | `docs/drafts/researchos-v21/reference/loop_append.py` |
+| A | `docs/drafts/researchos-v21/reference/masking_append.py` |
+| A | `docs/drafts/researchos-v21/test_macro_cases_acceptance.py` |
+| A | `docs/drafts/researchos-v22/SPEC-section.md` |
+| A | `docs/drafts/researchos-v22/check.py` |
+| A | `docs/drafts/researchos-v22/reference/main_patch.py` |
+| A | `docs/drafts/researchos-v22/reference/series.py` |
+| A | `docs/drafts/researchos-v22/test_series_acceptance.py` |
 | M | `docs/foundry-acceptance.md` |
 | M | `docs/open-questions.md` |
 | M | `docs/threat-model.md` |
