@@ -123,6 +123,18 @@ docstring, v28 but for one of its tests, which needed `tools` installed).
   either, every result is what it was. `blend` and `agreement` take
   `--perspectives {earnings,macro}`. 36 hidden tests, a reference
   `blend.py` with a patch to `__main__.py`, and `check.py`.
+- **Draft of v30, S7** (`docs/drafts/researchos-v30/`): the SPEC section
+  "Walk forward by resolution date (v30)". `train` takes macro snapshots in
+  place of v28's refusal: it forecasts and seals them in date order, and
+  learns from each target key only once it has resolved (before a batch,
+  what resolved earlier; after it, what resolved by then; the rest after
+  the last batch), one Hedge update per key with `update_weights_probs`
+  and one reflection per snapshot and horizon. `learned_through` takes a
+  record's `resolution_date`, so a later `train` or `forecast` starts after
+  the latest one. `evaluate` still refuses a macro case. 53 hidden tests, a
+  reference appended to `loop.py` and `playbook.py`, and `check.py`, which
+  keeps two of v28's own checks for `evaluate` only, since v30 changes
+  what they check for `train`.
 
 ## Decisions and open points
 
@@ -296,6 +308,10 @@ docstring, v28 but for one of its tests, which needed `tools` installed).
   reference and suite) and fails 6 against a copy with three deliberate
   bugs; its fuzzer finds 2,752 mismatches in 8,000 calls there and none
   between the reference and itself.
+- v30 draft: its suite passes against its reference (2095, with v29's
+  reference and suite) and fails 13 against a copy with three deliberate
+  bugs; its fuzzer finds 197 mismatches in 400 random runs there and none
+  between the reference and itself.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -346,6 +362,7 @@ Files that differ from main (the working tree; this file left out):
 | A | `docs/drafts/researchos-v29/reference/main_patch.py` |
 | A | `docs/drafts/researchos-v29/test_blend_macro_acceptance.py` |
 | A | `docs/drafts/researchos-v30/SPEC-section.md` |
+| A | `docs/drafts/researchos-v30/check.py` |
 | A | `docs/drafts/researchos-v30/reference/loop_append.py` |
 | A | `docs/drafts/researchos-v30/reference/playbook_append.py` |
 | A | `docs/drafts/researchos-v30/test_walk_forward_acceptance.py` |
