@@ -14,6 +14,8 @@ src/foundry/prompts/ versioned system prompts
 tests/              1436 tests; fixtures/ holds the golden-task sample repo
 demo/               mini_foundry.py + the notebook: the architecture in one file
 run-foundry.py      run the CLI from this clone, no install (foundry.cmd wraps it)
+scripts/            build_wheelhouse.py; delta.py, which keeps DELTA.md
+DELTA.md            how this branch differs from main (on main, the empty template)
 docs/               requirements, design, threat model, decision log, research
 ```
 
@@ -60,9 +62,36 @@ by design.
 - A new runtime dependency needs a decision-log entry
   ([docs/decision-log.md](docs/decision-log.md)); the budget is deliberate.
 
+## Branch notes
+
+`DELTA.md` says how the current branch differs from main: what changed, why,
+and how it was checked. On main it is always the empty template.
+
+- On a branch, write its Summary as soon as the branch changes anything, and
+  keep Changes, Decisions and open points, and Verification current as you
+  commit. The file list at the bottom is generated; `python scripts/delta.py
+  refresh` rewrites it.
+- The Claude Code hooks in `.claude/settings.json` do this as you go: a
+  session starts with `refresh` (on main that restores the template), and a
+  turn ends with `check --stop-hook`, which refreshes the list and sends the
+  agent back, once, if the Summary is unwritten or later commits changed files
+  the notes were not updated for.
+- CI runs `python scripts/delta.py check`: on main the file must be the
+  template; on a branch with commits beyond main the Summary must be written.
+- To land a branch, empty the file as its last commit, then fast-forward main
+  to it from a checkout of main:
+
+  ```bash
+  python scripts/delta.py reset --commit
+  git merge --ff-only <branch>
+  ```
+
+  `reset --commit` puts the notes in that commit's message, so `git log
+  --grep` still finds them once the branch has landed.
+
 ## Before you finish
 
-Run the suite. If you changed the demo's output strings, the assertions in
+Run the suite, and on a branch bring `DELTA.md` up to date. If you changed the demo's output strings, the assertions in
 `tests/test_demo.py` and `tests/test_demo_notebook.py` are what check them, and
 if you changed the breaker table, `tests/test_prompt_matches_breaker.py` checks
 that the system prompt still tells the model the truth.

@@ -13,10 +13,18 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The branch-notes check needs main and the merge base with it.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Branch notes
+        # DELTA.md: the empty template on main, a written Summary on a branch
+        # (AGENT.md, "Branch notes").
+        run: python scripts/delta.py check
 
       - name: Install
         run: |

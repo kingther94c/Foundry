@@ -158,10 +158,12 @@ both are enforced by tests
 | [docs/design.md](docs/design.md) | the design: package structure, core interfaces, key mechanisms |
 | [docs/threat-model.md](docs/threat-model.md) | what is protected, what is not, and where enforcement happens |
 | [docs/roadmap.md](docs/roadmap.md) | milestones and status |
-| [docs/decision-log.md](docs/decision-log.md) | 33 numbered decisions (including the overturned ones) |
+| [docs/decision-log.md](docs/decision-log.md) | 34 numbered decisions (including the overturned ones) |
 | [docs/open-questions.md](docs/open-questions.md) | open questions |
 | [docs/research/](docs/research/) | research notes, including the [first live endpoint check](docs/research/live-endpoint.md) |
 | [demo/](demo/) | the skeleton in one runnable file, plus a notebook |
+| [AGENT.md](AGENT.md) | how to work in this repository |
+| [DELTA.md](DELTA.md) | how the current branch differs from main (on main, an empty template) |
 
 ## Open
 
