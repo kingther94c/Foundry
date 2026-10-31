@@ -71,8 +71,9 @@ snapshot builds the macro case of --as-of (researchos.snapshot.build_snapshot) f
 snapshot configuration --config (researchos.snapshot.load_macro_config) and the series
 files fetch-series stored under --series-dir: the tables, and of each kind of official
 text the latest published by then, fetched by address with the user agent chosen as for
-build. No outcome is written and no client is built. A case whose forecast is sealed or
-whose outcome is written is never rebuilt: exit 1, with the reason on stderr.
+build and cut to the page's main element when it has one (get_page with main_only, v31).
+No outcome is written and no client is built. A case whose forecast is sealed or whose
+outcome is written is never rebuilt: exit 1, with the reason on stderr.
 
 resolve records how far each target of the snapshots --ids (read as train reads them)
 moved over each horizon that has ended (researchos.snapshot.resolve_cases), from the
@@ -575,7 +576,8 @@ def _snapshot(args) -> int:
     try:
         config = load_macro_config(args.config)
         result = build_snapshot(args.root, config, args.as_of, series_dir=args.series_dir,
-                                fetch_page=lambda url: get_page(url, user_agent=user_agent))
+                                fetch_page=lambda url: get_page(url, user_agent=user_agent,
+                                                                main_only=True))
     except (OSError, ValueError) as exc:  # a missing or malformed file, a sealed case, ...
         print(f"error: {exc}", file=sys.stderr)
         return 1

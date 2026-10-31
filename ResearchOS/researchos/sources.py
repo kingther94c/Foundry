@@ -197,7 +197,12 @@ _BLANKS = re.compile("[ \t\xa0]+")
 
 
 class _TextParser(HTMLParser):
-    """Collects a page's first <title> and its visible text, broken into lines."""
+    """Collects a page's first <title> and its visible text, broken into lines.
+
+    It also finds the page's main elements (v31): start tags named main, or with
+    role="main", whose text the page keeps. ``mains`` counts them; the text of the
+    first one is ``parts[main_start:main_end]`` (``main_end`` None: to the end of the page).
+    """
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -210,6 +215,12 @@ class _TextParser(HTMLParser):
         self.pre = 0  # open <pre> elements
         # Per open table, the cells so far in its current row (None between rows).
         self.rows: list[int | None] = []
+        self.mains = 0  # main elements seen
+        self.main_tag: str | None = None  # the first main element's name
+        # Kept start tags of main_tag less kept end tags of it, from the first main element on.
+        self.main_depth = 0
+        self.main_start = 0  # where its text begins in parts: after what its start tag added
+        self.main_end: int | None = None  # where it ends: before what its end tag adds
 
     def handle_starttag(self, tag, attrs):
         if self.hidden and self.hidden[-1] == "head" and tag not in _HEAD_CONTENT:
@@ -227,6 +238,11 @@ class _TextParser(HTMLParser):
             return
         if self.hidden:
             return
+        if tag == self.main_tag and self.main_end is None:
+            self.main_depth += 1
+        is_main = tag == "main" or any(name == "role" and value is not None
+                                       and value.strip().lower() == "main"
+                                       for name, value in attrs)
         if tag in _LINE_TAGS:
             self.parts.append("\n")
         if tag == "pre":
@@ -244,6 +260,12 @@ class _TextParser(HTMLParser):
             if cells:
                 self.parts.append(_CELL_SEPARATOR)
             self.rows[-1] = cells + 1
+        if is_main:
+            self.mains += 1
+            if self.mains == 1:
+                self.main_tag = tag
+                self.main_depth = 1
+                self.main_start = len(self.parts)
 
     def handle_endtag(self, tag):
         if tag == "title":
@@ -258,6 +280,10 @@ class _TextParser(HTMLParser):
             return
         if self.hidden:
             return
+        if tag == self.main_tag and self.main_end is None:
+            self.main_depth -= 1
+            if self.main_depth == 0:
+                self.main_end = len(self.parts)
         if tag in _LINE_TAGS:
             self.parts.append("\n")
         if tag == "pre":
@@ -278,7 +304,13 @@ class _TextParser(HTMLParser):
             self.parts.append(_LINE_BREAKS.sub("\n" if self.pre else " ", data))
 
 
-def html_to_text(html: str) -> tuple[str, str]:
+def _lines_of(parts) -> str:
+    """The text of parts: blank runs become one space, lines stripped, empty ones dropped."""
+    lines = (_BLANKS.sub(" ", line).strip() for line in "".join(parts).split("\n"))
+    return "\n".join(line for line in lines if line)
+
+
+def html_to_text(html: str, *, main_only: bool = False) -> tuple[str, str]:
     """``(title, text)`` of an HTML page, using only ``html.parser``.
 
     The title is the text of the page's <title>, whitespace collapsed ("" when
@@ -287,13 +319,24 @@ def html_to_text(html: str) -> tuple[str, str]:
     table, h1-h6, ...) start new lines; the cells of a table row are joined by
     " | "; character references are decoded; runs of spaces, tabs and
     non-breaking spaces become one space; lines are stripped, empty ones dropped.
+
+    With ``main_only`` (v31) the text is that of the page's main element -- a
+    start tag named main, or with role="main", whose text the page keeps --
+    when the page has exactly one and its text is not empty. It runs to the end
+    tag of its name that closes it (to the end of the page when none does), and
+    what its own start and end tags add is left out. Otherwise the text is the
+    whole text, as without ``main_only``. The title is the same either way.
     """
     parser = _TextParser()
     parser.feed(html)
     parser.close()
     title = " ".join("".join(parser.title).split())
-    lines = (_BLANKS.sub(" ", line).strip() for line in "".join(parser.parts).split("\n"))
-    return title, "\n".join(line for line in lines if line)
+    if main_only and parser.mains == 1:
+        end = len(parser.parts) if parser.main_end is None else parser.main_end
+        main = _lines_of(parser.parts[parser.main_start:end])
+        if main:
+            return title, main
+    return title, _lines_of(parser.parts)
 
 
 _HTML_TYPES = frozenset({"text/html", "application/xhtml+xml"})
@@ -332,11 +375,14 @@ def _decode(body: bytes, charset: str) -> str:
     return text.removeprefix("\N{ZERO WIDTH NO-BREAK SPACE}")  # a byte order mark is not text
 
 
-def get_page(url: str, *, user_agent: str, transport=None) -> FetchedPage:
+def get_page(url: str, *, user_agent: str, transport=None,
+             main_only: bool = False) -> FetchedPage:
     """One GET of ``url`` with ``User-Agent: <user_agent>``; the page it returns.
 
     ``transport(url, headers) -> (body, content_type)`` defaults to urllib. HTML
-    goes through ``html_to_text``; plain text is kept as it is; any other content
+    goes through ``html_to_text`` (with ``main_only``, keeping only the text of
+    the page's main element when it has one: see there); plain text is kept as
+    it is, whatever ``main_only`` is; any other content
     type (a PDF, an image) raises ValueError. The transport's errors (OSError,
     which includes urllib's HTTP and URL errors) propagate.
     """
@@ -350,7 +396,7 @@ def get_page(url: str, *, user_agent: str, transport=None) -> FetchedPage:
         return FetchedPage(url, "", text)
     if not media_type and not text.lstrip().startswith("<"):
         raise ValueError(f"{url}: no content type, and the body is not HTML")
-    return FetchedPage(url, *html_to_text(text))
+    return FetchedPage(url, *html_to_text(text, main_only=main_only))
 
 
 URL_KINDS = ("release", "transcript", "expectations")

@@ -16,7 +16,8 @@ three parts (v23 snapshot tables, v24 building a snapshot, v25 resolving
 it), S5 in two parts (v26 the many-target analysis, v27 scoring and
 reflecting on it), S6 in two parts (v28 forecast now and score later, v29
 blend and agreement over the macro perspectives) and S7 (v30, walk
-forward by resolution date) were built by Foundry in isolated workspaces
+forward by resolution date) and v31 (the main text of a fetched page)
+were built by Foundry in isolated workspaces
 and landed as written (v23 but for one word of a docstring, v28 but for
 one of its tests, which needed `tools` installed). One of v30's hidden
 tests asked for more than its SPEC and was corrected. S8 pre-registers
@@ -170,13 +171,14 @@ domains.
   to $1.05 an arm) and how the cap is kept, since the CLI does not report
   spend (three snapshots per call, the arms alternating, the spend read
   between calls).
-- **Draft of v31** (`docs/drafts/researchos-v31/`): the SPEC section "The
-  main text of a fetched page (v31)". `html_to_text` and `get_page` take
+- **v31** (`ResearchOS/SPEC.md` "The main text of a fetched page
+  (v31)"). `html_to_text` and `get_page` take
   `main_only`: the text of the page's one main element (`<main>` or
   `role="main"`), else the whole text as before; `snapshot` asks for it,
-  `build` does not. 63 hidden tests, a reference appended to `sources.py`,
-  and `check.py`, whose fuzzer also checks that the whole text does not
-  change.
+  `build` does not. Foundry's `tests/test_main_text.py`, the hidden suite
+  as `tests/test_main_text_acceptance.py`, a scorecard row, a HISTORY.md
+  paragraph, a word in the README's Macro section, and a dated note in
+  the run's PLAN.md: its snapshots, built before v31, stay as hashed.
 
 ## Decisions and open points
 
@@ -404,6 +406,16 @@ domains.
   and itself. On the two Fed pages of the 2026-10-30 snapshot, fetched
   again, the main text keeps 1,389 of the statement's 9,710 characters
   and 36,015 of the minutes' 44,336.
+- v31: Foundry's build (9 rounds, 28 tool calls, finish "completed"
+  after its own run, 2200 passed) passes all 1130 hidden ResearchOS
+  tests on the first run and agrees with the reference on 40,000 fuzzed
+  pages (two seeds), where the whole text is also unchanged from v30. The
+  workspace holds no path from outside it. The relay agent's 22 calls
+  were 10 relay commands, 10 writes of its replies, one read of the
+  relay's saved output and its report; no Edit. Rebuilt with v31 in a
+  scratch folder, the 2026-10-30 snapshot keeps its four tables byte for
+  byte, and its documents shrink from 58,004 characters to 41,366. After
+  landing: ResearchOS 2263 passed.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -431,6 +443,7 @@ Files that differ from main (the working tree; this file left out):
 | M | `ResearchOS/researchos/playbook.py` |
 | A | `ResearchOS/researchos/series.py` |
 | A | `ResearchOS/researchos/snapshot.py` |
+| M | `ResearchOS/researchos/sources.py` |
 | A | `ResearchOS/researchos/targets.py` |
 | A | `ResearchOS/run-researchos.py` |
 | A | `ResearchOS/runs/2026-11-macro-calibration-run/.gitignore` |
@@ -448,6 +461,8 @@ Files that differ from main (the working tree; this file left out):
 | A | `ResearchOS/tests/test_forecast_score_acceptance.py` |
 | A | `ResearchOS/tests/test_macro_cases.py` |
 | A | `ResearchOS/tests/test_macro_cases_acceptance.py` |
+| A | `ResearchOS/tests/test_main_text.py` |
+| A | `ResearchOS/tests/test_main_text_acceptance.py` |
 | A | `ResearchOS/tests/test_resolve_snapshot.py` |
 | A | `ResearchOS/tests/test_resolve_snapshot_acceptance.py` |
 | A | `ResearchOS/tests/test_score_reflect_targets.py` |
@@ -461,10 +476,6 @@ Files that differ from main (the working tree; this file left out):
 | A | `ResearchOS/tests/test_walk_by_resolution.py` |
 | A | `ResearchOS/tests/test_walk_forward_acceptance.py` |
 | M | `docs/decision-log.md` |
-| A | `docs/drafts/researchos-v31/SPEC-section.md` |
-| A | `docs/drafts/researchos-v31/check.py` |
-| A | `docs/drafts/researchos-v31/reference/sources_append.py` |
-| A | `docs/drafts/researchos-v31/test_main_text_acceptance.py` |
 | M | `docs/foundry-acceptance.md` |
 | M | `docs/open-questions.md` |
 | M | `docs/threat-model.md` |

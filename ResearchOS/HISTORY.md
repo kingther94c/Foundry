@@ -280,3 +280,13 @@ moves the weights once, and each snapshot and horizon gets one
 reflection. Foundry made it in 12 rounds; it passed all 1067 hidden
 tests, after one that asked for more than the spec was corrected, and
 agreed with the hand-written version on 2,400 fuzzed runs.
+
+`snapshot` (v31) keeps only a fetched page's main content: the text of
+its one `main` element, or its one element with `role="main"`. A page
+with none, with several or with an empty one gives its whole text, and
+`build` still reads whole pages. Each Fed page had brought about 8,300
+characters of site navigation. Rebuilt with v31, the 2026-10-30
+snapshot's documents shrink from 58,004 characters to 41,366, the
+tables unchanged. Foundry made it in 9 rounds; it passed all 1130
+hidden tests and agreed with the hand-written version on 40,000 fuzzed
+pages, on every one of which the whole text was what it had been.

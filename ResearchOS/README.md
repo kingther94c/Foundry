@@ -135,7 +135,8 @@ or before `--knowledge-cutoff`, before any call.
   the calendar. It uses only what was known on the date: every series cut
   at it (an economic series as published by then, when its vintage is
   stored), positioning only once the report was public, the latest text
-  of each kind published by then, and the events scheduled after it.
+  of each kind published by then (of a fetched page, only its main
+  content), and the events scheduled after it.
   Building it twice gives the same bytes.
 - `forecast` has ten macro perspectives and a judge each give a probability
   for every key, one call each, and seals the forecast. It opens no

@@ -182,3 +182,9 @@ how the cap is kept.
     frozen, and each snapshot is analyzed on its own.
 - The code is that of `50c7a37`, which lands v30. The commits after it
   change only documentation and this folder.
+- Later the same day, still before any forecast: v31 makes `snapshot`
+  keep only a fetched page's main content, which takes about 8,300
+  characters of site navigation off each Fed page. These snapshots were
+  built before v31 and are used as hashed, navigation included, so the
+  known limit above stands for this run. `forecast`, `resolve` and `score`
+  are the same at v31 as at `50c7a37`.
