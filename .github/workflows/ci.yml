@@ -86,6 +86,41 @@ jobs:
       - name: Test
         run: python -X warn_default_encoding -m pytest -q
 
+  run-from-clone:
+    # Only the dependencies are installed: every suite and the CLI run from the
+    # source tree, as they do in a fresh clone (docs/decision-log.md D-033).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the dependencies only
+        run: python -m pip install -r requirements.in "pytest>=8.0,<9" "anthropic>=1.13,<2"
+
+      - name: Foundry itself is not installed
+        run: python -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('foundry') is not None)"
+
+      # One command a step: a pwsh step reports only its last command's exit code.
+      - name: The launcher
+        run: python run-foundry.py --version
+
+      - name: The command wrapper
+        run: .\foundry.cmd doctor
+
+      - name: Foundry suite
+        run: python -X warn_default_encoding -m pytest tests -q
+
+      - name: tools suite
+        working-directory: tools
+        run: python -X warn_default_encoding -m pytest -q
+
+      - name: ResearchOS suite
+        working-directory: ResearchOS
+        run: python -X warn_default_encoding -m pytest -q
+
   offline-install:
     runs-on: windows-latest
     steps:

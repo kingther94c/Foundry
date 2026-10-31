@@ -3,9 +3,10 @@
 #
 # Foundry targets Python 3.12 on Windows. The cloud image is Linux, defaults to
 # Python 3.11 and has no pytest, so this builds .venv on 3.12, installs the
-# package with its dev extras, and puts the venv first on PATH. That last step
-# matters: the demo and golden-task tests spawn a bare `python`, which must be
-# the 3.12 interpreter that has pytest.
+# dependencies and pytest (the code itself runs from the source tree, as in any
+# clone: pytest's pythonpath puts src/ first), and puts the venv first on PATH.
+# That last step matters: the demo and golden-task tests spawn a bare `python`,
+# which must be the 3.12 interpreter that has pytest.
 #
 # Local sessions are left alone; set up your own environment as AGENT.md says.
 set -euo pipefail
@@ -32,9 +33,9 @@ if ! is_py312; then
 fi
 
 if command -v uv >/dev/null 2>&1; then
-  uv pip install --quiet --python "$venv/bin/python" -e ".[dev]"
+  uv pip install --quiet --python "$venv/bin/python" -r requirements.in "pytest>=8.0,<9"
 else
-  "$venv/bin/python" -m pip install --quiet -e ".[dev]"
+  "$venv/bin/python" -m pip install --quiet -r requirements.in "pytest>=8.0,<9"
 fi
 
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then

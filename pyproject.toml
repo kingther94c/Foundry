@@ -24,6 +24,10 @@ packages = ["src/foundry"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The package is importable from the source tree with no install, so a clone
+# can be tested as it is -- and src/ comes ahead of any editable install that
+# points at another checkout.
+pythonpath = ["src"]
 # The sample repo under tests/fixtures is a golden-task fixture with a planted
 # bug: its own suite is meant to fail until the agent fixes it.
 norecursedirs = ["tests/fixtures"]

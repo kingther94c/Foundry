@@ -45,7 +45,32 @@ explains how to point it at a real model (any OpenAI-compatible
 
 ## Quick start
 
-`wheelhouse/` is not in version control, so build it first:
+There are two ways to run Foundry. Both run the same code; they differ only in
+how it gets onto the machine ([D-033](docs/decision-log.md)).
+
+### From a clone (development, personal use)
+
+Nothing is installed but the dependencies (`requirements.in`); the tests and
+the CLI run from the source tree.
+
+```bash
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.in "pytest>=8.0,<9"
+.venv\Scripts\python -m pytest -q
+.venv\Scripts\python run-foundry.py doctor
+```
+
+`foundry.cmd` is the same launcher as a command: put the clone on `PATH` (with
+that environment's `python` ahead of others), go to the repository you want to
+work in, and run `foundry doctor`, `foundry login`, `foundry`. `doctor` prints
+`source`, the directory the code was imported from, so it is always plain which
+checkout is running.
+
+### Installed offline (a machine with no package index)
+
+The distribution channel for the corporate machine is a wheel
+([D-002](docs/decision-log.md)). `wheelhouse/` is not in version control, so
+build it first:
 
 ```bash
 python scripts/build_wheelhouse.py
@@ -133,7 +158,7 @@ both are enforced by tests
 | [docs/design.md](docs/design.md) | the design: package structure, core interfaces, key mechanisms |
 | [docs/threat-model.md](docs/threat-model.md) | what is protected, what is not, and where enforcement happens |
 | [docs/roadmap.md](docs/roadmap.md) | milestones and status |
-| [docs/decision-log.md](docs/decision-log.md) | 32 numbered decisions (including the overturned ones) |
+| [docs/decision-log.md](docs/decision-log.md) | 33 numbered decisions (including the overturned ones) |
 | [docs/open-questions.md](docs/open-questions.md) | open questions |
 | [docs/research/](docs/research/) | research notes, including the [first live endpoint check](docs/research/live-endpoint.md) |
 | [demo/](demo/) | the skeleton in one runnable file, plus a notebook |

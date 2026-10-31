@@ -13,19 +13,38 @@ src/foundry/cli/    the terminal UI: an event subscriber, the approval UI, repor
 src/foundry/prompts/ versioned system prompts
 tests/              1436 tests; fixtures/ holds the golden-task sample repo
 demo/               mini_foundry.py + the notebook: the architecture in one file
+run-foundry.py      run the CLI from this clone, no install (foundry.cmd wraps it)
 docs/               requirements, design, threat model, decision log, research
 ```
 
 ## Running things
 
+Nothing needs installing but the dependencies: the tests and the CLI run from
+the source tree (`pythonpath = ["src"]` in `pyproject.toml`; `run-foundry.py`,
+or `foundry.cmd`, for the CLI).
+
 ```bash
-python -m pip install -e ".[dev]"
+python -m pip install -r requirements.in "pytest>=8.0,<9"
 python -m pytest -q
+python run-foundry.py doctor
 ```
 
-CI additionally runs `python -X warn_default_encoding -m pytest tests -q`, and
-builds the wheelhouse (`python scripts/build_wheelhouse.py`) to prove the
-offline `--no-index` install still works. Both jobs are Windows-only by design.
+`tools/` and `ResearchOS/` work the same way: `python -m pytest -q` in each.
+ResearchOS also needs `anthropic`; its pytest config puts `../tools` on the
+path, and `ResearchOS/run-researchos.py` runs its CLI.
+
+An editable install (`pip install -e ".[dev]"`) still works, but it writes a
+`.pth` file that points at one checkout. With several worktrees that used to
+mean every other worktree's `python -m pytest` tested that one checkout's code,
+without a word. Each worktree's own `src/` now comes first, and `foundry
+doctor` prints the `source` it imported; if that is not the checkout you are
+in, uninstall the editable copy.
+
+CI runs every suite with `python -X warn_default_encoding -m pytest`, once
+installed editable and once from the clone with only the dependencies
+installed, and builds the wheelhouse (`python scripts/build_wheelhouse.py`) to
+prove the offline `--no-index` install still works. Every job is Windows-only
+by design.
 
 ## Conventions
 

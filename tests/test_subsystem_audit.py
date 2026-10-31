@@ -11,6 +11,7 @@ import json
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -352,7 +353,9 @@ def test_doctor_fails_on_a_protocol_that_would_kill_every_session(tmp_path):
 
     (tmp_path / "config.toml").write_text(
         '[backend]\nprotocol = "anthropic"\n', encoding="utf-8")
-    env = {**os.environ, "FOUNDRY_HOME": str(tmp_path), "PYTHONPATH": "src",
+    # An absolute src/, so the test holds from any working directory.
+    src = Path(__file__).resolve().parents[1] / "src"
+    env = {**os.environ, "FOUNDRY_HOME": str(tmp_path), "PYTHONPATH": str(src),
            "PYTHONIOENCODING": "utf-8"}
     done = subprocess.run(
         [sys.executable, "-c",

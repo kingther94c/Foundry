@@ -592,6 +592,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     console.print(f"foundry {__version__}")
     console.print(f"python  {sys.version.split()[0]}")
+    # Every checkout reports the same version; where the code was imported from
+    # is what tells this clone from an editable install of another worktree.
+    import foundry
+
+    # soft_wrap: a long path stays on one line, so it can be copied.
+    console.print(f"source  {Path(foundry.__file__).resolve().parent}", soft_wrap=True)
 
     if sys.version_info[:2] != (3, 12):
         console.print("[yellow]warning:[/yellow] Foundry targets Python 3.12")

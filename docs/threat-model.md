@@ -267,6 +267,13 @@ directly in the text will not bypass approval by being spelled differently.**
    happen after `Popen` returns, so in theory there is a very brief window in
    which the child could spawn a grandchild that escapes the job. The stdlib
    cannot close that window.
+8. **Foundry working on its own source.** Run from a clone, or from an editable
+   install, whose repository is also the session's workspace, and a patch the
+   session applies changes the policy code the next run loads; in
+   `accept_edits` mode such a patch applies without asking. The breaker
+   protects `.git` and `.foundry`, not `src/`. A wheel install is not exposed
+   (site-packages is outside the workspace). To work on Foundry with Foundry,
+   run it from one clone and point it at another.
 
 ## 5. How this is accepted against
 

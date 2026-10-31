@@ -20,4 +20,8 @@ packages = ["researchos"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tools is a sibling package in this repository: put it on the path so the
+# suite runs from a clone without installing it. (Where tools is installed and
+# ../tools does not exist, as in an isolated build workspace, this does nothing.)
+pythonpath = ["../tools"]
 filterwarnings = ["error::EncodingWarning"]
