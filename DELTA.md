@@ -110,6 +110,14 @@ of a docstring).
   `train` and `evaluate` refusing a macro case, and the `forecast` and
   `score` commands. 58 hidden tests, a reference written as edits to the
   package, and `check.py`.
+- **Draft of v29, the second part of S6** (`docs/drafts/researchos-v29/`):
+  the SPEC section "Blend and agreement over the macro perspectives (v29)".
+  `blend.replay` and `blend.agreement` take the perspectives to read, and
+  `replay` learns from a record only once it has resolved: before a batch
+  it learns what resolved earlier, after it what resolved by then. Without
+  either, every result is what it was. `blend` and `agreement` take
+  `--perspectives {earnings,macro}`. 36 hidden tests, a reference
+  `blend.py` with a patch to `__main__.py`, and `check.py`.
 
 ## Decisions and open points
 
@@ -272,6 +280,10 @@ of a docstring).
   v26 and v27's reference) and fails 6 against a copy with three
   deliberate bugs; its fuzzer finds 231 mismatches in 1,200 calls there
   and none between the reference and itself.
+- v29 draft: its suite passes against its reference (2003, with v28's
+  reference and suite) and fails 6 against a copy with three deliberate
+  bugs; its fuzzer finds 2,752 mismatches in 8,000 calls there and none
+  between the reference and itself.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -317,6 +329,7 @@ Files that differ from main (the working tree; this file left out):
 | A | `docs/drafts/researchos-v28/reference/patch.py` |
 | A | `docs/drafts/researchos-v28/test_forecast_score_acceptance.py` |
 | A | `docs/drafts/researchos-v29/SPEC-section.md` |
+| A | `docs/drafts/researchos-v29/check.py` |
 | A | `docs/drafts/researchos-v29/reference/blend.py` |
 | A | `docs/drafts/researchos-v29/reference/main_patch.py` |
 | A | `docs/drafts/researchos-v29/test_blend_macro_acceptance.py` |
