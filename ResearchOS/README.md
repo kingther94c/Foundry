@@ -386,6 +386,16 @@ resolution date every result is what it was. Foundry made it in 8
 rounds; it passed all 1014 hidden tests and agreed with the hand-written
 version on 16,000 fuzzed calls.
 
+`train` (v30) walks a macro run forward by resolution date. The
+forecasts of a date use exactly the target keys that resolved before
+it; a key that resolves on the date is learned from once that date's
+forecasts are sealed, as an earnings case of the date is. A snapshot's
+outcome is opened only when its first key is learned from. Each key
+moves the weights once, and each snapshot and horizon gets one
+reflection. Foundry made it in 12 rounds; it passed all 1067 hidden
+tests, after one that asked for more than the spec was corrected, and
+agreed with the hand-written version on 2,400 fuzzed runs.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

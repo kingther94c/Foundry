@@ -83,9 +83,14 @@ anything is written: exit 1, with the reason on stderr.
 
 forecast seals a forecast for each case --ids (researchos.loop.forecast) and opens no
 outcome. It takes the arguments of train and evaluate, passes on only the options given,
-prints {"cases": [...]}, what it forecast, and exits as train does. train and evaluate
-refuse a macro case (its outcome is not known on its date): it is forecast with forecast
-and scored with score.
+prints {"cases": [...]}, what it forecast, and exits as train does. evaluate refuses a
+macro case (its outcome is not known on its date): it is forecast with forecast and
+scored with score.
+
+train also takes macro ids (researchos.loop.train): it walks the snapshots forward,
+learning from each target key once its horizon has ended, and prints the history records
+it appended. Every key of each snapshot must have resolved, and a macro run needs
+--knowledge-cutoff: without it, exit 1 with the reason on stderr.
 
 score prints researchos.loop.score_sealed of the cases --ids: the sealed forecasts scored
 against whatever has resolved since, and what is still pending. No model is called and

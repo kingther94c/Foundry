@@ -16,9 +16,11 @@ from free sources), S4 in three parts (v23 snapshot tables, v24
 building a snapshot, v25 resolving it), S5 in two parts (v26 the
 many-target analysis, v27 scoring and reflecting on it) and S6 in two parts
 (v28 forecast now and score later, v29 blend and agreement over the macro
-perspectives) were built by Foundry in isolated workspaces and landed as
-written (v23 but for one word of a docstring, v28 but for one of its
-tests, which needed `tools` installed).
+perspectives) and S7 (v30, walk forward by resolution date) were built by
+Foundry in isolated workspaces and landed as written (v23 but for one
+word of a docstring, v28 but for one of its tests, which needed `tools`
+installed). One of v30's hidden tests asked for more than its SPEC and
+was corrected.
 
 ## Changes
 
@@ -126,18 +128,19 @@ tests, which needed `tools` installed).
   `tests/test_blend_perspectives.py`, the hidden suite as
   `tests/test_blend_macro_acceptance.py`, a scorecard row and a README
   paragraph.
-- **Draft of v30, S7** (`docs/drafts/researchos-v30/`): the SPEC section
-  "Walk forward by resolution date (v30)". `train` takes macro snapshots in
+- **v30, S7** (`ResearchOS/SPEC.md` "Walk forward by resolution date
+  (v30)"). `train` takes macro snapshots in
   place of v28's refusal: it forecasts and seals them in date order, and
   learns from each target key only once it has resolved (before a batch,
   what resolved earlier; after it, what resolved by then; the rest after
   the last batch), one Hedge update per key with `update_weights_probs`
   and one reflection per snapshot and horizon. `learned_through` takes a
   record's `resolution_date`, so a later `train` or `forecast` starts after
-  the latest one. `evaluate` still refuses a macro case. 53 hidden tests, a
-  reference appended to `loop.py` and `playbook.py`, and `check.py`, which
-  keeps two of v28's own checks for `evaluate` only, since v30 changes
-  what they check for `train`.
+  the latest one. `evaluate` still refuses a macro case. Foundry's
+  `tests/test_walk_by_resolution.py` and the two checks of
+  `tests/test_forecast_score.py` that v30 changes for `train`, the hidden
+  suite as `tests/test_walk_forward_acceptance.py`, a scorecard row and a
+  README paragraph.
 - **S8, the first macro run, planned**
   (`ResearchOS/runs/2026-11-macro-calibration-run/`): `PLAN.md`, fixed
   before any forecast (eighteen Friday snapshots from 2026-07-03 to
@@ -339,6 +342,21 @@ tests, which needed `tools` installed).
   reference and suite) and fails 13 against a copy with three deliberate
   bugs; its fuzzer finds 197 mismatches in 400 random runs there and none
   between the reference and itself.
+- v30: Foundry's build (12 rounds, 34 tool calls, finish "completed"
+  after its own run, 2110 passed) passed 2140 of the 2141 tests of the
+  suite on the first run. The failure was the suite's: it told the
+  refusal of another domain's playbook from the date refusal by its
+  first words (`train refused: `), which the SPEC leaves open, and
+  Foundry's message begins as `forecast`'s does. The test now tells them
+  apart by what each names (the file, the cases); it passes against
+  Foundry's build and the reference, and the copy with three bugs still
+  fails 13. 2,400 fuzzed runs, no mismatch. The workspace holds no path
+  from outside it, and Foundry changed only the two v28 checks of
+  `train` it was told to. The relay agent's 41 calls were 14 relay
+  commands (one with a redirect and an `echo` added, whose output was
+  thrown away and fetched again), 15 writes of its replies, 11 reads or
+  searches of the relay's saved output, and its report; no Edit. After
+  landing: ResearchOS 2164 passed.
 - S8 inputs, 2026-11-01: `prepare.py fetch` stored 195 series files (FRED,
   ALFRED vintages for each Friday, CFTC), `build` built the eighteen
   snapshots (about 15k tokens each), and `load_macro_config` accepts the
@@ -397,12 +415,9 @@ Files that differ from main (the working tree; this file left out):
 | A | `ResearchOS/tests/test_target_scoring_acceptance.py` |
 | A | `ResearchOS/tests/test_targets.py` |
 | A | `ResearchOS/tests/test_targets_acceptance.py` |
+| A | `ResearchOS/tests/test_walk_by_resolution.py` |
+| A | `ResearchOS/tests/test_walk_forward_acceptance.py` |
 | M | `docs/decision-log.md` |
-| A | `docs/drafts/researchos-v30/SPEC-section.md` |
-| A | `docs/drafts/researchos-v30/check.py` |
-| A | `docs/drafts/researchos-v30/reference/loop_append.py` |
-| A | `docs/drafts/researchos-v30/reference/playbook_append.py` |
-| A | `docs/drafts/researchos-v30/test_walk_forward_acceptance.py` |
 | M | `docs/foundry-acceptance.md` |
 | M | `docs/open-questions.md` |
 | M | `docs/threat-model.md` |

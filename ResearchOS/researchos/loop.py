@@ -2,8 +2,12 @@
 
 Forecast now, score later (v28): ``forecast`` seals forecasts and opens no outcome, and
 ``score_sealed`` scores what was sealed against what has resolved since, calling no model.
-``train`` and ``evaluate`` open a case's outcome as soon as it is sealed, so they refuse a
-macro case, whose targets resolve weeks or months after its date.
+``evaluate`` opens a case's outcome as soon as it is sealed, so it refuses a macro case,
+whose targets resolve weeks or months after its date.
+
+Walk forward by resolution date (v30): ``train`` takes a macro run. Each snapshot is
+forecast with a playbook that has learned from exactly the target keys resolved before its
+date, and a key is learned from once its horizon has ended.
 """
 
 from __future__ import annotations
@@ -16,20 +20,22 @@ from itertools import groupby
 from pathlib import Path
 from typing import Any
 
-from tools.dates import parse_iso_date
+from tools.dates import horizon_end, parse_iso_date
 from tools.stats import brier_score
 
-from researchos.cases import (DOMAINS, OUTCOME_FILE, PREDICTION_FILE, Outcome, TargetOutcome,
-                              identity_terms, load_case, load_outcome)
+from researchos.cases import (DOMAINS, OUTCOME_FILE, PREDICTION_FILE, RESOLUTION_FILE, Outcome,
+                              TargetOutcome, identity_terms, load_case, load_outcome,
+                              load_resolution, target_key, target_keys, unresolved_targets)
 from researchos.jsonio import read_json, write_json
 from researchos.masking import (MASKED_FILE, MaskConfig, guard_documents, load_masked,
                                 mask_case, save_masked, unmasked)
 from researchos.perspectives import Analysis, View, analyze, check_mode
 from researchos.playbook import (Playbook, add_lessons, learned_through, lesson_is_clean,
-                                 load_playbook, save_playbook, update_weights)
+                                 load_playbook, save_playbook, update_weights,
+                                 update_weights_probs)
 from researchos.reflect import reflect
-from researchos.targets import (TargetAnalysis, analyze_targets, perspective_set, score_targets,
-                                target_analysis_from_dict)
+from researchos.targets import (TargetAnalysis, analyze_targets, perspective_set, reflect_targets,
+                                score_targets, target_analysis_from_dict)
 
 log = logging.getLogger("researchos")
 
@@ -207,9 +213,9 @@ def _load_cases(root, case_ids) -> list:
 def _refuse_macro(loaded, command: str) -> None:
     """ValueError naming every macro case among the loaded ones (v28).
 
-    train and evaluate open a case's outcome as soon as its forecast is sealed, and a macro
-    case's outcome is not known on its date: it is forecast with forecast and scored with
-    score_sealed.
+    evaluate opens a case's outcome as soon as its forecast is sealed, and a macro case's
+    outcome is not known on its date: it is forecast with forecast and scored with
+    score_sealed. (train walks a macro run forward by resolution date instead, v30.)
     """
     problems = [f"case {case_id} is a macro case: its outcome is not known on its date, so "
                 f"it is forecast with forecast and scored with score_sealed"
@@ -232,11 +238,13 @@ def _requested_cases(root, case_ids, playbook: Playbook, playbook_path, command:
     return _dated_cases(loaded, playbook, playbook_path, command)
 
 
-def _dated_cases(loaded, playbook: Playbook, playbook_path, command: str):
+def _dated_cases(loaded, playbook: Playbook, playbook_path, command: str, *,
+                 learned: str = "event date", used: str = "reactions"):
     """[(case_id, case, event_date)] for the loaded cases, once none of them is a look-ahead.
 
     Raises ValueError, its message beginning f"{command} refused: ", naming every case
     whose event_date is not an ISO date, or is on or before learned_through(playbook).
+    `learned` and `used` only word the message: a macro run learns by resolution date.
     """
     through = learned_through(playbook)
     requested, problems = [], []
@@ -249,8 +257,8 @@ def _dated_cases(loaded, playbook: Playbook, playbook_path, command: str):
         if through is not None and when <= through:
             problems.append(
                 f"case {case_id}: event_date {when.isoformat()} is on or before "
-                f"{through.isoformat()}, the latest event date the playbook {playbook_path} "
-                f"has learned from, so its forecast would use reactions it could not have known")
+                f"{through.isoformat()}, the latest {learned} the playbook {playbook_path} "
+                f"has learned from, so its forecast would use {used} it could not have known")
         requested.append((case_id, case, when))
     if problems:
         raise ValueError(f"{command} refused: " + "; ".join(problems))
@@ -260,10 +268,25 @@ def _dated_cases(loaded, playbook: Playbook, playbook_path, command: str):
 def train(root, case_ids, playbook_path, roles: Roles, seed=0,
           mask_config: MaskConfig = MaskConfig(), knowledge_cutoff=None,
           perspective_mode="holistic") -> list[dict]:
+    """Learn from the cases, walking forward in time.
+
+    check_mode and parse_cutoff come first, then load_case of every id. When none of the
+    cases is a macro case, the run is an earnings run, as before v30: batches of one event
+    date, each case masked, analyzed and sealed with the playbook from before its batch,
+    then its outcome opened, scored and reflected on; it returns the scored records.
+    Otherwise it is a macro run (_train_macro): each target key is learned from once its
+    resolution date has passed, and it returns the history records it appended.
+    """
     check_mode(perspective_mode)  # before anything is masked, called or written
     cutoff = parse_cutoff(knowledge_cutoff)
+    ids = list(case_ids)
+    loaded = _load_cases(root, ids)
+    if any(case.domain == "macro" for _, case in loaded):
+        return _train_macro(root, ids, loaded, playbook_path, roles, knowledge_cutoff, cutoff,
+                            perspective_mode)
+    # An earnings run, as before v30.
     playbook = _open_playbook(playbook_path)
-    requested = _requested_cases(root, case_ids, playbook, playbook_path, "train")
+    requested = _dated_cases(loaded, playbook, playbook_path, "train")
     # Walk forward in event-date order; sorted() is stable, so ties keep the order given.
     ordered = sorted(requested, key=lambda item: item[2])
     results: list[dict] = []
@@ -361,18 +384,19 @@ def _refuse_repeated(case_ids, command: str) -> None:
             f"case {case_id} is given more than once" for case_id in repeated))
 
 
-def _domain_playbook(playbook_path, domain: str) -> Playbook:
+def _domain_playbook(playbook_path, domain: str, command: str = "forecast") -> Playbook:
     """The playbook at playbook_path, else the initial playbook of the domain's perspectives.
 
     A loaded playbook whose weights do not name exactly the domain's perspectives (as a set)
-    belongs to another domain: ValueError naming the file and the domain.
+    belongs to another domain: ValueError naming the file and the domain, its message
+    beginning f"{command} refused: ".
     """
     names = perspective_set(domain)
     if not Path(playbook_path).is_file():
         return Playbook.initial(names)
     playbook = load_playbook(playbook_path)
     if set(playbook.weights) != set(names):
-        raise ValueError(f"forecast refused: the playbook {playbook_path} weighs the "
+        raise ValueError(f"{command} refused: the playbook {playbook_path} weighs the "
                          f"perspectives {', '.join(playbook.weights) or '(none)'}, not those "
                          f"of the {domain} domain ({', '.join(names)}): the playbook belongs "
                          f"to another domain")
@@ -405,16 +429,23 @@ def _forecast_earnings(root, case_id, case, playbook, roles, seed, mask_config, 
             "identifiable": masked.status == "identifiable"}
 
 
-def _forecast_macro(root, case_id, case, playbook, roles, cutoff, perspective_mode) -> dict:
-    """Analyze one macro case on its documents as they are and seal it; its entry.
+def _seal_macro(root, case_id, case, playbook, roles, cutoff, perspective_mode) -> TargetAnalysis:
+    """Analyze one macro case on its documents as they are and seal it; the analysis.
 
-    A macro case has no company to hide: no masked.json is read or written.
+    A macro case has no company to hide: no masked.json is read or written. The analysis
+    records the analyst's model and the knowledge cutoff as YYYY-MM-DD.
     """
     analysis = analyze_targets(unmasked(case), case, playbook, roles.analyst, roles.judge,
                                perspectives=perspective_set("macro"), mode=perspective_mode)
     analysis.model = _model_of(roles.analyst)
     analysis.knowledge_cutoff = _iso_cutoff(cutoff)
     write_json(Path(root) / case_id / PREDICTION_FILE, asdict(analysis))
+    return analysis
+
+
+def _forecast_macro(root, case_id, case, playbook, roles, cutoff, perspective_mode) -> dict:
+    """Analyze one macro case on its documents as they are and seal it; its entry."""
+    analysis = _seal_macro(root, case_id, case, playbook, roles, cutoff, perspective_mode)
     return {"case_id": case_id, "event_date": case.event_date, "domain": "macro",
             "sealed": True, "mode": perspective_mode, "model": analysis.model,
             "keys": list(analysis.keys),
@@ -462,12 +493,7 @@ def forecast(root, case_ids, playbook_path, roles: Roles, seed=0,
     if domain == "macro":
         for case_id, case in loaded:
             require_after_cutoff(case_id, case, knowledge_cutoff)
-    sealed = [(case_id, Path(root) / case_id / PREDICTION_FILE) for case_id, _ in loaded]
-    sealed = [(case_id, path) for case_id, path in sealed if path.exists()]
-    if sealed:
-        raise ValueError("forecast refused: " + "; ".join(
-            f"case {case_id}: {path} exists, so its forecast is already sealed; a forecast "
-            f"is sealed once and never replaced" for case_id, path in sealed))
+    _refuse_sealed(root, loaded, "forecast")
     entries: list[dict] = []
     for case_id, case in loaded:
         if domain == "macro":
@@ -571,3 +597,148 @@ def score_sealed(root, case_ids) -> dict:
         "accuracy_weighted": _mean([1.0 if r["correct_weighted"] else 0.0 for r in records]),
         "accuracy_judge": _mean([1.0 if r["correct_judge"] else 0.0 for r in records]),
     }
+
+
+# ---- walk forward by resolution date (v30) ----------------------------------------------
+
+def _refuse_sealed(root, loaded, command: str) -> None:
+    """ValueError naming every case whose prediction.json exists: a forecast is sealed once."""
+    sealed = [(case_id, Path(root) / case_id / PREDICTION_FILE) for case_id, _ in loaded]
+    sealed = [(case_id, path) for case_id, path in sealed if path.exists()]
+    if sealed:
+        raise ValueError(f"{command} refused: " + "; ".join(
+            f"case {case_id}: {path} exists, so its forecast is already sealed; a forecast "
+            f"is sealed once and never replaced" for case_id, path in sealed))
+
+
+def _refuse_unresolved(root, loaded, command: str) -> None:
+    """ValueError naming every case with a target key not resolved yet, and those keys.
+
+    Every key of a case has resolved when load_resolution gives a manifest (a dict) of which
+    unresolved_targets is empty. Only resolution.json is read: no outcome.json is opened.
+    """
+    problems: list[str] = []
+    for case_id, case in loaded:
+        manifest = load_resolution(root, case_id)
+        unresolved = unresolved_targets(case, manifest)
+        keys = ", ".join(unresolved) or "no key"
+        if manifest is None:
+            problems.append(f"case {case_id} has no {RESOLUTION_FILE}, so none of its keys is "
+                            f"known to have resolved ({keys})")
+        elif not isinstance(manifest, dict):
+            problems.append(f"case {case_id}: its {RESOLUTION_FILE} is not a manifest, so none "
+                            f"of its keys is known to have resolved ({keys})")
+        elif unresolved:
+            problems.append(f"case {case_id}: its keys {keys} have not resolved yet, so it "
+                            f"cannot be learned from")
+    if problems:
+        raise ValueError(f"{command} refused: " + "; ".join(problems))
+
+
+@dataclass
+class _Walked:
+    """A macro case on the walk, and what has been opened and learned from it so far."""
+    case_id: str
+    case: Any
+    when: date                       # its event date
+    keys: list                       # (key, horizon, resolution date), in target_keys order
+    by_horizon: dict                 # horizon -> its keys, in target_keys order
+    left: dict                       # horizon -> how many of those are not learned from yet
+    analysis: TargetAnalysis | None = None
+    outcome: Outcome | None = None
+    records: dict | None = None      # key -> its score_targets record, once the outcome is open
+
+
+def _walked(case_id, case, when: date) -> _Walked:
+    """The case with each key's resolution date, horizon_end(<event date>, <horizon>)."""
+    keys = target_keys(case)
+    horizon_of = {target_key(target.id, horizon): horizon
+                  for target in case.targets for horizon in target.horizons}
+    dated = [(key, horizon_of[key], horizon_end(when, horizon_of[key])) for key in keys]
+    by_horizon: dict[str, list[str]] = {}
+    for key, horizon, _ in dated:
+        by_horizon.setdefault(horizon, []).append(key)
+    return _Walked(case_id=case_id, case=case, when=when, keys=dated, by_horizon=by_horizon,
+                   left={horizon: len(group) for horizon, group in by_horizon.items()})
+
+
+def _learn(root, walked: _Walked, key: str, horizon: str, playbook: Playbook, playbook_path,
+           roles: Roles) -> dict:
+    """Learn from one resolved key of a sealed macro case; the history record appended."""
+    if walked.records is None:
+        # The first key of the case learned from: only now, after the case was sealed, is
+        # its outcome opened.
+        walked.outcome = load_outcome(root, walked.case_id)
+        walked.records = {record["key"]: record for record in
+                          score_targets(walked.analysis, walked.outcome, walked.case)}
+    record = walked.records.get(key)
+    if record is None:
+        raise ValueError(f"train: case {walked.case_id}: its {OUTCOME_FILE} has no outcome for "
+                         f"the key {key}, which its {RESOLUTION_FILE} marks resolved")
+    update_weights_probs(playbook, record["prob_by_perspective"], record["actual_up"])
+    entry = {"case_id": record["case_id"], "split": "train",
+             **{name: value for name, value in record.items() if name != "case_id"}}
+    playbook.history.append(entry)
+    walked.left[horizon] -= 1
+    if walked.left[horizon] == 0:
+        # The last key of this horizon: one reflection on the horizon's keys.
+        lessons = reflect_targets(walked.case, walked.analysis, walked.outcome, roles.reflector,
+                                  keys=list(walked.by_horizon[horizon]))
+        add_lessons(playbook, lessons, identity_terms(walked.case))
+    save_playbook(playbook_path, playbook)
+    return entry
+
+
+def _train_macro(root, ids, loaded, playbook_path, roles: Roles, knowledge_cutoff, cutoff,
+                 perspective_mode) -> list[dict]:
+    """The macro run of train (v30), once check_mode, parse_cutoff and load_case are done.
+
+    The remaining checks, in order, each for every case before the next, before anything
+    is called or written: an id given more than once; single_domain; the playbook (it must
+    weigh the macro perspectives); the dates train refuses; require_after_cutoff; every key
+    resolved; no prediction.json. Then the snapshots are walked in event-date order (ties
+    keep the order given), in batches of one event date b: the playbook learns from every
+    waiting key resolved before b; each case of the batch is forecast and sealed as
+    forecast does it; the batch's keys join the waiting ones, and the playbook learns from
+    those resolved on or before b. After the last batch it learns from every key still
+    waiting. Keys are learned from one at a time by resolution date, ties in the order they
+    joined (_learn). Returns the history records appended, in that order. Nothing is
+    masked, so seed and mask_config play no part.
+    """
+    _refuse_repeated(ids, "train")
+    single_domain(case for _, case in loaded)
+    playbook = _domain_playbook(playbook_path, "macro", "train")
+    requested = _dated_cases(loaded, playbook, playbook_path, "train",
+                             learned="resolution date", used="outcomes")
+    for case_id, case in loaded:
+        require_after_cutoff(case_id, case, knowledge_cutoff)
+    _refuse_unresolved(root, loaded, "train")
+    _refuse_sealed(root, loaded, "train")
+    # Each key's resolution date, still before anything is called or written; sort() is
+    # stable, so snapshots of one date keep the order given.
+    walk = [_walked(case_id, case, when) for case_id, case, when in requested]
+    walk.sort(key=lambda walked: walked.when)
+
+    results: list[dict] = []
+    waiting: list[tuple] = []  # (resolution date, _Walked, key, horizon), in joining order
+
+    def learn(due) -> None:
+        """Learn from every waiting key whose resolution date is due, by resolution date."""
+        # sorted() is stable: keys that resolve on the same day keep the order they joined.
+        ready = sorted((item for item in waiting if due(item[0])), key=lambda item: item[0])
+        waiting[:] = [item for item in waiting if not due(item[0])]
+        for _, walked, key, horizon in ready:
+            results.append(_learn(root, walked, key, horizon, playbook, playbook_path, roles))
+
+    for b, group in groupby(walk, key=lambda walked: walked.when):
+        batch = list(group)
+        learn(lambda resolved, b=b: resolved < b)  # known before the batch's date
+        for walked in batch:  # with the playbook as it stands: no outcome of b is known
+            walked.analysis = _seal_macro(root, walked.case_id, walked.case, playbook, roles,
+                                          cutoff, perspective_mode)
+        for walked in batch:
+            waiting.extend((resolved, walked, key, horizon)
+                           for key, horizon, resolved in walked.keys)
+        learn(lambda resolved, b=b: resolved <= b)  # resolved on the batch's own date
+    learn(lambda resolved: True)  # every key still waiting, however late it resolves
+    return results

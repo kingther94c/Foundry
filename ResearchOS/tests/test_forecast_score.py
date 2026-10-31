@@ -21,8 +21,8 @@ from researchos import cases as cases_mod
 from researchos import loop as loop_mod
 from researchos import snapshot as snapshot_mod
 from researchos.__main__ import main
-from researchos.cases import (Document, Outcome, Target, TargetOutcome, macro_case, save_case,
-                              save_outcome)
+from researchos.cases import (Document, Outcome, Target, TargetOutcome, macro_case,
+                              resolution_manifest, save_case, save_outcome, save_resolution)
 from researchos.jsonio import read_json, write_json
 from researchos.llm import DEFAULT_MODEL, LLMError
 from researchos.loop import evaluate, forecast, load_prediction, score_sealed, train
@@ -165,7 +165,7 @@ def test_playbook_initial_takes_the_perspectives():
     assert Playbook.initial(None) == Playbook.initial()
 
 
-# ---- train and evaluate refuse a macro case ---------------------------------------------
+# ---- evaluate refuses a macro case; train one that shares a run with an earnings case ---
 
 @pytest.mark.parametrize("run", [train, evaluate])
 def test_train_and_evaluate_refuse_a_macro_case(tmp_path, run):
@@ -173,7 +173,10 @@ def test_train_and_evaluate_refuse_a_macro_case(tmp_path, run):
     save_case(root, make_case("a"), make_outcome(ar=0.02))
     roles = make_roles()
     pb_path = tmp_path / "pb.json"
-    with pytest.raises(ValueError, match=SNAP) as err:
+    # evaluate refuses the macro case itself (v28). train takes a macro run (v30), but a
+    # macro case cannot share a run with an earnings case (single_domain).
+    refused = SNAP if run is evaluate else "more than one domain"
+    with pytest.raises(ValueError, match=refused) as err:
         run(root, ["a", SNAP], pb_path, roles, knowledge_cutoff=CUTOFF)
     assert "macro" in str(err.value) and "case a " not in str(err.value)
     assert not any(agent.calls for agent in (roles.masker, roles.guesser, roles.analyst,
@@ -693,12 +696,26 @@ def test_cli_forecast_and_score_a_macro_case(tmp_path, capsys):
     assert code == 0, captured.err
     report = json.loads(captured.out)
     assert report["n"] == 2 and report["pending"] == [f"{SNAP}/DGS10_1m"]
-    for cmd in ("train", "evaluate"):
-        code = main([cmd, "--root", str(root), "--playbook", pb, "--ids", SNAP,
-                     "--knowledge-cutoff", CUTOFF],
-                    client_factory=lambda: FakeClient(macro_responder))
-        captured = capsys.readouterr()
-        assert code == 1 and "macro case" in captured.err and captured.out == ""
+    code = main(["evaluate", "--root", str(root), "--playbook", pb, "--ids", SNAP,
+                 "--knowledge-cutoff", CUTOFF],
+                client_factory=lambda: FakeClient(macro_responder))
+    captured = capsys.readouterr()
+    assert code == 1 and "macro case" in captured.err and captured.out == ""
+    # train takes the macro id (v30), but learns only once every key has resolved, and it
+    # never replaces the forecast sealed above
+    train_args = ["train", "--root", str(root), "--playbook", pb, "--ids", SNAP,
+                  "--knowledge-cutoff", CUTOFF]
+    save_resolution(root, SNAP, resolution_manifest(make_macro(),
+                                                    resolved=["DGS10_1w", "SP500_1m"]))
+    code = main(train_args, client_factory=lambda: FakeClient(macro_responder))
+    captured = capsys.readouterr()
+    assert code == 1 and SNAP in captured.err and "DGS10_1m" in captured.err
+    assert "macro case" not in captured.err and captured.out == ""
+    save_resolution(root, SNAP, resolution_manifest(make_macro(), resolved=KEYS))
+    code = main(train_args, client_factory=lambda: FakeClient(macro_responder))
+    captured = capsys.readouterr()
+    assert code == 1 and SNAP in captured.err and "sealed" in captured.err
+    assert captured.out == "" and not Path(pb).exists()
 
 
 def test_cli_score_exit_codes(tmp_path, capsys):

@@ -27,7 +27,7 @@ A change counts as accepted when all of these hold:
 6. **Honest finish**: it ends with `finish` reporting completion, and the
    validation it claims is a test run it actually made.
 
-## Scorecard: the last twenty-eight changes
+## Scorecard: the last twenty-nine changes
 
 | Change | Hidden tests | Rounds | Tokens (~$) | Review |
 |---|---|---|---|---|
@@ -54,6 +54,7 @@ A change counts as accepted when all of these hold:
 | v27 scoring and reflecting on many targets | 920/920 | 8 | 1.59 | as written; 9,000 fuzzed calls, no mismatch |
 | v28 forecast now, score later | 978/978 | 7 | 2.02 | one fix to its own test, from a gap in FOUNDRY.md: a subprocess import check found `tools` only where it is installed, which a clone no longer does; 1,200 fuzzed calls, no mismatch |
 | v29 blend and agreement over the macro perspectives | 1014/1014 | 8 | 1.57 | as written; 16,000 fuzzed calls, no mismatch |
+| v30 walk forward by resolution date | 1067/1067 | 12 | 3.17 | as written; one hidden test asked for more than the spec (that the refusal of another domain's playbook not begin `train refused: `, which the spec leaves open) and was corrected, not the code; 2,400 fuzzed runs of `train`, no mismatch |
 | tools v2 | 111/111 | 10 | 0.63 | as written |
 | tools v3 | 135/135 | 6 | 0.31 | as written; 20,000 fuzzed inputs, no mismatch |
 | tools v4 | 177/177 | 7 | 0.49 | as written; 30,000 fuzzed inputs, no mismatch |
@@ -62,13 +63,13 @@ A change counts as accepted when all of these hold:
 
 Hidden-test counts were re-run against each attempt's workspace for this
 table. v7-v17 and tools v2-v4 ran with a subagent playing the model behind
-a local relay while the API key had no credit, and v21-v29 and tools v6 the
+a local relay while the API key had no credit, and v21-v30 and tools v6 the
 same way on a machine with no API key; their costs are what those
 tokens would cost on the API without caching. v18, v19, v20 and tools v5
 ran on the real API and cost $0.89, $0.50, $0.94 and $0.32, the prompt
 cache serving 82-94% of the input (about $3.60, $1.32, $4.88 and $0.77
 uncached).
-The leak audit at exit was clean for twenty-seven. In v8 it found compiled
+The leak audit at exit was clean for twenty-eight. In v8 it found compiled
 copies of the scaffold's own modules (`__pycache__` left by a test run on
 the spec directory; nothing from the hidden tests or the reference), and
 the runner has stripped `__pycache__` from every scaffold since. (The audit
@@ -82,15 +83,18 @@ a relay command, a write to its replies or a read of the relay's output,
 so nothing reached the model that did not come through Foundry. In v27 the
 agent changed one of its patch files three times with the Edit tool, where
 it was asked to write the file again instead; that too touched only its
-replies.
+replies. In v30 it added a redirect and an `echo` to one relay command,
+which threw that command's output away, and ran the command again.
 
 ## Verdict
 
-Every criterion holds for twenty-eight changes in a row (v8's audit finding was
-the runner's doing and v23's extra script the stand-in model's, not
-Foundry's, and neither carried answers). The eight
+Every criterion holds for twenty-nine changes in a row (v8's audit finding was
+the runner's doing and v23's extra script and v30's extra shell text the
+stand-in model's, not Foundry's, and none carried answers). The eight
 disagreements the differential checks found were all in the hand-written
-references, which Foundry's versions did not have; of the three
+references, which Foundry's versions did not have. One hidden test was
+wrong too: v30's told two refusals apart by opening words the spec leaves
+open, and it was corrected without a change to Foundry's code. Of the three
 review changes, two came from gaps in the spec (in v28, FOUNDRY.md still
 called `tools` an installed package after the clone stopped installing
 it) and the third corrected a word in a docstring. For

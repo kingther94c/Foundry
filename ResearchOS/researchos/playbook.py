@@ -62,24 +62,31 @@ def load_playbook(path) -> Playbook:
 
 
 def learned_through(playbook: Playbook) -> date | None:
-    """The latest event date among the history records the playbook learned from.
+    """The latest date among the history records the playbook learned from.
 
-    Records with "skipped" taught it nothing and do not count; records without an
-    event_date (written before training recorded one) are ignored. None if no record
-    counts. An event_date that is present but is not an ISO date raises ValueError:
-    what the playbook knows cannot be told, and guessing could let a look-ahead through.
+    A record's date is its resolution_date when that is present and not None (v30: a macro
+    target key is learned from once it has resolved), and its event_date otherwise; an
+    earnings record carries no resolution_date. Records with "skipped" taught it nothing and
+    do not count; records with neither date (written before training recorded one) are
+    ignored. None if no record counts. A date that is present but is not an ISO date raises
+    ValueError: what the playbook knows cannot be told, and guessing could let a look-ahead
+    through.
     """
     latest: date | None = None
     for record in playbook.history:
         if not isinstance(record, dict) or "skipped" in record:
             continue
-        value = record.get("event_date")
+        name = "resolution_date"
+        value = record.get(name)
+        if value is None:
+            name = "event_date"
+            value = record.get(name)
         if value is None:
             continue
         when = parse_iso_date(value)
         if when is None:
             raise ValueError(f"playbook history record for case {record.get('case_id')!r} has "
-                             f"event_date {value!r}, which is not an ISO date (YYYY-MM-DD)")
+                             f"{name} {value!r}, which is not an ISO date (YYYY-MM-DD)")
         if latest is None or when > latest:
             latest = when
     return latest
@@ -89,6 +96,18 @@ def update_weights(playbook: Playbook, views: dict, actual_up: bool, eta: float 
     """Hedge update of the weights with each perspective's squared error as its loss."""
     y = 1.0 if actual_up else 0.0
     losses = {name: (view.prob_up - y) ** 2 for name, view in views.items()}
+    playbook.weights = hedge_update(playbook.weights, losses, eta)
+
+
+def update_weights_probs(playbook: Playbook, probs: dict, actual_up: bool,
+                         eta: float = 0.5) -> None:
+    """The Hedge update of update_weights, from bare probabilities (v30).
+
+    Each perspective's loss is (p - y) ** 2 for its probability p in `probs` (a macro
+    record's prob_by_perspective), y being 1.0 when actual_up and 0.0 otherwise.
+    """
+    y = 1.0 if actual_up else 0.0
+    losses = {name: (p - y) ** 2 for name, p in probs.items()}
     playbook.weights = hedge_update(playbook.weights, losses, eta)
 
 

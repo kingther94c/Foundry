@@ -628,7 +628,8 @@ def test_the_playbook_is_checked_before_the_dates(tmp_path):
     history = [{"case_id": "acme-q4", "event_date": "2026-09-01"}]
     save_playbook(tmp_path / "pb.json", Playbook(Playbook.initial().weights, [], history))
     message = refused(tmp_path, [mid(A)])
-    assert "pb.json" in message and not message.startswith("train refused: ")
+    # The date refusal names every case it refuses; the playbook refusal names the file.
+    assert "pb.json" in message and mid(A) not in message
 
 
 def macro_book(root, through):
