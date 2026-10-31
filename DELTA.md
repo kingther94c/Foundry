@@ -10,9 +10,9 @@ before a branch lands. See AGENT.md, "Branch notes".
 The first part of a three-part refactoring planned with the user: Foundry runs
 straight from a clone, every branch records its changes from main in this
 file, and ResearchOS turns macro-first. This branch does the first two and
-carries the stages of the third as they are accepted: S1 (tools v6, horizons
-and level changes) was built by Foundry in an isolated workspace and landed
-as written.
+carries the stages of the third as they are accepted. S1 (tools v6, horizons
+and level changes) and S2 (ResearchOS v21, macro cases) were built by Foundry
+in isolated workspaces and landed as written.
 
 ## Changes
 
@@ -39,10 +39,20 @@ as written.
   `tests/test_v6_levels.py`; the hidden suite, now shipped as
   `tests/test_v6_acceptance.py`; a scorecard row in
   `docs/foundry-acceptance.md` and a paragraph in `tools/README.md`.
-- **Drafts of S2 and S3** (`docs/drafts/researchos-v21/`, `docs/drafts/researchos-v22/`):
-  the ResearchOS SPEC sections "Macro cases: as-of snapshots, per-target
-  outcomes (v21)" and "Series from free sources (v22)", their hidden suites
-  (173 and 188 tests), references written by hand and `check.py` for each.
+- **S2, ResearchOS v21** (`ResearchOS/SPEC.md` "Macro cases: as-of
+  snapshots, per-target outcomes (v21)"): `Target`, `TargetOutcome`,
+  `target_key`, `check_targets`, `target_keys`, `macro_case`, `save_outcome`,
+  the resolution manifest (`resolution_manifest`, `save_resolution`,
+  `load_resolution`, `unresolved_targets`) in `cases.py`; `Case.domain` and
+  `Case.targets`; an optional `Outcome.abnormal_return_1d` and
+  `Outcome.targets`; `masking.unmasked`; `loop.require_after_cutoff` and
+  `loop.single_domain`; `build` prints the outcome as `outcome.json` holds
+  it. Foundry's `tests/test_macro_cases.py`, the hidden suite as
+  `tests/test_macro_cases_acceptance.py`, a scorecard row and a README
+  paragraph.
+- **Draft of S3** (`docs/drafts/researchos-v22/`): the SPEC section "Series
+  from free sources (v22)", its hidden suite (188 tests), a reference written
+  by hand and `check.py`.
 
 ## Decisions and open points
 
@@ -109,6 +119,17 @@ as written.
   outside it; the relay agent's 15 tool calls all named workspace paths.
   After landing: tools 813 passed, ResearchOS 705 passed (in a `.venv` with
   rich, pytest 8.4.2 and anthropic 1.17.0).
+- S2: the hidden suite passed against the reference (878 with the existing
+  tests) and failed 9 against a copy with two deliberate bugs. Foundry's
+  build (9 rounds, 39 tool calls, finish "completed" citing its own run, 755
+  passed) passes all 448 hidden ResearchOS tests. On about 22,000 fuzzed
+  calls it agrees with the reference except in `load_case` of a target
+  whose `horizons` is not a list or whose `trailing` is not a dict, which
+  `check_targets` refuses or does not check: the reference raises there and
+  cannot read back what `save_case` wrote, Foundry's keeps the value. The
+  workspace holds no path from outside it, and the relay agent's 39 tool
+  calls named only workspace paths. After landing: ResearchOS 928 passed,
+  and the S3 draft's suite passes against its reference on top (1116).
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -123,16 +144,17 @@ Files that differ from main (the working tree; this file left out):
 | M | `.github/workflows/ci.yml` |
 | M | `AGENT.md` |
 | M | `README.md` |
+| M | `ResearchOS/README.md` |
+| M | `ResearchOS/SPEC.md` |
 | M | `ResearchOS/pyproject.toml` |
+| M | `ResearchOS/researchos/__main__.py` |
+| M | `ResearchOS/researchos/cases.py` |
+| M | `ResearchOS/researchos/loop.py` |
+| M | `ResearchOS/researchos/masking.py` |
 | A | `ResearchOS/run-researchos.py` |
+| A | `ResearchOS/tests/test_macro_cases.py` |
+| A | `ResearchOS/tests/test_macro_cases_acceptance.py` |
 | M | `docs/decision-log.md` |
-| A | `docs/drafts/researchos-v21/README.md` |
-| A | `docs/drafts/researchos-v21/SPEC-section.md` |
-| A | `docs/drafts/researchos-v21/check.py` |
-| A | `docs/drafts/researchos-v21/reference/cases.py` |
-| A | `docs/drafts/researchos-v21/reference/loop_append.py` |
-| A | `docs/drafts/researchos-v21/reference/masking_append.py` |
-| A | `docs/drafts/researchos-v21/test_macro_cases_acceptance.py` |
 | A | `docs/drafts/researchos-v22/SPEC-section.md` |
 | A | `docs/drafts/researchos-v22/check.py` |
 | A | `docs/drafts/researchos-v22/reference/main_patch.py` |

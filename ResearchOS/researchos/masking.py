@@ -44,7 +44,7 @@ class MaskConfig:
 class MaskedCase:
     case_id: str
     documents: list[Document]  # masked; same kinds and order as the case's
-    status: str  # "masked" or "identifiable"
+    status: str  # "masked" or "identifiable"; "unmasked" when there is nothing to hide (v21)
     rounds: int  # guesser rounds run
     mapping: dict[str, str]  # every redaction applied (term -> replacement)
     factor: float
@@ -474,6 +474,28 @@ def mask_case(case: Case, masker, guesser, rng: random.Random,
         final_guesses=final_guesses,
         abstracted=briefs is not None,
         redaction_rounds=redaction_rounds,
+    )
+
+
+def unmasked(case: Case) -> MaskedCase:
+    """The case's documents as they are, for a case with nothing to hide (a macro case).
+
+    Each document is copied with the same kind, title and text and source "" (as a masked
+    case's documents have), so changing the result does not change the case. Nothing in
+    the text is changed, no agent is called and no file is read or written.
+    """
+    return MaskedCase(
+        case_id=case.case_id,
+        documents=[Document(kind=doc.kind, title=doc.title, text=doc.text, source="")
+                   for doc in case.documents],
+        status="unmasked",
+        rounds=0,
+        mapping={},
+        factor=1.0,
+        year_offset=0,
+        final_guesses=[],
+        abstracted=False,
+        redaction_rounds=[],
     )
 
 

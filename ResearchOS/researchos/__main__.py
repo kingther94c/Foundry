@@ -52,13 +52,12 @@ import functools
 import json
 import os
 import sys
-from dataclasses import asdict
 from pathlib import Path
 
 from tools.stats import is_number
 
 from researchos.blend import RULES, agreement, replay
-from researchos.cases import CASE_FILE, load_outcome
+from researchos.cases import CASE_FILE, load_outcome, outcome_to_dict
 from researchos.compare import compare, load_report, merge_reports
 from researchos.jsonio import write_json
 from researchos.llm import ClaudeJSON, LLMError, anthropic_client
@@ -328,7 +327,8 @@ def _build(args, client_factory) -> int:
     except ValueError as exc:  # includes malformed JSON
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    return _emit({"case_id": case.case_id, "outcome": asdict(outcome)}, args.out)
+    # As outcome.json holds it: an earnings outcome prints exactly as it did before v21.
+    return _emit({"case_id": case.case_id, "outcome": outcome_to_dict(outcome)}, args.out)
 
 
 def _compare(args) -> int:

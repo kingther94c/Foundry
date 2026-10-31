@@ -13,7 +13,7 @@ from typing import Any
 from tools.dates import parse_iso_date
 from tools.stats import brier_score
 
-from researchos.cases import identity_terms, load_case, load_outcome
+from researchos.cases import DOMAINS, identity_terms, load_case, load_outcome
 from researchos.jsonio import write_json
 from researchos.masking import (MASKED_FILE, MaskConfig, guard_documents, load_masked,
                                 mask_case, save_masked)
@@ -146,6 +146,50 @@ def _event_date(case_id, case) -> date:
         raise ValueError(f"case {case_id}: event_date {value!r} is not an ISO date (YYYY-MM-DD), "
                          f"so the case cannot be placed in time")
     return when
+
+
+def require_after_cutoff(case_id, case, knowledge_cutoff) -> None:
+    """Refuse a case whose date is not after the model's knowledge cutoff (v21).
+
+    Nothing in a macro case's documents stops a model from remembering what followed their
+    date, so it may only be forecast when that date is after the cutoff. Raises ValueError
+    naming case_id when knowledge_cutoff is None, when the case's event_date is not a str
+    that parse_iso_date reads, or when that date is on or before the cutoff. knowledge_cutoff
+    is anything parse_cutoff accepts; parse_cutoff's ValueError passes through.
+    """
+    cutoff = parse_cutoff(knowledge_cutoff)
+    if cutoff is None:
+        raise ValueError(f"case {case_id}: no knowledge cutoff was given, so nothing shows that "
+                         f"the model cannot remember what followed the case's date")
+    # parse_cutoff passes a datetime through as it is: compare its date.
+    cutoff = parse_iso_date(cutoff)
+    when = _event_date(case_id, case)
+    if when <= cutoff:
+        raise ValueError(f"case {case_id}: event_date {when.isoformat()} is on or before the "
+                         f"knowledge cutoff {cutoff.isoformat()}, so the model may remember "
+                         f"what followed it")
+
+
+def single_domain(cases) -> str:
+    """The domain every case in `cases` shares; "earnings" when there are none (v21).
+
+    Raises ValueError naming the domain when a case's domain is not in DOMAINS, and naming
+    both when the cases have more than one: forecasts, playbooks and perspectives differ by
+    domain, so a run is one domain.
+    """
+    domains: list[str] = []
+    for case in cases:
+        domain = case.domain
+        if domain not in DOMAINS:
+            raise ValueError(f"case {case.case_id}: domain {domain!r} is not one of "
+                             f"{', '.join(DOMAINS)}")
+        if domain not in domains:
+            domains.append(domain)
+    if len(domains) > 1:
+        raise ValueError(f"the cases have more than one domain, {domains[0]!r} and "
+                         f"{domains[1]!r}: forecasts, playbooks and perspectives differ by "
+                         f"domain, so a run is one domain")
+    return domains[0] if domains else "earnings"
 
 
 def _requested_cases(root, case_ids, playbook: Playbook, playbook_path, command: str):

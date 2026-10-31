@@ -302,6 +302,16 @@ it passed all 275 hidden tests, and on 3,000 random analyses it made the
 same calls with the same prompts and returned the same forecasts as the
 hand-written version.
 
+Macro cases (v21) are the first step of the macro pivot: a snapshot of the
+markets as of a date, whose targets (the 10-year yield, the S&P 500, ...)
+are each forecast over horizons and resolve on their own dates, so the
+outcome is written later, target by target, and a resolution manifest that
+holds only dates says which are known. A macro case is not masked, and it
+may only be forecast after the model's knowledge cutoff. Foundry made it in
+9 rounds through the relay; it passed all 448 hidden tests and kept every
+earnings file byte for byte, and it also kept `build`'s output unchanged,
+which the hand-written version did not.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name
