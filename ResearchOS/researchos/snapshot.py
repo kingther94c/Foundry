@@ -31,12 +31,11 @@ from tools.dates import (first_on_or_after, horizon_end, last_on_or_before, pars
 from tools.finance import level_change
 from tools.stats import is_number, percentile_rank
 
-from researchos.cases import (KINDS, OUTCOME_FILE, Document, Outcome, Target, TargetOutcome,
-                              check_targets, load_case, load_outcome, macro_case,
+from researchos.cases import (KINDS, OUTCOME_FILE, PREDICTION_FILE, Document, Outcome, Target,
+                              TargetOutcome, check_targets, load_case, load_outcome, macro_case,
                               resolution_manifest, save_case, save_outcome, save_resolution,
                               target_key, target_keys)
 from researchos.jsonio import read_json
-from researchos.loop import PREDICTION_FILE
 from researchos.series import _check_series_id, _date_argument, load_series
 
 log = logging.getLogger("researchos")

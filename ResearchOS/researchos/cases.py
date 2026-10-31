@@ -5,6 +5,7 @@ Layout under a root directory::
     <root>/<case_id>/case.json        the Case (never contains the outcome)
     <root>/<case_id>/outcome.json     the Outcome
     <root>/<case_id>/resolution.json  which targets of a macro case have resolved (v21)
+    <root>/<case_id>/prediction.json  the sealed forecast, written before any outcome is read
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ from researchos.jsonio import read_json, write_json
 CASE_FILE = "case.json"
 OUTCOME_FILE = "outcome.json"
 RESOLUTION_FILE = "resolution.json"
+# The sealed forecast (v28: moved here from researchos.loop, which imports it from here).
+PREDICTION_FILE = "prediction.json"
 DOMAINS = ("earnings", "macro")
 # How a target's change is measured (tools.finance.level_change).
 KINDS = ("bp", "return", "points")

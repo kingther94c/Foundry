@@ -13,10 +13,11 @@ file, and ResearchOS turns macro-first. This branch does the first two and
 carries the stages of the third as they are accepted. S1 (tools v6, horizons
 and level changes), S2 (ResearchOS v21, macro cases), S3 (v22, series
 from free sources), S4 in three parts (v23 snapshot tables, v24
-building a snapshot, v25 resolving it) and S5 in two parts (v26 the
-many-target analysis, v27 scoring and reflecting on it) were built by
-Foundry in isolated workspaces and landed as written (v23 but for one word
-of a docstring).
+building a snapshot, v25 resolving it) S5 in two parts (v26 the
+many-target analysis, v27 scoring and reflecting on it) and the first part
+of S6 (v28, forecast now and score later) were built by Foundry in
+isolated workspaces and landed as written (v23 but for one word of a
+docstring, v28 but for one of its tests, which needed `tools` installed).
 
 ## Changes
 
@@ -100,16 +101,20 @@ of a docstring).
   `tests/test_score_reflect_targets.py`, the hidden suite as
   `tests/test_target_scoring_acceptance.py`, a scorecard row and a README
   paragraph.
-- **Draft of v28, the first part of S6** (`docs/drafts/researchos-v28/`):
-  the SPEC section "Forecast now, score later (v28)". `loop.forecast` seals
+- **v28, the first part of S6** (`ResearchOS/SPEC.md` "Forecast now,
+  score later (v28)"). `loop.forecast` seals
   forecasts and opens no outcome: a macro case needs a date after the
   knowledge cutoff, and a forecast is sealed once. `loop.score_sealed`
   scores what was sealed against what has resolved and calls no model.
   Also `loop.load_prediction`, `Playbook.initial(perspectives)`,
   `PREDICTION_FILE` moved to `cases` (so `loop` can import `targets`),
   `train` and `evaluate` refusing a macro case, and the `forecast` and
-  `score` commands. 58 hidden tests, a reference written as edits to the
-  package, and `check.py`.
+  `score` commands. Foundry's `tests/test_forecast_score.py` (its
+  subprocess import test now passes the path of `tools` on, and
+  `ResearchOS/FOUNDRY.md` says a child process does not inherit pytest's
+  `pythonpath`), the hidden suite as
+  `tests/test_forecast_score_acceptance.py`, a scorecard row and a README
+  paragraph.
 - **Draft of v29, the second part of S6** (`docs/drafts/researchos-v29/`):
   the SPEC section "Blend and agreement over the macro perspectives (v29)".
   `blend.replay` and `blend.agreement` take the perspectives to read, and
@@ -276,10 +281,17 @@ of a docstring).
   before that paragraph was written; the README was not taken from it.
   After landing: ResearchOS 1909 passed; v28's suite passes against its
   reference on top (1967).
-- v28 draft: its suite passes against its reference (1939, on Foundry's
-  v26 and v27's reference) and fails 6 against a copy with three
-  deliberate bugs; its fuzzer finds 231 mismatches in 1,200 calls there
-  and none between the reference and itself.
+- v28: Foundry's build (7 rounds, 34 tool calls, finish "completed"
+  after its own run, 1948 passed) passes all 978 hidden ResearchOS tests
+  and agrees with the reference on 1,200 fuzzed calls. The workspace holds
+  no path from outside it. The relay agent's 25 calls were 8 relay
+  commands, 8 writes of its replies, 7 reads of the relay's saved output
+  or its own patch file, and its report; no Edit. Landing found 4 of
+  Foundry's tests failing in a clone: a subprocess that imports each
+  module found `tools` in the workspace (on PYTHONPATH) but not here
+  (pytest's `pythonpath` is not inherited). The test now passes the path
+  on. After landing: ResearchOS 2006 passed; v29's suite passes against
+  its reference on top (2042).
 - v29 draft: its suite passes against its reference (2003, with v28's
   reference and suite) and fails 6 against a copy with three deliberate
   bugs; its fuzzer finds 2,752 mismatches in 8,000 calls there and none
@@ -298,6 +310,7 @@ Files that differ from main (the working tree; this file left out):
 | M | `.github/workflows/ci.yml` |
 | M | `AGENT.md` |
 | M | `README.md` |
+| M | `ResearchOS/FOUNDRY.md` |
 | M | `ResearchOS/README.md` |
 | M | `ResearchOS/SPEC.md` |
 | M | `ResearchOS/pyproject.toml` |
@@ -305,12 +318,15 @@ Files that differ from main (the working tree; this file left out):
 | M | `ResearchOS/researchos/cases.py` |
 | M | `ResearchOS/researchos/loop.py` |
 | M | `ResearchOS/researchos/masking.py` |
+| M | `ResearchOS/researchos/playbook.py` |
 | A | `ResearchOS/researchos/series.py` |
 | A | `ResearchOS/researchos/snapshot.py` |
 | A | `ResearchOS/researchos/targets.py` |
 | A | `ResearchOS/run-researchos.py` |
 | A | `ResearchOS/tests/test_build_snapshot.py` |
 | A | `ResearchOS/tests/test_build_snapshot_acceptance.py` |
+| A | `ResearchOS/tests/test_forecast_score.py` |
+| A | `ResearchOS/tests/test_forecast_score_acceptance.py` |
 | A | `ResearchOS/tests/test_macro_cases.py` |
 | A | `ResearchOS/tests/test_macro_cases_acceptance.py` |
 | A | `ResearchOS/tests/test_resolve_snapshot.py` |
@@ -324,15 +340,15 @@ Files that differ from main (the working tree; this file left out):
 | A | `ResearchOS/tests/test_targets.py` |
 | A | `ResearchOS/tests/test_targets_acceptance.py` |
 | M | `docs/decision-log.md` |
-| A | `docs/drafts/researchos-v28/SPEC-section.md` |
-| A | `docs/drafts/researchos-v28/check.py` |
-| A | `docs/drafts/researchos-v28/reference/patch.py` |
-| A | `docs/drafts/researchos-v28/test_forecast_score_acceptance.py` |
 | A | `docs/drafts/researchos-v29/SPEC-section.md` |
 | A | `docs/drafts/researchos-v29/check.py` |
 | A | `docs/drafts/researchos-v29/reference/blend.py` |
 | A | `docs/drafts/researchos-v29/reference/main_patch.py` |
 | A | `docs/drafts/researchos-v29/test_blend_macro_acceptance.py` |
+| A | `docs/drafts/researchos-v30/SPEC-section.md` |
+| A | `docs/drafts/researchos-v30/reference/loop_append.py` |
+| A | `docs/drafts/researchos-v30/reference/playbook_append.py` |
+| A | `docs/drafts/researchos-v30/test_walk_forward_acceptance.py` |
 | M | `docs/foundry-acceptance.md` |
 | M | `docs/open-questions.md` |
 | M | `docs/threat-model.md` |

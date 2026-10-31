@@ -366,6 +366,17 @@ dates, never a rule of a particular date, level or event. Foundry made it
 in 8 rounds; it passed all 920 hidden tests and agreed with the
 hand-written version on 9,000 fuzzed calls.
 
+`forecast` and `score` (v28) split a macro run in two. `forecast` seals
+a forecast for each snapshot dated after the model's knowledge cutoff
+and opens no outcome; a forecast is sealed once. `score` scores the
+sealed forecasts against whatever has resolved since, lists what is
+still pending, and calls no model. `train` and `evaluate` refuse a macro
+case for now, since they open an outcome as soon as the forecast is
+sealed. Foundry made it in 7 rounds; it passed all 978 hidden tests and
+agreed with the hand-written version on 1,200 fuzzed calls. Review
+changed one of its tests, which started a Python process that could
+find `tools` only where it was installed; FOUNDRY.md now says so.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

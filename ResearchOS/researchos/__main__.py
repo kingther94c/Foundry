@@ -21,6 +21,8 @@
                                       [--start YYYY-MM-DD] [--vintage YYYY-MM-DD] [--limit N]
                                       [--oi-file FILE] [--user-agent TEXT] [--out FILE]
     python -m researchos resolve --root DIR --ids ID[,ID...] --series-dir DIR [--out FILE]
+    python -m researchos forecast ...   (the arguments of train and evaluate)
+    python -m researchos score --root DIR --ids ID[,ID...] [--out FILE]
 
 Each command prints its result as JSON; with --out FILE it writes the result to
 FILE instead (researchos.jsonio.write_json) and prints nothing.
@@ -71,6 +73,17 @@ series files under --series-dir as they stand now, and prints {"cases": [...]}: 
 case's resolved, new, pending and unmeasurable keys. No forecast is opened and no client
 is built. With no id it exits 2; a case that fails its checks stops the command before
 anything is written: exit 1, with the reason on stderr.
+
+forecast seals a forecast for each case --ids (researchos.loop.forecast) and opens no
+outcome. It takes the arguments of train and evaluate, passes on only the options given,
+prints {"cases": [...]}, what it forecast, and exits as train does. train and evaluate
+refuse a macro case (its outcome is not known on its date): it is forecast with forecast
+and scored with score.
+
+score prints researchos.loop.score_sealed of the cases --ids: the sealed forecasts scored
+against whatever has resolved since, and what is still pending. No model is called and
+no client is built. With no id it exits 2; an OSError, a ValueError or a KeyError exits
+1, with the reason on stderr.
 """
 
 from __future__ import annotations
@@ -89,7 +102,7 @@ from researchos.cases import CASE_FILE, load_outcome, outcome_to_dict
 from researchos.compare import compare, load_report, merge_reports
 from researchos.jsonio import write_json
 from researchos.llm import ClaudeJSON, LLMError, anthropic_client
-from researchos.loop import Roles, evaluate, parse_cutoff, train
+from researchos.loop import Roles, evaluate, forecast, parse_cutoff, score_sealed, train
 from researchos.masking import MaskConfig
 from researchos.perspectives import MODES
 from researchos.series import MAX_CFTC_LIMIT, fetch_cftc, fetch_fred, save_series
@@ -183,7 +196,7 @@ def _add_out(p: argparse.ArgumentParser) -> None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m researchos")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("train", "evaluate"):
+    for name in ("train", "evaluate", "forecast"):
         p = sub.add_parser(name)
         p.add_argument("--root", required=True)
         p.add_argument("--playbook", required=True)
@@ -306,6 +319,11 @@ def _parser() -> argparse.ArgumentParser:
                    help="the directory fetch-series stored the series in, read as it "
                         "stands now")
     _add_out(p)
+    p = sub.add_parser("score", help="score the sealed forecasts against whatever has "
+                                     "resolved since")
+    p.add_argument("--root", required=True)
+    p.add_argument("--ids", required=True, help="comma-separated case ids")
+    _add_out(p)
     return parser
 
 
@@ -348,6 +366,8 @@ def main(argv=None, *, client_factory=None) -> int:
         return _snapshot(args)
     if args.command == "resolve":
         return _resolve(args)
+    if args.command == "score":
+        return _score(args)
     if args.command == "compare":
         return _compare(args)
     if args.command == "blend":
@@ -367,7 +387,7 @@ def main(argv=None, *, client_factory=None) -> int:
     try:
         client = (client_factory or anthropic_client)()
         roles = build_roles(client, abstract=args.mask_abstract)
-        run = train if args.command == "train" else evaluate
+        run = {"train": train, "evaluate": evaluate, "forecast": forecast}[args.command]
         kwargs = {"seed": args.seed, "knowledge_cutoff": args.knowledge_cutoff}
         if (args.mask_give_up is not None or args.mask_abstract
                 or args.mask_history_years is not None):
@@ -377,6 +397,8 @@ def main(argv=None, *, client_factory=None) -> int:
         if args.perspective_mode is not None:
             kwargs["perspective_mode"] = args.perspective_mode
         result = run(args.root, ids, args.playbook, roles, **kwargs)
+        if args.command == "forecast":
+            result = {"cases": result}
     except LLMError as exc:
         print(f"error: LLM call failed: {exc}", file=sys.stderr)
         return 1
@@ -542,6 +564,22 @@ def _resolve(args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return _emit({"cases": cases}, args.out)
+
+
+def _score(args) -> int:
+    ids = _case_ids(args.ids)
+    if not ids:
+        print("error: --ids needs at least one case id", file=sys.stderr)
+        return 2
+    try:
+        result = score_sealed(args.root, ids)
+    except (OSError, ValueError) as exc:  # no such case, never forecast, a bad forecast, ...
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except KeyError as exc:  # a sealed forecast or an outcome without a field it needs
+        print(f"error: missing field {exc}", file=sys.stderr)
+        return 1
+    return _emit(result, args.out)
 
 
 def _compare_sides(args) -> tuple[list[str], list[str]] | None:

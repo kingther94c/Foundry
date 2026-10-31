@@ -6,7 +6,12 @@ says, with the module, class and function names it gives.
 ## Conventions
 
 - Python 3.12. Dependencies: the standard library, `anthropic`, and the
-  installed local package `tools` (see SPEC.md "Using tools").
+  local package `tools` (see SPEC.md "Using tools").
+- `tools` is not always installed: in a clone, pytest finds it through the
+  `pythonpath` of pyproject.toml, which a child process does not inherit.
+  A test that starts a Python subprocess passes the directory holding
+  `tools` (the parent of `Path(tools.__file__)`'s folder) and this one on
+  in `PYTHONPATH`.
 - Only `researchos/llm.py` imports `anthropic`. Every other module receives
   its agents as objects with a `json(system, prompt, schema, *, prefix=None)`
   method, so tests use fakes and never touch the network or need a key.

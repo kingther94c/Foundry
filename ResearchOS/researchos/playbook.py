@@ -29,9 +29,11 @@ class Playbook:
     history: list[dict] = field(default_factory=list)
 
     @classmethod
-    def initial(cls) -> "Playbook":
-        return cls(weights={p: 1.0 / len(PERSPECTIVES) for p in PERSPECTIVES},
-                   lessons=[], history=[])
+    def initial(cls, perspectives=None) -> "Playbook":
+        """Weights 1 / n for each of the n names of `perspectives`, in order (PERSPECTIVES
+        when it is None), no lessons and no history."""
+        names = list(PERSPECTIVES if perspectives is None else perspectives)
+        return cls(weights={p: 1.0 / len(names) for p in names}, lessons=[], history=[])
 
 
 def save_playbook(path, playbook: Playbook) -> None:
