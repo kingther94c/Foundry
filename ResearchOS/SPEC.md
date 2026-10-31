@@ -1,4 +1,4 @@
-# ResearchOS -- specification (v1: earnings)
+# ResearchOS -- specification
 
 ResearchOS trains an analyst agent to read a company's quarterly earnings
 documents (the results release, the call transcript, what the market expected)
@@ -23,14 +23,25 @@ One training step on one case:
 
 Evaluation runs steps 1-4 on held-out cases with the playbook frozen.
 
+**Domains.** Every case belongs to one domain, and a command is given
+cases of one domain. The steps above are the first, `earnings` (v1-v20).
+The second, `macro` (v21 onward), asks of an as-of snapshot of the
+markets and the economy whether each of its targets will be higher at
+the end of each horizon. Nothing is masked; instead a macro case dated on
+or before the model's knowledge cutoff is refused before any call, and a
+target's outcome is read only after its horizon has ended and its
+forecast is sealed ("Macro cases" and the sections after it). Each
+section adds to the ones before it; where a later section changes an
+earlier rule, it says so.
+
 Package: `researchos` (Python 3.12). Dependencies: the standard library,
-`anthropic` (>=1.13,<2), and the local package `tools` (already installed;
-see "Using tools" below). Every behaviour below is tested offline with fake
-LLMs; nothing in the tests touches the network.
+`anthropic` (>=1.13,<2), and the local package `tools` (installed, or on
+the path in a clone; see "Using tools" below). Every behaviour below is
+tested offline with fake LLMs; nothing in the tests touches the network.
 
 ## Using `tools`
 
-`tools` is installed. Use it rather than reimplementing:
+Use `tools` rather than reimplementing:
 `tools.textmask.redact(text, mapping, *, case_sensitive=False)` (whole-word,
 longest key first, case-insensitive by default, never rescans replacements),
 `tools.textmask.find_terms(text, terms, *, case_sensitive=False)`,

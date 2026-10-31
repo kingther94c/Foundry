@@ -7,20 +7,22 @@ before a branch lands. See AGENT.md, "Branch notes".
 
 ## Summary
 
-The first part of a three-part refactoring planned with the user: Foundry runs
-straight from a clone, every branch records its changes from main in this
-file, and ResearchOS turns macro-first. This branch does the first two and
-carries the stages of the third as they are accepted. S1 (tools v6, horizons
-and level changes), S2 (ResearchOS v21, macro cases), S3 (v22, series
-from free sources), S4 in three parts (v23 snapshot tables, v24
-building a snapshot, v25 resolving it), S5 in two parts (v26 the
-many-target analysis, v27 scoring and reflecting on it) and S6 in two parts
-(v28 forecast now and score later, v29 blend and agreement over the macro
-perspectives) and S7 (v30, walk forward by resolution date) were built by
-Foundry in isolated workspaces and landed as written (v23 but for one
-word of a docstring, v28 but for one of its tests, which needed `tools`
-installed). One of v30's hidden tests asked for more than its SPEC and
-was corrected.
+A three-part refactoring planned with the user: Foundry runs straight from
+a clone, every branch records its changes from main in this file, and
+ResearchOS turns macro-first. This branch does the first two, and the
+third in eight stages. S1 (tools v6, horizons and level changes), S2
+(ResearchOS v21, macro cases), S3 (v22, series from free sources), S4 in
+three parts (v23 snapshot tables, v24 building a snapshot, v25 resolving
+it), S5 in two parts (v26 the many-target analysis, v27 scoring and
+reflecting on it), S6 in two parts (v28 forecast now and score later, v29
+blend and agreement over the macro perspectives) and S7 (v30, walk
+forward by resolution date) were built by Foundry in isolated workspaces
+and landed as written (v23 but for one word of a docstring, v28 but for
+one of its tests, which needed `tools` installed). One of v30's hidden
+tests asked for more than its SPEC and was corrected. S8 pre-registers
+the first macro run, its inputs built and hashed (its forecasts need the
+Anthropic API, which this machine does not have), and documents the two
+domains.
 
 ## Changes
 
@@ -153,6 +155,13 @@ was corrected.
   series may not be redistributed. `ResearchOS/FOUNDRY.md` gains the
   network rule (a passed-in transport, no key anywhere), and
   `pyproject.toml`'s description names both domains.
+- **S8 docs**: ResearchOS's README opens with both domains, says how to
+  run it from a clone, and gains a Macro section (the commands in order
+  and the cutoff rule) and the run's entry. The build record, version by
+  version, moves to `ResearchOS/HISTORY.md`, with the note on the first
+  version's review back after that version. SPEC.md's title drops "(v1:
+  earnings)", a Domains paragraph says how the two differ, and `tools`
+  is no longer said to be installed.
 
 ## Decisions and open points
 
@@ -363,6 +372,8 @@ was corrected.
   config. The 2026-10-30 dashboard was read against the series by hand.
   `primary.py`, run on synthetic forecasts, finds a planted difference
   and names a perspective that never leaves 0.50.
+- S8 docs: ResearchOS 2164 passed; every relative link in README.md and
+  HISTORY.md resolves.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -378,6 +389,7 @@ Files that differ from main (the working tree; this file left out):
 | M | `AGENT.md` |
 | M | `README.md` |
 | M | `ResearchOS/FOUNDRY.md` |
+| A | `ResearchOS/HISTORY.md` |
 | M | `ResearchOS/README.md` |
 | M | `ResearchOS/SPEC.md` |
 | M | `ResearchOS/pyproject.toml` |
