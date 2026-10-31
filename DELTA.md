@@ -11,8 +11,9 @@ The first part of a three-part refactoring planned with the user: Foundry runs
 straight from a clone, every branch records its changes from main in this
 file, and ResearchOS turns macro-first. This branch does the first two and
 carries the stages of the third as they are accepted. S1 (tools v6, horizons
-and level changes) and S2 (ResearchOS v21, macro cases) were built by Foundry
-in isolated workspaces and landed as written.
+and level changes), S2 (ResearchOS v21, macro cases) and S3 (v22, series
+from free sources) were built by Foundry in isolated workspaces and landed
+as written.
 
 ## Changes
 
@@ -50,9 +51,12 @@ in isolated workspaces and landed as written.
   it. Foundry's `tests/test_macro_cases.py`, the hidden suite as
   `tests/test_macro_cases_acceptance.py`, a scorecard row and a README
   paragraph.
-- **Draft of S3** (`docs/drafts/researchos-v22/`): the SPEC section "Series
-  from free sources (v22)", its hidden suite (188 tests), a reference written
-  by hand and `check.py`.
+- **S3, ResearchOS v22** (`ResearchOS/SPEC.md` "Series from free sources
+  (v22)"): `researchos/series.py` (`fred_url`, `cftc_url`, `parse_fred_csv`,
+  `parse_cftc`, `save_series`, `load_series`, `fetch_text`, `fetch_fred`,
+  `fetch_cftc`) and the `fetch-series` command in `__main__.py`. Foundry's
+  `tests/test_series.py`, the hidden suite as
+  `tests/test_series_acceptance.py`, a scorecard row and a README paragraph.
 
 ## Decisions and open points
 
@@ -130,6 +134,11 @@ in isolated workspaces and landed as written.
   workspace holds no path from outside it, and the relay agent's 39 tool
   calls named only workspace paths. After landing: ResearchOS 928 passed,
   and the S3 draft's suite passes against its reference on top (1116).
+- S3: Foundry's build (6 rounds, 23 tool calls, finish "completed" citing
+  its own run, 1115 passed) passes all 636 hidden ResearchOS tests and
+  agrees with the reference on 17,266 fuzzed calls. The workspace holds no
+  path from outside it, and the relay agent's 23 tool calls named only
+  workspace paths. After landing: ResearchOS 1303 passed, tools 813.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -151,15 +160,22 @@ Files that differ from main (the working tree; this file left out):
 | M | `ResearchOS/researchos/cases.py` |
 | M | `ResearchOS/researchos/loop.py` |
 | M | `ResearchOS/researchos/masking.py` |
+| A | `ResearchOS/researchos/series.py` |
 | A | `ResearchOS/run-researchos.py` |
 | A | `ResearchOS/tests/test_macro_cases.py` |
 | A | `ResearchOS/tests/test_macro_cases_acceptance.py` |
+| A | `ResearchOS/tests/test_series.py` |
+| A | `ResearchOS/tests/test_series_acceptance.py` |
 | M | `docs/decision-log.md` |
-| A | `docs/drafts/researchos-v22/SPEC-section.md` |
-| A | `docs/drafts/researchos-v22/check.py` |
-| A | `docs/drafts/researchos-v22/reference/main_patch.py` |
-| A | `docs/drafts/researchos-v22/reference/series.py` |
-| A | `docs/drafts/researchos-v22/test_series_acceptance.py` |
+| A | `docs/drafts/researchos-v23/SPEC-section.md` |
+| A | `docs/drafts/researchos-v23/check.py` |
+| A | `docs/drafts/researchos-v23/reference/snapshot.py` |
+| A | `docs/drafts/researchos-v23/test_snapshot_tables_acceptance.py` |
+| A | `docs/drafts/researchos-v24/SPEC-section.md` |
+| A | `docs/drafts/researchos-v24/check.py` |
+| A | `docs/drafts/researchos-v24/reference/main_patch.py` |
+| A | `docs/drafts/researchos-v24/reference/snapshot_append.py` |
+| A | `docs/drafts/researchos-v24/test_build_snapshot_acceptance.py` |
 | M | `docs/foundry-acceptance.md` |
 | M | `docs/open-questions.md` |
 | M | `docs/threat-model.md` |

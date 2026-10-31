@@ -312,6 +312,14 @@ may only be forecast after the model's knowledge cutoff. Foundry made it in
 earnings file byte for byte, and it also kept `build`'s output unchanged,
 which the hand-written version did not.
 
+`fetch-series` (v22) stores the series a snapshot reads, all from free
+sources that need no account: FRED's CSV for current values, ALFRED's for a
+series as it was known on a date (`--vintage`), and the CFTC's Commitments
+of Traders for speculative positioning. `load_series` reads a series back as
+it was known on a date, never past it. Foundry made it in 6 rounds through
+the relay; it passed all 636 hidden tests and agreed with the hand-written
+version on 17,000 fuzzed calls.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name

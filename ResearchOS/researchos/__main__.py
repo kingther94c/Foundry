@@ -15,6 +15,9 @@
                                  [--resamples N] [--seed S] [--out FILE]
     python -m researchos blend FILE [FILE ...] [--rule NAME] [--eta X] [--out FILE]
     python -m researchos agreement FILE [FILE ...] [--out FILE]
+    python -m researchos fetch-series --source {fred,cftc} --id ID --file FILE
+                                      [--start YYYY-MM-DD] [--vintage YYYY-MM-DD] [--limit N]
+                                      [--oi-file FILE] [--user-agent TEXT] [--out FILE]
 
 Each command prints its result as JSON; with --out FILE it writes the result to
 FILE instead (researchos.jsonio.write_json) and prints nothing.
@@ -43,6 +46,14 @@ researchos.blend.replay of their cases: a rule for combining the perspectives
 
 agreement reads and merges files as blend does and prints
 researchos.blend.agreement of their cases: how far the perspectives disagree.
+
+fetch-series downloads one series and saves it as a series file (researchos.series).
+--source fred reads FRED's CSV of series --id, from --start when given, or ALFRED's as
+it was known on --vintage; --source cftc reads the CFTC's Commitments of Traders of
+contract --id (the newest --limit reports, default 600) and saves the net non-commercial
+position to --file, and the open interest to --oi-file when given. The user agent is
+chosen as for build. Every series is parsed before the first file is written, so a
+failed fetch writes nothing: exit 1, with the reason on stderr.
 """
 
 from __future__ import annotations
@@ -64,10 +75,12 @@ from researchos.llm import ClaudeJSON, LLMError, anthropic_client
 from researchos.loop import Roles, evaluate, parse_cutoff, train
 from researchos.masking import MaskConfig
 from researchos.perspectives import MODES
+from researchos.series import MAX_CFTC_LIMIT, fetch_cftc, fetch_fred, save_series
 from researchos.sources import build_case, fetch_pages, load_case_spec, load_closes, url_fetcher
 
 USER_AGENT_ENV = "RESEARCHOS_USER_AGENT"
 DEFAULT_USER_AGENT = "ResearchOS/0.1 (research use)"
+SERIES_SOURCES = ("fred", "cftc")
 
 
 def _iso_date(value: str) -> str:
@@ -129,6 +142,18 @@ def _positive_number(value: str) -> float:
     if not (is_number(x) and x > 0):  # also rejects nan and infinity
         raise argparse.ArgumentTypeError(f"must be a positive number: {value!r}")
     return x
+
+
+def _cftc_limit(value: str) -> int:
+    """argparse type: an integer from 1 to MAX_CFTC_LIMIT."""
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not an integer: {value!r}") from None
+    if not 1 <= n <= MAX_CFTC_LIMIT:
+        raise argparse.ArgumentTypeError(f"must be an integer from 1 to {MAX_CFTC_LIMIT}: "
+                                         f"{value!r}")
+    return n
 
 
 def _add_out(p: argparse.ArgumentParser) -> None:
@@ -217,6 +242,28 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("files", nargs="+", metavar="FILE",
                    help="evaluate or train output; several files are merged in the order given")
     _add_out(p)
+    p = sub.add_parser("fetch-series", help="download a series from FRED (or ALFRED) or the "
+                                            "CFTC and save it as a series file")
+    p.add_argument("--source", required=True, choices=SERIES_SOURCES,
+                   help="fred: a FRED or ALFRED series; cftc: a contract's Commitments of "
+                        "Traders")
+    p.add_argument("--id", required=True,
+                   help="the FRED series id (fred) or the CFTC contract code (cftc)")
+    p.add_argument("--file", required=True,
+                   help="series file to write (cftc: the net non-commercial position)")
+    p.add_argument("--start", type=_iso_date, default=None, metavar="YYYY-MM-DD",
+                   help="fred only: the first observation date")
+    p.add_argument("--vintage", type=_iso_date, default=None, metavar="YYYY-MM-DD",
+                   help="fred only: the series as it was known on this date (from ALFRED)")
+    p.add_argument("--limit", type=_cftc_limit, default=None, metavar="N",
+                   help=f"cftc only: how many reports, the newest first (1 to "
+                        f"{MAX_CFTC_LIMIT}; default 600)")
+    p.add_argument("--oi-file", dest="oi_file", default=None, metavar="FILE",
+                   help="cftc only: also write the open interest to FILE")
+    p.add_argument("--user-agent", dest="user_agent", default=None, metavar="TEXT",
+                   help=f"User-Agent sent when fetching (default: the {USER_AGENT_ENV} "
+                        f"environment variable, else {DEFAULT_USER_AGENT!r})")
+    _add_out(p)
     return parser
 
 
@@ -245,10 +292,16 @@ def main(argv=None, *, client_factory=None) -> int:
                     or any(s.startswith("-") for s in extras)):
                 parser.error(f"unrecognized arguments: {' '.join(extras)}")
             args.files = [*args.files, *extras]
+        if args.command == "fetch-series":
+            misuse = _fetch_series_misuse(args)
+            if misuse:
+                parser.error(misuse)
     except SystemExit as exc:  # argparse already wrote the message to stderr
         return 0 if exc.code in (0, None) else 2
     if args.command == "build":
         return _build(args, client_factory)
+    if args.command == "fetch-series":
+        return _fetch_series(args)
     if args.command == "compare":
         return _compare(args)
     if args.command == "blend":
@@ -372,6 +425,46 @@ def _agreement(args) -> int:
     except ValueError as exc:  # not JSON, not a report, or a record agreement refuses
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    return _emit(result, args.out)
+
+
+def _fetch_series_misuse(args) -> str | None:
+    """The options given that do not go with --source (argparse cannot say so); None if none."""
+    if args.source == "fred":
+        others = (("--limit", args.limit), ("--oi-file", args.oi_file))
+    else:
+        others = (("--start", args.start), ("--vintage", args.vintage))
+    given = [name for name, value in others if value is not None]
+    if not given:
+        return None
+    return f"{' and '.join(given)} cannot be used with --source {args.source}"
+
+
+def _fetch_series(args) -> int:
+    user_agent = _user_agent(args.user_agent)
+    try:
+        if args.source == "fred":
+            options = {name: value for name, value in (("start", args.start),
+                                                         ("vintage", args.vintage))
+                       if value is not None}
+            series = fetch_fred(args.id, user_agent=user_agent, **options)
+            save_series(args.file, series)
+        else:
+            options = {} if args.limit is None else {"limit": args.limit}
+            # Both series are parsed before either file is written.
+            series, open_interest = fetch_cftc(args.id, user_agent=user_agent, **options)
+            save_series(args.file, series)
+            if args.oi_file is not None:
+                save_series(args.oi_file, open_interest)
+    except (OSError, ValueError) as exc:  # a dead link, a bad id or code, a file not written
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    result = {"source": args.source, "id": args.id, "observations": len(series),
+              "first": series[0][0].isoformat() if series else None,
+              "last": series[-1][0].isoformat() if series else None,
+              "file": args.file}
+    if args.source == "cftc":
+        result["oi_file"] = args.oi_file
     return _emit(result, args.out)
 
 
