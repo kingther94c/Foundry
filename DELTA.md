@@ -13,11 +13,12 @@ file, and ResearchOS turns macro-first. This branch does the first two and
 carries the stages of the third as they are accepted. S1 (tools v6, horizons
 and level changes), S2 (ResearchOS v21, macro cases), S3 (v22, series
 from free sources), S4 in three parts (v23 snapshot tables, v24
-building a snapshot, v25 resolving it) S5 in two parts (v26 the
-many-target analysis, v27 scoring and reflecting on it) and the first part
-of S6 (v28, forecast now and score later) were built by Foundry in
-isolated workspaces and landed as written (v23 but for one word of a
-docstring, v28 but for one of its tests, which needed `tools` installed).
+building a snapshot, v25 resolving it), S5 in two parts (v26 the
+many-target analysis, v27 scoring and reflecting on it) and S6 in two parts
+(v28 forecast now and score later, v29 blend and agreement over the macro
+perspectives) were built by Foundry in isolated workspaces and landed as
+written (v23 but for one word of a docstring, v28 but for one of its
+tests, which needed `tools` installed).
 
 ## Changes
 
@@ -115,14 +116,16 @@ docstring, v28 but for one of its tests, which needed `tools` installed).
   `pythonpath`), the hidden suite as
   `tests/test_forecast_score_acceptance.py`, a scorecard row and a README
   paragraph.
-- **Draft of v29, the second part of S6** (`docs/drafts/researchos-v29/`):
-  the SPEC section "Blend and agreement over the macro perspectives (v29)".
+- **v29, the second part of S6** (`ResearchOS/SPEC.md` "Blend and agreement
+  over the macro perspectives (v29)").
   `blend.replay` and `blend.agreement` take the perspectives to read, and
   `replay` learns from a record only once it has resolved: before a batch
   it learns what resolved earlier, after it what resolved by then. Without
   either, every result is what it was. `blend` and `agreement` take
-  `--perspectives {earnings,macro}`. 36 hidden tests, a reference
-  `blend.py` with a patch to `__main__.py`, and `check.py`.
+  `--perspectives {earnings,macro}`. Foundry's
+  `tests/test_blend_perspectives.py`, the hidden suite as
+  `tests/test_blend_macro_acceptance.py`, a scorecard row and a README
+  paragraph.
 - **Draft of v30, S7** (`docs/drafts/researchos-v30/`): the SPEC section
   "Walk forward by resolution date (v30)". `train` takes macro snapshots in
   place of v28's refusal: it forecasts and seals them in date order, and
@@ -304,10 +307,13 @@ docstring, v28 but for one of its tests, which needed `tools` installed).
   (pytest's `pythonpath` is not inherited). The test now passes the path
   on. After landing: ResearchOS 2006 passed; v29's suite passes against
   its reference on top (2042).
-- v29 draft: its suite passes against its reference (2003, with v28's
-  reference and suite) and fails 6 against a copy with three deliberate
-  bugs; its fuzzer finds 2,752 mismatches in 8,000 calls there and none
-  between the reference and itself.
+- v29: Foundry's build (8 rounds, 28 tool calls, finish "completed"
+  after its own run, 2052 passed) passes all 1014 hidden ResearchOS
+  tests and agrees with the reference on 16,000 fuzzed calls. The
+  workspace holds no path from outside it. The relay agent's 24 calls
+  were 9 relay commands, 11 writes of its replies, 3 reads of the relay's
+  saved output, and its report; no Edit. After landing: ResearchOS 2088
+  passed; v30's suite passes against its reference on top (2141).
 - v30 draft: its suite passes against its reference (2095, with v29's
   reference and suite) and fails 13 against a copy with three deliberate
   bugs; its fuzzer finds 197 mismatches in 400 random runs there and none
@@ -331,6 +337,7 @@ Files that differ from main (the working tree; this file left out):
 | M | `ResearchOS/SPEC.md` |
 | M | `ResearchOS/pyproject.toml` |
 | M | `ResearchOS/researchos/__main__.py` |
+| M | `ResearchOS/researchos/blend.py` |
 | M | `ResearchOS/researchos/cases.py` |
 | M | `ResearchOS/researchos/loop.py` |
 | M | `ResearchOS/researchos/masking.py` |
@@ -339,6 +346,13 @@ Files that differ from main (the working tree; this file left out):
 | A | `ResearchOS/researchos/snapshot.py` |
 | A | `ResearchOS/researchos/targets.py` |
 | A | `ResearchOS/run-researchos.py` |
+| A | `ResearchOS/runs/2026-11-macro-calibration-run/.gitignore` |
+| A | `ResearchOS/runs/2026-11-macro-calibration-run/PLAN.md` |
+| A | `ResearchOS/runs/2026-11-macro-calibration-run/macro-config.json` |
+| A | `ResearchOS/runs/2026-11-macro-calibration-run/prepare.py` |
+| A | `ResearchOS/runs/2026-11-macro-calibration-run/primary.py` |
+| A | `ResearchOS/tests/test_blend_macro_acceptance.py` |
+| A | `ResearchOS/tests/test_blend_perspectives.py` |
 | A | `ResearchOS/tests/test_build_snapshot.py` |
 | A | `ResearchOS/tests/test_build_snapshot_acceptance.py` |
 | A | `ResearchOS/tests/test_forecast_score.py` |
@@ -356,11 +370,6 @@ Files that differ from main (the working tree; this file left out):
 | A | `ResearchOS/tests/test_targets.py` |
 | A | `ResearchOS/tests/test_targets_acceptance.py` |
 | M | `docs/decision-log.md` |
-| A | `docs/drafts/researchos-v29/SPEC-section.md` |
-| A | `docs/drafts/researchos-v29/check.py` |
-| A | `docs/drafts/researchos-v29/reference/blend.py` |
-| A | `docs/drafts/researchos-v29/reference/main_patch.py` |
-| A | `docs/drafts/researchos-v29/test_blend_macro_acceptance.py` |
 | A | `docs/drafts/researchos-v30/SPEC-section.md` |
 | A | `docs/drafts/researchos-v30/check.py` |
 | A | `docs/drafts/researchos-v30/reference/loop_append.py` |

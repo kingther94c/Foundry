@@ -13,8 +13,10 @@
                                  [--out FILE]
     python -m researchos compare -a FILE [-a FILE ...] -b FILE [-b FILE ...] [--metric NAME]
                                  [--resamples N] [--seed S] [--out FILE]
-    python -m researchos blend FILE [FILE ...] [--rule NAME] [--eta X] [--out FILE]
-    python -m researchos agreement FILE [FILE ...] [--out FILE]
+    python -m researchos blend FILE [FILE ...] [--rule NAME] [--eta X]
+                               [--perspectives {earnings,macro}] [--out FILE]
+    python -m researchos agreement FILE [FILE ...] [--perspectives {earnings,macro}]
+                                   [--out FILE]
     python -m researchos snapshot --root DIR --config FILE --as-of YYYY-MM-DD --series-dir DIR
                                   [--user-agent TEXT] [--out FILE]
     python -m researchos fetch-series --source {fred,cftc} --id ID --file FILE
@@ -51,6 +53,11 @@ researchos.blend.replay of their cases: a rule for combining the perspectives
 
 agreement reads and merges files as blend does and prints
 researchos.blend.agreement of their cases: how far the perspectives disagree.
+
+Both read the seven perspectives of an earnings report. With --perspectives macro they
+read the ten of a macro snapshot (researchos.targets.perspective_set), as score writes
+them; without the option nothing is passed and the default holds. A record carrying a
+resolution_date is learned from only once it has resolved.
 
 fetch-series downloads one series and saves it as a series file (researchos.series).
 --source fred reads FRED's CSV of series --id, from --start when given, or ALFRED's as
@@ -109,6 +116,7 @@ from researchos.series import MAX_CFTC_LIMIT, fetch_cftc, fetch_fred, save_serie
 from researchos.snapshot import build_snapshot, load_macro_config, resolve_cases
 from researchos.sources import (build_case, fetch_pages, get_page, load_case_spec, load_closes,
                                 url_fetcher)
+from researchos.targets import PERSPECTIVE_SETS, perspective_set
 
 USER_AGENT_ENV = "RESEARCHOS_USER_AGENT"
 DEFAULT_USER_AGENT = "ResearchOS/0.1 (research use)"
@@ -193,6 +201,13 @@ def _add_out(p: argparse.ArgumentParser) -> None:
                    help="write the JSON result to FILE (UTF-8) instead of printing it")
 
 
+def _add_perspectives(p) -> None:
+    p.add_argument("--perspectives", choices=list(PERSPECTIVE_SETS), default=None,
+                   help="the perspectives the records hold: earnings (the seven of an "
+                        "earnings report, the default) or macro (the ten of a macro "
+                        "snapshot)")
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m researchos")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -268,11 +283,13 @@ def _parser() -> argparse.ArgumentParser:
                    help="how to combine the perspectives (default hedge)")
     p.add_argument("--eta", type=_positive_number, default=0.5,
                    help="learning rate of the hedge rule, a positive number (default 0.5)")
+    _add_perspectives(p)
     _add_out(p)
     p = sub.add_parser("agreement", help="do the perspectives disagree? their spread, "
                                          "accuracy and pairwise correlations")
     p.add_argument("files", nargs="+", metavar="FILE",
                    help="evaluate or train output; several files are merged in the order given")
+    _add_perspectives(p)
     _add_out(p)
     p = sub.add_parser("fetch-series", help="download a series from FRED (or ALFRED) or the "
                                             "CFTC and save it as a series file")
@@ -475,10 +492,17 @@ def _compare(args) -> int:
     return _emit(result, args.out)
 
 
+def _perspectives_option(args) -> dict:
+    """What blend and agreement pass on: perspectives only when --perspectives was given."""
+    if args.perspectives is None:
+        return {}
+    return {"perspectives": perspective_set(args.perspectives)}
+
+
 def _blend(args) -> int:
     try:
         merged = merge_reports([load_report(path) for path in args.files])
-        result = replay(merged["cases"], args.rule, eta=args.eta)
+        result = replay(merged["cases"], args.rule, eta=args.eta, **_perspectives_option(args))
     except OSError as exc:  # missing file, a directory, unreadable
         print(f"error: cannot read report: {exc}", file=sys.stderr)
         return 1
@@ -491,7 +515,7 @@ def _blend(args) -> int:
 def _agreement(args) -> int:
     try:
         merged = merge_reports([load_report(path) for path in args.files])
-        result = agreement(merged["cases"])
+        result = agreement(merged["cases"], **_perspectives_option(args))
     except OSError as exc:  # missing file, a directory, unreadable
         print(f"error: cannot read report: {exc}", file=sys.stderr)
         return 1

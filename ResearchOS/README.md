@@ -377,6 +377,15 @@ agreed with the hand-written version on 1,200 fuzzed calls. Review
 changed one of its tests, which started a Python process that could
 find `tools` only where it was installed; FOUNDRY.md now says so.
 
+`blend` and `agreement` (v29) read the ten macro perspectives with
+`--perspectives macro`, so a macro run's scored keys can be replayed and
+their agreement measured as an earnings run's are. `replay` now learns
+from a record only once it has resolved: a one-month view of a snapshot
+teaches nothing to the next week's forecasts. Without the option or a
+resolution date every result is what it was. Foundry made it in 8
+rounds; it passed all 1014 hidden tests and agreed with the hand-written
+version on 16,000 fuzzed calls.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name
