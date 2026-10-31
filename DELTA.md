@@ -31,6 +31,12 @@ its own.
   hooks in `.claude/settings.json`; a `Branch notes` step in CI's `test` job,
   which now checks out with `fetch-depth: 0`; AGENT.md "Branch notes"; the
   README documentation table.
+- **S1 draft** (`docs/drafts/tools-v6/`): the tools v6 SPEC section
+  (`add_months`, `parse_horizon`, `shift_date`, `horizon_end`,
+  `last_on_or_before`, `first_on_or_after`, `level_change`, `direction`),
+  its hidden acceptance suite, a reference written by hand, and `check.py`,
+  which runs the suite and fuzzes a build against the reference. Nothing in
+  `tools/` changes until Foundry's build is accepted.
 
 ## Decisions and open points
 
@@ -53,6 +59,10 @@ its own.
   first run. Views are 1 week, 1 month and 3 months ahead on UST 10y and 2y,
   2s10s, the broad dollar, the S&P 500, WTI, gold, the HY spread, the 10y
   breakeven and VIX.
+- The S1 draft lives in `docs/drafts/`, not `tools/`: the hidden suite would
+  fail the tools CI job until v6 exists, and the build workspace is a copy of
+  `tools/`, which must not contain the suite or the reference. Neither pytest
+  configuration collects `docs/`. Its README says how the S1 session uses it.
 
 ## Verification
 
@@ -65,6 +75,11 @@ its own.
 - `tests/test_delta_notes.py`: 14 passed. The two hook commands were run by
   hand as the hooks run them: `refresh` exits 0, and `check --stop-hook` exits
   2 while the Summary is unwritten, and 0 with `stop_hook_active` set.
+- The full Foundry suite with the new tests, dependencies only: 1589 passed.
+- S1: the hidden suite passes against the reference (227); against a copy of
+  the reference with two deliberate bugs it fails 4 tests, and `check.py
+  fuzz` finds 386 mismatches in 20,000 calls (0 against the reference
+  itself). The current `tools/`, without v6, fails the suite at collection.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -82,6 +97,11 @@ Files that differ from main (the working tree; this file left out):
 | M | `ResearchOS/pyproject.toml` |
 | A | `ResearchOS/run-researchos.py` |
 | M | `docs/decision-log.md` |
+| A | `docs/drafts/tools-v6/README.md` |
+| A | `docs/drafts/tools-v6/SPEC-section.md` |
+| A | `docs/drafts/tools-v6/check.py` |
+| A | `docs/drafts/tools-v6/reference.py` |
+| A | `docs/drafts/tools-v6/test_v6_acceptance.py` |
 | M | `docs/open-questions.md` |
 | M | `docs/threat-model.md` |
 | A | `foundry.cmd` |
