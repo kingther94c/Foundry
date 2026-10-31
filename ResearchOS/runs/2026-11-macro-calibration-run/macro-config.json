@@ -1,0 +1,249 @@
+{
+  "case_prefix": "macro",
+  "horizons": [
+    "1w",
+    "1m",
+    "3m"
+  ],
+  "targets": [
+    {
+      "id": "DGS10",
+      "name": "10-year Treasury yield",
+      "unit": "percent",
+      "kind": "bp"
+    },
+    {
+      "id": "DGS2",
+      "name": "2-year Treasury yield",
+      "unit": "percent",
+      "kind": "bp"
+    },
+    {
+      "id": "T10Y2Y",
+      "name": "10-year minus 2-year Treasury yield (2s10s)",
+      "unit": "percentage points",
+      "kind": "bp"
+    },
+    {
+      "id": "DTWEXBGS",
+      "name": "Nominal broad U.S. dollar index",
+      "unit": "index, Jan 2006 = 100",
+      "kind": "return"
+    },
+    {
+      "id": "SP500",
+      "name": "S&P 500",
+      "unit": "index",
+      "kind": "return"
+    },
+    {
+      "id": "DCOILWTICO",
+      "name": "WTI crude oil, Cushing",
+      "unit": "dollars per barrel",
+      "kind": "return"
+    },
+    {
+      "id": "NASDAQQGLDI",
+      "name": "Gold (NASDAQ gold price index)",
+      "unit": "index",
+      "kind": "return",
+      "optional": true
+    },
+    {
+      "id": "BAMLH0A0HYM2",
+      "name": "U.S. high-yield option-adjusted spread (ICE BofA)",
+      "unit": "percent",
+      "kind": "bp"
+    },
+    {
+      "id": "T10YIE",
+      "name": "10-year breakeven inflation",
+      "unit": "percent",
+      "kind": "bp"
+    },
+    {
+      "id": "VIXCLS",
+      "name": "VIX",
+      "unit": "index points",
+      "kind": "points"
+    }
+  ],
+  "context": [
+    {
+      "id": "PAYEMS",
+      "name": "Nonfarm payrolls",
+      "unit": "thousands of persons"
+    },
+    {
+      "id": "UNRATE",
+      "name": "Unemployment rate",
+      "unit": "percent"
+    },
+    {
+      "id": "ICSA",
+      "name": "Initial jobless claims",
+      "unit": "persons, weekly"
+    },
+    {
+      "id": "CPIAUCSL",
+      "name": "CPI, all items",
+      "unit": "index 1982-84 = 100"
+    },
+    {
+      "id": "PCEPILFE",
+      "name": "Core PCE price index",
+      "unit": "index 2017 = 100"
+    },
+    {
+      "id": "GDPNOW",
+      "name": "Atlanta Fed GDPNow, current quarter",
+      "unit": "percent, annual rate"
+    },
+    {
+      "id": "UMCSENT",
+      "name": "University of Michigan consumer sentiment",
+      "unit": "index 1966:Q1 = 100"
+    },
+    {
+      "id": "NFCI",
+      "name": "Chicago Fed National Financial Conditions Index",
+      "unit": "index, 0 = average"
+    },
+    {
+      "id": "WALCL",
+      "name": "Federal Reserve total assets",
+      "unit": "millions of dollars"
+    }
+  ],
+  "positioning": [
+    {
+      "id": "TY",
+      "name": "10-year T-note futures (CBOT)",
+      "net": "COT_043602_net",
+      "open_interest": "COT_043602_oi",
+      "release_lag_days": 3
+    },
+    {
+      "id": "TU",
+      "name": "2-year T-note futures (CBOT)",
+      "net": "COT_042601_net",
+      "open_interest": "COT_042601_oi",
+      "release_lag_days": 3
+    },
+    {
+      "id": "ES",
+      "name": "E-mini S&P 500 futures (CME)",
+      "net": "COT_13874A_net",
+      "open_interest": "COT_13874A_oi",
+      "release_lag_days": 3
+    },
+    {
+      "id": "DX",
+      "name": "U.S. dollar index futures (ICE)",
+      "net": "COT_098662_net",
+      "open_interest": "COT_098662_oi",
+      "release_lag_days": 3
+    },
+    {
+      "id": "CL",
+      "name": "WTI crude oil futures (NYMEX)",
+      "net": "COT_067651_net",
+      "open_interest": "COT_067651_oi",
+      "release_lag_days": 3
+    },
+    {
+      "id": "GC",
+      "name": "Gold futures (COMEX)",
+      "net": "COT_088691_net",
+      "open_interest": "COT_088691_oi",
+      "release_lag_days": 3
+    },
+    {
+      "id": "VX",
+      "name": "VIX futures (CFE)",
+      "net": "COT_1170E1_net",
+      "open_interest": "COT_1170E1_oi",
+      "release_lag_days": 3
+    }
+  ],
+  "documents": [
+    {
+      "kind": "fomc_statement",
+      "title": "FOMC statement, June 17, 2026",
+      "dated": "2026-06-17",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260617a.htm"
+    },
+    {
+      "kind": "fomc_statement",
+      "title": "FOMC statement, July 29, 2026",
+      "dated": "2026-07-29",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm"
+    },
+    {
+      "kind": "fomc_statement",
+      "title": "FOMC statement, September 16, 2026",
+      "dated": "2026-09-16",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260916a.htm"
+    },
+    {
+      "kind": "fomc_statement",
+      "title": "FOMC statement, October 28, 2026",
+      "dated": "2026-10-28",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20261028a.htm"
+    },
+    {
+      "kind": "fomc_minutes",
+      "title": "Minutes of the FOMC meeting of April 28-29, 2026",
+      "dated": "2026-05-20",
+      "url": "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260429.htm"
+    },
+    {
+      "kind": "fomc_minutes",
+      "title": "Minutes of the FOMC meeting of June 16-17, 2026",
+      "dated": "2026-07-08",
+      "url": "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260617.htm"
+    },
+    {
+      "kind": "fomc_minutes",
+      "title": "Minutes of the FOMC meeting of July 28-29, 2026",
+      "dated": "2026-08-19",
+      "url": "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260729.htm"
+    },
+    {
+      "kind": "fomc_minutes",
+      "title": "Minutes of the FOMC meeting of September 15-16, 2026",
+      "dated": "2026-10-07",
+      "url": "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260916.htm"
+    }
+  ],
+  "calendar": [
+    {
+      "date": "2026-07-08",
+      "event": "Minutes of the June 16-17 FOMC meeting"
+    },
+    {
+      "date": "2026-07-29",
+      "event": "FOMC statement and press conference (July 28-29 meeting)"
+    },
+    {
+      "date": "2026-08-19",
+      "event": "Minutes of the July 28-29 FOMC meeting"
+    },
+    {
+      "date": "2026-09-16",
+      "event": "FOMC statement, Summary of Economic Projections and press conference (September 15-16 meeting)"
+    },
+    {
+      "date": "2026-10-07",
+      "event": "Minutes of the September 15-16 FOMC meeting"
+    },
+    {
+      "date": "2026-10-28",
+      "event": "FOMC statement and press conference (October 27-28 meeting)"
+    },
+    {
+      "date": "2026-12-09",
+      "event": "FOMC statement, Summary of Economic Projections and press conference (December 8-9 meeting)"
+    }
+  ]
+}

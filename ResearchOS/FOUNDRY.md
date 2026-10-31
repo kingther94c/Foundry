@@ -15,6 +15,10 @@ says, with the module, class and function names it gives.
 - Only `researchos/llm.py` imports `anthropic`. Every other module receives
   its agents as objects with a `json(system, prompt, schema, *, prefix=None)`
   method, so tests use fakes and never touch the network or need a key.
+- The free data sources (`researchos/series.py`, `sources.py`) are reached
+  only through `urllib.request.urlopen` or a transport the caller passes in,
+  so tests replace them. None of them needs an account: no API key (FRED's
+  or any other) is read, stored, sent or written into a test.
 - Every `open()` / `read_text()` / `write_text()` passes `encoding="utf-8"`;
   `EncodingWarning` is an error under pytest.
 - Source files are ASCII.

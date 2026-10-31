@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "researchos"
 version = "0.1.0"
-description = "Train an analyst agent on masked earnings documents"
+description = "Train an analyst agent on masked earnings documents and macro snapshots"
 requires-python = ">=3.12"
 dependencies = [
     "anthropic>=1.13,<2",

@@ -138,6 +138,18 @@ tests, which needed `tools` installed).
   reference appended to `loop.py` and `playbook.py`, and `check.py`, which
   keeps two of v28's own checks for `evaluate` only, since v30 changes
   what they check for `train`.
+- **S8, the first macro run, planned**
+  (`ResearchOS/runs/2026-11-macro-calibration-run/`): `PLAN.md`, fixed
+  before any forecast (eighteen Friday snapshots from 2026-07-03 to
+  2026-10-30; holistic against isolated perspectives; the primary
+  endpoints use no outcome); `macro-config.json` (ten targets, nine
+  economic series as published on each date, seven COT contracts, the
+  FOMC statements and minutes, the Fed's calendar); `prepare.py` (fetch,
+  build, hash and resolve through the CLI); `primary.py`; and
+  `inputs.sha256`. The series and the cases are not committed, since some
+  series may not be redistributed. `ResearchOS/FOUNDRY.md` gains the
+  network rule (a passed-in transport, no key anywhere), and
+  `pyproject.toml`'s description names both domains.
 
 ## Decisions and open points
 
@@ -189,6 +201,15 @@ tests, which needed `tools` installed).
   v7-v17 did: this machine has no API key, and the OpenClaw gateway's only
   provider refuses the model it is configured with. The relay agent may run
   only the relay's two commands; every tool call it made was checked.
+- The first macro run's forecasts need the Anthropic API, which this
+  machine does not have; everything before them is done. bls.gov answers
+  403 to automated requests, which is not worked around, so the run has no
+  BLS texts or release dates (their figures come through the economic
+  series).
+- Open: a fetched page's text is all of its visible text, so each of the
+  Fed's pages brings about 8,500 characters of site navigation. A later
+  version could keep only a page's main element (`role="main"`) for
+  snapshot documents.
 
 ## Verification
 
@@ -318,6 +339,12 @@ tests, which needed `tools` installed).
   reference and suite) and fails 13 against a copy with three deliberate
   bugs; its fuzzer finds 197 mismatches in 400 random runs there and none
   between the reference and itself.
+- S8 inputs, 2026-11-01: `prepare.py fetch` stored 195 series files (FRED,
+  ALFRED vintages for each Friday, CFTC), `build` built the eighteen
+  snapshots (about 15k tokens each), and `load_macro_config` accepts the
+  config. The 2026-10-30 dashboard was read against the series by hand.
+  `primary.py`, run on synthetic forecasts, finds a planted difference
+  and names a perspective that never leaves 0.50.
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -348,6 +375,7 @@ Files that differ from main (the working tree; this file left out):
 | A | `ResearchOS/run-researchos.py` |
 | A | `ResearchOS/runs/2026-11-macro-calibration-run/.gitignore` |
 | A | `ResearchOS/runs/2026-11-macro-calibration-run/PLAN.md` |
+| A | `ResearchOS/runs/2026-11-macro-calibration-run/inputs.sha256` |
 | A | `ResearchOS/runs/2026-11-macro-calibration-run/macro-config.json` |
 | A | `ResearchOS/runs/2026-11-macro-calibration-run/prepare.py` |
 | A | `ResearchOS/runs/2026-11-macro-calibration-run/primary.py` |

@@ -1,0 +1,5 @@
+# Rebuilt by prepare.py; some series may not be redistributed.
+series/
+cases/
+arm-*/
+resolve_*.json
