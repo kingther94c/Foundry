@@ -11,9 +11,10 @@ The first part of a three-part refactoring planned with the user: Foundry runs
 straight from a clone, every branch records its changes from main in this
 file, and ResearchOS turns macro-first. This branch does the first two and
 carries the stages of the third as they are accepted. S1 (tools v6, horizons
-and level changes), S2 (ResearchOS v21, macro cases) and S3 (v22, series
-from free sources) were built by Foundry in isolated workspaces and landed
-as written.
+and level changes), S2 (ResearchOS v21, macro cases), S3 (v22, series
+from free sources) and v23 (snapshot tables, the first part of S4) were
+built by Foundry in isolated workspaces and landed as written (v23 but for
+one word of a docstring).
 
 ## Changes
 
@@ -57,12 +58,17 @@ as written.
   `fetch_cftc`) and the `fetch-series` command in `__main__.py`. Foundry's
   `tests/test_series.py`, the hidden suite as
   `tests/test_series_acceptance.py`, a scorecard row and a README paragraph.
-- **Drafts of S4** (`docs/drafts/researchos-v23/`, `researchos-v24/`): the
-  SPEC sections "Snapshot tables (v23)" (the dashboard, economy,
-  positioning and calendar tables, 79 hidden tests) and "Building a
-  snapshot (v24)" (`load_macro_config`, `build_snapshot` and the `snapshot`
-  command, 75 hidden tests), each with a reference written by hand and
-  `check.py`.
+- **v23, the first part of S4** (`ResearchOS/SPEC.md` "Snapshot tables
+  (v23)"): `researchos/snapshot.py` (`trailing_change`, `format_level`,
+  `format_change`, `target_table`, `context_table`, `positioning_table`,
+  `calendar_list`). Foundry's `tests/test_snapshot.py`, the hidden suite as
+  `tests/test_snapshot_tables_acceptance.py`, a scorecard row and a README
+  paragraph.
+- **Draft of v24** (`docs/drafts/researchos-v24/`): the SPEC section
+  "Building a snapshot (v24)" (`load_macro_config`, `build_snapshot` and
+  the `snapshot` command), 75 hidden tests, a reference written by hand
+  (appended to the landed `snapshot.py`, so it imports what it uses and
+  prefixes its private names) and `check.py`.
 
 ## Decisions and open points
 
@@ -154,6 +160,17 @@ as written.
   fuzz mismatches); v24's passes against its reference (1457), fails 20
   against a copy with three deliberate bugs, and its fuzzer finds 344
   mismatches there and none between the reference and itself.
+- v23: Foundry's build (6 rounds, 18 tool calls, finish "completed" citing
+  its own run, 1382 passed) passes all 715 hidden ResearchOS tests and
+  agrees with the reference on 21,000 fuzzed calls; the workspace holds no
+  path from outside it. The relay agent reported, and its transcript
+  shows, one command outside the relay: a five-line Python script that
+  moved a file's deletion from one of its patch files to another. It
+  touched only that reply file; every other call was a relay command, a
+  write to its replies or a read of the relay's saved output. Review
+  changed one word of a docstring (`_observed` returns `[]`, not None).
+  After landing: ResearchOS 1461 passed, and v24's suite passes against
+  its reference appended to Foundry's `snapshot.py` (1536).
 
 <!-- auto:begin: written by scripts/delta.py refresh; do not edit by hand -->
 `claude/refactoring-plan-foundry-macro-690951`, from main at `603db4f`.
@@ -176,16 +193,15 @@ Files that differ from main (the working tree; this file left out):
 | M | `ResearchOS/researchos/loop.py` |
 | M | `ResearchOS/researchos/masking.py` |
 | A | `ResearchOS/researchos/series.py` |
+| A | `ResearchOS/researchos/snapshot.py` |
 | A | `ResearchOS/run-researchos.py` |
 | A | `ResearchOS/tests/test_macro_cases.py` |
 | A | `ResearchOS/tests/test_macro_cases_acceptance.py` |
 | A | `ResearchOS/tests/test_series.py` |
 | A | `ResearchOS/tests/test_series_acceptance.py` |
+| A | `ResearchOS/tests/test_snapshot.py` |
+| A | `ResearchOS/tests/test_snapshot_tables_acceptance.py` |
 | M | `docs/decision-log.md` |
-| A | `docs/drafts/researchos-v23/SPEC-section.md` |
-| A | `docs/drafts/researchos-v23/check.py` |
-| A | `docs/drafts/researchos-v23/reference/snapshot.py` |
-| A | `docs/drafts/researchos-v23/test_snapshot_tables_acceptance.py` |
 | A | `docs/drafts/researchos-v24/SPEC-section.md` |
 | A | `docs/drafts/researchos-v24/check.py` |
 | A | `docs/drafts/researchos-v24/reference/main_patch.py` |

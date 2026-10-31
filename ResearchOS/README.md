@@ -320,6 +320,15 @@ it was known on a date, never past it. Foundry made it in 6 rounds through
 the relay; it passed all 636 hidden tests and agreed with the hand-written
 version on 17,000 fuzzed calls.
 
+A snapshot's first documents are four tables (v23, `researchos.snapshot`):
+each target's level with its changes over a week, a month, three months
+and a year and where it stands in its one-year range; the economic series
+with the previous value and a year earlier, marked as published on the
+date or as current values; speculative positioning from each report as
+it was public on the date; and the events scheduled after it. Foundry
+made it in 6 rounds; it passed all 715 hidden tests and agreed with the
+hand-written version on 21,000 fuzzed calls.
+
 Review of the first version removed one thing: the loop called `load_outcome` through a helper
 that checked two module globals so that its own test could patch either one.
 That was production code bent around a test; the test now patches the name
