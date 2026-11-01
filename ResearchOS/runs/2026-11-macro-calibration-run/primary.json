@@ -1,0 +1,157 @@
+{
+  "excluded": [],
+  "snapshots_in_both_arms": 18,
+  "arms": {
+    "holistic": {
+      "snapshots_sealed": [
+        "macro-2026-07-03",
+        "macro-2026-07-10",
+        "macro-2026-07-17",
+        "macro-2026-07-24",
+        "macro-2026-07-31",
+        "macro-2026-08-07",
+        "macro-2026-08-14",
+        "macro-2026-08-21",
+        "macro-2026-08-28",
+        "macro-2026-09-04",
+        "macro-2026-09-11",
+        "macro-2026-09-18",
+        "macro-2026-09-25",
+        "macro-2026-10-02",
+        "macro-2026-10-09",
+        "macro-2026-10-16",
+        "macro-2026-10-23",
+        "macro-2026-10-30"
+      ],
+      "keys_sealed": 540,
+      "mean_correlation": 0.6543585296413917,
+      "perspectives": {
+        "growth": {
+          "sd_prob": 0.0312720484632709,
+          "leaves_half": 0.737037037037037
+        },
+        "inflation": {
+          "sd_prob": 0.03090613138967728,
+          "leaves_half": 0.8185185185185185
+        },
+        "labor": {
+          "sd_prob": 0.029550333707459596,
+          "leaves_half": 0.7833333333333333
+        },
+        "monetary_policy": {
+          "sd_prob": 0.03225745200533582,
+          "leaves_half": 0.8055555555555556
+        },
+        "fiscal_supply": {
+          "sd_prob": 0.027025739648833483,
+          "leaves_half": 0.7425925925925926
+        },
+        "liquidity_conditions": {
+          "sd_prob": 0.030997560636800106,
+          "leaves_half": 0.7777777777777778
+        },
+        "positioning_sentiment": {
+          "sd_prob": 0.03728606557242339,
+          "leaves_half": 0.85
+        },
+        "global_fx": {
+          "sd_prob": 0.033649039919693806,
+          "leaves_half": 0.7944444444444444
+        },
+        "commodities_energy": {
+          "sd_prob": 0.03278455150765829,
+          "leaves_half": 0.8018518518518518
+        },
+        "politics_geopolitics": {
+          "sd_prob": 0.03268748811528189,
+          "leaves_half": 0.7722222222222223
+        }
+      },
+      "judge_outside_neutral": {
+        "1m": 0.07222222222222222,
+        "1w": 0.022222222222222223,
+        "3m": 0.17222222222222222
+      }
+    },
+    "isolated": {
+      "snapshots_sealed": [
+        "macro-2026-07-03",
+        "macro-2026-07-10",
+        "macro-2026-07-17",
+        "macro-2026-07-24",
+        "macro-2026-07-31",
+        "macro-2026-08-07",
+        "macro-2026-08-14",
+        "macro-2026-08-21",
+        "macro-2026-08-28",
+        "macro-2026-09-04",
+        "macro-2026-09-11",
+        "macro-2026-09-18",
+        "macro-2026-09-25",
+        "macro-2026-10-02",
+        "macro-2026-10-09",
+        "macro-2026-10-16",
+        "macro-2026-10-23",
+        "macro-2026-10-30"
+      ],
+      "keys_sealed": 540,
+      "mean_correlation": 0.04525098978382033,
+      "perspectives": {
+        "growth": {
+          "sd_prob": 0.027244580135806953,
+          "leaves_half": 0.8796296296296297
+        },
+        "inflation": {
+          "sd_prob": 0.02873307338543582,
+          "leaves_half": 0.8388888888888889
+        },
+        "labor": {
+          "sd_prob": 0.02197275872985172,
+          "leaves_half": 0.8407407407407408
+        },
+        "monetary_policy": {
+          "sd_prob": 0.030263452268534684,
+          "leaves_half": 0.8296296296296296
+        },
+        "fiscal_supply": {
+          "sd_prob": 0.020393959405836673,
+          "leaves_half": 0.6944444444444444
+        },
+        "liquidity_conditions": {
+          "sd_prob": 0.027405273940986647,
+          "leaves_half": 0.7907407407407407
+        },
+        "positioning_sentiment": {
+          "sd_prob": 0.0320956432479657,
+          "leaves_half": 0.8
+        },
+        "global_fx": {
+          "sd_prob": 0.0219335806833089,
+          "leaves_half": 0.7333333333333333
+        },
+        "commodities_energy": {
+          "sd_prob": 0.024193889874723196,
+          "leaves_half": 0.7574074074074074
+        },
+        "politics_geopolitics": {
+          "sd_prob": 0.024009143205787144,
+          "leaves_half": 0.7944444444444444
+        }
+      },
+      "judge_outside_neutral": {
+        "1m": 0.3388888888888889,
+        "1w": 0.16111111111111112,
+        "3m": 0.4777777777777778
+      }
+    }
+  },
+  "difference_isolated_minus_holistic": {
+    "point": -0.6091075398575714,
+    "ci95": [
+      -0.6642448702795655,
+      -0.5474170738813929
+    ],
+    "resamples_used": 2000,
+    "isolated_disagrees_more": true
+  }
+}
