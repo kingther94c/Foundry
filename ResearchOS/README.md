@@ -181,8 +181,9 @@ combination rule starts to matter, pooling log-odds beating averaging.
 [runs/2026-11-macro-calibration-run](runs/2026-11-macro-calibration-run/PLAN.md):
 the first macro run, pre-registered: eighteen Friday snapshots from
 2026-07-03 to 2026-10-30, holistic against isolated perspectives,
-forecasts sealed before any outcome is used. The inputs are built and
-hashed; the forecasts are not yet made.
+forecasts sealed before any outcome is used. The forecasts are made where
+an API key is, by [RUNBOOK.md](runs/2026-11-macro-calibration-run/RUNBOOK.md):
+it rebuilds the snapshots at v31 and commits their hashes first.
 
 ## How it was built
 

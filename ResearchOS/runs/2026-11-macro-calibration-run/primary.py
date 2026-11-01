@@ -1,6 +1,6 @@
 """The primary endpoints of PLAN.md, from the sealed forecasts alone: no outcome is read.
 
-    python primary.py [--out primary.json]
+    python primary.py [--out primary.json] [--exclude ID,ID]
 
 Reads <arm>/<case>/prediction.json for the two arms (arm-holistic, arm-isolated) and
 reports, per arm: which snapshots and keys were sealed; the mean pairwise correlation of
@@ -9,6 +9,8 @@ perspective's standard deviation and how often it leaves 0.50; how often the jud
 probability leaves [0.45, 0.55], by horizon. The difference in mean correlation (isolated
 minus holistic) gets a 95% percentile interval from 2,000 resamples of the snapshots sealed
 in both arms (a cluster bootstrap: a snapshot's keys move together), random.Random(0).
+--exclude leaves the named snapshots out of both arms first (those forecast_arm.py names
+as served in part by another model).
 """
 
 from __future__ import annotations
@@ -88,10 +90,13 @@ def judge_edge(rows: list[dict]) -> dict:
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--out")
+    p.add_argument("--exclude", default="")
     args = p.parse_args()
-    sealed = {arm: load(root) for arm, root in ARMS.items()}
+    excluded = sorted({i.strip() for i in args.exclude.split(",") if i.strip()})
+    sealed = {arm: {c: f for c, f in load(root).items() if c not in excluded}
+              for arm, root in ARMS.items()}
     both = sorted(set(sealed["holistic"]) & set(sealed["isolated"]))
-    report = {"snapshots_in_both_arms": len(both), "arms": {}}
+    report = {"excluded": excluded, "snapshots_in_both_arms": len(both), "arms": {}}
     names = None
     for arm, forecasts in sealed.items():
         rows = [row for case_id in both for row in rows_of(forecasts[case_id])]

@@ -188,3 +188,78 @@ how the cap is kept.
   built before v31 and are used as hashed, navigation included, so the
   known limit above stands for this run. `forecast`, `resolve` and `score`
   are the same at v31 as at `50c7a37`.
+
+## Amendment, 2026-11-01 (second), before any forecast
+
+The forecasts are made in another environment, which has an API key; the
+machine this plan was written on has none. Nothing here changes what is
+measured: the arms, the cutoff, the endpoints and the cap stand. `RUNBOOK.md`
+gives the steps.
+
+- **The snapshots are rebuilt there, before any forecast,** at the commit
+  that adds this note. Its `snapshot` is v31; `forecast`, `resolve` and
+  `score` are the same as at `50c7a37`.
+  - The cases cannot travel through the repository: it is public, and they
+    carry series that may not be redistributed. So `prepare.py fetch`,
+    `build`, `check` and `hashes` run there, and the new `inputs.sha256`
+    and `inputs-parts.sha256` are committed and pushed before the first
+    forecast. That commit, not the hashes above, fixes this run's inputs.
+  - The hashes of the 2026-11-01 build (v30) are kept as
+    `inputs-2026-11-01.sha256`. Those snapshots are not used.
+  - With v31 the Fed pages come without the site's navigation, so the
+    known limit about it no longer applies. Rebuilt here at v31 from the
+    series fetched on 2026-11-01, the snapshots hold 41,184 to 51,444
+    characters (57,822 to 68,082 before). Their tables and targets are
+    byte for byte those of the v30 build; only the two Fed pages differ.
+  - `inputs-2026-11-01-v31-parts.sha256` holds the hash of each part of
+    that rebuild, and `prepare.py compare` names the parts of the new build
+    that differ from it. Parts may differ where a series has posted values
+    since 2026-11-01: the 2026-10-30 levels of the targets that had not
+    posted them, and the broad dollar's latest weeks. They are used as
+    fetched and reported, never chosen.
+  - `prepare.py check` must pass before the hashes are written: every
+    snapshot holds its six documents (four tables, the FOMC statement, the
+    minutes) and its nine required targets. A page that cannot be fetched
+    is not left out silently.
+  - If the sources cannot be reached from there, nothing is forecast until
+    they can.
+- **`forecast_arm.py` keeps the cap** in place of the Console:
+  - The order is the same as above: date order, three snapshots of an arm
+    at a time, H first, the arms alternating.
+  - Every call's usage is metered at claude-opus-5-5's prices into
+    `spend-<arm>.jsonl`. Per million tokens: $5 input, $6.25 cache write,
+    $0.50 cache read, $25 output.
+  - Before each snapshot, the arm's spend plus the most a snapshot has cost
+    so far (never less than $1.05) must stay within $15.
+  - A forecast that fails (a refusal, max_tokens, output not of the
+    schema) goes to `failed-<arm>.jsonl` with its reason and is not tried
+    again: it counts against completeness.
+  - A failed API request, after the client's retries, is not the model's
+    failure. The run stops, nothing is recorded, and the snapshot is
+    forecast when the run resumes.
+  - With the shorter prefix the input side is about $0.17 a snapshot per
+    arm, so the estimate is about $0.45 to $1.00.
+- **The serving model is recorded.** `forecast` asks for claude-opus-5-5
+  with the server-side fallback on, so another model may serve a call, and
+  its knowledge may run past 2026-06-30. Each call notes the model that
+  served it. A snapshot any of whose calls another model served is named.
+  The primary endpoints are then reported twice: over every snapshot sealed
+  in both arms, and without those (`primary.py --exclude`).
+- **What is committed:** the sealed `prediction.json` files as they are made
+  (probabilities, the model's key points and theses, its name and the
+  cutoff; no series level), the spend and failure logs, `primary.json` and
+  each scoring's `secondary-<date>.json`.
+  - Not committed: `case.json`, `outcome.json`, `resolution.json` and the
+    outputs of `score`, `compare` and `blend`, which carry series levels.
+  - A private copy of `series/` and `cases/` is kept outside the repository
+    for the later scorings. If it is lost, the cases are rebuilt at the
+    same commit and must match `inputs.sha256`; a snapshot that does not
+    is not scored.
+- **Scoring:** `secondary.py` makes one scoring of the secondary endpoints.
+  - It fetches the ten target series that day and resolves copies of each
+    arm's sealed snapshots against them; the arms are not touched.
+  - It then runs `score`, `compare`, every `blend` rule, `agreement` and
+    the baselines above.
+  - The first scoring is made once both arms are finished, and not before
+    2026-11-02; it gives its date. The later two are on 2026-12-07 and
+    2027-02-08, or the first day after that the run can be reached.

@@ -1,5 +1,12 @@
 # Rebuilt by prepare.py; some series may not be redistributed.
 series/
 cases/
-arm-*/
+# Of an arm's snapshots only the sealed forecasts are committed: they hold probabilities
+# and the model's text, no series level. case.json, outcome.json and resolution.json stay.
+arm-*/**
+!arm-*/*/
+!arm-*/*/prediction.json
 resolve_*.json
+# secondary.py's working folder: target series, resolved copies, score outputs.
+scores/
+*.log
