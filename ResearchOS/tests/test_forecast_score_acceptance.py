@@ -207,7 +207,7 @@ def test_each_module_imports_first(module):
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(
         paths + [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]))
     done = subprocess.run([sys.executable, "-c", f"import {module}"], env=env,
-                          capture_output=True, text=True, check=False)
+                          capture_output=True, text=True, encoding="utf-8", check=False)
     assert done.returncode == 0, done.stderr
 
 
