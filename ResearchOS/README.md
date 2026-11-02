@@ -178,12 +178,15 @@ pre-registered. Isolated views disagree: their mean correlation fell from
 0.85 to 0.39 (interval -0.59 to -0.37 for the difference), and on them the
 combination rule starts to matter, pooling log-odds beating averaging.
 
-[runs/2026-11-macro-calibration-run](runs/2026-11-macro-calibration-run/PLAN.md):
+[runs/2026-11-macro-calibration-run](runs/2026-11-macro-calibration-run/README.md):
 the first macro run, pre-registered: eighteen Friday snapshots from
-2026-07-03 to 2026-10-30, holistic against isolated perspectives,
-forecasts sealed before any outcome is used. The forecasts are made where
-an API key is, by [RUNBOOK.md](runs/2026-11-macro-calibration-run/RUNBOOK.md):
-it rebuilds the snapshots at v31 and commits their hashes first.
+2026-07-03 to 2026-10-30, holistic against isolated perspectives.
+- Isolated macro views disagree as the earnings ones did: a mean
+  correlation of 0.05 against 0.65 (interval -0.66 to -0.55 for the
+  difference).
+- On the 330 keys resolved so far, neither arm beats a coin. Eighteen
+  snapshots of one summer could not show that either way.
+- Two more scorings are fixed, for 2026-12-07 and 2027-02-08.
 
 ## How it was built
 
