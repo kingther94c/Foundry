@@ -110,8 +110,10 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 |---|---|
 | `foundry` / `foundry run [task]` | interactive session (the default) |
 | `foundry exec <task> [--json]` | unattended execution; every ASK becomes DENY (fail-closed) |
+| `foundry resume [session] [task]` | continue a recorded session (default `last`, the newest here); refused if HEAD moved |
+| `foundry exec --resume <session> [task]` | the same, unattended; the task defaults to carrying on where it stopped |
 | `foundry record <task> --output f.json` | record a session as a replay fixture |
-| `foundry sessions [id]` | list sessions, or show one |
+| `foundry sessions [id]` | list sessions (and which are in use), or show one |
 | `foundry report [--json]` | patch first-try success rate, command failures, denials, token stats |
 | `foundry login` / `logout` | credential management (DPAPI encrypted) |
 | `foundry doctor` | environment self-check |

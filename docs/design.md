@@ -279,31 +279,51 @@ class ModelBackend(Protocol):
 - The line envelope is `{ts, ordinal, type, v, payload}`; the type set is
   `session_meta / model_request / model_response / tool_call / tool_result /
   policy_decision / approval / command_exec / token_usage / capability_probe /
-  validation_claim / git_baseline / termination`. Artifact contents are stored
-  content-addressed at `sessions/<id>/artifacts/<sha256>`, and events reference
-  only the digest.
-- Writes are serialised; termination, approval and command-completion events
-  flush immediately; the reader tolerates a truncated final line, and no
-  termination event means `interrupted`. Schema migration happens only on the
-  read side; historical journals are immutable.
+  validation_claim / git_baseline / termination / user_input / tool_reply /
+  resumed` (the last three added for resume, [D-035](decision-log.md)).
+  Artifact contents are stored content-addressed at
+  `sessions/<id>/artifacts/<sha256>`, and events reference only the digest.
+- Writes are serialised and every record is flushed as it is written;
+  termination, approval, command-completion, policy-decision and resumed
+  records are also synced to disk. The reader tolerates a truncated final line,
+  and no termination event means `interrupted`. Schema migration happens only
+  on the read side; historical journals are immutable. One process writes a
+  journal at a time: the store holds an OS lock on `sessions/<id>/lock`.
 - A single write choke point function: exact-match replacement of
   self-held credentials (100% acceptable) + best-effort pattern scanning;
   command output is stored as raw bytes (base64).
 - `model_request` is complete enough to rebuild (**except the
   auth/Authorization header** -- never written to disk, and re-injected by the
   HTTP layer on replay), so ReplayBackend uses the session file directly as a
-  fixture; resume (V2) is the same replay mechanism. **The replay matching
-  contract**: replay by ordinal + structural assertions (the tool call
-  sequence, key fields), with a full-text request diff emitted as a test
-  artifact for human review; byte-for-byte identity is a separate
-  resume-ready test (otherwise a prompt tweak turns every fixture red, or blind
-  replay verifies nothing at all). Fixtures are re-recorded with `foundry
-  record` (against a local endpoint, delivered in M0).
+  fixture; resume ([D-035](decision-log.md)) rebuilds the conversation from
+  the same records. **The replay matching contract**: replay by ordinal +
+  structural assertions (the tool call sequence, key fields), with a full-text
+  request diff emitted as a test artifact for human review; byte-for-byte
+  identity is a separate resume-ready test, `tests/test_resume.py`
+  (otherwise a prompt tweak turns every fixture red, or blind replay verifies
+  nothing at all). Fixtures are re-recorded with `foundry record` (against a
+  local endpoint, delivered in M0).
 - The termination state machine: `completed` requires (a) an automatic git
   check by the runtime, (b) every `validation_claim` cross-verified against
   `command_exec` events (the event_id exists and the exit code matches), and
   (c) HEAD not having moved; otherwise it is downgraded to `partial`.
-  Read-only tasks take the `completed(no_changes)` path.
+  Read-only tasks take the `completed(no_changes)` path. A journal holds one
+  termination per run, plus one for each blocked turn an interactive session
+  went on past; its status is the last one's unless a later `resumed` record
+  starts a run that has not ended, which reads as `interrupted`.
+- **Resume** ([D-035](decision-log.md), `core/resume.py`). The history is each
+  `model_request`'s messages taken where they first appear (never masked
+  there), then what followed the last request: its `model_response` (with the
+  `opaque` block), the `tool_reply` records, any `user_input`. Round numbers
+  come from `model_request.turn` (older journals: one more than the responses
+  so far). Every tool call without a result is given one, in call order, before
+  any user text: an accepted finish with its status, a call not run with the
+  reason, or an outcome unknown. The CLI then refuses a moved HEAD, another
+  workspace, a newer schema or a full context; reuses the original baseline
+  (so the system prompt is unchanged); adds files changed outside the session
+  to the dirty-file guard; starts the evidence over (no command history, no
+  files read, no grants); writes `resumed`; and puts a note before the first
+  task saying all of that to the model.
 - `~/.foundry/audit.jsonl` is appended to separately (and is not writable by
   the tools).
 

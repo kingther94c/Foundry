@@ -539,7 +539,8 @@ plan) is a V2 candidate.
   capability probe, and git_baseline.
 - **The resume feature itself is deferred to V2**; V1 promises only that the
   schema is replayable (which doubles as the basis of ReplayBackend testing --
-  two birds, one stone).
+  two birds, one stone). It has since landed: `foundry resume` and
+  `foundry exec --resume`, [D-035](decision-log.md).
 - **Crash recovery semantics** (absorbed from the Codex version): a truncated
   final record is tolerated on read; **a session with no termination event is
   always judged `interrupted` and can never be mistaken for completed**;
@@ -600,7 +601,11 @@ compensating control for a no-sandbox V1.
   it can prove, and never claims line-level attribution.
 - Other states: `partial / blocked / failed / cancelled` (plus `interrupted`,
   determined at recovery), each of which must carry a termination reason event;
-  a session has **exactly one** termination event.
+  a run has **exactly one** termination event. A journal holds one per run --
+  a resumed session is a later run in the same journal
+  ([D-035](decision-log.md)) -- plus one for each blocked turn an interactive
+  session went on past; its status is the last one's, unless a later `resumed`
+  record starts a run that has not ended (`interrupted`).
 
 ## 7. Packaging and dependencies
 
@@ -638,7 +643,8 @@ compensating control for a no-sandbox V1.
    evidence. The regression method (a review correction): ReplayBackend replays
    by ordinal with **structural assertions** on the request (the tool call
    sequence, key fields), with the full request diff emitted as a test artifact
-   for human review; "byte-for-byte rebuild" is a separate resume-ready test.
+   for human review; "byte-for-byte rebuild" is a separate resume-ready test
+   (`tests/test_resume.py`).
    Prompt or loop changes must pass the whole set of structural assertions; the
    fixture re-recording workflow (`foundry record`, re-recorded against a local
    endpoint) is an M0 deliverable.
@@ -669,8 +675,9 @@ compensating control for a no-sandbox V1.
 ## 9. Non-goals (explicitly not in V1)
 
 A sandbox (an honest trusted host); session resume (the schema is ready, the
-feature is V2); LLM summarisation compaction (V1 uses masking + a clean
-termination); MCP (aligning the internal representation with its shapes is
-enough); subagents (a seam is left); multi-repository tasks; browser/network
-tools; embeddings/RAG; automatic commits; skills and slash commands (V2);
-Claude consumer OAuth; NTLM/Kerberos proxies.
+feature is V2 -- since landed, [D-035](decision-log.md)); LLM summarisation
+compaction (V1 uses masking + a clean termination); MCP (aligning the internal
+representation with its shapes is enough); subagents (a seam is left);
+multi-repository tasks; browser/network tools; embeddings/RAG; automatic
+commits; skills and slash commands (V2); Claude consumer OAuth; NTLM/Kerberos
+proxies.

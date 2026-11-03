@@ -148,7 +148,7 @@ covering agentic tool continuation.
 
 ## V2 candidates (explicitly no commitment to order)
 
-session resume (the schema is ready) | LLM summarisation compaction (the
+~~session resume~~ (landed, D-035) | LLM summarisation compaction (the
 Compacted event is already reserved) | a visible `update_plan` | skills and
 slash commands | enabling the subagent seam | an MCP bridge (the IR already
 lines up) | shadow-git checkpoint/undo | a Python-only repo map (stdlib ast) |

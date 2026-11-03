@@ -1,4 +1,4 @@
-"""CLI entry points: session, login, logout, sessions, doctor.
+"""CLI entry points: session, resume, login, logout, sessions, doctor.
 
 The CLI owns no agent behaviour. It builds the runtime, subscribes to the event
 stream, and answers approval requests -- which is what makes a headless runner or
@@ -27,7 +27,7 @@ from foundry.core.backends.recording import RecordingBackend
 from foundry.core.backends.responses import ResponsesBackend
 from foundry.core.config import ANTHROPIC_PROTOCOL, Config, load_config, user_dir
 from foundry.core.context import ContextManager
-from foundry.core.errors import AuthError, ConfigError, FoundryError
+from foundry.core.errors import AuthError, ConfigError, FoundryError, ResumeError
 from foundry.core.events import (
     EXIT_CODES,
     EventSink,
@@ -44,8 +44,18 @@ from foundry.core.prompts import (
     permissions_paragraph,
 )
 from foundry.core.redaction import default_redactor
+from foundry.core.resume import (
+    CONTINUE_PROMPT,
+    JournalState,
+    find_journal,
+    outside_changes,
+    read_journal,
+    resolve_session,
+    resume_note,
+    same_path,
+)
 from foundry.core.runtime import AgentRuntime, Budget
-from foundry.core.session import AuditLog, SessionStore
+from foundry.core.session import AuditLog, EventType, SessionStore, is_locked
 from foundry.core.tools.base import ReadTracker, ToolContext
 from foundry.core.tools.git import capture_baseline, is_git_repository
 from foundry.core.tools.registry import default_registry
@@ -61,6 +71,11 @@ class Wiring:
     runtime: AgentRuntime
     renderer: Renderer
     session: SessionStore
+    # Set for a resumed session (D-035).
+    resumed: JournalState | None = None
+    outside: frozenset[str] = frozenset()
+    # Prepended to the first task after a resume, then cleared.
+    note: str = ""
 
 
 def _trusted_paths(home: Path) -> set[str]:
@@ -151,7 +166,8 @@ def _rule_writer(home: Path, policy: PolicyEngine):
 
 def build(workspace_path: Path, *, home: Path | None = None,
           overrides: dict | None = None, console: Console | None = None,
-          interactive: bool = True) -> Wiring:
+          interactive: bool = True, resume: str | None = None) -> Wiring:
+    """``resume`` names a recorded session to continue: an id, or ``last``."""
     console = console or Console()
     home = home or user_dir()
 
@@ -170,18 +186,53 @@ def build(workspace_path: Path, *, home: Path | None = None,
     trusted = _confirm_trust(console, home, workspace.root, interactive=interactive)
     config = load_config(workspace.root if trusted else None, overrides=overrides, home=home)
 
-    baseline = capture_baseline(workspace.root)
+    current = capture_baseline(workspace.root)
+    state: JournalState | None = None
+    outside: frozenset[str] = frozenset()
+    if resume is None:
+        baseline = current
+        session = SessionStore(home / "sessions", redactor=default_redactor())
+        session.write_header(workspace=str(workspace.root), profile=config.backend.name,
+                             model=config.backend.model, foundry_version=__version__)
+        session.append("git_baseline", baseline.as_payload())
+    else:
+        session, state, outside = _reopen(home / "sessions", resume, workspace.root, current)
+        # The baseline the session started from, not a fresh one: its account of
+        # what it changed, and its system prompt, are relative to that.
+        baseline = state.baseline
+    try:
+        return _assemble(workspace, config, trusted, baseline, session, state, outside,
+                         home=home, console=console)
+    except BaseException:
+        session.close()
+        raise
 
+
+def _reopen(sessions: Path, session_id: str, root: Path,
+            current) -> tuple[SessionStore, JournalState, frozenset[str]]:
+    """Lock the journal, then read it, so nothing is appended in between."""
+    journal = resolve_session(sessions, session_id, root)
+    session = SessionStore(sessions, session_id=journal.parent.name,
+                           redactor=default_redactor(), resume=True)
+    try:
+        state = read_journal(session.path)
+        if not state.workspace or not same_path(state.workspace, root):
+            raise ResumeError(f"session {state.session_id} worked in {state.workspace or '?'}, "
+                              f"not {root}; resume it with --workspace pointing there")
+        return session, state, outside_changes(state, current)
+    except BaseException:
+        session.close()
+        raise
+
+
+def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
+              session: SessionStore, state: JournalState | None, outside: frozenset[str], *,
+              home: Path, console: Console) -> Wiring:
     policy = PolicyEngine(
         rules=list(builtin_rules()) + list(config.rules),
         mode=config.mode,
-        dirty_files=set(baseline.dirty_paths) | set(baseline.untracked_paths),
+        dirty_files=set(baseline.dirty_paths) | set(baseline.untracked_paths) | set(outside),
     )
-
-    session = SessionStore(home / "sessions", redactor=default_redactor())
-    session.write_header(workspace=str(workspace.root), profile=config.backend.name,
-                         model=config.backend.model, foundry_version=__version__)
-    session.append("git_baseline", baseline.as_payload())
 
     registry = default_registry(recorder=session)
     dead = policy.dead_rules(registry.names())
@@ -255,8 +306,69 @@ def build(workspace_path: Path, *, home: Path | None = None,
     if missing_credential:
         # Say it before spending a round trip on a request that cannot succeed.
         sink.emit(Notice(missing_credential, level="warning"))
-    return Wiring(workspace=workspace, config=config, runtime=runtime,
-                  renderer=renderer, session=session)
+    wiring = Wiring(workspace=workspace, config=config, runtime=runtime,
+                    renderer=renderer, session=session)
+    if state is not None:
+        # Evidence starts over (D-035): the command history, the files read and
+        # the session grants are this run's own, so nothing from before the
+        # resume can vouch for the workspace as it is now.
+        context.restore(list(state.history), list(state.turns), state.turn, state.usage)
+        if context.context_exhausted():
+            raise ResumeError(f"session {state.session_id}'s context is full; start a new session")
+        session.append(EventType.RESUMED, {
+            "previous_status": state.status.value,
+            "previous_reason": state.reason,
+            "head": baseline.head,
+            "outside_changes": sorted(outside),
+            "repaired": [r.as_payload() for r in state.repairs],
+            "model": config.backend.model,
+            "profile": config.backend.name,
+            "foundry_version": __version__,
+            "legacy": state.legacy,
+        })
+        wiring.resumed, wiring.outside = state, outside
+        wiring.note = resume_note(state, outside)
+    return wiring
+
+
+def _announce_resume(wiring: Wiring) -> None:
+    """Said through the event stream, so a --json consumer hears it too."""
+    state = wiring.resumed
+    if state is None:
+        return
+    events = wiring.runtime.events
+    ended = state.status.value + (f" ({state.reason})" if state.reason else "")
+    task = state.first_task.splitlines()[0][:80] if state.first_task else "?"
+    events.emit(Notice(
+        f"resumed session {state.session_id} ({task!r}); it had ended {ended}. "
+        f"{len(state.repairs)} tool call(s) without a recorded result were given one; "
+        f"{len(wiring.outside)} file(s) changed outside it since it started.", level="info"))
+    if (state.profile, state.model) != (wiring.config.backend.name, wiring.config.backend.model):
+        events.emit(Notice(
+            f"this session ran on {state.profile} ({state.model}); it continues on "
+            f"{wiring.config.backend.name} ({wiring.config.backend.model})", level="warning"))
+    if state.legacy:
+        events.emit(Notice(
+            "this session was recorded before resume existed: the output of the calls it "
+            "made last was not kept, and a provider may reject its last reply's reasoning",
+            level="warning"))
+
+
+def _with_note(wiring: Wiring, task: str) -> str:
+    """The first task after a resume carries the note; later ones do not."""
+    note, wiring.note = wiring.note, ""
+    return f"{note}\n\n{task}" if note else task
+
+
+def _close(wiring: Wiring, status: TerminalStatus, reason: str) -> None:
+    # A journal write can fail (full volume, a backup agent holding the
+    # file); losing the exit code over it would be worse than the lost line.
+    try:
+        if not wiring.session._terminated:
+            wiring.session.record_termination(status, reason)
+    except OSError:
+        pass
+    wiring.session.close()
 
 
 def _credential_source(config: Config, vault: CredentialVault):
@@ -274,9 +386,11 @@ def _credential_source(config: Config, vault: CredentialVault):
 
 
 def cmd_session(args: argparse.Namespace) -> int:
+    """`run`, and `resume`, which is the same session continued from its journal."""
     console = Console()
     try:
-        wiring = build(Path(args.workspace).resolve(), console=console)
+        wiring = build(Path(args.workspace).resolve(), console=console,
+                       resume=getattr(args, "resume", None))
     except FoundryError as exc:
         console.print(f"[red]{exc}[/red]")
         return EXIT_CODES[TerminalStatus.FAILED]
@@ -284,53 +398,50 @@ def cmd_session(args: argparse.Namespace) -> int:
     wiring.renderer.show_disclosure(str(wiring.workspace.root),
                                     wiring.config.backend.model,
                                     wiring.config.mode.value)
+    _announce_resume(wiring)
     status = TerminalStatus.CANCELLED
     try:
         if args.task:
-            outcome = wiring.runtime.run_turn(args.task)
+            outcome = wiring.runtime.run_turn(_with_note(wiring, args.task))
             # Only the finish gate can produce 'completed'. A turn that simply
             # ended is unfinished work, not success.
             status = outcome.status or TerminalStatus.PARTIAL
         else:
-            while True:
-                try:
-                    task = console.input("\n[bold cyan]foundry>[/bold cyan] ").strip()
-                except (EOFError, KeyboardInterrupt):
-                    console.print()
-                    break
-                if not task:
-                    continue
-                if task in ("/exit", "/quit"):
-                    break
-                outcome = wiring.runtime.run_turn(task)
-                if outcome.status is None:
-                    continue
-                status = outcome.status
-                # A dropped stream or an unreachable provider ends the *turn*,
-                # not the session. Breaking here threw away the whole
-                # conversation over a network blip -- and the code that raises
-                # it says "transient, so it is retried", which no layer does
-                # once deltas have been shown. The user keeps their context and
-                # can simply ask again.
-                if status is TerminalStatus.BLOCKED:
-                    console.print("[yellow]that turn could not be completed; "
-                                  "the session is still open.[/yellow]")
-                    continue
-                break
+            status = _repl(wiring, console)
     except KeyboardInterrupt:
         wiring.runtime.cancel()
         console.print("\n[yellow]cancelled[/yellow]")
     finally:
-        # A journal write can fail (full volume, a backup agent holding the
-        # file); losing the exit code over it would be worse than the lost line.
-        try:
-            if not wiring.session._terminated:
-                wiring.session.record_termination(status, "session ended")
-        except OSError:
-            pass
-        wiring.session.close()
+        _close(wiring, status, "session ended")
 
     return EXIT_CODES.get(status, 0)
+
+
+def _repl(wiring: Wiring, console: Console) -> TerminalStatus:
+    while True:
+        try:
+            task = console.input("\n[bold cyan]foundry>[/bold cyan] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return TerminalStatus.CANCELLED
+        if not task:
+            continue
+        if task in ("/exit", "/quit"):
+            return TerminalStatus.CANCELLED
+        outcome = wiring.runtime.run_turn(_with_note(wiring, task))
+        if outcome.status is None:
+            continue
+        # A dropped stream or an unreachable provider ends the *turn*, not the
+        # session. Breaking here threw away the whole conversation over a
+        # network blip -- and the code that raises it says "transient, so it is
+        # retried", which no layer does once deltas have been shown. The user
+        # keeps their context and can simply ask again. The blocked turn is then
+        # not how the session ends: a later turn, or /exit, decides that.
+        if outcome.status is TerminalStatus.BLOCKED:
+            console.print("[yellow]that turn could not be completed; "
+                          "the session is still open.[/yellow]")
+            continue
+        return outcome.status
 
 
 def cmd_login(args: argparse.Namespace) -> int:
@@ -403,15 +514,11 @@ def cmd_sessions(args: argparse.Namespace) -> int:
 
     entries = sorted((p for p in root.iterdir() if p.is_dir()), reverse=True)
     if args.session_id:
-        target = (root / args.session_id / "events.jsonl")
         # A session id is a name, not a path. `foundry sessions ../notes` used to
         # read whatever it landed on and print a traceback when the lines were
         # not journal records.
-        try:
-            inside = target.resolve().is_relative_to(root.resolve())
-        except (OSError, ValueError):
-            inside = False
-        if not inside or not target.is_file():
+        target = find_journal(root, args.session_id)
+        if target is None:
             console.print(f"[red]no such session: {args.session_id}[/red]")
             return 1
         for record in SessionStore.read_records(target):
@@ -424,7 +531,8 @@ def cmd_sessions(args: argparse.Namespace) -> int:
             continue
         status = SessionStore.terminal_status(journal)
         style = "green" if status is TerminalStatus.COMPLETED else "yellow"
-        console.print(f"{entry.name}  [{style}]{status.value}[/{style}]")
+        busy = "  [cyan]in use[/cyan]" if is_locked(entry) else ""
+        console.print(f"{entry.name}  [{style}]{status.value}[/{style}]{busy}")
     return 0
 
 
@@ -488,10 +596,22 @@ def cmd_exec(args: argparse.Namespace) -> int:
     whatever it was asked would be strictly worse than one that stops.
     """
     console = Console(stderr=True)
+    if args.task is None and args.resume is None:
+        console.print("[red]exec needs a task, or --resume SESSION to continue one[/red]")
+        return 2
     try:
+        if args.resume is not None and args.task is None:
+            # Continuing a finished session needs to be told what to do next;
+            # "continue where it stopped" would only finish it again.
+            journal = resolve_session(user_dir() / "sessions", args.resume,
+                                      Path(args.workspace).resolve())
+            if SessionStore.terminal_status(journal) is TerminalStatus.COMPLETED:
+                console.print("[red]that session completed; give the task to continue "
+                              "it with[/red]")
+                return 2
         wiring = build(Path(args.workspace).resolve(),
                        overrides={"mode": Mode.DONT_ASK}, console=console,
-                       interactive=False)
+                       interactive=False, resume=args.resume)
     except FoundryError as exc:
         console.print(f"[red]{exc}[/red]")
         return EXIT_CODES[TerminalStatus.FAILED]
@@ -508,12 +628,14 @@ def cmd_exec(args: argparse.Namespace) -> int:
             print(json.dumps(_event_payload(event), ensure_ascii=False), flush=True)
 
         wiring.runtime.events.subscribe(as_json)
+    _announce_resume(wiring)
 
     status = TerminalStatus.FAILED
     reason = "headless run ended"
     outcome = None
     try:
-        outcome = _run_unattended(wiring.runtime, args.task)
+        outcome = _run_unattended(wiring.runtime,
+                                  _with_note(wiring, args.task or CONTINUE_PROMPT))
         # Only the finish gate can produce 'completed'. A turn that simply
         # ended is unfinished work, not success.
         status = outcome.status or TerminalStatus.PARTIAL
@@ -538,12 +660,7 @@ def cmd_exec(args: argparse.Namespace) -> int:
             wiring.runtime.events.emit(Termination(
                 status=status, reason=reason,
                 summary=(outcome.text if outcome else "")))
-        try:
-            if not wiring.session._terminated:
-                wiring.session.record_termination(status, reason)
-        except OSError:
-            pass
-        wiring.session.close()
+        _close(wiring, status, reason)
     return EXIT_CODES.get(status, 0)
 
 
@@ -564,12 +681,7 @@ def cmd_record(args: argparse.Namespace) -> int:
     try:
         wiring.runtime.run_turn(args.task)
     finally:
-        try:
-            if not wiring.session._terminated:
-                wiring.session.record_termination(TerminalStatus.CANCELLED, "recording ended")
-        except OSError:
-            pass
-        wiring.session.close()
+        _close(wiring, TerminalStatus.CANCELLED, "recording ended")
         path = recorder.save()
         console.print(f"[green]recorded[/green] {len(recorder.captured)} turns to {path}")
     return 0
@@ -687,10 +799,20 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--workspace", default=".", help="repository to work in")
     run.set_defaults(func=cmd_session)
 
+    resume = sub.add_parser("resume", help="continue a recorded session")
+    resume.add_argument("resume", nargs="?", default="last", metavar="session",
+                        help="the session id (default: last, the newest in this workspace)")
+    resume.add_argument("task", nargs="?", help="run one task then exit")
+    resume.add_argument("--workspace", default=".", help="repository the session worked in")
+    resume.set_defaults(func=cmd_session)
+
     execute = sub.add_parser("exec", help="run one task headlessly (approvals are denied)")
-    execute.add_argument("task")
+    execute.add_argument("task", nargs="?")
     execute.add_argument("--workspace", default=".")
     execute.add_argument("--json", action="store_true", help="emit the event stream as JSONL")
+    execute.add_argument("--resume", metavar="SESSION",
+                         help="continue a recorded session (an id, or last); the task "
+                              "defaults to carrying on where it stopped")
     execute.set_defaults(func=cmd_exec)
 
     record = sub.add_parser("record", help="capture a session as a replay fixture")
