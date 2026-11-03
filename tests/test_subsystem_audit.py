@@ -136,6 +136,75 @@ def test_the_runtime_records_when_the_workspace_last_changed(tmp_path):
     assert "before the last change" in outcome.text
 
 
+def test_a_partly_applied_patch_still_counts_as_a_change(tmp_path):
+    """apply_patch reports is_error when any file is rejected, and only clean
+    results moved the mutation mark -- so after a patch that landed one file and
+    rejected another, a green run from before it still vouched for the change."""
+    from foundry.core.backends.replay import ScriptedBackend
+    from foundry.core.context import ContextManager
+    from foundry.core.conversation import ModelTurn, StopReason, ToolUseBlock, Usage
+    from foundry.core.events import EventSink
+    from foundry.core.policy.engine import Mode, PolicyEngine, Rule, Verdict
+    from foundry.core.runtime import AgentRuntime, Budget
+    from foundry.core.tools.registry import default_registry
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "a.py").write_text("A = 1\n", encoding="utf-8")
+    (repo / "b.py").write_text("B = 1\n", encoding="utf-8")
+
+    def call(cid, name, args):
+        return ToolUseBlock(call_id=cid, name=name, arguments=json.dumps(args))
+
+    def turn(*calls):
+        return ModelTurn(text="", tool_calls=tuple(calls), usage=Usage(1, 1),
+                         stop_reason=StopReason.TOOL_USE)
+
+    patch = ("*** Begin Patch\n*** Update File: a.py\n"
+             "<<<<<<< SEARCH\nA = 1\n=======\nA = 2\n>>>>>>> REPLACE\n"
+             "*** Update File: b.py\n"
+             "<<<<<<< SEARCH\nB = 9\n=======\nB = 2\n>>>>>>> REPLACE\n"
+             "*** End Patch\n")
+    session = SessionStore(tmp_path / "sessions")
+    registry = default_registry(recorder=session)
+    script = [
+        turn(call("c1", "run_command", {"command": "python --version"})),
+        turn(call("c2", "read_file", {"path": "a.py"}), call("c3", "read_file", {"path": "b.py"})),
+        turn(call("c4", "apply_patch", {"patch": patch})),
+    ]
+
+    class _CitesThePrePatchRun(ScriptedBackend):
+        def stream_turn(self, request):
+            if len(self.seen) < len(script):
+                return super().stream_turn(request)
+            self.seen.append(request)
+            from foundry.core.backends.base import ToolCallComplete, TurnFinished, UsageUpdate
+            pre = registry.tools["run_command"].history[0]["event_ordinal"]
+            finish = turn(call("c5", "finish", {
+                "status": "completed", "summary": "changed a",
+                "claims": [{"claim_text": "verified", "command_event_id": pre}]}))
+            return iter([ToolCallComplete(finish.tool_calls[0]),
+                         UsageUpdate(finish.usage), TurnFinished(finish)])
+
+    policy = PolicyEngine(mode=Mode.ACCEPT_EDITS)
+    policy.add_rule(Rule(tool="run_command", pattern="*", verdict=Verdict.ALLOW))
+    runtime = AgentRuntime(
+        backend=_CitesThePrePatchRun(list(script)), registry=registry, policy=policy,
+        context=ContextManager(system_prompt="t"),
+        tool_ctx=ToolContext(workspace=Workspace(repo), artifacts=session.artifacts,
+                             read_tracker=ReadTracker()),
+        session=session, events=EventSink(), budget=Budget(),
+    )
+    outcome = runtime.run_turn("change both")
+    session.close()
+
+    assert (repo / "a.py").read_text(encoding="utf-8") == "A = 2\n"
+    assert (repo / "b.py").read_text(encoding="utf-8") == "B = 1\n"
+    assert runtime._last_mutation > 0, "the partial patch was not recorded as a change"
+    assert outcome.status.value == "partial", outcome.text
+    assert "before the last change" in outcome.text
+
+
 def test_a_session_that_changed_nothing_needs_no_ordering():
     result = verify_claims(
         [ValidationClaim(claim_text="the suite passes", command_event_id=3)],

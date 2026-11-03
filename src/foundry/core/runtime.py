@@ -479,8 +479,12 @@ class AgentRuntime:
             "artifact_id": output.artifact_id, "truncated": output.truncated,
         })
         # When the workspace last changed. A claim citing a command older than
-        # this cannot vouch for the change -- see verify_claims.
-        if op.kind is ToolKind.MUTATOR and op.tool != "run_command" and not output.is_error:
+        # this cannot vouch for the change -- see verify_claims. A patch that
+        # landed some files and rejected others is an error *and* a change:
+        # counting only clean results let a green run from before it vouch for
+        # the files that did land.
+        changed = not output.is_error or bool(output.metadata.get("applied"))
+        if op.kind is ToolKind.MUTATOR and op.tool != "run_command" and changed:
             self._last_mutation = max(self._last_mutation, ordinal)
         self._reply(call, content, is_error=output.is_error)
         self._emit(ToolEnd(call.call_id, op.tool, not output.is_error,
