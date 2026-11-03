@@ -186,8 +186,17 @@ class AgentRuntime:
     # -- the loop ---------------------------------------------------------
 
     def run_turn(self, user_input: str) -> TurnOutcome:
+        # The request records carry every message the model was sent; this is
+        # for input that never reached one, which a resumed session still owes
+        # an answer to.
+        self._journal(EventType.USER_INPUT, {"text": user_input})
         self.context.append_user(user_input)
         self._finish = None
+        # Each task gets its own termination record. Left set by an earlier
+        # task that ended blocked, it stopped the REPL from recording how the
+        # session actually ended.
+        if self.session is not None:
+            self.session._terminated = False
         # Per-task limits, as the requirements specify. Left accumulating, an
         # interactive session silently died: once the running total passed the
         # limit, a later question produced no work at all and the REPL exited.
@@ -278,6 +287,8 @@ class AgentRuntime:
         # Authorization header is the one thing deliberately absent.
         self._journal(EventType.MODEL_REQUEST, {
             "model": self.model,
+            # The round, so a resumed session masks exactly what this one would.
+            "turn": self.context.turn,
             "message_count": len(request.messages),
             "tools": [t.name for t in request.tools],
             "messages": [
@@ -303,13 +314,18 @@ class AgentRuntime:
         if finished is None:
             raise FatalError("backend produced no finished turn")
 
-        self._journal(EventType.MODEL_RESPONSE, {
+        response = {
             "text": finished.text,
             "tool_calls": [{"call_id": c.call_id, "name": c.name, "arguments": c.arguments}
                            for c in finished.tool_calls],
             "stop_reason": finished.stop_reason.value,
             "notices": list(finished.notices),
-        })
+        }
+        # The next request replays it, so it reaches the journal anyway -- except
+        # after the last response, which is the one a resumed session needs.
+        if finished.opaque is not None:
+            response["opaque"] = self._block_payload(finished.opaque)
+        self._journal(EventType.MODEL_RESPONSE, response)
         for notice in finished.notices:
             self._emit(Notice(notice, level="warning"))
         return finished
@@ -332,10 +348,13 @@ class AgentRuntime:
 
         op = self._canonicalize_paths(op)
 
-        self._journal(EventType.TOOL_CALL, {
-            "call_id": call.call_id, "name": op.tool, "target": op.target,
-            "display": op.display,
-        })
+        record = {"call_id": call.call_id, "name": op.tool, "target": op.target,
+                  "display": op.display}
+        # The paths a change was asked for, so a resumed session can tell the
+        # files it changed itself from changes made outside it.
+        if op.kind is ToolKind.MUTATOR and op.args.get("paths"):
+            record["paths"] = list(op.args["paths"])
+        self._journal(EventType.TOOL_CALL, record)
 
         decision, op = self.policy.evaluate(op)
         self._journal(EventType.POLICY_DECISION, {
@@ -539,6 +558,10 @@ class AgentRuntime:
 
     def _reply(self, call: ToolUseBlock, content: str, *, is_error: bool = False) -> None:
         self.context.append_tool_result(call.call_id, content, is_error=is_error)
+        # What the model will read, word for word. The next request carries it
+        # too, but a session that stops first has no next request.
+        self._journal(EventType.TOOL_REPLY, {"call_id": call.call_id, "tool": call.name,
+                                             "content": content, "is_error": is_error})
 
     def _ask(self, op: Operation, decision: Decision) -> ApprovalChoice:
         if self.approval is None:

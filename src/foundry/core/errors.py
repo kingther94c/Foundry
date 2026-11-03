@@ -68,3 +68,15 @@ class StaleFileError(ToolError):
 
 class Cancelled(FoundryError):
     category = "cancelled"
+
+
+class ResumeError(FoundryError):
+    """A session that cannot be continued safely; nothing was written to it."""
+
+    category = "resume"
+
+
+class SessionLocked(ResumeError):
+    """Another Foundry process is writing this session's journal."""
+
+    category = "session_locked"

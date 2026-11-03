@@ -84,9 +84,38 @@ class ContextManager:
 
     # -- history ----------------------------------------------------------
 
+    @property
+    def turn(self) -> int:
+        """The current round; every message appended now is stamped with it."""
+        return self._turn
+
     def start_turn(self) -> int:
         self._turn += 1
         return self._turn
+
+    def restore(self, history: list[Message], turns: list[int], turn: int,
+                usage: Usage | None = None) -> None:
+        """Take over a resumed session's history, as its journal recorded it.
+
+        Tool results go through the redactor again, as on the way in; the rest
+        is the journal's own copy, which was scrubbed when it was written.
+        """
+        if len(history) != len(turns):
+            raise ValueError("every restored message needs the round it belongs to")
+        if any(a > b for a, b in zip(turns, turns[1:])) or (turns and turns[-1] > turn):
+            raise ValueError("restored rounds must not go backwards")
+        self.history = [
+            Message(role=m.role, blocks=tuple(
+                ToolResultBlock(call_id=b.call_id, content=self.redactor.scrub(b.content),
+                                is_error=b.is_error)
+                if isinstance(b, ToolResultBlock) else b
+                for b in m.blocks))
+            for m in history
+        ]
+        self._turn_of_message = list(turns)
+        self._turn = turn
+        if usage is not None:
+            self.session_usage = usage
 
     def append(self, message: Message) -> None:
         self.history.append(message)

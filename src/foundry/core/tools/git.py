@@ -117,6 +117,21 @@ class GitBaseline:
             "untracked_paths": sorted(self.untracked_paths),
         }
 
+    @staticmethod
+    def from_payload(payload: dict[str, Any]) -> GitBaseline:
+        """The inverse of ``as_payload``, for a session read back from its journal."""
+        def paths(key: str) -> frozenset[str]:
+            value = payload.get(key, [])
+            if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+                raise ValueError(f"git baseline field {key} is not a list of paths")
+            return frozenset(value)
+
+        head, branch = payload.get("head", ""), payload.get("branch", "")
+        if not isinstance(head, str) or not isinstance(branch, str):
+            raise ValueError("git baseline head and branch must be text")
+        return GitBaseline(head=head, branch=branch, dirty_paths=paths("dirty_paths"),
+                           untracked_paths=paths("untracked_paths"))
+
 
 def parse_porcelain_path(line: str) -> str | None:
     """Extract the path from one ``git status --porcelain=v2`` line.

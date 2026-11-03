@@ -16,9 +16,12 @@ these files for writing.
 from __future__ import annotations
 
 import base64
+import errno
 import hashlib
 import json
 import os
+import re
+import sys
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -26,6 +29,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from foundry.core.conversation import IR_VERSION
+from foundry.core.errors import SessionLocked
 from foundry.core.events import PROTOCOL_VERSION, TerminalStatus
 from foundry.core.redaction import Redactor, default_redactor
 
@@ -48,12 +52,22 @@ class EventType:
     NOTICE = "notice"
     ERROR = "error"
     TERMINATION = "termination"
+    # Added for resume (D-035). The request records already hold every message
+    # the model was sent; these hold what came after the last one.
+    USER_INPUT = "user_input"
+    TOOL_REPLY = "tool_reply"
+    RESUMED = "resumed"
 
 
-# Types whose loss on a crash would break the evidence chain: flushed on write.
-_FLUSH_TYPES = frozenset(
-    {EventType.TERMINATION, EventType.APPROVAL, EventType.COMMAND_EXEC, EventType.POLICY_DECISION}
+# Types whose loss on a power failure would break the evidence chain: synced
+# to disk on write. Every record is flushed to the operating system, which is
+# what survives a killed process.
+_FSYNC_TYPES = frozenset(
+    {EventType.TERMINATION, EventType.APPROVAL, EventType.COMMAND_EXEC, EventType.POLICY_DECISION,
+     EventType.RESUMED}
 )
+
+_ARTIFACT_ID = re.compile(r"[0-9a-f]{64}")
 
 
 def utc_now_iso() -> str:
@@ -120,6 +134,18 @@ class ArtifactStore:
     def has(self, artifact_id: str) -> bool:
         return artifact_id in self._index
 
+    def reindex(self) -> int:
+        """Re-learn the ids this session issued, for a resumed session.
+
+        Every file in a session's own artifact directory was put there by
+        ``put_bytes`` under its digest, so the directory is the index; anything
+        else in it (a ``.tmp`` left by a crash) is not an id.
+        """
+        for path in self.root.iterdir():
+            if path.is_file() and _ARTIFACT_ID.fullmatch(path.name):
+                self._index[path.name] = path
+        return len(self._index)
+
     def read_text(self, artifact_id: str, *, offset: int = 0, limit: int | None = None) -> str:
         """Only ids this session issued resolve. An unknown id is an error, not
         a path lookup -- otherwise this becomes a second unrestricted reader."""
@@ -134,18 +160,94 @@ class ArtifactStore:
         return text
 
 
+class _JournalLock:
+    """An exclusive lock on ``<session>/lock`` for as long as a store is open.
+
+    Two processes appending to one journal would interleave records under
+    duplicate ordinals. The operating system releases the lock when the process
+    dies, so a crash never leaves a session locked.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._fd: int | None = None
+        try:
+            fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+        except OSError:
+            return  # a store that cannot create its lock file still journals
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            os.close(fd)
+            if isinstance(exc, BlockingIOError) or exc.errno in (errno.EACCES, errno.EDEADLK):
+                raise SessionLocked(
+                    f"session {path.parent.name} is in use by another Foundry process"
+                ) from exc
+            return  # a filesystem without locks: no worse than before there was one
+        self._fd = fd
+
+    def release(self) -> None:
+        if self._fd is None:
+            return
+        fd, self._fd = self._fd, None
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        finally:
+            os.close(fd)
+
+
+def is_locked(session_dir: Path) -> bool:
+    """Whether an open store, in this process or another, holds the session."""
+    try:
+        _JournalLock(session_dir / "lock").release()
+    except SessionLocked:
+        return True
+    return False
+
+
 class SessionStore:
     """One journal file plus its artifact directory."""
 
     def __init__(self, root: Path, session_id: str | None = None,
-                 redactor: Redactor | None = None) -> None:
+                 redactor: Redactor | None = None, *, resume: bool = False) -> None:
+        """``resume`` reopens an existing journal: ordinals continue from its
+        last record and the artifacts it issued resolve again."""
         self.session_id = session_id or new_session_id()
         self.dir = root / self.session_id
-        self.dir.mkdir(parents=True, exist_ok=True)
         self.path = self.dir / "events.jsonl"
+        if resume and not self.path.is_file():
+            raise FileNotFoundError(f"no journal for session {self.session_id}")
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self._lock = _JournalLock(self.dir / "lock")
         self.artifacts = ArtifactStore(self.dir / "artifacts", redactor)
         self._redactor = redactor or default_redactor()
         self._ordinal = 0
+        # A process killed mid-write leaves half a line, and the next record
+        # appended to it would be unreadable too. Ended on the first append, so
+        # a resume that is refused leaves the file exactly as it was.
+        self._partial_line = False
+        if resume:
+            self._ordinal = max((r.ordinal for r in self.read_records(self.path)
+                                 if isinstance(r.ordinal, int)), default=0)
+            self.artifacts.reindex()
+            with self.path.open("rb") as fh:
+                size = fh.seek(0, os.SEEK_END)
+                if size:
+                    fh.seek(size - 1)
+                    self._partial_line = fh.read(1) != b"\n"
         self._fh = self.path.open("a", encoding="utf-8", newline="\n")
         self._terminated = False
         # Set to the first write failure's description; the runtime surfaces it
@@ -174,9 +276,12 @@ class SessionStore:
             "payload": self._redactor.scrub_obj(payload),
         }
         try:
+            if self._partial_line:
+                self._fh.write("\n")
+                self._partial_line = False
             self._fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-            if event_type in _FLUSH_TYPES:
-                self._fh.flush()
+            self._fh.flush()
+            if event_type in _FSYNC_TYPES:
                 os.fsync(self._fh.fileno())
         except (OSError, ValueError) as exc:
             if not self.degraded:
@@ -231,6 +336,7 @@ class SessionStore:
             except (OSError, ValueError):
                 pass
             self._fh.close()
+        self._lock.release()
 
     def __enter__(self) -> SessionStore:
         return self
@@ -271,10 +377,16 @@ class SessionStore:
     @staticmethod
     def terminal_status(path: Path) -> TerminalStatus:
         """A journal with no termination record is ``interrupted``. This is the
-        rule that keeps a crashed run from ever reading as completed."""
+        rule that keeps a crashed run from ever reading as completed.
+
+        The last termination wins, unless a ``resumed`` record follows it: a
+        resumed run that crashed must not read as the earlier run's outcome.
+        """
         status = TerminalStatus.INTERRUPTED
         for record in SessionStore.read_records(path):
-            if record.type == EventType.TERMINATION:
+            if record.type == EventType.RESUMED:
+                status = TerminalStatus.INTERRUPTED
+            elif record.type == EventType.TERMINATION:
                 raw = record.payload.get("status", "")
                 try:
                     status = TerminalStatus(raw)

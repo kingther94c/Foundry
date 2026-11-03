@@ -468,7 +468,9 @@ class PolicyEngine:
             if touched:
                 return finish(
                     Verdict.ASK,
-                    f"{', '.join(touched)} had uncommitted changes when this session started",
+                    # Not "when this session started": a resumed session also
+                    # guards what changed outside it while it was stopped.
+                    f"{', '.join(touched)} had uncommitted changes this session did not make",
                     "builtin.dirty_file", 3,
                 )
         for rule in self.rules:
