@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
 from foundry.core.backends.base import ModelBackend, TextDelta, TurnFinished, UsageUpdate
 from foundry.core.context import ContextManager
@@ -176,6 +176,16 @@ class AgentRuntime:
 
     def cancel(self) -> None:
         self._cancelled = True
+
+    def files_changed(self, ordinal: int, paths: list[str]) -> None:
+        """Files changed outside the tools -- by an undo -- at journal ``ordinal``.
+
+        A command run before then can no longer vouch for the workspace, and
+        each of these files is read again before it is patched.
+        """
+        self._last_mutation = max(self._last_mutation, ordinal)
+        for path in paths:
+            self.tool_ctx.read_tracker.forget(path)
 
     def _journal(self, event_type: str, payload: dict) -> int:
         return self.session.append(event_type, payload) if self.session else 0
@@ -493,10 +503,14 @@ class AgentRuntime:
         if output.metadata.get("event_ordinal"):
             content += f"\n[event_id={output.metadata['event_ordinal']}]"
 
-        ordinal = self._journal(EventType.TOOL_RESULT, {
+        result: dict[str, Any] = {
             "call_id": call.call_id, "tool": op.tool, "is_error": output.is_error,
             "artifact_id": output.artifact_id, "truncated": output.truncated,
-        })
+        }
+        if output.metadata.get("changes"):
+            # Each file's content before and after: what undo restores (D-036).
+            result["changes"] = output.metadata["changes"]
+        ordinal = self._journal(EventType.TOOL_RESULT, result)
         # When the workspace last changed. A claim citing a command older than
         # this cannot vouch for the change -- see verify_claims. A patch that
         # landed some files and rejected others is an error *and* a change:

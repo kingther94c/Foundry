@@ -57,6 +57,7 @@ are willing to have both executed and read as instructions.**
 | a non-ASCII filename bypassing the dirty-file guard | git escapes non-ASCII paths as `\303\251...` by default, so a file with an accented or CJK name never matches the dirty set; the hardened arguments add `core.quotepath=false` | tools/git.py `_HARDENING` |
 | a crashed session mistaken for a successful one | a journal with no termination event is always judged `interrupted`; a truncated final line is tolerated; a resumed run that has not ended reads as `interrupted`, not as the earlier run's outcome | [session.py](../src/foundry/core/session.py) |
 | a resumed session trading on a workspace that has changed | a moved HEAD refuses the resume; commands from before it cannot back a finish claim, files are read again before a patch, and approvals start over; files changed while the session was stopped join the dirty-file guard and are named to the model; the restored conversation is the journal's redacted copy; one process writes a journal at a time (an OS lock), and a refused resume writes nothing | [resume.py](../src/foundry/core/resume.py), [cli/app.py](../src/foundry/cli/app.py) `build` |
+| an undo discarding work that is not the session's | a file is put back only while it holds exactly what the session wrote, checked again just before the write; an edit since, or between two of its patches, stops undo there and is named; content holding a known credential is never kept, so a redacted copy is never written back; writes go through workspace containment and a move is reverted whole; afterwards the model is told, reads the files again, and earlier commands no longer count as evidence | [undo.py](../src/foundry/core/undo.py), [cli/app.py](../src/foundry/cli/app.py) `cmd_undo` |
 | the model retrying forever by rewording | failure fingerprints count by "normalised operation + error class", so a change of wording does not reset the counter | runtime.py `FailureTracker` |
 
 ## 3.5 Three principles learned the hard way
@@ -343,7 +344,8 @@ These are not statements, they are tests:
 
 A restricted-token sandbox (Codex's Windows sandbox uses a restricted token + a
 dedicated local account + a WFP firewall + an elevation helper service, which
-is several quarters of engineering), shadow-git checkpoint/undo, and an actual
-distribution mechanism for managed policy.
+is several quarters of engineering), checkpoints of the whole workspace (undo
+of a session's own patches landed, D-036), and an actual distribution
+mechanism for managed policy.
 Until then, honest disclosure + strong ASK + a complete audit trail is V1's
 position, not an oversight.

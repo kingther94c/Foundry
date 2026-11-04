@@ -136,6 +136,9 @@ class JournalState:
     # Recorded before resume existed: rounds are estimated, and the last
     # response's provider blocks and tool output were never kept.
     legacy: bool
+    # Files an undo put back after the model last heard from the session, so
+    # its history still shows its own patches in them (D-036).
+    undone: tuple[str, ...] = ()
 
 
 def _status(raw: Any) -> TerminalStatus:
@@ -212,6 +215,14 @@ def read_journal(path: Path) -> JournalState:
                 and str(record.payload.get("call_id")) in executed):
             patched.update(normalize_path(p) for p in paths if isinstance(p, str))
 
+    undone: list[str] = []
+    for record in records[last_request + 1:]:
+        if record.type == EventType.UNDO:
+            for entry in record.payload.get("files") or []:
+                name = entry.get("path") if isinstance(entry, dict) else None
+                if isinstance(name, str) and name not in undone:
+                    undone.append(name)
+
     requests = [r for r in records if r.type == EventType.MODEL_REQUEST]
     return JournalState(
         session_id=str(meta.payload.get("session_id", path.parent.name)),
@@ -230,6 +241,7 @@ def read_journal(path: Path) -> JournalState:
         patched_paths=frozenset(patched),
         repairs=tuple(repairs),
         legacy=any("turn" not in r.payload for r in requests),
+        undone=tuple(undone),
     )
 
 
@@ -387,7 +399,7 @@ def resolve_session(sessions: Path, session_id: str, workspace: Path) -> Path:
     if session_id == "last":
         latest = latest_session(sessions, workspace)
         if latest is None:
-            raise ResumeError(f"no recorded session in {workspace} to resume")
+            raise ResumeError(f"no recorded session in {workspace}")
         session_id = latest
     journal = find_journal(sessions, session_id)
     if journal is None:
@@ -433,17 +445,25 @@ def outside_changes(state: JournalState, current: GitBaseline) -> frozenset[str]
                      and normalize_path(p) not in state.patched_paths)
 
 
+def _names(names: list[str]) -> str:
+    shown = ", ".join(names[:_NOTE_PATHS])
+    if len(names) > _NOTE_PATHS:
+        shown += f", and {len(names) - _NOTE_PATHS} more"
+    return shown
+
+
 def resume_note(state: JournalState, outside: frozenset[str]) -> str:
     """What the model is told before its first task after a resume."""
     ended = state.status.value + (f" ({state.reason})" if state.reason else "")
     lines = [f"This session was resumed. When it stopped, its status was {ended}."]
     if outside:
-        names = sorted(outside)
-        shown = ", ".join(names[:_NOTE_PATHS])
-        if len(names) > _NOTE_PATHS:
-            shown += f", and {len(names) - _NOTE_PATHS} more"
+        shown = _names(sorted(outside))
         lines.append("These files have changes this session did not make with apply_patch "
                      f"(made outside it, or by a command it ran); patching them asks first: {shown}.")
+    if state.undone:
+        lines.append("After it stopped, the user undid patches it had made: these files hold "
+                     "what they held before them again, or were removed if the session had "
+                     f"created them: {_names(sorted(state.undone))}.")
     lines.append("Commands run before this resume cannot be cited in finish claims; run them "
                  "again. Read a file again before patching it.")
     return "\n".join(lines)

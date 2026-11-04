@@ -1,4 +1,4 @@
-"""CLI entry points: session, resume, login, logout, sessions, doctor.
+"""CLI entry points: session, resume, undo, login, logout, sessions, doctor.
 
 The CLI owns no agent behaviour. It builds the runtime, subscribes to the event
 stream, and answers approval requests -- which is what makes a headless runner or
@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape
 
 from foundry import __version__
 from foundry.cli.render import Renderer
@@ -27,7 +28,14 @@ from foundry.core.backends.recording import RecordingBackend
 from foundry.core.backends.responses import ResponsesBackend
 from foundry.core.config import ANTHROPIC_PROTOCOL, Config, load_config, user_dir
 from foundry.core.context import ContextManager
-from foundry.core.errors import AuthError, ConfigError, FoundryError, ResumeError
+from foundry.core.errors import (
+    AuthError,
+    ConfigError,
+    FoundryError,
+    ResumeError,
+    SessionLocked,
+    UndoError,
+)
 from foundry.core.events import (
     EXIT_CODES,
     EventSink,
@@ -59,6 +67,17 @@ from foundry.core.session import AuditLog, EventType, SessionStore, is_locked
 from foundry.core.tools.base import ReadTracker, ToolContext
 from foundry.core.tools.git import capture_baseline, is_git_repository
 from foundry.core.tools.registry import default_registry
+from foundry.core.undo import (
+    Outcome,
+    Plan,
+    apply_undo,
+    other_changes,
+    plan_undo,
+    read_source,
+    recorded_changes,
+    undo_note,
+    undo_payload,
+)
 from foundry.core.workspace import PathRejected, Workspace
 
 TRUST_FILE = "trusted.json"
@@ -352,6 +371,10 @@ def _announce_resume(wiring: Wiring) -> None:
             "this session was recorded before resume existed: the output of the calls it "
             "made last was not kept, and a provider may reject its last reply's reasoning",
             level="warning"))
+    if state.undone:
+        events.emit(Notice(
+            f"{len(state.undone)} file(s) were undone after it stopped; the model is told which",
+            level="info"))
 
 
 def _with_note(wiring: Wiring, task: str) -> str:
@@ -428,6 +451,9 @@ def _repl(wiring: Wiring, console: Console) -> TerminalStatus:
             continue
         if task in ("/exit", "/quit"):
             return TerminalStatus.CANCELLED
+        if task == "/undo":
+            _undo_last(wiring, console)
+            continue
         outcome = wiring.runtime.run_turn(_with_note(wiring, task))
         if outcome.status is None:
             continue
@@ -442,6 +468,123 @@ def _repl(wiring: Wiring, console: Console) -> TerminalStatus:
                           "the session is still open.[/yellow]")
             continue
         return outcome.status
+
+
+def _show_plan(console: Console, plan: Plan, others: list[str]) -> None:
+    if plan.steps:
+        console.print(f"will undo {len(plan.steps)} file(s):")
+        for step in plan.steps:
+            label = {"none": "unchanged"}.get(step.action, step.action)
+            console.print(f"  {label:<9} {escape(step.path)}", soft_wrap=True)
+    if plan.skipped:
+        console.print("[yellow]cannot undo:[/yellow]")
+        for skip in plan.skipped:
+            console.print(f"  {escape(skip.path)}: {escape(skip.reason)}", soft_wrap=True)
+    if others:
+        console.print("[dim]not undone, changed by a command or outside the session: "
+                      f"{escape(', '.join(others))}[/dim]", soft_wrap=True)
+
+
+def _show_outcome(console: Console, outcome: Outcome) -> None:
+    if outcome.reverted:
+        console.print(f"[green]undone:[/green] {len(outcome.reverted)} file(s)")
+    for skip in outcome.failed:
+        console.print(f"[red]not undone:[/red] {escape(skip.path)}: {escape(skip.reason)}",
+                      soft_wrap=True)
+
+
+def _confirm(console: Console, question: str) -> bool:
+    try:
+        return console.input(f"{question} [y/N]: ").strip().lower().startswith("y")
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        return False
+
+
+def _undo_last(wiring: Wiring, console: Console) -> None:
+    """``/undo``: revert the session's newest patch, after asking.
+
+    The model is told on its next turn, its command evidence from before the
+    undo stops counting, and it reads each restored file again before patching.
+    """
+    records = list(SessionStore.read_records(wiring.session.path))
+    plan = plan_undo(recorded_changes(records), wiring.workspace, wiring.session.artifacts,
+                     last=True)
+    if plan.empty:
+        console.print("[dim]nothing to undo: no patch of this session is left to revert[/dim]")
+        return
+    _show_plan(console, plan, [])
+    if not plan.steps or not _confirm(console, "undo these changes?"):
+        console.print("[dim]nothing was changed[/dim]")
+        return
+    outcome = apply_undo(plan, wiring.workspace, wiring.session.artifacts)
+    ordinal = wiring.session.append(EventType.UNDO,
+                                    undo_payload(plan, outcome, scope="last", by="repl"))
+    wiring.runtime.files_changed(ordinal, [s.path for s in outcome.reverted])
+    note = undo_note(outcome)
+    if note:
+        wiring.note = f"{wiring.note}\n\n{note}" if wiring.note else note
+    _show_outcome(console, outcome)
+
+
+def cmd_undo(args: argparse.Namespace) -> int:
+    """Revert a recorded session's patches (D-036): 0 when all of it was undone,
+    1 when some or all of it could not be, 2 when asked to without a way to ask."""
+    console = Console()
+    sessions = user_dir() / "sessions"
+    try:
+        workspace = Workspace(Path(args.workspace).resolve())
+        journal = resolve_session(sessions, args.session, workspace.root)
+        store = SessionStore(sessions, session_id=journal.parent.name,
+                             redactor=default_redactor(), resume=True)
+    except SessionLocked as exc:
+        console.print(f"[red]{escape(str(exc))}; type /undo in that session instead[/red]")
+        return 1
+    except (FoundryError, PathRejected, OSError) as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        return 1
+    try:
+        source = read_source(store.path)
+        if not source.workspace or not same_path(source.workspace, workspace.root):
+            raise UndoError(f"session {source.session_id} worked in {source.workspace or '?'}, "
+                            f"not {workspace.root}; undo it with --workspace pointing there")
+        plan = plan_undo(list(source.changes), workspace, store.artifacts, last=args.last)
+        others: list[str] = []
+        if is_git_repository(workspace.root):
+            current = capture_baseline(workspace.root)
+            others = other_changes(source, current)
+            if source.baseline is not None and current.head != source.baseline.head:
+                console.print("[yellow]HEAD moved since this session started; undo still "
+                              "touches only files that hold exactly what it wrote[/yellow]")
+        task = source.first_task.splitlines()[0][:80] if source.first_task else "?"
+        console.print(f"session {source.session_id} ({escape(repr(task))})", soft_wrap=True)
+        if plan.empty:
+            console.print("nothing to undo: no patch of this session is left to revert")
+            _show_plan(console, plan, others)
+            return 0
+        _show_plan(console, plan, others)
+        if not plan.steps:
+            return 1
+        if args.dry_run:
+            console.print("[dim]dry run: nothing was changed[/dim]")
+            return 0
+        if not args.yes:
+            if not sys.stdin or not sys.stdin.isatty():
+                console.print("[red]nobody to ask: pass --yes to undo without a prompt[/red]")
+                return 2
+            if not _confirm(console, "undo these changes?"):
+                console.print("[dim]nothing was changed[/dim]")
+                return 1
+        outcome = apply_undo(plan, workspace, store.artifacts)
+        store.append(EventType.UNDO, undo_payload(plan, outcome,
+                                                  scope="last" if args.last else "all", by="cli"))
+        _show_outcome(console, outcome)
+        return 0 if not plan.skipped and not outcome.failed else 1
+    except FoundryError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        return 1
+    finally:
+        store.close()
 
 
 def cmd_login(args: argparse.Namespace) -> int:
@@ -805,6 +948,16 @@ def build_parser() -> argparse.ArgumentParser:
     resume.add_argument("task", nargs="?", help="run one task then exit")
     resume.add_argument("--workspace", default=".", help="repository the session worked in")
     resume.set_defaults(func=cmd_session)
+
+    undo = sub.add_parser("undo", help="revert the files a recorded session patched")
+    undo.add_argument("session", nargs="?", default="last",
+                      help="the session id (default: last, the newest in this workspace)")
+    undo.add_argument("--last", action="store_true",
+                      help="only the session's newest patch")
+    undo.add_argument("--yes", action="store_true", help="do not ask first")
+    undo.add_argument("--dry-run", action="store_true", help="say what would change, change nothing")
+    undo.add_argument("--workspace", default=".", help="repository the session worked in")
+    undo.set_defaults(func=cmd_undo)
 
     execute = sub.add_parser("exec", help="run one task headlessly (approvals are denied)")
     execute.add_argument("task", nargs="?")

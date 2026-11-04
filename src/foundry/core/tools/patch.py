@@ -345,7 +345,7 @@ def _detect_line_ending(text: str) -> tuple[str, bool]:
 
 
 def _write_atomic(path: Path, text: str, encoding: str, line_ending: str,
-                  had_bom: bool) -> None:
+                  had_bom: bool) -> bytes:
     if line_ending == "\r\n":
         text = text.replace("\n", "\r\n")
     data = text.encode(encoding)
@@ -354,6 +354,32 @@ def _write_atomic(path: Path, text: str, encoding: str, line_ending: str,
     tmp = path.with_name(path.name + TMP_SUFFIX)
     tmp.write_bytes(data)
     os.replace(tmp, path)
+    return data
+
+
+def _digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _before(path: Path, ctx: ToolContext) -> dict[str, Any]:
+    """What a file held before a patch changed it, kept for undo (D-036).
+
+    Exact bytes or nothing: content holding a credential Foundry knows is not
+    kept, and the change says so. A store that cannot keep it costs undo that
+    one file, never the patch.
+    """
+    if not path.exists():
+        return {"before": None, "before_sha": None, "kept": True}
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return {"before": None, "before_sha": None, "kept": False}
+    keep = getattr(ctx.artifacts, "put_exact", None)
+    try:
+        kept = keep(raw) if keep is not None else None
+    except OSError:
+        kept = None
+    return {"before": kept, "before_sha": _digest(raw), "kept": kept is not None}
 
 
 @dataclass(slots=True)
@@ -503,9 +529,11 @@ class ApplyPatch:
         # with nothing saying so, and the model was told only "the tool failed
         # unexpectedly". Each item is isolated, and what happened is reported.
         applied: list[str] = []
+        # Each file's content before and after, for undo; never shown to the model.
+        changes: list[dict[str, Any]] = []
         for item in planned:
             try:
-                self._apply_one(item, ctx, applied)
+                self._apply_one(item, ctx, applied, changes)
             except OSError as exc:
                 self.failures[item.op.path] = self.failures.get(item.op.path, 0) + 1
                 rejected.append(f"{item.relative}: {type(exc).__name__}: {exc}")
@@ -524,12 +552,17 @@ class ApplyPatch:
         if rejected:
             lines.append("Rejected (left untouched):\n" + "\n".join(f"  {r}" for r in rejected))
         content = "\n\n".join(lines) if lines else "(no operations)"
-        return ToolOutput(content=content, is_error=bool(rejected),
-                          metadata={"applied": len(applied), "rejected": len(rejected)})
+        metadata: dict[str, Any] = {"applied": len(applied), "rejected": len(rejected)}
+        if changes:
+            metadata["changes"] = changes
+        return ToolOutput(content=content, is_error=bool(rejected), metadata=metadata)
 
-    def _apply_one(self, item: _Planned, ctx: ToolContext, applied: list[str]) -> None:
+    def _apply_one(self, item: _Planned, ctx: ToolContext, applied: list[str],
+                   changes: list[dict[str, Any]]) -> None:
+        before = _before(item.path, ctx)
         if item.op.action == "delete":
             item.path.unlink()
+            changes.append({"path": item.relative, **before, "after": None})
             ctx.read_tracker.forget(item.relative)
             applied.append(f"deleted {item.relative}")
             return
@@ -542,9 +575,18 @@ class ApplyPatch:
             # "left untouched", and the model's retry then failed to locate
             # because its SEARCH text no longer matched.
             item.move_target.parent.mkdir(parents=True, exist_ok=True)
+            target = {"path": item.move_relative, **_before(item.move_target, ctx)}
             os.replace(item.path, item.move_target)
-            _write_atomic(item.move_target, item.new_text, "utf-8",
-                          item.line_ending, item.had_bom)
+            # Recorded as soon as the move lands: if the write that follows
+            # fails, the destination holds the source's old bytes.
+            # Linked, so undo reverts the move whole or not at all.
+            changes.append({"path": item.relative, **before, "after": None,
+                            "moved_to": item.move_relative})
+            changes.append({**target, "after": before["before_sha"],
+                            "moved_from": item.relative})
+            data = _write_atomic(item.move_target, item.new_text, "utf-8",
+                                 item.line_ending, item.had_bom)
+            changes[-1]["after"] = _digest(data)
             self.failures.pop(item.op.path, None)
             ctx.read_tracker.forget(item.relative)
             ctx.read_tracker.record(item.move_relative)
@@ -552,7 +594,8 @@ class ApplyPatch:
             return
 
         item.path.parent.mkdir(parents=True, exist_ok=True)
-        _write_atomic(item.path, item.new_text, "utf-8", item.line_ending, item.had_bom)
+        data = _write_atomic(item.path, item.new_text, "utf-8", item.line_ending, item.had_bom)
+        changes.append({"path": item.relative, **before, "after": _digest(data)})
         self.failures.pop(item.op.path, None)
 
         ctx.read_tracker.record(item.relative)

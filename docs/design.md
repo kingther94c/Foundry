@@ -280,11 +280,12 @@ class ModelBackend(Protocol):
   `session_meta / model_request / model_response / tool_call / tool_result /
   policy_decision / approval / command_exec / token_usage / capability_probe /
   validation_claim / git_baseline / termination / user_input / tool_reply /
-  resumed` (the last three added for resume, [D-035](decision-log.md)).
+  resumed / undo` (`user_input`, `tool_reply` and `resumed` added for resume,
+  [D-035](decision-log.md); `undo` for undo, [D-036](decision-log.md)).
   Artifact contents are stored content-addressed at
   `sessions/<id>/artifacts/<sha256>`, and events reference only the digest.
 - Writes are serialised and every record is flushed as it is written;
-  termination, approval, command-completion, policy-decision and resumed
+  termination, approval, command-completion, policy-decision, resumed and undo
   records are also synced to disk. The reader tolerates a truncated final line,
   and no termination event means `interrupted`. Schema migration happens only
   on the read side; historical journals are immutable. One process writes a
@@ -324,6 +325,21 @@ class ModelBackend(Protocol):
   to the dirty-file guard; starts the evidence over (no command history, no
   files read, no grants); writes `resumed`; and puts a note before the first
   task saying all of that to the model.
+- **Undo** ([D-036](decision-log.md), `core/undo.py`). `apply_patch` puts
+  `changes` in its `tool_result`: per file, `before` (an artifact holding the
+  exact earlier bytes, or null if the file did not exist or its content held a
+  known credential and was not `kept`), `before_sha`, and `after` (the digest
+  written, null if removed); a move gives two linked entries. Undo groups the
+  changes no `undo` record has reverted by file, newest first. For each file it
+  keeps the run of changes that can be reverted: the file must hold the newest
+  one's `after`, each change's earlier content must be kept, and each must
+  start from what the one before it left. A move is reverted only with its
+  other end. Each file is then checked again, written atomically (or removed)
+  through `Workspace.resolve`, and an `undo` record lists the reverted
+  `(result ordinal, path)` pairs and the skipped files with the reason. `/undo`
+  also tells the model, forgets those files in the read tracker and moves the
+  last-mutation mark to the undo record; a resume after an undo names the files
+  in its note.
 - `~/.foundry/audit.jsonl` is appended to separately (and is not writable by
   the tools).
 

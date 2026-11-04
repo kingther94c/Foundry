@@ -80,3 +80,9 @@ class SessionLocked(ResumeError):
     """Another Foundry process is writing this session's journal."""
 
     category = "session_locked"
+
+
+class UndoError(FoundryError):
+    """A session's changes cannot be undone from here; nothing was changed."""
+
+    category = "undo"

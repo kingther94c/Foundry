@@ -112,6 +112,7 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 | `foundry exec <task> [--json]` | unattended execution; every ASK becomes DENY (fail-closed) |
 | `foundry resume [session] [task]` | continue a recorded session (default `last`, the newest here); refused if HEAD moved |
 | `foundry exec --resume <session> [task]` | the same, unattended; the task defaults to carrying on where it stopped |
+| `foundry undo [session] [--last] [--dry-run] [--yes]` | revert the files a session patched (default `last`); a file edited since is left alone. In a session, `/undo` reverts its newest patch |
 | `foundry record <task> --output f.json` | record a session as a replay fixture |
 | `foundry sessions [id]` | list sessions (and which are in use), or show one |
 | `foundry report [--json]` | patch first-try success rate, command failures, denials, token stats |

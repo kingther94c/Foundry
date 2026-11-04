@@ -57,6 +57,8 @@ class EventType:
     USER_INPUT = "user_input"
     TOOL_REPLY = "tool_reply"
     RESUMED = "resumed"
+    # Added for undo (D-036): which recorded changes were reverted.
+    UNDO = "undo"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced
@@ -64,7 +66,7 @@ class EventType:
 # what survives a killed process.
 _FSYNC_TYPES = frozenset(
     {EventType.TERMINATION, EventType.APPROVAL, EventType.COMMAND_EXEC, EventType.POLICY_DECISION,
-     EventType.RESUMED}
+     EventType.RESUMED, EventType.UNDO}
 )
 
 _ARTIFACT_ID = re.compile(r"[0-9a-f]{64}")
@@ -130,6 +132,24 @@ class ArtifactStore:
     def put_text(self, text: str, *, media_type: str = "text/plain", truncated: bool = False) -> ArtifactRef:
         return self.put_bytes(self._redactor.scrub(text).encode("utf-8"),
                               media_type=media_type, truncated=truncated)
+
+    def put_exact(self, data: bytes) -> str | None:
+        """Keep these exact bytes, or nothing: a file's content for undo.
+
+        Everything stored here is redacted, and a file restored from a
+        redacted copy would be corrupted -- a config with ``[REDACTED]`` where
+        its key was. So content holding a credential Foundry knows is not kept
+        at all, and the caller records that it cannot be restored.
+        """
+        if self._redactor.scrub_bytes(data) != data:
+            return None
+        return self.put_bytes(data).artifact_id
+
+    def read_bytes(self, artifact_id: str) -> bytes:
+        path = self._index.get(artifact_id)
+        if path is None:
+            raise KeyError(f"unknown artifact id: {artifact_id}")
+        return path.read_bytes()
 
     def has(self, artifact_id: str) -> bool:
         return artifact_id in self._index
