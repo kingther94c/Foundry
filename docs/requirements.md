@@ -421,7 +421,7 @@ The V1 rules:
   ProactorEventLoop supports subprocesses); synchronous tools are wrapped in
   `asyncio.to_thread`.
 
-### 5.2 The V1 tool surface (9 tools, each with an output ceiling and a truncation marker)
+### 5.2 The tool surface (the 9 V1 tools and `update_plan`, each with an output ceiling and a truncation marker)
 
 | Tool | Description | Default policy |
 |---|---|---|
@@ -433,11 +433,12 @@ The V1 rules:
 | `read_artifact` | reads the complete tool output this session wrote to disk after exceeding a limit. artifact_id is an **opaque token** resolved only through the current session's in-memory index (no path semantics are accepted), limited to this session's products; the output re-enters the context through the same truncation and redaction path as any other tool (undefined in v0.1, now defined by [D-015](decision-log.md)) | ALLOW |
 | `git_status` / `git_diff` | hardened invocation: `git --no-pager -c core.fsmonitor= -c core.hooksPath=`, stripping `GIT_*` from the env, with `GIT_TERMINAL_PROMPT=0` | ALLOW |
 | `finish` | the model explicitly closing out the task: `{status, summary, claims:[{claim_text, command_event_id}]}`; the runtime verifies per §6.3 and then emits a Termination event ([D-017](decision-log.md); the only channel that produces a ValidationClaim) | ALLOW |
+| `update_plan` | (V2, [D-037](decision-log.md)) the model's plan, shown to the user: `{explanation?, plan:[{step, status}]}`, replaced whole by each call; never evidence -- `finish` lists the steps not marked completed | ALLOW |
 
 Tool description text is a short paragraph plus one example (the SWE-agent ACI
 evidence: a concise, consolidated, guard-railed tool surface measurably scores
-higher). V1 freezes at these 9 with no additions; `update_plan` (a visible
-plan) is a V2 candidate.
+higher). V1 froze at the first 9; `update_plan` (a visible plan), the first V2
+candidate, is the tenth ([D-037](decision-log.md)).
 
 ### 5.3 apply_patch ([D-010](decision-log.md): a model-neutral anchored format)
 

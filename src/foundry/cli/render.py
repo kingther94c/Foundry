@@ -25,6 +25,9 @@ from foundry.core.events import (
     Event,
     MessageDelta,
     Notice,
+    PlanStep,
+    PlanUpdated,
+    StepStatus,
     TerminalStatus,
     Termination,
     TokenCount,
@@ -69,6 +72,34 @@ def safe(text: str) -> str:
     return escape(sanitize(text))
 
 
+# Backslashes, so rich prints the brackets instead of reading them as tags.
+_STEP_MARK = {
+    StepStatus.COMPLETED: "[green]\\[x][/green]",
+    StepStatus.IN_PROGRESS: "[cyan]\\[>][/cyan]",
+    StepStatus.PENDING: "[dim]\\[ ][/dim]",
+}
+
+
+def print_plan(console, steps: tuple[PlanStep, ...], explanation: str = "") -> None:
+    """The model's plan as a checklist (D-037). Its text is the model's: escaped
+    and stripped of control sequences like any other model output."""
+    if not steps:
+        console.print("[dim]plan cleared[/dim]")
+        return
+    done = sum(s.status is StepStatus.COMPLETED for s in steps)
+    head = f"[bold]plan[/bold] [dim]{done}/{len(steps)} done[/dim]"
+    if explanation:
+        head += f"  {safe(explanation)}"
+    console.print(head, highlight=False)
+    for step in steps:
+        text = safe(step.step)
+        if step.status is StepStatus.COMPLETED:
+            text = f"[dim]{text}[/dim]"
+        elif step.status is StepStatus.IN_PROGRESS:
+            text = f"[bold]{text}[/bold]"
+        console.print(f"  {_STEP_MARK[step.status]} {text}", highlight=False)
+
+
 @dataclass(slots=True)
 class Renderer:
     console: Console = field(default_factory=Console)
@@ -96,8 +127,12 @@ class Renderer:
             self._streaming = False
 
         if isinstance(event, ToolBegin):
-            self.console.print(f"[cyan]->[/cyan] {safe(event.display)}")
+            # The plan it sets is drawn instead; a line saying so adds nothing.
+            if event.tool != "update_plan":
+                self.console.print(f"[cyan]->[/cyan] {safe(event.display)}")
         elif isinstance(event, ToolEnd):
+            if event.tool == "update_plan" and event.ok:
+                return
             mark = "[green]ok[/green]" if event.ok else "[red]failed[/red]"
             detail = f" {safe(event.summary)}" if self.verbose and event.summary else ""
             self.console.print(f"   {mark}{detail}")
@@ -126,6 +161,8 @@ class Renderer:
             )
             if event.summary:
                 self.console.print(safe(event.summary))
+        elif isinstance(event, PlanUpdated):
+            print_plan(self.console, event.steps, event.explanation)
         elif isinstance(event, TurnComplete):
             pass  # the text already streamed
 

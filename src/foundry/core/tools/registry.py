@@ -1,4 +1,4 @@
-"""The V1 tool surface: nine tools, frozen.
+"""The tool surface: the nine V1 tools, and update_plan (D-037).
 
 Kept deliberately small. SWE-agent's ablations found concise, guard-railed tools
 raise success rates more than additional tools do, and every tool is also a
@@ -17,6 +17,7 @@ from foundry.core.tools.files import ListFiles, ReadArtifact, ReadFile, SearchTe
 from foundry.core.tools.finish import Finish
 from foundry.core.tools.git import GitDiff, GitStatus
 from foundry.core.tools.patch import ApplyPatch
+from foundry.core.tools.plan import UpdatePlan
 
 
 @dataclass(slots=True)
@@ -45,7 +46,7 @@ def default_registry(*, recorder=None) -> ToolRegistry:
     for tool in (
         ListFiles(), SearchText(), ReadFile(), ReadArtifact(),
         ApplyPatch(), RunCommand(recorder=recorder),
-        GitStatus(), GitDiff(), Finish(),
+        GitStatus(), GitDiff(), UpdatePlan(), Finish(),
     ):
         registry.register(tool)
     return registry

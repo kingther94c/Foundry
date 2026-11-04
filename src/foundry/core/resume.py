@@ -39,10 +39,11 @@ from foundry.core.conversation import (
     Usage,
 )
 from foundry.core.errors import ResumeError
-from foundry.core.events import TerminalStatus
+from foundry.core.events import PlanStep, TerminalStatus
 from foundry.core.policy.engine import normalize_path
 from foundry.core.session import SCHEMA_VERSION, EventType, JournalRecord, SessionStore
 from foundry.core.tools.git import GitBaseline
+from foundry.core.tools.plan import steps_from_payload
 
 # The task a headless resume continues with when it is given none.
 CONTINUE_PROMPT = ("Continue the task from where this session stopped. Check the current "
@@ -139,6 +140,10 @@ class JournalState:
     # Files an undo put back after the model last heard from the session, so
     # its history still shows its own patches in them (D-036).
     undone: tuple[str, ...] = ()
+    # The plan its last update_plan set (D-037); the model's history holds the
+    # same call, so only the runtime and the user need it back.
+    plan: tuple[PlanStep, ...] = ()
+    plan_explanation: str = ""
 
 
 def _status(raw: Any) -> TerminalStatus:
@@ -215,6 +220,12 @@ def read_journal(path: Path) -> JournalState:
                 and str(record.payload.get("call_id")) in executed):
             patched.update(normalize_path(p) for p in paths if isinstance(p, str))
 
+    plan: tuple[PlanStep, ...] = ()
+    plan_explanation = ""
+    for record in records:
+        if record.type == EventType.TOOL_RESULT and "plan" in record.payload:
+            plan, plan_explanation = steps_from_payload(record.payload["plan"])
+
     undone: list[str] = []
     for record in records[last_request + 1:]:
         if record.type == EventType.UNDO:
@@ -242,6 +253,8 @@ def read_journal(path: Path) -> JournalState:
         repairs=tuple(repairs),
         legacy=any("turn" not in r.payload for r in requests),
         undone=tuple(undone),
+        plan=plan,
+        plan_explanation=plan_explanation,
     )
 
 

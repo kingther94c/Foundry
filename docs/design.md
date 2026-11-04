@@ -71,7 +71,8 @@ class ModelTurn:         # the product of one sampling
 # events.py -- two queues (codex): the UI submits Ops, core broadcasts Events
 Op    = UserInput | ApprovalDecision | Interrupt | Shutdown
 Event = TurnStarted | MessageDelta | ToolBegin | ToolOutputDelta | ToolEnd \
-      | ApprovalRequest | TokenCount | TurnComplete | Termination | Error
+      | ToolRejected | ApprovalRequest | TokenCount | TurnComplete | Termination \
+      | Error | Notice | PlanUpdated
 PROTOCOL_VERSION = 1
 ```
 
@@ -85,6 +86,11 @@ PROTOCOL_VERSION = 1
   front end comes for free.
 - Before rendering any model or tool text, the UI strips ANSI/OSC sequences and
   escapes rich markup (terminal injection is a real attack surface).
+- Every string an event carries passes the redactor on its way out, nested
+  ones included (a plan's steps sit inside a tuple).
+- `PlanUpdated{call_id, steps: [{step, status}], explanation}`
+  ([D-037](decision-log.md)): the whole plan after each `update_plan`; an empty
+  `call_id` means a resume restored it.
 
 ## 4. AgentRuntime: the shape of the loop
 
@@ -236,6 +242,12 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
 - `finish(status, summary, claims)`: the task close-out tool; the runtime
   verifies the claims and the git state per requirements §6.3 and then emits a
   Termination (D-017).
+- `update_plan(explanation?, plan)` ([D-037](decision-log.md)): replaces the
+  session's plan (at most 20 one-line steps, at most one `in_progress`; empty
+  clears it). Read-only and always allowed; the runtime keeps the plan, emits
+  `PlanUpdated`, and records it in the call's `tool_result` (`plan`), from
+  which a resume restores it. `finish` lists the steps not marked completed and
+  decides nothing over them.
 
 ## 8. ModelBackend and AuthProvider
 
@@ -340,6 +352,9 @@ class ModelBackend(Protocol):
   also tells the model, forgets those files in the read tracker and moves the
   last-mutation mark to the undo record; a resume after an undo names the files
   in its note.
+- **Plan** ([D-037](decision-log.md)). `update_plan`'s `tool_result` carries
+  `plan: {explanation, steps: [{step, status}]}`; a resume takes the newest one
+  in the journal, reading back only steps that still validate.
 - `~/.foundry/audit.jsonl` is appended to separately (and is not writable by
   the tools).
 

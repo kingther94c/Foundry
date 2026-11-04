@@ -20,7 +20,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from foundry import __version__
-from foundry.cli.render import Renderer
+from foundry.cli.render import Renderer, print_plan
 from foundry.core.auth import ApiKeySource, CredentialVault, StaticTokenSource
 from foundry.core.backends.anthropic import AnthropicBackend
 from foundry.core.backends.openai_compat import OpenAICompatBackend
@@ -40,6 +40,7 @@ from foundry.core.events import (
     EXIT_CODES,
     EventSink,
     Notice,
+    PlanUpdated,
     TerminalStatus,
     Termination,
 )
@@ -347,6 +348,7 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
         })
         wiring.resumed, wiring.outside = state, outside
         wiring.note = resume_note(state, outside)
+        runtime.plan, runtime.plan_explanation = state.plan, state.plan_explanation
     return wiring
 
 
@@ -375,6 +377,9 @@ def _announce_resume(wiring: Wiring) -> None:
         events.emit(Notice(
             f"{len(state.undone)} file(s) were undone after it stopped; the model is told which",
             level="info"))
+    if state.plan:
+        # No call set it this time: an empty call_id says it was restored.
+        events.emit(PlanUpdated("", state.plan, state.plan_explanation))
 
 
 def _with_note(wiring: Wiring, task: str) -> str:
@@ -453,6 +458,12 @@ def _repl(wiring: Wiring, console: Console) -> TerminalStatus:
             return TerminalStatus.CANCELLED
         if task == "/undo":
             _undo_last(wiring, console)
+            continue
+        if task == "/plan":
+            if wiring.runtime.plan:
+                print_plan(console, wiring.runtime.plan, wiring.runtime.plan_explanation)
+            else:
+                console.print("[dim]no plan: the model has not set one in this session[/dim]")
             continue
         outcome = wiring.runtime.run_turn(_with_note(wiring, task))
         if outcome.status is None:

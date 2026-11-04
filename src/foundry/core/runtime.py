@@ -38,6 +38,9 @@ from foundry.core.events import (
     EventSink,
     MessageDelta,
     Notice,
+    PlanStep,
+    PlanUpdated,
+    StepStatus,
     TerminalStatus,
     Termination,
     TokenCount,
@@ -52,6 +55,7 @@ from foundry.core.policy.engine import POLICY_VERSION, Decision, PolicyEngine, V
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput
 from foundry.core.tools.finish import ValidationClaim, verify_claims
+from foundry.core.tools.plan import plan_payload
 from foundry.core.tools.registry import ToolRegistry
 
 ApprovalCallback = Callable[[ApprovalRequest], ApprovalChoice]
@@ -171,6 +175,9 @@ class AgentRuntime:
     _refreshed: bool = False
     # Journal ordinal of the last successful change to the workspace.
     _last_mutation: int = 0
+    # The model's plan (D-037): the session's, replaced whole by update_plan.
+    plan: tuple[PlanStep, ...] = ()
+    plan_explanation: str = ""
 
     # -- helpers ----------------------------------------------------------
 
@@ -510,6 +517,11 @@ class AgentRuntime:
         if output.metadata.get("changes"):
             # Each file's content before and after: what undo restores (D-036).
             result["changes"] = output.metadata["changes"]
+        planned = op.tool == "update_plan"
+        if planned:
+            # Kept with the call, so a resumed session shows the plan again.
+            self.plan, self.plan_explanation = op.args["steps"], op.args["explanation"]
+            result["plan"] = plan_payload(self.plan, self.plan_explanation)
         ordinal = self._journal(EventType.TOOL_RESULT, result)
         # When the workspace last changed. A claim citing a command older than
         # this cannot vouch for the change -- see verify_claims. A patch that
@@ -520,6 +532,8 @@ class AgentRuntime:
         if op.kind is ToolKind.MUTATOR and op.tool != "run_command" and changed:
             self._last_mutation = max(self._last_mutation, ordinal)
         self._reply(call, content, is_error=output.is_error)
+        if planned:
+            self._emit(PlanUpdated(call.call_id, self.plan, self.plan_explanation))
         self._emit(ToolEnd(call.call_id, op.tool, not output.is_error,
                            _tool_end_summary(op, output, content),
                            duration_ms=duration_ms))
@@ -642,6 +656,18 @@ class AgentRuntime:
             self._emit(Notice(f"claim rejected: {problem}", level="warning"))
         if rejected:
             summary += "\n\nRejected claims:\n" + "\n".join(f"  - {r}" for r in rejected)
+
+        # The plan is the model's own account, so it decides nothing: a step it
+        # forgot to tick is not a failed task, and ticking every step proves
+        # nothing was done. What it can do is show where the account and the
+        # outcome disagree.
+        unfinished = [s for s in self.plan if s.status is not StepStatus.COMPLETED]
+        if unfinished:
+            summary += "\n\nPlan steps not marked completed:\n" + "\n".join(
+                f"  - [{s.status.value.replace('_', ' ')}] {s.step}" for s in unfinished)
+            if status is TerminalStatus.COMPLETED:
+                self._emit(Notice(f"finish reported completed with {len(unfinished)} plan "
+                                  "step(s) not marked completed", level="warning"))
 
         return self._terminate(status, reason, summary)
 

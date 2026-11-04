@@ -38,8 +38,9 @@ def permissions_paragraph(policy: PolicyEngine) -> str:
                             "need approval, and files that already had uncommitted changes when "
                             "this session started still need approval."),
         Mode.PLAN: ("Plan mode: you may read and search, but edits and commands are refused "
-                    "until the user approves your plan. Produce the plan; do not try to work "
-                    "around the restriction."),
+                    "until the user approves your plan. Lay the plan out with update_plan "
+                    "and explain it in your reply; do not try to work around the "
+                    "restriction."),
         Mode.DONT_ASK: ("Unattended: anything not explicitly allowed by a rule is denied. "
                         "Nobody is available to approve, or to read a reply: end the "
                         "task by calling `finish`, whatever the outcome."),

@@ -33,6 +33,12 @@ and paths outside the workspace are rejected.
   reading whole directories.
 - `read_artifact` retrieves the full output of an earlier call that was
   truncated; the id is printed with the truncated output.
+- `update_plan` shows the user your plan for a task of several steps, and how
+  far you have got. Each call replaces the whole plan. Keep at most one step
+  `in_progress`, and mark a step `completed` in the same turn as the work that
+  finished it, not in a round of its own. A task of one or two steps needs no
+  plan. The plan is for the user to follow, not evidence: `finish` lists the
+  steps you did not mark completed, and its claims still need commands.
 - `finish` ends the task. See below.
 
 # Approvals

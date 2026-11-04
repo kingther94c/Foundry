@@ -149,7 +149,7 @@ covering agentic tool continuation.
 ## V2 candidates (explicitly no commitment to order)
 
 ~~session resume~~ (landed, D-035) | LLM summarisation compaction (the
-Compacted event is already reserved) | a visible `update_plan` | skills and
+Compacted event is already reserved) | ~~a visible `update_plan`~~ (landed, D-037) | skills and
 slash commands | enabling the subagent seam | an MCP bridge (the IR already
 lines up) | ~~checkpoint/undo~~ (landed as patch undo, D-036) | a Python-only
 repo map (stdlib ast) | research into a restricted-token sandbox.

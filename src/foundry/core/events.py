@@ -186,6 +186,34 @@ class Notice:
     kind: Literal["notice"] = "notice"
 
 
+class StepStatus(str, Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+
+
+@dataclass(frozen=True, slots=True)
+class PlanStep:
+    step: str           # one line of plain text, as update_plan normalized it
+    status: StepStatus
+
+
+@dataclass(frozen=True, slots=True)
+class PlanUpdated:
+    """The model's plan for its task, replaced whole by each ``update_plan``
+    call (D-037).
+
+    The model's own account of what it intends and how far it has got: for the
+    user to follow, never evidence of anything. ``call_id`` is empty when a
+    resume restored the plan from the journal rather than a call setting it.
+    """
+
+    call_id: str
+    steps: tuple[PlanStep, ...]
+    explanation: str = ""
+    kind: Literal["plan_updated"] = "plan_updated"
+
+
 Event = (
     TurnStarted
     | MessageDelta
@@ -199,6 +227,7 @@ Event = (
     | Termination
     | ErrorEvent
     | Notice
+    | PlanUpdated
 )
 
 
@@ -334,15 +363,34 @@ class EventSink:
     def _scrub(self, event: Event) -> Event:
         if self.redactor is None:
             return event
-        # Exact type, not isinstance: ApprovalChoice and TerminalStatus are str
-        # subclasses, and rewriting one into a plain string would break every
-        # subscriber that compares against the enum.
-        changed = {}
-        for f in dataclasses.fields(event):
-            value = getattr(event, f.name)
-            if type(value) is not str or not value:
-                continue
+        return self._scrub_value(event)
+
+    def _scrub_value(self, value):
+        """Every string the event carries, however deeply.
+
+        Top-level fields only used to be enough, until an event carried text
+        inside a tuple: the steps of a plan are model-written, and a credential
+        the model put in one reached every subscriber while the journal's copy
+        was scrubbed.
+
+        Exact type, not isinstance: ApprovalChoice and TerminalStatus are str
+        subclasses, and rewriting one into a plain string would break every
+        subscriber that compares against the enum.
+        """
+        if type(value) is str:
+            if not value:
+                return value
             scrubbed = self.redactor.scrub(value)
-            if scrubbed != value:
-                changed[f.name] = scrubbed
-        return dataclasses.replace(event, **changed) if changed else event
+            return value if scrubbed == value else scrubbed
+        if type(value) is tuple:
+            items = tuple(self._scrub_value(item) for item in value)
+            return value if all(a is b for a, b in zip(items, value)) else items
+        if dataclasses.is_dataclass(value) and not isinstance(value, type):
+            changed = {}
+            for f in dataclasses.fields(value):
+                current = getattr(value, f.name)
+                scrubbed = self._scrub_value(current)
+                if scrubbed is not current:
+                    changed[f.name] = scrubbed
+            return dataclasses.replace(value, **changed) if changed else value
+        return value
