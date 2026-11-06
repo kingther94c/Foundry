@@ -52,6 +52,7 @@ from foundry.core.events import (
     TokenCount,
     ToolBegin,
     ToolEnd,
+    ToolOutputDelta,
     ToolRejected,
     TurnComplete,
     TurnStarted,
@@ -664,6 +665,10 @@ class AgentRuntime:
         def elapsed_ms() -> int:
             return int((time.perf_counter() - started) * 1000)
 
+        def on_output(line: str, stream: str) -> None:
+            self._emit(ToolOutputDelta(call.call_id, line, stream))
+
+        self.tool_ctx.on_output = on_output
         try:
             output: ToolOutput = tool.execute(op, self.tool_ctx)
         except ToolError as exc:
@@ -701,6 +706,8 @@ class AgentRuntime:
             self._emit(ToolEnd(call.call_id, op.tool, False, detail,
                                duration_ms=duration_ms))
             return
+        finally:
+            self.tool_ctx.on_output = None
 
         duration_ms = elapsed_ms()
         self.failures.clear(op)

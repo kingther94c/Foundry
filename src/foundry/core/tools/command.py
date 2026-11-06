@@ -12,6 +12,7 @@ model that emits one anyway cannot slip a second command past policy.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import threading
 import time
@@ -37,6 +38,14 @@ from foundry.core.workspace import PathRejected
 DEFAULT_TIMEOUT_S = 120
 MAX_TIMEOUT_S = 600
 MAX_CAPTURE_BYTES = 2_000_000
+
+# What the working line shows of a command still running (D-074): the newest
+# complete line it printed, looked for at each slice of the wait in
+# run_process and passed on at most this often, and only when it changed.
+OUTPUT_EVERY_S = 0.5
+# How much of the end of each pipe is kept to find that line in.
+OUTPUT_WINDOW_BYTES = 4096
+_LINE_END = re.compile(rb"[\r\n]")
 
 POWERSHELL = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command"]
 
@@ -66,19 +75,60 @@ class CommandResult:
     output_incomplete: bool = False
 
 
-def _drain(stream, budget: int, sink: list[bytes], dropped: list[int]) -> None:
+@dataclass(slots=True)
+class PipeEnd:
+    """The last bytes a pipe carried, kept by its reader for the line the
+    working line shows (D-074), and when a line last ended in them."""
+    data: bytes = b""
+    line_ended: float = 0.0
+
+
+def newest_line(data: bytes) -> str:
+    """The last complete, non-blank line in ``data``, the end of a pipe; ""
+    if there is none.
+
+    Complete means ended -- by a newline, or by the carriage return a progress
+    bar redraws its line with -- so a line is passed on whole: the redactor
+    recognizes a credential only whole, and half of one printed on a screen
+    is half of one leaked. For the same reason a window that has filled drops
+    its first line, which may begin partway through one.
+    """
+    end = max(data.rfind(b"\n"), data.rfind(b"\r"))
+    if end < 0:
+        return ""
+    start = 0
+    if len(data) >= OUTPUT_WINDOW_BYTES:
+        start = _LINE_END.search(data).end()
+        if start > end:
+            return ""
+    # NULs out: UTF-16 text read as UTF-8 interleaves them, and a credential
+    # spelled that way is one the redactor cannot match.
+    text = decode_output(data[start:end]).text.replace("\x00", "")
+    for line in reversed(text.replace("\r", "\n").split("\n")):
+        if line.strip():
+            return line.strip()
+    return ""
+
+
+def _drain(stream, budget: int, sink: list[bytes], dropped: list[int],
+           end: PipeEnd | None = None) -> None:
     """Read a pipe to EOF, keeping at most ``budget`` bytes.
 
     ``communicate()`` buffers everything the child writes, so the output cap
     used to limit what was *journaled*, not what was allocated: a command
     printing in a loop could exhaust memory well before its timeout fired.
     This keeps a bounded head and counts the rest.
+
+    ``read1``, not ``read``: on a pipe ``read(65536)`` waits for 64 KB or the
+    end, so a command printing a line a second showed nothing for minutes.
+    ``end`` keeps the pipe's last bytes, past the budget too (D-074).
     """
     kept = 0
     total = 0
+    read = getattr(stream, "read1", stream.read)
     try:
         while True:
-            chunk = stream.read(65536)
+            chunk = read(65536)
             if not chunk:
                 break
             total += len(chunk)
@@ -86,6 +136,10 @@ def _drain(stream, budget: int, sink: list[bytes], dropped: list[int]) -> None:
                 room = budget - kept
                 sink.append(chunk[:room])
                 kept += min(len(chunk), room)
+            if end is not None:
+                end.data = (end.data + chunk[-OUTPUT_WINDOW_BYTES:])[-OUTPUT_WINDOW_BYTES:]
+                if _LINE_END.search(chunk):
+                    end.line_ended = time.monotonic()
     except (OSError, ValueError):
         pass
     finally:
@@ -98,7 +152,8 @@ def _drain(stream, budget: int, sink: list[bytes], dropped: list[int]) -> None:
 
 def run_process(command: str, *, cwd: str, timeout_s: int,
                 env: dict[str, str] | None = None,
-                cancelled: Callable[[], bool] | None = None) -> CommandResult:
+                cancelled: Callable[[], bool] | None = None,
+                on_output: Callable[[str, str], None] | None = None) -> CommandResult:
     """Run one command under a job object so the whole tree can be killed.
 
     The job also releases pipe handles a grandchild inherited, which is what
@@ -107,6 +162,10 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
     ``cancelled`` is polled while waiting so the runtime's cancel flag reaches a
     running child, and so Ctrl+C is not swallowed for the command's whole
     duration.
+
+    ``on_output(line, stream)`` is told, from this thread, the newest complete
+    line the command printed while it runs (D-074): at most every
+    OUTPUT_EVERY_S, and only when it changed.
     """
     argv = (POWERSHELL + [command + _EXIT_CODE_EPILOGUE] if IS_WINDOWS
             else ["/bin/sh", "-c", command])
@@ -140,11 +199,14 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
         out_chunks: list[bytes] = []
         err_chunks: list[bytes] = []
         out_dropped, err_dropped = [0], [0]
+        ends = {"stdout": PipeEnd(), "stderr": PipeEnd()}
         readers = [
             threading.Thread(target=_drain, args=(process.stdout, MAX_CAPTURE_BYTES,
-                                                  out_chunks, out_dropped), daemon=True),
+                                                  out_chunks, out_dropped, ends["stdout"]),
+                             daemon=True),
             threading.Thread(target=_drain, args=(process.stderr, MAX_CAPTURE_BYTES,
-                                                  err_chunks, err_dropped), daemon=True),
+                                                  err_chunks, err_dropped, ends["stderr"]),
+                             daemon=True),
         ]
         for reader in readers:
             reader.start()
@@ -157,6 +219,8 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
         timed_out = False
         exit_code = None
         deadline = time.monotonic() + timeout_s
+        reported = ("", "")
+        last_report = time.monotonic()
         try:
             while True:
                 try:
@@ -168,6 +232,13 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
                         raise KeyboardInterrupt from None
                     if time.monotonic() >= deadline:
                         raise
+                    if on_output is not None and time.monotonic() - last_report >= OUTPUT_EVERY_S:
+                        last_report = time.monotonic()
+                        stream = max(ends, key=lambda name: ends[name].line_ended)
+                        line = newest_line(ends[stream].data)
+                        if line and (line, stream) != reported:
+                            reported = (line, stream)
+                            on_output(line, stream)
         except KeyboardInterrupt:
             if not (IS_WINDOWS and job.terminate()):
                 taskkill_tree(process.pid)
@@ -316,7 +387,8 @@ class RunCommand:
         env = child_environment(ctx.env_policy)
         result = run_process(op.args["command"], cwd=str(workdir.absolute),
                              timeout_s=timeout_s, env=env,
-                             cancelled=getattr(ctx, "cancelled", None))
+                             cancelled=getattr(ctx, "cancelled", None),
+                             on_output=getattr(ctx, "on_output", None))
 
         # `;` does not stop on failure and only the last statement's code
         # survives, so a chain whose first half failed is recorded as exit 0 --

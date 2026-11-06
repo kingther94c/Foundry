@@ -234,6 +234,8 @@ What a codex user still notices day to day, next:
     D-072).
 34. ~~How long a task took~~ -- `worked for 1m 12s` as it ends, as codex says
     it (landed, D-073).
+35. ~~The newest line of a running command~~ -- in the working line while it
+    runs, so a long build is visibly alive (landed, D-074).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

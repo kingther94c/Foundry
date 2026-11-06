@@ -41,6 +41,7 @@ from foundry.core.events import (
     TokenCount,
     ToolBegin,
     ToolEnd,
+    ToolOutputDelta,
     ToolRejected,
     TurnComplete,
     TurnStarted,
@@ -137,12 +138,18 @@ class Working:
         self.started = started
         self.clock = clock
         self.spinner = Spinner("line", style="cyan")
+        # The newest line a running command printed (D-074).
+        self.latest = ""
 
     def text(self) -> str:
-        return f"{self.what} ({elapsed(self.clock() - self.started)}, Ctrl+C to stop)"
+        text = f"{self.what} ({elapsed(self.clock() - self.started)}, Ctrl+C to stop)"
+        return f"{text}: {self.latest}" if self.latest else text
 
     def __rich_console__(self, console, options):
-        self.spinner.update(text=Text(self.text(), style="dim"))
+        # One line, however long the command's: the spinner and a space take 2.
+        text = Text(self.text(), style="dim")
+        text.truncate(max(options.max_width - 2, 1), overflow="ellipsis")
+        self.spinner.update(text=text)
         yield self.spinner
 
 
@@ -151,8 +158,10 @@ class Renderer:
     console: Console = field(default_factory=Console)
     verbose: bool = False
     _streaming: bool = False
-    # The working line while it is up (D-069); None otherwise.
+    # The working line while it is up (D-069), and what it draws; None
+    # otherwise.
     _live: Live | None = None
+    _working: Working | None = None
     # The model's text being rendered as Markdown (D-070), while it streams.
     _markdown: MarkdownLines | None = None
     # When the task now running started (D-073); None between tasks.
@@ -165,7 +174,8 @@ class Renderer:
         self.idle()
         if not self.console.is_terminal or self.console.is_dumb_terminal:
             return
-        self._live = Live(Working(what, time.monotonic()), console=self.console,
+        self._working = Working(what, time.monotonic())
+        self._live = Live(self._working, console=self.console,
                           transient=True, refresh_per_second=WORKING_REFRESH_PER_S,
                           redirect_stdout=False, redirect_stderr=False)
         self._live.start()
@@ -174,6 +184,7 @@ class Renderer:
         """Take the working line down, before anything else is printed or
         asked: a line being redrawn cannot share the screen with a prompt."""
         live, self._live = self._live, None
+        self._working = None
         if live is not None:
             live.stop()
 
@@ -206,6 +217,12 @@ class Renderer:
             self.console.print(f"[dim]worked for {elapsed(seconds)}[/dim]")
 
     def handle(self, event: Event) -> None:
+        if isinstance(event, ToolOutputDelta):
+            # Into the working line, which stays up (D-074). Off a terminal
+            # there is none, and the output comes with the command's end.
+            if self._working is not None:
+                self._working.latest = sanitize(event.text)
+            return
         self.idle()
         if isinstance(event, MessageDelta):
             self._text(event.text)

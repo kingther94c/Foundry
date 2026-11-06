@@ -107,8 +107,11 @@ PROTOCOL_VERSION = 1
   `run_command`, `summary` is the exit code and `output` the last lines the
   command printed (at most 20 and 4,000 characters), shown under it -- 5 lines,
   all with `-v` ([D-068](decision-log.md)); empty for other tools.
-  `ToolOutputDelta` is reserved for streaming a command's output live, and not
-  emitted yet.
+- `ToolOutputDelta{call_id, text, stream}` ([D-074](decision-log.md)): the
+  newest complete line a running command printed -- on whichever pipe ended a
+  line last -- at most every half second and only when it changed; on a
+  terminal it follows the working line. Only whole lines, so each is scrubbed
+  whole; the full output still comes with `ToolEnd`.
 - `PlanUpdated{call_id, steps: [{step, status}], explanation}`
   ([D-037](decision-log.md)): the whole plan after each `update_plan`; an empty
   `call_id` means a resume restored it.
