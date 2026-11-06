@@ -123,6 +123,8 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 Exit codes: `completed=0 partial=10 blocked=11 failed=12 cancelled=13
 interrupted=14`
 
+Every command that works in a repository takes `-C DIR` (or `--cd DIR`,
+`--workspace DIR`; the default is the current directory), as codex does.
 `run`, `resume`, `exec` and `record` take `-m MODEL`, `--mode MODE`,
 `-c key=value` (repeatable, such as `-c runtime.max_tool_rounds=60`; never a
 secret) and `--profile NAME`, a `[profiles.NAME]` table in your `config.toml`

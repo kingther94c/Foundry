@@ -476,3 +476,10 @@
 - **What it may not weaken**: commands still come only from the user's typed line. The values are the user's own text, put in once and never expanded again (a value of `$2` stays `$2`). A repository's prompt is still read only where the user trusts the repository.
 - **Rejected**: leaving an unfilled `$NAME` in place (the model would get a prompt with a hole, and act on it); treating every `KEY=value` word as named (a prompt about environment variables would lose its arguments); asking for missing values one by one (a prompt is one line, as codex's are).
 - **A change for existing prompts**: a capitalised `$HOME` or `$PATH` meant literally is now a placeholder, and the prompt says it needs `HOME=...`; write `$$HOME`.
+
+## D-072 `-C DIR`, as codex spells it
+- **Date**: 2026-11-07 · **Status**: confirmed (item 33)
+- **Background**: every command that works in a repository took `--workspace DIR`; codex takes `-C DIR` / `--cd DIR`, and a codex user's `foundry -C ../api` was refused as an unknown argument.
+- **Decision**: `-C`, `--cd` and `--workspace` are three names for the one setting on `run`, `resume`, `exec`, `undo` and `record`, so `foundry -C DIR` works too (a flag first means `run`, D-042). Nothing else changes: the directory is resolved and checked as `--workspace`'s always was.
+- **What it may not weaken**: it is the same destination under another name, so every check made against the workspace -- the trust question, containment, the dirty-file guard, a resume's workspace match -- is made against the directory the user named. `-c` (a setting) and `-C` (a directory) are told apart by case, as codex tells them.
+- **Rejected**: `--cd` alone without `-C` (codex users type the short one); dropping `--workspace` (scripts use it).

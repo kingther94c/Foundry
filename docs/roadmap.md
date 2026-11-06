@@ -230,6 +230,8 @@ What a codex user still notices day to day, next:
     as codex renders it (landed, D-070).
 32. ~~Named placeholders in custom prompts~~ -- `$FILE` filled from
     `FILE=value`, as codex's prompts take them (landed, D-071).
+33. ~~`-C DIR`~~ -- the directory to work in, as codex spells it (landed,
+    D-072).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

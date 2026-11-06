@@ -1190,7 +1190,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser("run", help="start a session (default)")
     run.add_argument("task", nargs="?", help="run one task then exit")
-    run.add_argument("--workspace", default=".", help="repository to work in")
+    run.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
+                     help="repository to work in (default: here)")
     _image_flag(run)
     _config_flags(run)
     run.set_defaults(func=cmd_session)
@@ -1201,7 +1202,8 @@ def build_parser() -> argparse.ArgumentParser:
                              "(default: at a terminal, pick from the recent ones; "
                              "otherwise last)")
     resume.add_argument("task", nargs="?", help="run one task then exit")
-    resume.add_argument("--workspace", default=".", help="repository the session worked in")
+    resume.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
+                        help="repository the session worked in")
     _image_flag(resume)
     _config_flags(resume)
     resume.set_defaults(func=cmd_session)
@@ -1213,12 +1215,14 @@ def build_parser() -> argparse.ArgumentParser:
                       help="only the session's newest patch")
     undo.add_argument("--yes", action="store_true", help="do not ask first")
     undo.add_argument("--dry-run", action="store_true", help="say what would change, change nothing")
-    undo.add_argument("--workspace", default=".", help="repository the session worked in")
+    undo.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
+                      help="repository the session worked in")
     undo.set_defaults(func=cmd_undo)
 
     execute = sub.add_parser("exec", help="run one task headlessly (approvals are denied)")
     execute.add_argument("task", nargs="?", help="the task; - reads it from stdin")
-    execute.add_argument("--workspace", default=".")
+    execute.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
+                         help="repository to work in (default: here)")
     execute.add_argument("--json", action="store_true", help="emit the event stream as JSONL")
     execute.add_argument("--resume", metavar="SESSION",
                          help="continue a recorded session (an id, or last); the task "
@@ -1235,7 +1239,8 @@ def build_parser() -> argparse.ArgumentParser:
     record = sub.add_parser("record", help="capture a session as a replay fixture")
     record.add_argument("task")
     record.add_argument("--output", required=True, help="fixture file to write")
-    record.add_argument("--workspace", default=".")
+    record.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
+                        help="repository to work in (default: here)")
     _config_flags(record)
     record.set_defaults(func=cmd_record)
 
