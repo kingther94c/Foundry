@@ -23,6 +23,7 @@ from foundry.core.backends.base import (
 )
 from foundry.core.conversation import (
     Capabilities,
+    ImageBlock,
     Message,
     ModelTurn,
     Role,
@@ -35,6 +36,7 @@ from foundry.core.conversation import (
     Usage,
 )
 from foundry.core.errors import ProtocolError, TransientError
+from foundry.core.images import data_url
 from foundry.core.httpc import (HttpClient, NotStreaming, open_retrying_stream,
                                 retry_with_backoff)
 
@@ -60,11 +62,35 @@ def _message_to_wire(message: Message) -> list[dict[str, Any]]:
         for b in message.blocks if isinstance(b, ToolUseBlock)
     ]
     wire: dict[str, Any] = {"role": message.role.value}
-    if text or not tool_calls:
+    images = [b for b in message.blocks if isinstance(b, ImageBlock)]
+    if images:
+        # Content parts only when there is an image: a plain string stays the
+        # shape every server takes (D-045).
+        wire["content"] = [_image_part(i) for i in images] + (
+            [{"type": "text", "text": text}] if text else [])
+    elif text or not tool_calls:
         wire["content"] = text
     if tool_calls:
         wire["tool_calls"] = tool_calls
     return [wire]
+
+
+def _image_part(block: ImageBlock) -> dict[str, Any]:
+    return {"type": "image_url", "image_url": {"url": data_url(block)}}
+
+
+def _tool_images_message(results: list[ToolResultBlock]) -> dict[str, Any] | None:
+    """The images a run of tool results carried, as the user message after
+    them: a tool message takes text only, so this is where the image goes --
+    what codex does too (D-045)."""
+    parts: list[dict[str, Any]] = []
+    for result in results:
+        if result.images:
+            names = ", ".join(i.name or "an image" for i in result.images)
+            parts.append({"type": "text",
+                          "text": f"The image(s) from tool call {result.call_id}: {names}"})
+            parts.extend(_image_part(i) for i in result.images)
+    return {"role": "user", "content": parts} if parts else None
 
 
 def _tool_to_wire(schema: ToolSchema) -> dict[str, Any]:
@@ -80,8 +106,17 @@ def _tool_to_wire(schema: ToolSchema) -> dict[str, Any]:
 
 def build_body(request: TurnRequest, *, stream: bool) -> dict[str, Any]:
     messages: list[dict[str, Any]] = []
+    results: list[ToolResultBlock] = []
     for message in request.messages:
+        if message.role is Role.TOOL:
+            results.extend(b for b in message.blocks if isinstance(b, ToolResultBlock))
+        elif results:
+            pending = _tool_images_message(results)
+            messages.extend([pending] if pending else [])
+            results.clear()
         messages.extend(_message_to_wire(message))
+    pending = _tool_images_message(results)
+    messages.extend([pending] if pending else [])
     body: dict[str, Any] = {
         "model": request.model,
         "messages": messages,

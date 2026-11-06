@@ -21,7 +21,9 @@ What the journal cannot supply is decided conservatively:
 
 from __future__ import annotations
 
+import base64
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,6 +31,7 @@ from typing import Any
 from foundry.core.conversation import (
     IR_VERSION,
     ContentBlock,
+    ImageBlock,
     Message,
     ModelTurn,
     OpaqueBlock,
@@ -63,8 +66,44 @@ def _text(payload: dict[str, Any], key: str) -> str:
     return value
 
 
-def decode_block(payload: Any) -> ContentBlock:
-    """The inverse of ``AgentRuntime._block_payload``."""
+_ARTIFACT_ID = re.compile(r"[0-9a-f]{64}")
+IMAGE_NOT_KEPT = "[an image was here; it was not kept, so it is not shown again]"
+
+
+def image_loader(artifacts: Path):
+    """Reads a recorded image's bytes back from the session's artifacts, each
+    once however many requests repeat it. None for one that is not there."""
+    cache: dict[str, str | None] = {}
+
+    def load(artifact: Any) -> str | None:
+        if not isinstance(artifact, str) or not _ARTIFACT_ID.fullmatch(artifact):
+            return None
+        if artifact not in cache:
+            try:
+                cache[artifact] = base64.b64encode(
+                    (artifacts / artifact).read_bytes()).decode("ascii")
+            except OSError:
+                cache[artifact] = None
+        return cache[artifact]
+
+    return load
+
+
+def _image(payload: Any, load) -> ImageBlock | None:
+    if not isinstance(payload, dict) or payload.get("kind") != "image":
+        raise ResumeError("a recorded image is not an image block")
+    data = load(payload.get("artifact")) if load is not None else None
+    if data is None:
+        return None
+    name = payload.get("name")
+    return ImageBlock(media_type=_text(payload, "media_type"), data=data,
+                      name=name if isinstance(name, str) else "")
+
+
+def decode_block(payload: Any, load=None) -> ContentBlock:
+    """The inverse of ``AgentRuntime._block_payload``. ``load`` reads a
+    recorded image back (``image_loader``); an image it cannot read becomes a
+    note saying so, never a failed resume."""
     if not isinstance(payload, dict):
         raise ResumeError("a recorded message block is not an object")
     kind = payload.get("kind")
@@ -74,22 +113,31 @@ def decode_block(payload: Any) -> ContentBlock:
         return ToolUseBlock(call_id=_text(payload, "call_id"), name=_text(payload, "name"),
                             arguments=_text(payload, "arguments"))
     if kind == "tool_result":
-        return ToolResultBlock(call_id=_text(payload, "call_id"),
-                               content=_text(payload, "content"),
-                               is_error=payload.get("is_error") is True)
+        content = _text(payload, "content")
+        recorded = payload.get("images") or []
+        if not isinstance(recorded, list):
+            raise ResumeError("a recorded tool result's images are not a list")
+        images = [_image(i, load) for i in recorded]
+        if None in images:
+            content += "\n" + IMAGE_NOT_KEPT
+        return ToolResultBlock(call_id=_text(payload, "call_id"), content=content,
+                               is_error=payload.get("is_error") is True,
+                               images=tuple(i for i in images if i is not None))
     if kind == "opaque":
         return OpaqueBlock(provider=_text(payload, "provider"), data=_text(payload, "data"))
+    if kind == "image":
+        return _image(payload, load) or TextBlock(IMAGE_NOT_KEPT)
     raise ResumeError(f"a recorded message block has an unknown kind: {kind!r}")
 
 
-def decode_message(payload: Any) -> Message:
+def decode_message(payload: Any, load=None) -> Message:
     if not isinstance(payload, dict) or not isinstance(payload.get("blocks"), list):
         raise ResumeError("a recorded message is not an object with blocks")
     try:
         role = Role(payload.get("role"))
     except ValueError:
         raise ResumeError(f"a recorded message has an unknown role: {payload.get('role')!r}")
-    return Message(role=role, blocks=tuple(decode_block(b) for b in payload["blocks"]))
+    return Message(role=role, blocks=tuple(decode_block(b, load) for b in payload["blocks"]))
 
 
 def _call_ids(message: Message) -> tuple[str, ...]:
@@ -185,10 +233,11 @@ def read_journal(path: Path) -> JournalState:
     except ValueError as exc:
         raise ResumeError(f"the journal's git baseline is unreadable: {exc}") from exc
 
-    history, turns, last_request, turn = _fold_requests(records)
+    load = image_loader(path.parent / "artifacts")
+    history, turns, last_request, turn = _fold_requests(records, load)
     tail_turn = turn
     for record in records[last_request + 1:]:
-        message = _tail_message(record)
+        message = _tail_message(record, load)
         if message is not None:
             history.append(message)
             turns.append(tail_turn)
@@ -265,7 +314,8 @@ def read_journal(path: Path) -> JournalState:
     )
 
 
-def _fold_requests(records: list[JournalRecord]) -> tuple[list[Message], list[int], int, int]:
+def _fold_requests(records: list[JournalRecord],
+                   load=None) -> tuple[list[Message], list[int], int, int]:
     """History from the requests, each message where it first appears.
 
     A message that first appears in round T's request was appended during
@@ -287,7 +337,7 @@ def _fold_requests(records: list[JournalRecord]) -> tuple[list[Message], list[in
             if not isinstance(raw, list) or not raw:
                 raise ResumeError(f"inconsistent journal at record {record.ordinal}: "
                                   "a compaction without the history it left")
-            history = [decode_message(m) for m in raw]
+            history = [decode_message(m, load) for m in raw]
             turn = max(_int(record.payload.get("turn")), last_turn)
             turns = [turn] * len(history)
             answered = False
@@ -304,7 +354,7 @@ def _fold_requests(records: list[JournalRecord]) -> tuple[list[Message], list[in
                 or raw[0].get("role") != Role.SYSTEM.value:
             raise ResumeError(f"inconsistent journal at record {record.ordinal}: "
                               "a request does not start with its system message")
-        body = [decode_message(m) for m in raw[1:]]
+        body = [decode_message(m, load) for m in raw[1:]]
         # Journals written before resume existed have no round number; a
         # request follows one response per completed round.
         turn = _int(record.payload.get("turn")) or responses + 1
@@ -325,7 +375,7 @@ def _fold_requests(records: list[JournalRecord]) -> tuple[list[Message], list[in
     return history, turns, last_request, last_turn
 
 
-def _tail_message(record: JournalRecord) -> Message | None:
+def _tail_message(record: JournalRecord, load=None) -> Message | None:
     payload = record.payload
     if payload.get("purpose"):
         return None
@@ -342,9 +392,15 @@ def _tail_message(record: JournalRecord) -> Message | None:
             opaque=block,
         ).as_message()
     if record.type == EventType.TOOL_REPLY:
-        return Message(role=Role.TOOL, blocks=(decode_block({"kind": "tool_result", **payload}),))
+        return Message(role=Role.TOOL,
+                       blocks=(decode_block({"kind": "tool_result", **payload}, load),))
     if record.type == EventType.USER_INPUT:
-        return Message.text(Role.USER, _text(payload, "text"))
+        images = payload.get("images") or []
+        if not isinstance(images, list):
+            raise ResumeError(f"a recorded user input's images are not a list "
+                              f"(record {record.ordinal})")
+        return Message(role=Role.USER, blocks=(
+            *(decode_block(i, load) for i in images), TextBlock(_text(payload, "text"))))
     return None
 
 

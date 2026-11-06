@@ -32,7 +32,9 @@ from typing import Any, Callable
 from foundry import __version__
 from foundry.core.config import McpServerConfig
 from foundry.core.conversation import ToolSchema
-from foundry.core.errors import Cancelled, FoundryError, InvalidToolCall, ToolError
+from foundry.core.errors import (Cancelled, FoundryError, ImageRejected, InvalidToolCall,
+                                 ToolError)
+from foundry.core.images import MAX_IMAGES_PER_MESSAGE, from_base64 as image_from_base64
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput, truncate_middle
 from foundry.core.winapi import (
     CREATE_NEW_PROCESS_GROUP,
@@ -361,9 +363,10 @@ class StdioClient:
 # --- a server's tool, as Foundry offers it ----------------------------------------
 
 
-def render_result(result: dict) -> str:
-    """The text of a tools/call result. Content Foundry cannot show yet is
-    named, not dropped, so the model knows it was there."""
+def render_result(result: dict, images: list | None = None, name: str = "") -> str:
+    """The text of a tools/call result. Content Foundry cannot show is named,
+    not dropped, so the model knows it was there. Given an ``images`` list,
+    image content that passes the checks is collected into it instead (D-045)."""
     parts: list[str] = []
     content = result.get("content")
     for item in content if isinstance(content, list) else []:
@@ -372,6 +375,18 @@ def render_result(result: dict) -> str:
         kind = item.get("type")
         if kind == "text" and isinstance(item.get("text"), str):
             parts.append(item["text"])
+        elif kind == "image" and images is not None:
+            if len(images) >= MAX_IMAGES_PER_MESSAGE:
+                parts.append(f"[image content not shown: more than {MAX_IMAGES_PER_MESSAGE} "
+                             "images in one result]")
+                continue
+            try:
+                picture = image_from_base64(item.get("data"), name)
+            except ImageRejected as exc:
+                parts.append(f"[image content not shown: {exc}]")
+                continue
+            images.append(picture.block)
+            parts.append(f"[image {len(images)} attached ({picture.describe()})]")
         elif kind in ("image", "audio"):
             parts.append(f"[{kind} content ({item.get('mimeType', 'unknown type')}) not shown]")
         elif kind == "resource_link":
@@ -428,7 +443,8 @@ class McpTool:
             result = self.client.call_tool(self.remote, op.args, cancelled=ctx.cancelled)
         except McpError as exc:
             raise ToolError(f"MCP server {self.server}: {exc}") from exc
-        text = render_result(result) or "(no output)"
+        images: list | None = [] if ctx.images else None
+        text = render_result(result, images, f"{self.server}: {self.remote}") or "(no output)"
         body, truncated = truncate_middle(text, ctx.max_output_bytes)
         artifact_id = ""
         if truncated and ctx.artifacts is not None:
@@ -436,7 +452,8 @@ class McpTool:
             body += f"\n\n[full output saved; read_artifact artifact_id=\"{artifact_id}\"]"
         return ToolOutput(content=body, is_error=result.get("isError") is True,
                           truncated=truncated, artifact_id=artifact_id,
-                          metadata={"mcp_server": self.server, "mcp_tool": self.remote})
+                          metadata={"mcp_server": self.server, "mcp_tool": self.remote},
+                          images=tuple(images or ()))
 
 
 def _tool(client: StdioClient, spec: dict, taken: set[str]) -> McpTool | str:

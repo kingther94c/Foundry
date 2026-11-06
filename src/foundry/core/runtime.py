@@ -14,6 +14,7 @@ DENY; no tool ever blocks on input itself.
 
 from __future__ import annotations
 
+import base64
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -189,6 +190,9 @@ class AgentRuntime:
     # Whether the model's reasoning reaches subscribers (D-044); the journal
     # keeps it either way.
     show_reasoning: bool = True
+    # Each image's artifact id, by its data: every request repeats the
+    # history, and an image is stored once, not once a round (D-045).
+    _image_ids: dict = field(default_factory=dict)
 
     # -- helpers ----------------------------------------------------------
 
@@ -213,12 +217,16 @@ class AgentRuntime:
 
     # -- the loop ---------------------------------------------------------
 
-    def run_turn(self, user_input: str) -> TurnOutcome:
+    def run_turn(self, user_input: str, images: tuple = ()) -> TurnOutcome:
+        """``images`` are ImageBlocks the user attached to this message (D-045)."""
         # The request records carry every message the model was sent; this is
         # for input that never reached one, which a resumed session still owes
         # an answer to.
-        self._journal(EventType.USER_INPUT, {"text": user_input})
-        self.context.append_user(user_input)
+        record: dict[str, Any] = {"text": user_input}
+        if images:
+            record["images"] = [self._block_payload(i, self._store_image) for i in images]
+        self._journal(EventType.USER_INPUT, record)
+        self.context.append_user(user_input, tuple(images))
         self._finish = None
         # Each task gets its own termination record. Left set by an earlier
         # task that ended blocked, it stopped the REPL from recording how the
@@ -364,7 +372,8 @@ class AgentRuntime:
             "tokens_before": before,
             "tokens_after": after,
             "messages": [
-                {"role": m.role.value, "blocks": [self._block_payload(b) for b in m.blocks]}
+                {"role": m.role.value,
+                 "blocks": [self._block_payload(b, self._store_image) for b in m.blocks]}
                 for m in self.context.history
             ],
         })
@@ -390,7 +399,8 @@ class AgentRuntime:
             "messages": [
                 {
                     "role": message.role.value,
-                    "blocks": [self._block_payload(b) for b in message.blocks],
+                    "blocks": [self._block_payload(b, self._store_image)
+                               for b in message.blocks],
                 }
                 for message in request.messages
             ],
@@ -630,7 +640,7 @@ class AgentRuntime:
         changed = not output.is_error or bool(output.metadata.get("applied"))
         if op.kind is ToolKind.MUTATOR and op.tool != "run_command" and changed:
             self._last_mutation = max(self._last_mutation, ordinal)
-        self._reply(call, content, is_error=output.is_error)
+        self._reply(call, content, is_error=output.is_error, images=tuple(output.images))
         if planned:
             self._emit(PlanUpdated(call.call_id, self.plan, self.plan_explanation))
         self._emit(ToolEnd(call.call_id, op.tool, not output.is_error,
@@ -667,9 +677,12 @@ class AgentRuntime:
         return _replace(op, args={**op.args, "paths": resolved})
 
     @staticmethod
-    def _block_payload(block) -> dict:
-        from foundry.core.conversation import (OpaqueBlock, TextBlock, ToolResultBlock,
-                                               ToolUseBlock as TU)
+    def _block_payload(block, store=None) -> dict:
+        """A block as the journal keeps it. An image is kept by the id of the
+        artifact ``store`` put it in, never inline: every request repeats the
+        history, and a screenshot a round would swamp the journal."""
+        from foundry.core.conversation import (ImageBlock, OpaqueBlock, TextBlock,
+                                               ToolResultBlock, ToolUseBlock as TU)
 
         if isinstance(block, TextBlock):
             return {"kind": "text", "text": block.text}
@@ -677,18 +690,41 @@ class AgentRuntime:
             return {"kind": "tool_use", "call_id": block.call_id, "name": block.name,
                     "arguments": block.arguments}
         if isinstance(block, ToolResultBlock):
-            return {"kind": "tool_result", "call_id": block.call_id,
-                    "content": block.content, "is_error": block.is_error}
+            payload = {"kind": "tool_result", "call_id": block.call_id,
+                       "content": block.content, "is_error": block.is_error}
+            if block.images:
+                payload["images"] = [AgentRuntime._block_payload(i, store)
+                                     for i in block.images]
+            return payload
         if isinstance(block, OpaqueBlock):
             return {"kind": "opaque", "provider": block.provider, "data": block.data}
+        if isinstance(block, ImageBlock):
+            return {"kind": "image", "media_type": block.media_type, "name": block.name,
+                    "artifact": store(block) if store is not None else None}
         return {"kind": "unknown"}
 
-    def _reply(self, call: ToolUseBlock, content: str, *, is_error: bool = False) -> None:
-        self.context.append_tool_result(call.call_id, content, is_error=is_error)
+    def _store_image(self, block) -> str | None:
+        """The artifact holding this image's bytes, written the first time.
+        None when there is no session, or when the bytes hold a credential
+        Foundry knows: an image cannot be scrubbed, so it is not kept."""
+        if self.session is None:
+            return None
+        if block.data not in self._image_ids:
+            self._image_ids[block.data] = self.session.artifacts.put_exact(
+                base64.b64decode(block.data))
+        return self._image_ids[block.data]
+
+    def _reply(self, call: ToolUseBlock, content: str, *, is_error: bool = False,
+               images: tuple = ()) -> None:
+        self.context.append_tool_result(call.call_id, content, is_error=is_error,
+                                        images=images)
         # What the model will read, word for word. The next request carries it
         # too, but a session that stops first has no next request.
-        self._journal(EventType.TOOL_REPLY, {"call_id": call.call_id, "tool": call.name,
-                                             "content": content, "is_error": is_error})
+        record: dict[str, Any] = {"call_id": call.call_id, "tool": call.name,
+                                  "content": content, "is_error": is_error}
+        if images:
+            record["images"] = [self._block_payload(i, self._store_image) for i in images]
+        self._journal(EventType.TOOL_REPLY, record)
 
     def _ask(self, op: Operation, decision: Decision) -> ApprovalChoice:
         if self.approval is None:

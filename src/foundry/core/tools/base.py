@@ -46,6 +46,8 @@ class ToolOutput:
     artifact_id: str = ""
     truncated: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Images for the model to look at, beside the text (D-045).
+    images: tuple = ()
 
 
 class Tool(Protocol):
@@ -79,6 +81,9 @@ class ToolContext:
     # Polled by long-running tools so a cancel reaches a running child rather
     # than only being noticed between calls.
     cancelled: Any = None              # callable() -> bool | None
+    # Whether the backend takes images (backend.images, D-045): an MCP tool's
+    # images are passed on only then.
+    images: bool = True
 
 
 @dataclass(slots=True)

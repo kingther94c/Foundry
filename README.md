@@ -109,7 +109,7 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 
 | Command | What it does |
 |---|---|
-| `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/undo`, `/compact [focus]`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`). The model reads your own `FOUNDRY.md` (or `AGENTS.md`) from the Foundry folder, then the repository's from its top down to the working directory |
+| `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/undo`, `/compact [focus]`, `/image PATH`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`). The model reads your own `FOUNDRY.md` (or `AGENTS.md`) from the Foundry folder, then the repository's from its top down to the working directory |
 | `foundry exec <task> [--json] [-o FILE]` | unattended execution; every ASK becomes DENY (fail-closed). `--mode accept_edits` lets it patch the workspace (commands still need a rule); `-o` writes its final summary or reply to FILE |
 | `foundry resume [session] [task]` | continue a recorded session (default `last`, the newest here); refused if HEAD moved |
 | `foundry exec --resume <session> [task]` | the same, unattended; the task defaults to carrying on where it stopped |
@@ -157,6 +157,12 @@ What the model shows of its reasoning appears dim under "thinking" before it
 acts: Claude's thinking summaries, the reasoning DeepSeek-style servers stream,
 and -- with `reasoning_summary = "auto"` under `[backend]` -- a Responses
 model's summaries. `show_reasoning = false` under `[runtime]` hides it.
+
+Images: `foundry run -i shot.png "why is this button cut off?"` (or `exec -i`)
+attaches a screenshot to the task, `/image PATH` attaches one to your next
+message, and the model can look at an image in the workspace itself with
+`view_image`. PNG, JPEG, GIF and WebP up to 3.75 MB are sent as they are; for a
+text-only model, set `images = false` under `[backend]`.
 
 ## Design points
 

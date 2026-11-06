@@ -60,10 +60,24 @@ class ToolUseBlock:
 
 
 @dataclass(frozen=True, slots=True)
+class ImageBlock:
+    """An image the model is shown (D-045): on a user's message, or carried by
+    a tool result. ``data`` is the base64 of the file's bytes, checked and
+    sized by foundry.core.images; ``name`` says where it came from."""
+
+    media_type: str
+    data: str
+    name: str = ""
+    kind: Literal["image"] = "image"
+
+
+@dataclass(frozen=True, slots=True)
 class ToolResultBlock:
     call_id: str
     content: str
     is_error: bool = False
+    # Images the result carries (D-045; additive): view_image's, an MCP tool's.
+    images: tuple[ImageBlock, ...] = ()
     kind: Literal["tool_result"] = "tool_result"
 
 
@@ -81,7 +95,7 @@ class OpaqueBlock:
     kind: Literal["opaque"] = "opaque"
 
 
-ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | OpaqueBlock
+ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock | OpaqueBlock | ImageBlock
 
 
 @dataclass(frozen=True, slots=True)

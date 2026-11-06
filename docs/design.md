@@ -20,6 +20,7 @@ foundry/
 │   ├── policy/              # PolicyEngine: rules, modes, the six-step pipeline, the command segmenter
 │   ├── tools/               # ToolExecutor + the 8 tool implementations + the workspace boundary
 │   ├── mcp.py               # the MCP client over stdio: servers' tools as policy-checked tools (D-043)
+│   ├── images.py            # images the model is shown: checked, sized, base64 (D-045)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
 │   ├── auth.py              # AuthProvider + DPAPI storage
 │   ├── session.py           # SessionStore (JSONL) + the audit log
@@ -38,7 +39,7 @@ does nothing but convert between the IR and the wire protocol.**
 
 ```python
 # conversation.py (illustrative; all frozen dataclasses, no bare dicts)
-class ContentBlock:      # aligned with the MCP shapes: text | tool_use | tool_result | image (reserved)
+class ContentBlock:      # aligned with the MCP shapes: text | tool_use | tool_result | image (D-045)
     ...
 
 @dataclass(frozen=True)
@@ -281,6 +282,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   `read_only = true`. A call is `tools/call` with a timeout and the cancel
   flag; the result's text is truncated like a command's. A failing server is a
   warning and a `capability_probe` record, never a failed session.
+- `view_image` ([D-045](decision-log.md)): a read-only, workspace-bound tool
+  that returns the image on its result (`ToolOutput.images`). An image is
+  checked by `core/images.py` from its own bytes -- PNG, JPEG, GIF or WebP, at
+  most 3.75 MB, no side over 8000 pixels -- and is never resized. Not offered
+  when `backend.images = false`.
 
 ## 8. ModelBackend and AuthProvider
 
@@ -316,6 +322,10 @@ class ModelBackend(Protocol):
   Responses reasoning item's summary (asked for only when
   `backend.reasoning_summary` is set), or the `reasoning_content` a Chat
   Completions server streams. It is never sent back.
+- Images ([D-045](decision-log.md)): Anthropic takes an `ImageBlock` in the
+  user message and inside a `tool_result`; Chat Completions and Responses take
+  a tool's output as text only, so the images a run of results carried follow
+  it as one user message. The context counts an image as 1,600 tokens.
 - AuthProvider / CredentialSource: `acquire(scope) -> SecretHandle`,
   `refresh()`, `invalidate()`, `logout()`; **a SecretHandle is not a printable
   string**, only httpc's header injection point can resolve it, and the
@@ -335,7 +345,9 @@ class ModelBackend(Protocol):
   `resumed` added for resume, [D-035](decision-log.md); `undo` for undo,
   [D-036](decision-log.md); `mode_change` for plan approval,
   [D-038](decision-log.md); `compacted` for compaction, whose own request and
-  response carry `purpose: "compact"`, [D-040](decision-log.md)).
+  response carry `purpose: "compact"`, [D-040](decision-log.md)). An image
+  is journaled by the id of the artifact that holds its bytes, written once
+  however many requests repeat it ([D-045](decision-log.md)).
   Artifact contents are stored content-addressed at
   `sessions/<id>/artifacts/<sha256>`, and events reference only the digest.
 - Writes are serialised and every record is flushed as it is written;

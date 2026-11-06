@@ -164,8 +164,9 @@ Each item lands on its own branch with a D-entry, tests and a mutation check.
    same policy pipeline (landed, D-043).
 6. ~~Reasoning summaries shown where the provider streams them~~ (landed,
    D-044).
-7. Images: attaching one to a task, and a `view_image` tool, where the backend
-   accepts them.
+7. ~~Images~~ -- attaching one to a task (`-i`, `/image`), a `view_image`
+   tool, and an MCP tool's images, where the backend accepts them (landed,
+   D-045).
 8. A Python-only repo map (stdlib `ast`).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,

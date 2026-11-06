@@ -24,9 +24,10 @@ builds the replacement; the model call is the runtime's.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from foundry.core.conversation import (
+    ImageBlock,
     Message,
     Role,
     TextBlock,
@@ -34,6 +35,7 @@ from foundry.core.conversation import (
     ToolUseBlock,
     Usage,
 )
+from foundry.core.images import IMAGE_TOKEN_ESTIMATE
 from foundry.core.redaction import Redactor, default_redactor
 from foundry.core.tools.base import truncate_middle
 
@@ -63,25 +65,29 @@ SUMMARY_PREFIX = (
 
 
 def _estimate_tokens(messages) -> int:
-    """Rough sizing: four characters to the token."""
+    """Rough sizing: four characters to the token, and an image as what a
+    provider charges for one -- not its base64, which would count a screenshot
+    as a quarter of a million tokens."""
     chars = 0
     for message in messages:
         for block in message.blocks:
             if isinstance(block, TextBlock):
                 chars += len(block.text)
             elif isinstance(block, ToolResultBlock):
-                chars += len(block.content)
+                chars += len(block.content) + 4 * IMAGE_TOKEN_ESTIMATE * len(block.images)
             elif isinstance(block, ToolUseBlock):
                 chars += len(block.arguments) + len(block.name)
+            elif isinstance(block, ImageBlock):
+                chars += 4 * IMAGE_TOKEN_ESTIMATE
     return chars // 4
 
 
 def _masked(message: Message) -> Message:
     # A result already shorter than the notice is left alone: replacing it
-    # would cost context, not save it.
+    # would cost context, not save it. Its images go either way.
     return Message(role=message.role, blocks=tuple(
         ToolResultBlock(call_id=b.call_id, content=MASK_NOTICE, is_error=b.is_error)
-        if isinstance(b, ToolResultBlock) and len(b.content) > len(MASK_NOTICE)
+        if isinstance(b, ToolResultBlock) and (len(b.content) > len(MASK_NOTICE) or b.images)
         else b
         for b in message.blocks
     ))
@@ -131,8 +137,7 @@ class ContextManager:
             raise ValueError("restored rounds must not go backwards")
         self.history = [
             Message(role=m.role, blocks=tuple(
-                ToolResultBlock(call_id=b.call_id, content=self.redactor.scrub(b.content),
-                                is_error=b.is_error)
+                replace(b, content=self.redactor.scrub(b.content))
                 if isinstance(b, ToolResultBlock) else b
                 for b in m.blocks))
             for m in history
@@ -146,17 +151,20 @@ class ContextManager:
         self.history.append(message)
         self._turn_of_message.append(self._turn)
 
-    def append_user(self, text: str) -> None:
-        self.append(Message.text(Role.USER, text))
+    def append_user(self, text: str, images: tuple[ImageBlock, ...] = ()) -> None:
+        # Images first: a model reads the question after what it is about.
+        self.append(Message(role=Role.USER, blocks=(*images, TextBlock(text))))
 
-    def append_tool_result(self, call_id: str, content: str, *, is_error: bool = False) -> None:
+    def append_tool_result(self, call_id: str, content: str, *, is_error: bool = False,
+                           images: tuple[ImageBlock, ...] = ()) -> None:
         # The third redaction sink. A command that printed a credential must not
         # carry it into the next request just because the journal copy was
         # scrubbed -- the model's context is the one that leaves the machine.
+        # (An image cannot be scrubbed; what it shows is untrusted content.)
         self.append(Message(role=Role.TOOL,
                             blocks=(ToolResultBlock(call_id=call_id,
                                                     content=self.redactor.scrub(content),
-                                                    is_error=is_error),)))
+                                                    is_error=is_error, images=images),)))
 
     def record_usage(self, usage: Usage) -> None:
         self.session_usage = self.session_usage + usage

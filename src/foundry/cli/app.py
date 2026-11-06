@@ -24,6 +24,8 @@ from rich.markup import escape
 from foundry import __version__
 from foundry.cli.render import Renderer
 from foundry.cli.repl import NEW_SESSION
+from foundry.cli.repl import attach as _attach
+from foundry.cli.repl import take_images as _take_images
 from foundry.cli.repl import confirm as _confirm
 from foundry.cli.repl import repl as _repl
 from foundry.cli.repl import show_outcome as _show_outcome
@@ -110,6 +112,8 @@ class Wiring:
     instructions: tuple[str, ...] = ()
     # The MCP servers this session started (D-043); closed with it.
     mcp: McpServers | None = None
+    # Images for the next message: -i, then /image (D-045).
+    images: list = field(default_factory=list)
 
 
 def _trusted_paths(home: Path) -> set[str]:
@@ -265,7 +269,7 @@ def _reopen(sessions: Path, session_id: str, root: Path,
 def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
               session: SessionStore, state: JournalState | None, outside: frozenset[str], *,
               home: Path, console: Console) -> Wiring:
-    registry = default_registry(recorder=session)
+    registry = default_registry(recorder=session, images=config.backend.images)
     # Started before the rules are checked, so a rule for a server's tool is
     # not reported as one that can never match (D-043).
     mcp = (start_servers(config.mcp_servers, workspace.root, registry)
@@ -351,7 +355,8 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         tool_ctx=ToolContext(workspace=workspace, artifacts=session.artifacts,
                              read_tracker=ReadTracker(),
                              max_output_bytes=config.max_output_bytes,
-                             max_command_timeout_s=config.command_timeout_s),
+                             max_command_timeout_s=config.command_timeout_s,
+                             images=config.backend.images),
         session=session, events=sink, approval=renderer.ask_approval,
         budget=Budget(max_tool_rounds=config.max_tool_rounds,
                       max_tool_calls=config.max_tool_calls),
@@ -501,10 +506,15 @@ def cmd_session(args: argparse.Namespace) -> int:
                                     wiring.config.backend.model,
                                     wiring.config.mode.value)
     _announce_resume(wiring)
+    for raw in getattr(args, "image", None) or []:
+        if not _attach(wiring, console, raw):
+            _close(wiring, TerminalStatus.CANCELLED, "an image could not be attached")
+            return 2
     status = TerminalStatus.CANCELLED
     try:
         if args.task:
-            outcome = wiring.runtime.run_turn(_with_note(wiring, args.task))
+            outcome = wiring.runtime.run_turn(_with_note(wiring, args.task),
+                                              _take_images(wiring))
             # Only the finish gate can produce 'completed'. A turn that simply
             # ended is unfinished work, not success.
             status = outcome.status or TerminalStatus.PARTIAL
@@ -721,7 +731,7 @@ FINISH_REMINDER = (
 )
 
 
-def _run_unattended(runtime: AgentRuntime, task: str):
+def _run_unattended(runtime: AgentRuntime, task: str, images: tuple = ()):
     """One task; a reply in prose gets a single reminder to call finish.
 
     Only finish reports an outcome, and nobody reads a reply in an unattended
@@ -729,7 +739,7 @@ def _run_unattended(runtime: AgentRuntime, task: str):
     it in prose -- with the event ids -- and exited partial. Asked once, not
     in a loop: a model that cannot call tools must still end.
     """
-    outcome = runtime.run_turn(task)
+    outcome = runtime.run_turn(task, images)
     if outcome.status is None:
         outcome = runtime.run_turn(FINISH_REMINDER)
     return outcome
@@ -780,13 +790,18 @@ def cmd_exec(args: argparse.Namespace) -> int:
 
         wiring.runtime.events.subscribe(as_json)
     _announce_resume(wiring)
+    for raw in args.image or []:
+        if not _attach(wiring, console, raw):
+            _close(wiring, TerminalStatus.CANCELLED, "an image could not be attached")
+            return 2
 
     status = TerminalStatus.FAILED
     reason = "headless run ended"
     outcome = None
     try:
         outcome = _run_unattended(wiring.runtime,
-                                  _with_note(wiring, args.task or CONTINUE_PROMPT))
+                                  _with_note(wiring, args.task or CONTINUE_PROMPT),
+                                  _take_images(wiring))
         # Only the finish gate can produce 'completed'. A turn that simply
         # ended is unfinished work, not success.
         status = outcome.status or TerminalStatus.PARTIAL
@@ -965,6 +980,11 @@ def _config_flags(parser: argparse.ArgumentParser, *, modes: tuple[Mode, ...] = 
     parser.add_argument("--profile", help="a [profiles.<name>] table from your config.toml")
 
 
+def _image_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("-i", "--image", action="append", metavar="PATH",
+                        help="attach an image to the first task (repeatable)")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="foundry",
                                      description="A local coding-agent runtime.")
@@ -974,6 +994,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="start a session (default)")
     run.add_argument("task", nargs="?", help="run one task then exit")
     run.add_argument("--workspace", default=".", help="repository to work in")
+    _image_flag(run)
     _config_flags(run)
     run.set_defaults(func=cmd_session)
 
@@ -982,6 +1003,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="the session id (default: last, the newest in this workspace)")
     resume.add_argument("task", nargs="?", help="run one task then exit")
     resume.add_argument("--workspace", default=".", help="repository the session worked in")
+    _image_flag(resume)
     _config_flags(resume)
     resume.set_defaults(func=cmd_session)
 
@@ -1004,6 +1026,7 @@ def build_parser() -> argparse.ArgumentParser:
                               "defaults to carrying on where it stopped")
     execute.add_argument("-o", "--output-last-message", metavar="FILE",
                          help="write the run's final summary or reply to FILE")
+    _image_flag(execute)
     _config_flags(execute, modes=(Mode.DONT_ASK, Mode.PLAN, Mode.ACCEPT_EDITS))
     execute.set_defaults(func=cmd_exec)
 

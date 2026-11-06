@@ -70,6 +70,12 @@ class Cancelled(FoundryError):
     category = "cancelled"
 
 
+class ImageRejected(FoundryError):
+    """An image that is not sent: its type, size or pixels (D-045)."""
+
+    category = "image"
+
+
 class ResumeError(FoundryError):
     """A session that cannot be continued safely; nothing was written to it."""
 

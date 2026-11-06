@@ -30,6 +30,7 @@ from foundry.core.backends.base import (
 )
 from foundry.core.conversation import (
     Capabilities,
+    ImageBlock,
     Message,
     ModelTurn,
     OpaqueBlock,
@@ -101,6 +102,11 @@ def _assistant_content(message: Message) -> list[dict[str, Any]]:
     return built
 
 
+def _image_to_wire(block: ImageBlock) -> dict[str, Any]:
+    return {"type": "image", "source": {"type": "base64", "media_type": block.media_type,
+                                        "data": block.data}}
+
+
 def _build_messages(messages: tuple[Message, ...]) -> list[dict[str, Any]]:
     wire: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
@@ -130,9 +136,17 @@ def _build_messages(messages: tuple[Message, ...]) -> list[dict[str, Any]]:
                 result: dict[str, Any] = {"type": "tool_result",
                                           "tool_use_id": block.call_id,
                                           "content": block.content}
+                if block.images:
+                    # A result may carry images itself (D-045); an empty text
+                    # block is refused, so none is sent.
+                    result["content"] = (
+                        ([{"type": "text", "text": block.content}] if block.content else [])
+                        + [_image_to_wire(i) for i in block.images])
                 if block.is_error:
                     result["is_error"] = True
                 results.append(result)
+            elif isinstance(block, ImageBlock):
+                texts.append(_image_to_wire(block))
         text = message.text_content
         if text:
             texts.append({"type": "text", "text": text})

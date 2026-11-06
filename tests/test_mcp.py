@@ -114,7 +114,8 @@ def test_the_servers_own_requests_get_a_ping_and_nothing_else(started, tmp_path)
 
 def test_content_foundry_cannot_show_is_named_not_dropped(started, tmp_path):
     _, registry = started(_server())
-    assert _run(registry, "mcp__fake__mixed", {}, tmp_path).content.splitlines() == [
+    # A backend without images (D-045): the image is named, as before.
+    assert _run(registry, "mcp__fake__mixed", {}, tmp_path, images=False).content.splitlines() == [
         "first", "[image content (image/png) not shown]", "[resource link: file:///x.txt]",
         "inline", "[binary resource file:///z.bin not shown]", "[hologram content not shown]"]
     assert render_result({"content": [], "structuredContent": {"a": 1}}) == '{\n  "a": 1\n}'

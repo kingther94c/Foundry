@@ -13,6 +13,7 @@ rather than sent to the model as a task: "/udno" should not start a turn.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from rich.console import Console
@@ -21,7 +22,8 @@ from rich.syntax import Syntax
 
 from foundry.cli.render import print_plan, sanitize
 from foundry.core.commands import builtin_prompt, expand, parse_command
-from foundry.core.errors import Cancelled, FoundryError
+from foundry.core.errors import Cancelled, FoundryError, ImageRejected
+from foundry.core.images import MAX_IMAGES_PER_MESSAGE, load as load_image
 from foundry.core.events import Notice, TerminalStatus
 from foundry.core.policy.engine import Mode
 from foundry.core.prompts import PROJECT_DOC_NAMES, mode_line, system_prompt
@@ -75,11 +77,42 @@ def with_note(wiring: "Wiring", task: str) -> str:
     return f"{note}\n\n{task}" if note else task
 
 
+def attach(wiring: "Wiring", console: Console, raw: str, then: str = "") -> bool:
+    """Queue an image for the next message (D-045): `/image PATH`, and `-i`.
+    The path is the user's own, so it need not be in the workspace."""
+    raw = raw.strip().strip('"').strip("'")
+    if not raw:
+        console.print("[yellow]usage: /image PATH[/yellow]")
+        return False
+    if not wiring.config.backend.images:
+        console.print("[yellow]this backend is set up without images "
+                      "(backend.images = false)[/yellow]")
+        return False
+    if len(wiring.images) >= MAX_IMAGES_PER_MESSAGE:
+        console.print(f"[yellow]at most {MAX_IMAGES_PER_MESSAGE} images go with one "
+                      "message[/yellow]")
+        return False
+    path = Path(raw).expanduser()
+    try:
+        picture = load_image(path if path.is_absolute() else Path.cwd() / path, raw)
+    except ImageRejected as exc:
+        console.print(f"[red]cannot attach {escape(raw)}: {escape(str(exc))}[/red]")
+        return False
+    wiring.images.append(picture.block)
+    console.print(f"[dim]attached {escape(raw)} ({picture.describe()}){then}[/dim]")
+    return True
+
+
+def take_images(wiring: "Wiring") -> tuple:
+    images, wiring.images = tuple(wiring.images), []
+    return images
+
+
 def run_task(wiring: "Wiring", task: RunTask):
     policy = wiring.runtime.policy
     policy.read_only = task.read_only
     try:
-        return wiring.runtime.run_turn(with_note(wiring, task.text))
+        return wiring.runtime.run_turn(with_note(wiring, task.text), take_images(wiring))
     finally:
         policy.read_only = ""
 
@@ -271,6 +304,11 @@ def _compact(wiring: "Wiring", console: Console, arguments: str) -> None:
     return None
 
 
+def _image(wiring: "Wiring", console: Console, arguments: str) -> None:
+    attach(wiring, console, arguments, "; it goes with your next message")
+    return None
+
+
 def _init(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
     root = wiring.workspace.root
     existing = [name for name in PROJECT_DOC_NAMES if (root / name).exists()]
@@ -409,6 +447,7 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("plan", "the model's current plan", _plan),
     Command("compact", "summarise the conversation so far to free context", _compact,
             arguments="[focus]"),
+    Command("image", "attach an image to your next message", _image, arguments="PATH"),
     Command("approve", "in plan mode: approve the plan and let the work start", approve_plan),
     Command("undo", "revert this session's newest patch", undo_last),
     Command("review", "a read-only review of the uncommitted changes", _review,

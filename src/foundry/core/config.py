@@ -54,6 +54,11 @@ def _validate_backend_setting(key: str, value: Any) -> None:
             raise ConfigError(
                 f"backend.effort must be one of {', '.join(EFFORT_LEVELS)}, got {value!r}"
             )
+    elif key == "images":
+        if not isinstance(value, bool):
+            raise ConfigError(
+                f"backend.images must be true or false, got {type(value).__name__} ({value!r})"
+            )
     elif key == "reasoning_summary":
         if value is not None and value not in REASONING_SUMMARIES:
             raise ConfigError(
@@ -114,6 +119,10 @@ class BackendConfig:
     # for its summary, responses asks for nothing (a model that does not reason
     # rejects the field). "none" asks for nothing anywhere.
     reasoning_summary: str | None = None
+    # Whether the model takes images (D-045): view_image, -i and /image, and an
+    # MCP tool's images. False for a text-only model, which refuses a request
+    # that carries one.
+    images: bool = True
 
 
 _SERVER_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}\Z")

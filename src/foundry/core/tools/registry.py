@@ -16,6 +16,7 @@ from foundry.core.tools.command import RunCommand
 from foundry.core.tools.files import ListFiles, ReadArtifact, ReadFile, SearchText
 from foundry.core.tools.finish import Finish
 from foundry.core.tools.git import GitDiff, GitStatus
+from foundry.core.tools.image import ViewImage
 from foundry.core.tools.patch import ApplyPatch
 from foundry.core.tools.plan import UpdatePlan
 
@@ -41,10 +42,13 @@ class ToolRegistry:
         return tuple(self.tools[name].schema() for name in sorted(self.tools))
 
 
-def default_registry(*, recorder=None) -> ToolRegistry:
+def default_registry(*, recorder=None, images: bool = True) -> ToolRegistry:
+    """``images``: whether the backend takes them (backend.images); without,
+    view_image is not offered (D-045)."""
     registry = ToolRegistry()
     for tool in (
         ListFiles(), SearchText(), ReadFile(), ReadArtifact(),
+        *((ViewImage(),) if images else ()),
         ApplyPatch(), RunCommand(recorder=recorder),
         GitStatus(), GitDiff(), UpdatePlan(), Finish(),
     ):

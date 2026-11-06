@@ -30,6 +30,7 @@ from foundry.core.backends.base import (
 )
 from foundry.core.conversation import (
     Capabilities,
+    ImageBlock,
     Message,
     ModelTurn,
     Role,
@@ -42,6 +43,7 @@ from foundry.core.conversation import (
     Usage,
 )
 from foundry.core.errors import ProtocolError, TransientError
+from foundry.core.images import data_url
 from foundry.core.httpc import (HttpClient, NotStreaming, open_retrying_stream,
                                 retry_with_backoff)
 
@@ -56,11 +58,13 @@ def _message_to_items(message: Message) -> list[dict[str, Any]]:
 
     items: list[dict[str, Any]] = []
     text = "".join(b.text for b in message.blocks if isinstance(b, TextBlock))
-    if text:
+    images = [b for b in message.blocks if isinstance(b, ImageBlock)]
+    if text or images:
         content_type = "output_text" if message.role is Role.ASSISTANT else "input_text"
         items.append({
             "type": "message", "role": message.role.value,
-            "content": [{"type": content_type, "text": text}],
+            "content": [_image_part(i) for i in images]
+            + ([{"type": content_type, "text": text}] if text else []),
         })
     for block in message.blocks:
         if isinstance(block, ToolUseBlock):
@@ -69,6 +73,23 @@ def _message_to_items(message: Message) -> list[dict[str, Any]]:
                 "name": block.name, "arguments": block.arguments,
             })
     return items
+
+
+def _image_part(block: ImageBlock) -> dict[str, Any]:
+    return {"type": "input_image", "image_url": data_url(block)}
+
+
+def _tool_images_item(results: list[ToolResultBlock]) -> list[dict[str, Any]]:
+    """The images a run of tool results carried, as the user message after
+    them: the portable place for them, and codex's (D-045)."""
+    content: list[dict[str, Any]] = []
+    for result in results:
+        if result.images:
+            names = ", ".join(i.name or "an image" for i in result.images)
+            content.append({"type": "input_text",
+                            "text": f"The image(s) from tool call {result.call_id}: {names}"})
+            content.extend(_image_part(i) for i in result.images)
+    return [{"type": "message", "role": "user", "content": content}] if content else []
 
 
 def _tool_to_wire(schema: ToolSchema) -> dict[str, Any]:
@@ -84,12 +105,19 @@ def build_body(request: TurnRequest, *, stream: bool,
                reasoning_summary: str | None = None) -> dict[str, Any]:
     instructions = ""
     items: list[dict[str, Any]] = []
+    results: list[ToolResultBlock] = []
     for message in request.messages:
         if message.role is Role.SYSTEM:
             # Responses carries the system prompt out of band.
             instructions = message.text_content
             continue
+        if message.role is Role.TOOL:
+            results.extend(b for b in message.blocks if isinstance(b, ToolResultBlock))
+        elif results:
+            items.extend(_tool_images_item(results))
+            results.clear()
         items.extend(_message_to_items(message))
+    items.extend(_tool_images_item(results))
 
     body: dict[str, Any] = {
         "model": request.model,
