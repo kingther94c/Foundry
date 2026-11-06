@@ -109,7 +109,7 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 
 | Command | What it does |
 |---|---|
-| `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/mode [NAME]`, `/model [NAME]`, `/effort [LEVEL]`, `/mcp`, `/undo`, `/compact [focus]`, `/rewind [N]`, `/image PATH`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`). The model reads your own `FOUNDRY.md` (or `AGENTS.md`) from the Foundry folder, then the repository's from its top down to the working directory |
+| `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/mode [NAME]`, `/model [NAME]`, `/effort [LEVEL]`, `/mcp`, `/undo`, `/compact [focus]`, `/rewind [N]`, `/image [PATH]`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`). The model reads your own `FOUNDRY.md` (or `AGENTS.md`) from the Foundry folder, then the repository's from its top down to the working directory |
 | `foundry exec <task> [--json] [-o FILE] [--output-schema FILE]` | `-` as the task reads it from stdin; unattended execution, which first names its session (the `session_started` event with `--json`, a line on stderr without) for `exec --resume`; every ASK becomes DENY (fail-closed). `--mode accept_edits` lets it patch the workspace (commands still need a rule); `-o` writes its final summary or reply to FILE; `--output-schema` asks for a result matching a JSON Schema, checked by Foundry and printed as the only output |
 | `foundry resume [session] [task]` | continue a recorded session: with no id, pick from this workspace's recent ones (Enter is the newest; not at a terminal, `last`); refused if HEAD moved |
 | `foundry exec --resume <session> [task]` | the same, unattended; the task defaults to carrying on where it stopped |
@@ -186,7 +186,8 @@ comes back too: the session ends when you end it (exit code 13). When the sessio
 
 Images: `foundry run -i shot.png "why is this button cut off?"` (or `exec -i`)
 attaches a screenshot to the task, `/image PATH` attaches one to your next
-message, and the model can look at an image in the workspace itself with
+message -- `/image` alone, the one on the clipboard (Win+Shift+S puts it there)
+-- and the model can look at an image in the workspace itself with
 `view_image`. PNG, JPEG, GIF and WebP up to 3.75 MB are sent as they are; for a
 text-only model, set `images = false` under `[backend]`.
 

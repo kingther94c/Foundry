@@ -19,6 +19,7 @@ import pytest
 from rich.console import Console
 
 from foundry.cli import app
+from foundry.cli import repl as repl_module
 from foundry.cli.repl import dispatch, run_task, RunTask
 from foundry.core import images
 from foundry.core.backends.anthropic import build_body as anthropic_body
@@ -478,8 +479,10 @@ def test_slash_image_queues_an_image_for_the_next_message(repo, tmp_path, monkey
         run_task(wiring, RunTask("what is it?"))
         run_task(wiring, RunTask("and this?"))
         assert len(sent[0]) == 1 and sent[1] == ()
+        # Alone, it takes the clipboard's image (D-065); this one holds none.
+        monkeypatch.setattr(repl_module, "clipboard_image", lambda: None)
         dispatch(wiring, console, "image", "")
-        assert "usage: /image PATH" in out.getvalue()
+        assert "the clipboard holds no image; /image PATH attaches a file" in out.getvalue()
         dispatch(wiring, console, "image", "missing.png")
         assert "cannot attach missing.png: there is no such file" in out.getvalue()
         for _ in range(images.MAX_IMAGES_PER_MESSAGE + 1):

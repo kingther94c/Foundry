@@ -13,7 +13,9 @@ rather than sent to the model as a task: "/udno" should not start a turn.
 
 from __future__ import annotations
 
+import base64
 import re
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -30,7 +32,8 @@ from foundry.core.config import effort_levels
 from foundry.core.context import SUMMARY_PREFIX
 from foundry.core.conversation import Message, Role, TextBlock
 from foundry.core.errors import Cancelled, FoundryError, ImageRejected, ToolError
-from foundry.core.images import MAX_IMAGES_PER_MESSAGE, load as load_image
+from foundry.core.images import MAX_IMAGES_PER_MESSAGE, from_bytes as image_from_bytes
+from foundry.core.images import load as load_image
 from foundry.core.events import Notice, TerminalStatus
 from foundry.core.policy.engine import Mode, Verdict
 from foundry.core.prompts import PROJECT_DOC_NAMES, mode_line, system_prompt
@@ -39,7 +42,7 @@ from foundry.core.tools.base import ToolKind, truncate_middle
 from foundry.core.tools.command import combined_output, run_process
 from foundry.core.tools.files import ReadFile
 from foundry.core.tools.git import collect_evidence, run_git
-from foundry.core.winapi import child_environment
+from foundry.core.winapi import CREATE_NO_WINDOW, IS_WINDOWS, child_environment, find_program
 from foundry.core.workspace import PathRejected
 from foundry.core.undo import (
     Outcome,
@@ -96,13 +99,7 @@ def attach(wiring: "Wiring", console: Console, raw: str, then: str = "") -> bool
     if not raw:
         console.print("[yellow]usage: /image PATH[/yellow]")
         return False
-    if not wiring.config.backend.images:
-        console.print("[yellow]this backend is set up without images "
-                      "(backend.images = false)[/yellow]")
-        return False
-    if len(wiring.images) >= MAX_IMAGES_PER_MESSAGE:
-        console.print(f"[yellow]at most {MAX_IMAGES_PER_MESSAGE} images go with one "
-                      "message[/yellow]")
+    if not _may_attach(wiring, console):
         return False
     path = Path(raw).expanduser()
     try:
@@ -112,6 +109,84 @@ def attach(wiring: "Wiring", console: Console, raw: str, then: str = "") -> bool
         return False
     wiring.images.append(picture.block)
     console.print(f"[dim]attached {escape(raw)} ({picture.describe()}){then}[/dim]")
+    return True
+
+
+def _may_attach(wiring: "Wiring", console: Console) -> bool:
+    if not wiring.config.backend.images:
+        console.print("[yellow]this backend is set up without images "
+                      "(backend.images = false)[/yellow]")
+        return False
+    if len(wiring.images) >= MAX_IMAGES_PER_MESSAGE:
+        console.print(f"[yellow]at most {MAX_IMAGES_PER_MESSAGE} images go with one "
+                      "message[/yellow]")
+        return False
+    return True
+
+
+# The clipboard's image, as PNG in base64 on stdout (D-065); exit 3 when it
+# holds none. -Sta: the clipboard is not reachable from a multithreaded
+# apartment.
+CLIPBOARD_SCRIPT = (
+    "Add-Type -AssemblyName System.Windows.Forms, System.Drawing; "
+    "$image = [System.Windows.Forms.Clipboard]::GetImage(); "
+    "if ($null -eq $image) { exit 3 }; "
+    "$stream = New-Object System.IO.MemoryStream; "
+    "$image.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png); "
+    "[Convert]::ToBase64String($stream.ToArray())")
+CLIPBOARD_EMPTY = 3
+CLIPBOARD_TIMEOUT_S = 15
+CLIPBOARD_NAME = "the clipboard's image"
+
+
+def clipboard_image() -> bytes | None:
+    """The image on the clipboard as PNG bytes, or None when it holds none
+    (D-065). Raises ImageRejected when the clipboard cannot be read."""
+    if not IS_WINDOWS:
+        raise ImageRejected("the clipboard is read on Windows only; /image PATH attaches "
+                            "a file")
+    # powershell.exe from PATH, not a copy in the current directory (D-049).
+    shell = find_program("powershell.exe")
+    if shell is None:
+        raise ImageRejected("powershell.exe was not found on PATH")
+    try:
+        done = subprocess.run(
+            [shell, "-NoProfile", "-NonInteractive", "-Sta", "-Command", CLIPBOARD_SCRIPT],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="ascii",
+            errors="replace", timeout=CLIPBOARD_TIMEOUT_S, creationflags=CREATE_NO_WINDOW)
+    except subprocess.TimeoutExpired as exc:
+        raise ImageRejected(f"reading the clipboard took over {CLIPBOARD_TIMEOUT_S}s") from exc
+    except OSError as exc:
+        raise ImageRejected(f"the clipboard could not be read ({exc})") from exc
+    if done.returncode == CLIPBOARD_EMPTY:
+        return None
+    if done.returncode != 0:
+        raise ImageRejected(f"the clipboard could not be read (PowerShell exit "
+                            f"{done.returncode})")
+    try:
+        return base64.b64decode(done.stdout.strip(), validate=True)
+    except ValueError as exc:
+        raise ImageRejected("what the clipboard gave back is not an image") from exc
+
+
+def attach_clipboard(wiring: "Wiring", console: Console, then: str = "") -> bool:
+    """``/image`` alone: the image on the clipboard -- a screenshot, as
+    codex's Ctrl+V pastes one (D-065) -- goes with the next message, checked
+    as a file's would be."""
+    if not _may_attach(wiring, console):
+        return False
+    try:
+        data = clipboard_image()
+        if data is None:
+            console.print("[yellow]the clipboard holds no image; /image PATH attaches a "
+                          "file[/yellow]")
+            return False
+        picture = image_from_bytes(data, CLIPBOARD_NAME)
+    except ImageRejected as exc:
+        console.print(f"[red]cannot attach {CLIPBOARD_NAME}: {escape(str(exc))}[/red]")
+        return False
+    wiring.images.append(picture.block)
+    console.print(f"[dim]attached {CLIPBOARD_NAME} ({picture.describe()}){then}[/dim]")
     return True
 
 
@@ -554,7 +629,11 @@ def _compact(wiring: "Wiring", console: Console, arguments: str) -> None:
 
 
 def _image(wiring: "Wiring", console: Console, arguments: str) -> None:
-    attach(wiring, console, arguments, "; it goes with your next message")
+    then = "; it goes with your next message"
+    if arguments.strip():
+        attach(wiring, console, arguments, then)
+    else:
+        attach_clipboard(wiring, console, then)
     return None
 
 
@@ -926,7 +1005,8 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("plan", "the model's current plan", _plan),
     Command("compact", "summarise the conversation so far to free context", _compact,
             arguments="[focus]"),
-    Command("image", "attach an image to your next message", _image, arguments="PATH"),
+    Command("image", "attach an image to your next message -- a file, or the clipboard's",
+            _image, arguments="[PATH]"),
     Command("approve", "in plan mode: approve the plan and let the work start", approve_plan),
     Command("mode", "show or change what the session may do without asking", set_mode,
             arguments="[NAME]"),

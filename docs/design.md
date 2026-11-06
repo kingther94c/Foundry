@@ -329,7 +329,9 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   that returns the image on its result (`ToolOutput.images`). An image is
   checked by `core/images.py` from its own bytes -- PNG, JPEG, GIF or WebP, at
   most 3.75 MB, no side over 8000 pixels -- and is never resized. Not offered
-  when `backend.images = false`.
+  when `backend.images = false`. `/image` with no path
+  ([D-065](decision-log.md)) takes the clipboard's image instead of a file's,
+  read by a fixed PowerShell script that writes it as PNG in base64.
 - `repo_map(path?)` ([D-046](decision-log.md)): an outline of Python code from
   `ast` -- classes, fields, methods, signatures, constants, with the line each
   starts on. One file gets its whole outline; a directory gets a brief one,

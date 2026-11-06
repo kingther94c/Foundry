@@ -216,6 +216,8 @@ What a codex user still notices day to day, next:
     prompt comes back; only the user ends the session (landed, D-063).
 25. ~~`/mcp`~~ -- the servers, how each is, and the tools each offers
     (landed, D-064).
+26. ~~A screenshot from the clipboard~~ -- `/image` alone, as codex's Ctrl+V
+    pastes one (landed, D-065).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
