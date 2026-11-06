@@ -146,10 +146,36 @@ covering agentic tool continuation.
   event architecture should make it nearly free, so whether it lands in V1 or
   slips depends on the remaining budget.
 
+## Toward codex parity (2026-11-06, the user's goal: "basically like codex")
+
+The V2 work now has an order: what a codex user reaches for daily, first.
+Each item lands on its own branch with a D-entry, tests and a mutation check.
+
+1. ~~Slash commands and custom prompts~~ -- `/help /status /diff /plan /approve
+   /undo /review /init /new`, `~/.foundry/prompts/` (landed, D-039).
+2. Compaction by summary: `/compact`, and automatic compaction before the
+   context fills (the reserved `Compacted` record), so a long session goes on
+   instead of ending `partial(context exhausted)`.
+3. Project instructions layered as codex does: a global file under
+   `~/.foundry/`, then the repository's from its root down to the working
+   directory.
+4. The CLI flags codex users expect: `-m/--model`, `--mode`, `-c key=value`,
+   `--profile`, and `exec --output-last-message`.
+5. An MCP client: stdio servers' tools offered to the model under the same
+   policy pipeline (the IR already lines up).
+6. Reasoning summaries shown where the provider streams them.
+7. Images: attaching one to a task, and a `view_image` tool, where the backend
+   accepts them.
+8. A Python-only repo map (stdlib `ast`).
+
+Not planned for now: a Windows sandbox (codex's needs dedicated local users,
+WFP filters and an elevated service; the threat model documents its absence),
+hosted web search, and interactive PTY sessions for long-running commands.
+
 ## V2 candidates (explicitly no commitment to order)
 
 ~~session resume~~ (landed, D-035) | LLM summarisation compaction (the
-Compacted event is already reserved) | ~~a visible `update_plan`~~ (landed, D-037) | skills and
-slash commands | enabling the subagent seam | an MCP bridge (the IR already
+Compacted event is already reserved) | ~~a visible `update_plan`~~ (landed, D-037) | ~~skills and
+slash commands~~ (slash commands and custom prompts landed, D-039) | enabling the subagent seam | an MCP bridge (the IR already
 lines up) | ~~checkpoint/undo~~ (landed as patch undo, D-036) | a Python-only
 repo map (stdlib ast) | research into a restricted-token sandbox.

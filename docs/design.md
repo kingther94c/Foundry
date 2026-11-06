@@ -24,7 +24,8 @@ foundry/
 │   ├── session.py           # SessionStore (JSONL) + the audit log
 │   ├── httpc.py             # a stdlib HTTP/SSE client (~300 lines)
 │   └── winapi.py            # ctypes: DPAPI, Job Objects, reparse tags
-├── cli/                     # the terminal UI: event subscriber + approval UI (rich / prompt_toolkit)
+├── cli/                     # the terminal UI: event subscriber + approval UI (rich); repl.py, the
+│                            #   interactive prompt and its slash commands (D-039)
 ├── prompts/                 # versioned assets: the base system prompt, the patch format description, the permissions section template
 └── __main__.py              # entry point: bootstraps in UTF-8 mode
 ```
@@ -162,13 +163,17 @@ async def run_turn(user_input):
 # the six-step pipeline (the claude-code Agent SDK's published specification, testable step by step)
 def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DENY(reason)
     1. the pre_tool callback (a configured Python callable, or a stdin-JSON subprocess; may rewrite the input)
-    2. DENY rules (merged across every layer; a hit ends it -- no ALLOW can flip it)
+    2. DENY rules (merged across every layer; a hit ends it -- no ALLOW can flip it);
+       then plan mode and read-only tasks (/review) refuse every mutator, before any ASK (D-039)
     3. ASK rules
     4. the mode baseline (default/accept_edits/plan/dont_ask)
     5. ALLOW rules
     6. interactive approval (headless: DENY)
 ```
 
+- A read-only task sets `PolicyEngine.read_only` for its turn (`/review`,
+  [D-039](decision-log.md)): every mutator is refused at step 2 with that
+  reason, whatever the mode, and the field is cleared when the turn ends.
 - The mode is fixed for a session but for one move: `/approve` in an
   interactive session in plan mode ([D-038](decision-log.md)) switches it to
   `default` or `accept_edits`, builds the system prompt's permissions paragraph

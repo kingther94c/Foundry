@@ -2,9 +2,10 @@
 
     0  circuit breaker      hard-coded, precedes everything
     1  pre_tool callback    optional; a rewrite re-enters at step 0
-    2  DENY rules           a DENY at any layer cannot be undone by any ALLOW
+    2  DENY rules           a DENY at any layer cannot be undone by any ALLOW;
+                            plan mode and read-only tasks refuse mutators here
     3  ASK rules            built-ins live here (dirty-file writes)
-    4  mode baseline        default / accept_edits / plan / dont_ask
+    4  mode baseline        default / accept_edits / dont_ask
     5  ALLOW rules          read-only built-ins; persisted approvals
     6  interactive approval  headless and dont_ask resolve this to DENY
 
@@ -378,6 +379,9 @@ class PolicyEngine:
     dirty_files: set[str] = field(default_factory=set)
     pre_tool: PreToolHook | None = None
     session_grants: set[str] = field(default_factory=set)
+    # Set for the length of a read-only task, such as /review (D-039): every
+    # mutator is refused at step 4, whatever the mode, with this as the reason.
+    read_only: str = ""
 
     # -- rule management --------------------------------------------------
 
@@ -457,6 +461,19 @@ class PolicyEngine:
             if rule.verdict is Verdict.DENY and rule.matches(op, targets):
                 return finish(Verdict.DENY, rule.reason or "denied by rule", rule.identity(), 2)
 
+        # Plan mode, and a read-only task such as /review, change nothing. They
+        # refuse here, with the DENY rules: as the mode baseline at step 4 they
+        # came after the ASK rules, so in plan mode an edit to an uncommitted
+        # file, or a command that could not be parsed, was put to the user --
+        # who could approve it -- instead of being refused (D-039).
+        if op.kind is ToolKind.MUTATOR:
+            if self.read_only:
+                return finish(Verdict.DENY, self.read_only, "task.read_only", 2)
+            if self.mode is Mode.PLAN:
+                return finish(Verdict.DENY,
+                              "plan mode: no changes until the plan is approved",
+                              "mode.plan", 2)
+
         # Step 3 -- ASK rules, including the dirty-file guard.
         if op.tool == "apply_patch":
             # Both sides normalized: the envelope's spelling comes from the
@@ -486,10 +503,6 @@ class PolicyEngine:
             )
 
         # Step 4 -- mode baseline.
-        if self.mode is Mode.PLAN and op.kind is ToolKind.MUTATOR:
-            return finish(Verdict.DENY,
-                          "plan mode: no changes until the plan is approved",
-                          "mode.plan", 4)
         if self.mode is Mode.ACCEPT_EDITS and op.tool == "apply_patch":
             return finish(Verdict.ALLOW, "accept_edits: workspace patch", "mode.accept_edits", 4)
 

@@ -108,7 +108,7 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 
 | Command | What it does |
 |---|---|
-| `foundry` / `foundry run [task]` | interactive session (the default); the model's plan is drawn as a checklist as it changes, and `/plan` shows it again. In plan mode, `/approve` approves the plan and lets the work start |
+| `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/undo`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`) |
 | `foundry exec <task> [--json]` | unattended execution; every ASK becomes DENY (fail-closed) |
 | `foundry resume [session] [task]` | continue a recorded session (default `last`, the newest here); refused if HEAD moved |
 | `foundry exec --resume <session> [task]` | the same, unattended; the task defaults to carrying on where it stopped |

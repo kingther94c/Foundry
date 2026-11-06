@@ -1,5 +1,7 @@
 """CLI entry points: session, resume, undo, login, logout, sessions, doctor.
 
+The interactive prompt and its slash commands are in cli/repl.py.
+
 The CLI owns no agent behaviour. It builds the runtime, subscribes to the event
 stream, and answers approval requests -- which is what makes a headless runner or
 another frontend a matter of swapping this file.
@@ -13,19 +15,26 @@ import json
 import os
 import sys
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from rich.console import Console
 from rich.markup import escape
 
 from foundry import __version__
-from foundry.cli.render import Renderer, print_plan
+from foundry.cli.render import Renderer
+from foundry.cli.repl import NEW_SESSION
+from foundry.cli.repl import confirm as _confirm
+from foundry.cli.repl import repl as _repl
+from foundry.cli.repl import show_outcome as _show_outcome
+from foundry.cli.repl import show_undo_plan as _show_plan
+from foundry.cli.repl import with_note as _with_note
 from foundry.core.auth import ApiKeySource, CredentialVault, StaticTokenSource
 from foundry.core.backends.anthropic import AnthropicBackend
 from foundry.core.backends.openai_compat import OpenAICompatBackend
 from foundry.core.backends.recording import RecordingBackend
 from foundry.core.backends.responses import ResponsesBackend
+from foundry.core.commands import CustomPrompt, load_custom_prompts
 from foundry.core.config import ANTHROPIC_PROTOCOL, Config, load_config, user_dir
 from foundry.core.context import ContextManager
 from foundry.core.errors import (
@@ -46,12 +55,7 @@ from foundry.core.events import (
 )
 from foundry.core.httpc import HttpClient
 from foundry.core.policy.engine import Mode, PolicyEngine, builtin_rules
-from foundry.core.prompts import (
-    environment_paragraph,
-    load_project_doc,
-    mode_line,
-    system_prompt,
-)
+from foundry.core.prompts import environment_paragraph, load_project_doc, system_prompt
 from foundry.core.redaction import default_redactor
 from foundry.core.resume import (
     CONTINUE_PROMPT,
@@ -68,17 +72,7 @@ from foundry.core.session import AuditLog, EventType, SessionStore, is_locked
 from foundry.core.tools.base import ReadTracker, ToolContext
 from foundry.core.tools.git import capture_baseline, is_git_repository
 from foundry.core.tools.registry import default_registry
-from foundry.core.undo import (
-    Outcome,
-    Plan,
-    apply_undo,
-    other_changes,
-    plan_undo,
-    read_source,
-    recorded_changes,
-    undo_note,
-    undo_payload,
-)
+from foundry.core.undo import apply_undo, other_changes, plan_undo, read_source, undo_payload
 from foundry.core.workspace import PathRejected, Workspace
 
 TRUST_FILE = "trusted.json"
@@ -96,6 +90,10 @@ class Wiring:
     outside: frozenset[str] = frozenset()
     # Prepended to the first task after a resume, then cleared.
     note: str = ""
+    # For /new, and the custom prompts the REPL offers (D-039).
+    home: Path | None = None
+    trusted: bool = False
+    prompts: dict[str, CustomPrompt] = field(default_factory=dict)
 
 
 def _trusted_paths(home: Path) -> set[str]:
@@ -131,7 +129,7 @@ def _confirm_trust(console: Console, home: Path, workspace: Path, *,
         return True
     has_input = (workspace / ".foundry" / "config.toml").is_file() or any(
         (workspace / name).is_file() for name in ("FOUNDRY.md", "AGENTS.md")
-    )
+    ) or (workspace / ".foundry" / "prompts").is_dir()  # custom prompts (D-039)
     if not has_input:
         return False
     if not interactive or not sys.stdin or not sys.stdin.isatty():
@@ -327,7 +325,8 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
         # Say it before spending a round trip on a request that cannot succeed.
         sink.emit(Notice(missing_credential, level="warning"))
     wiring = Wiring(workspace=workspace, config=config, runtime=runtime,
-                    renderer=renderer, session=session)
+                    renderer=renderer, session=session, home=home, trusted=trusted,
+                    prompts=load_custom_prompts(home, workspace.root, trusted=trusted))
     if state is not None:
         # Evidence starts over (D-035): the command history, the files read and
         # the session grants are this run's own, so nothing from before the
@@ -388,12 +387,6 @@ def _announce_resume(wiring: Wiring) -> None:
             f"in {mode.value} mode, as configured{again}", level="info"))
 
 
-def _with_note(wiring: Wiring, task: str) -> str:
-    """The first task after a resume carries the note; later ones do not."""
-    note, wiring.note = wiring.note, ""
-    return f"{note}\n\n{task}" if note else task
-
-
 def _close(wiring: Wiring, status: TerminalStatus, reason: str) -> None:
     # A journal write can fail (full volume, a backup agent holding the
     # file); losing the exit code over it would be worse than the lost line.
@@ -441,7 +434,17 @@ def cmd_session(args: argparse.Namespace) -> int:
             # ended is unfinished work, not success.
             status = outcome.status or TerminalStatus.PARTIAL
         else:
-            status = _repl(wiring, console)
+            while (ended := _repl(wiring, console)) == NEW_SESSION:
+                # /new: this session ends, and a fresh one starts in the same
+                # workspace -- a new journal, an empty conversation, no grants.
+                _close(wiring, TerminalStatus.CANCELLED, "the user started a new session")
+                try:
+                    wiring = build(wiring.workspace.root, home=wiring.home, console=console)
+                except FoundryError as exc:
+                    console.print(f"[red]{exc}[/red]")
+                    return EXIT_CODES[TerminalStatus.FAILED]
+                console.print(f"[dim]new session {wiring.session.session_id}[/dim]")
+            status = ended
     except KeyboardInterrupt:
         wiring.runtime.cancel()
         console.print("\n[yellow]cancelled[/yellow]")
@@ -449,149 +452,6 @@ def cmd_session(args: argparse.Namespace) -> int:
         _close(wiring, status, "session ended")
 
     return EXIT_CODES.get(status, 0)
-
-
-def _repl(wiring: Wiring, console: Console) -> TerminalStatus:
-    while True:
-        try:
-            task = console.input("\n[bold cyan]foundry>[/bold cyan] ").strip()
-        except (EOFError, KeyboardInterrupt):
-            console.print()
-            return TerminalStatus.CANCELLED
-        if not task:
-            continue
-        if task in ("/exit", "/quit"):
-            return TerminalStatus.CANCELLED
-        if task == "/undo":
-            _undo_last(wiring, console)
-            continue
-        if task == "/plan":
-            if wiring.runtime.plan:
-                print_plan(console, wiring.runtime.plan, wiring.runtime.plan_explanation)
-            else:
-                console.print("[dim]no plan: the model has not set one in this session[/dim]")
-            continue
-        if task == "/approve":
-            # Approved, the work starts at once: what the user approved is
-            # the plan, so the next turn carries it out.
-            task = _approve_plan(wiring, console)
-            if task is None:
-                continue
-        outcome = wiring.runtime.run_turn(_with_note(wiring, task))
-        if outcome.status is None:
-            continue
-        # A dropped stream or an unreachable provider ends the *turn*, not the
-        # session. Breaking here threw away the whole conversation over a
-        # network blip -- and the code that raises it says "transient, so it is
-        # retried", which no layer does once deltas have been shown. The user
-        # keeps their context and can simply ask again. The blocked turn is then
-        # not how the session ends: a later turn, or /exit, decides that.
-        if outcome.status is TerminalStatus.BLOCKED:
-            console.print("[yellow]that turn could not be completed; "
-                          "the session is still open.[/yellow]")
-            continue
-        return outcome.status
-
-
-_APPROVE_INTO = {"y": Mode.DEFAULT, "e": Mode.ACCEPT_EDITS}
-
-
-def _approve_plan(wiring: Wiring, console: Console) -> str | None:
-    """``/approve``: end plan mode as the user chooses (D-038), and return the
-    task that starts the work -- or None, with nothing changed.
-
-    Only the user can do this, by typing it at the prompt: nothing the model
-    writes, and nothing a tool prints, reaches the REPL's commands. The
-    permissions paragraph is built again, so the model is never told rules that
-    no longer hold, and the change is journaled.
-    """
-    runtime = wiring.runtime
-    policy = runtime.policy
-    if policy.mode is not Mode.PLAN:
-        console.print(f"[dim]nothing to approve: this session is in {policy.mode.value} "
-                      "mode, not plan mode[/dim]")
-        return None
-    if runtime.plan:
-        print_plan(console, runtime.plan, runtime.plan_explanation)
-    else:
-        console.print("[dim]the model has not set a plan with update_plan; approving lets "
-                      "it act on what it described[/dim]")
-    try:
-        answer = console.input("approve the plan? (y)es, ask before each edit / (e)dits "
-                               "apply without asking / (n)o, keep planning: ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        console.print()
-        answer = ""
-    mode = _APPROVE_INTO.get(answer[:1])
-    if mode is None:
-        console.print("[dim]still in plan mode[/dim]")
-        return None
-
-    policy.mode = mode
-    runtime.context.system_prompt = system_prompt(policy)
-    wiring.session.append(EventType.MODE_CHANGE, {"from": Mode.PLAN.value, "to": mode.value,
-                                                  "by": "repl",
-                                                  "reason": "the user approved the plan"})
-    runtime.events.emit(Notice(f"plan approved: this session is in {mode.value} mode now"))
-    return ("The user approved your plan, so plan mode is over. " + mode_line(mode)
-            + " Carry out the plan, and keep it current with update_plan.")
-
-
-def _show_plan(console: Console, plan: Plan, others: list[str]) -> None:
-    if plan.steps:
-        console.print(f"will undo {len(plan.steps)} file(s):")
-        for step in plan.steps:
-            label = {"none": "unchanged"}.get(step.action, step.action)
-            console.print(f"  {label:<9} {escape(step.path)}", soft_wrap=True)
-    if plan.skipped:
-        console.print("[yellow]cannot undo:[/yellow]")
-        for skip in plan.skipped:
-            console.print(f"  {escape(skip.path)}: {escape(skip.reason)}", soft_wrap=True)
-    if others:
-        console.print("[dim]not undone, changed by a command or outside the session: "
-                      f"{escape(', '.join(others))}[/dim]", soft_wrap=True)
-
-
-def _show_outcome(console: Console, outcome: Outcome) -> None:
-    if outcome.reverted:
-        console.print(f"[green]undone:[/green] {len(outcome.reverted)} file(s)")
-    for skip in outcome.failed:
-        console.print(f"[red]not undone:[/red] {escape(skip.path)}: {escape(skip.reason)}",
-                      soft_wrap=True)
-
-
-def _confirm(console: Console, question: str) -> bool:
-    try:
-        return console.input(f"{question} [y/N]: ").strip().lower().startswith("y")
-    except (EOFError, KeyboardInterrupt):
-        console.print()
-        return False
-
-
-def _undo_last(wiring: Wiring, console: Console) -> None:
-    """``/undo``: revert the session's newest patch, after asking.
-
-    The model is told on its next turn, its command evidence from before the
-    undo stops counting, and it reads each restored file again before patching.
-    """
-    records = list(SessionStore.read_records(wiring.session.path))
-    plan = plan_undo(recorded_changes(records), wiring.workspace, wiring.session.artifacts,
-                     last=True)
-    if plan.empty:
-        console.print("[dim]nothing to undo: no patch of this session is left to revert[/dim]")
-        return
-    _show_plan(console, plan, [])
-    if not plan.steps or not _confirm(console, "undo these changes?"):
-        console.print("[dim]nothing was changed[/dim]")
-        return
-    outcome = apply_undo(plan, wiring.workspace, wiring.session.artifacts)
-    ordinal = wiring.session.append(EventType.UNDO,
-                                    undo_payload(plan, outcome, scope="last", by="repl"))
-    wiring.runtime.files_changed(ordinal, [s.path for s in outcome.reverted])
-    note = undo_note(outcome)
-    if note:
-        wiring.note = f"{wiring.note}\n\n{note}" if wiring.note else note
-    _show_outcome(console, outcome)
 
 
 def cmd_undo(args: argparse.Namespace) -> int:
