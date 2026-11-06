@@ -219,7 +219,10 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
 - `/model NAME` ([D-047](decision-log.md)) sends the following requests to
   another model behind the same endpoint, writes `model_change`, and tells the
   model with the next message; the system prompt is not rebuilt, so the
-  prefix the provider binds thinking blocks to is unchanged.
+  prefix the provider binds thinking blocks to is unchanged. `/model` alone
+  ([D-067](decision-log.md)) lists the endpoint's models: each HTTP backend's
+  `list_models()` asks `GET /models` with its own headers, once, within 15
+  seconds and a megabyte, and the ids are shown, never sent or journaled.
 - `/effort LEVEL` ([D-061](decision-log.md)) changes `backend.effort` for the
   following requests -- `output_config.effort`, `reasoning.effort` or
   `reasoning_effort`, as the protocol spells it -- and writes `effort_change`;
@@ -373,7 +376,9 @@ class ModelBackend(Protocol):
   anchored_patch | whole_file`, `tool_schema_dialect`, and
   `system_prompt_variant`.
 - Streaming: line-by-line SSE parsing (httpc.py); an idle timeout; a dropped
-  stream is retried as a TransientError (up to the ceiling).
+  stream is retried as a TransientError (up to the ceiling). The one GET,
+  `get_json`, is for the model list (D-067): a timeout of its own for the
+  connection and every read, a cap on the body, no retries.
 - Reasoning ([D-044](decision-log.md)): each adapter yields
   `ReasoningComplete(text)` when a stretch of reasoning is complete -- an
   Anthropic thinking block (asked for with `display: "summarized"`), a

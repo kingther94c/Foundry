@@ -13,6 +13,24 @@ from dataclasses import dataclass
 from typing import Iterator, Literal, Protocol, runtime_checkable
 
 from foundry.core.conversation import Capabilities, ModelTurn, ToolUseBlock, TurnRequest, Usage
+from foundry.core.errors import ProtocolError
+
+# The model list (D-067): asked for only when the user types /model, so it
+# waits less than a turn would, and is never retried.
+MODELS_TIMEOUT_S = 15.0
+MODELS_MAX_BYTES = 1 << 20
+
+
+def model_ids(payload: object) -> list[str]:
+    """The ids in a model list, as OpenAI's and Anthropic's ``/models`` both
+    shape it (``{"data": [{"id": ...}, ...]}``): sorted, each once. An entry
+    without a string id is skipped; a payload with no list is a ProtocolError."""
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list):
+        raise ProtocolError("the endpoint's answer holds no list of models")
+    return sorted({entry["id"] for entry in data
+                   if isinstance(entry, dict) and isinstance(entry.get("id"), str)
+                   and entry["id"]})
 
 
 @dataclass(frozen=True, slots=True)

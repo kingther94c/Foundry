@@ -20,6 +20,9 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator
 
 from foundry.core.backends.base import (
+    MODELS_MAX_BYTES,
+    MODELS_TIMEOUT_S,
+    model_ids,
     ReasoningComplete,
     RequestRecord,
     StreamEvent,
@@ -365,6 +368,16 @@ class AnthropicBackend:
 
     def capabilities(self) -> Capabilities:
         return self.caps
+
+    def list_models(self) -> list[str]:
+        """The models the API lists (``GET /models``), for /model (D-067):
+        one page of up to a thousand, without the betas a turn asks for."""
+        headers = self._headers()
+        headers.pop("anthropic-beta")
+        response = self.client.get_json(f"{self.base_url.rstrip('/')}/models?limit=1000",
+                                        headers, timeout=MODELS_TIMEOUT_S,
+                                        max_bytes=MODELS_MAX_BYTES)
+        return model_ids(response.json())
 
     def _body(self, request: TurnRequest, *, stream: bool) -> dict[str, Any]:
         return build_body(request, stream=stream, effort=self.effort,

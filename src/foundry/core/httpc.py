@@ -7,8 +7,9 @@ configuration. certifi-backed clients trust only the Mozilla bundle and fail wit
 CERTIFICATE_VERIFY_FAILED until someone discovers SSL_CERT_FILE -- the single
 most common enterprise support ticket for Python HTTP clients.
 
-Scope is deliberately narrow: POST JSON, stream SSE, honour proxy settings, and
-raise the error taxonomy. No redirects, no connection pooling.
+Scope is deliberately narrow: POST JSON, stream SSE, GET JSON (the model list,
+D-067), honour proxy settings, and raise the error taxonomy. No redirects, no
+connection pooling.
 """
 
 from __future__ import annotations
@@ -203,6 +204,34 @@ class HttpClient:
             conn.close()
 
         raise_for_status(response)
+        return response
+
+    def get_json(self, url: str, headers: dict[str, str], *, timeout: float,
+                 max_bytes: int) -> Response:
+        """GET ``url``: at most ``timeout`` seconds to connect and as long
+        again between reads, and at most ``max_bytes`` of body (D-067)."""
+        conn, path, proxy_headers = self._connect(url)
+        # The request makes the connection, and its socket keeps this timeout
+        # for every read after it.
+        conn.timeout = timeout
+        send_headers = {"Accept": "application/json", **proxy_headers, **headers}
+        try:
+            conn.request("GET", path, headers=send_headers)
+            raw = conn.getresponse()
+            data = raw.read(max_bytes + 1)
+            response = Response(status=raw.status,
+                                headers={k.lower(): v for k, v in raw.getheaders()},
+                                body=data[:max_bytes])
+        except (socket.timeout, TimeoutError) as exc:
+            raise TransientError(f"request timed out: {exc}") from exc
+        except (http.client.HTTPException, OSError) as exc:
+            raise TransientError(f"connection failed: {exc}") from exc
+        finally:
+            conn.close()
+
+        raise_for_status(response)
+        if len(data) > max_bytes:
+            raise ProtocolError(f"the response was larger than {max_bytes} bytes")
         return response
 
     def stream_sse(self, url: str, payload: dict, headers: dict[str, str],

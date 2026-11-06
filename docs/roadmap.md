@@ -220,6 +220,8 @@ What a codex user still notices day to day, next:
     pastes one (landed, D-065).
 27. ~~`/review` of a branch or a commit~~ -- `--base REV` and `--commit REV`,
     as codex's review presets (landed, D-066).
+28. ~~The endpoint's models~~ -- `/model` alone lists them, the session's
+    marked (landed, D-067).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

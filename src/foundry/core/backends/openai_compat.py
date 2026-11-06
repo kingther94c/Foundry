@@ -13,6 +13,9 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator
 
 from foundry.core.backends.base import (
+    MODELS_MAX_BYTES,
+    MODELS_TIMEOUT_S,
+    model_ids,
     ReasoningComplete,
     RequestRecord,
     StreamEvent,
@@ -189,6 +192,12 @@ class OpenAICompatBackend:
 
     def capabilities(self) -> Capabilities:
         return self.caps
+
+    def list_models(self) -> list[str]:
+        """The models the endpoint lists (``GET /models``), for /model (D-067)."""
+        response = self.client.get_json(f"{self.base_url.rstrip('/')}/models", self._headers(),
+                                        timeout=MODELS_TIMEOUT_S, max_bytes=MODELS_MAX_BYTES)
+        return model_ids(response.json())
 
     def stream_turn(self, request: TurnRequest) -> Iterator[StreamEvent]:
         body = build_body(request, stream=self.stream, effort=self.effort)

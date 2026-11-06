@@ -21,6 +21,7 @@ from typing import Iterator
 from foundry.core.backends.base import ModelBackend, StreamEvent, TurnFinished
 from foundry.core.backends.replay import write_fixture
 from foundry.core.conversation import Capabilities, ModelTurn, TurnRequest
+from foundry.core.errors import FatalError
 
 
 @dataclass(slots=True)
@@ -32,6 +33,12 @@ class RecordingBackend:
 
     def capabilities(self) -> Capabilities:
         return self.inner.capabilities()
+
+    def list_models(self) -> list[str]:
+        lister = getattr(self.inner, "list_models", None)
+        if lister is None:
+            raise FatalError("this backend lists no models")
+        return lister()
 
     def stream_turn(self, request: TurnRequest) -> Iterator[StreamEvent]:
         for event in self.inner.stream_turn(request):

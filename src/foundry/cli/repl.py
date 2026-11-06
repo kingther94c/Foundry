@@ -752,6 +752,43 @@ _MODE_NAMES = {m.value: m for m in Mode} | {m.value.replace("_", "-"): m for m i
 _MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}")
 
 
+# At most this many of the endpoint's models are shown (D-067).
+MODELS_SHOWN = 200
+
+
+def show_models(backend, current: str, console: Console) -> None:
+    """The models the endpoint lists, the session's in bold (D-067). Asked
+    for each time, with the session's own endpoint and credential; what comes
+    back is shown, never sent to the model or journaled. A name Foundry would
+    not take in /model is left out, and counted."""
+    lister = getattr(backend, "list_models", None)
+    if lister is None:
+        console.print("[dim]this backend lists no models[/dim]")
+        return
+    try:
+        listed = lister()
+    except KeyboardInterrupt:
+        console.print("[yellow]stopped asking the endpoint for its models[/yellow]")
+        return
+    except FoundryError as exc:
+        console.print(f"[yellow]the endpoint did not list its models: "
+                      f"{escape(sanitize(str(exc)))}[/yellow]", soft_wrap=True)
+        return
+    usable = [m for m in listed if _MODEL_NAME.fullmatch(m)]
+    if not usable:
+        console.print("[dim]the endpoint lists no models[/dim]")
+    else:
+        shown = ", ".join(f"[bold]{escape(m)}[/bold]" if m == current else escape(m)
+                          for m in usable[:MODELS_SHOWN])
+        more = len(usable) - MODELS_SHOWN
+        console.print(f"the endpoint lists {len(usable)}: {shown}"
+                      + (f", and {more} more" if more > 0 else ""))
+    left_out = len(listed) - len(usable)
+    if left_out:
+        console.print(f"[dim]{left_out} with a name that is not a model name left "
+                      "out[/dim]")
+
+
 def tell_model(wiring: "Wiring", text: str) -> None:
     """Say ``text`` to the model with the user's next message: the
     conversation grows, and nothing already sent is rewritten."""
@@ -812,6 +849,7 @@ def set_model(wiring: "Wiring", console: Console, arguments: str = "") -> None:
     if not name:
         console.print(f"this session uses [bold]{escape(runtime.model)}[/bold] "
                       f"({backend.protocol}, profile {escape(backend.name)})")
+        show_models(runtime.backend, runtime.model, console)
         console.print("[dim]usage: /model NAME -- another model on the same endpoint; for "
                       "another endpoint, start a session with --profile[/dim]")
         return None
