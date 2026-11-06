@@ -17,10 +17,12 @@ Everything degrades honestly on non-Windows so the pure-logic tests run anywhere
 from __future__ import annotations
 
 import ctypes
+import functools
 import os
 import sys
 from ctypes import wintypes
 from dataclasses import dataclass
+from typing import Mapping
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -131,8 +133,10 @@ def taskkill_tree(pid: int) -> None:
         return
     import subprocess
 
-    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
-                   capture_output=True, check=False)
+    program = find_program("taskkill.exe")
+    if program is not None:
+        subprocess.run([program, "/F", "/T", "/PID", str(pid)],
+                       capture_output=True, check=False)
 
 
 # --- DPAPI ---------------------------------------------------------------
@@ -271,6 +275,53 @@ def _split_incomplete_tail(data: bytes) -> tuple[bytes, bytes]:
         expected = 2 if lead < 0xE0 else 3 if lead < 0xF0 else 4
         return (data[:-back], data[-back:]) if back < expected else (data, b"")
     return data, b""
+
+
+_DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD"
+
+
+def find_program(name: str, env: Mapping[str, str] | None = None) -> str | None:
+    """The absolute path of the program ``name`` names, or None (D-049).
+
+    Windows looks for a program in the current directory before PATH --
+    CreateProcess does, and so does shutil.which -- and Foundry is usually
+    started in the repository it works on: a ``git.exe`` committed at the top
+    of a clone ran in git's place the moment a session began, before anything
+    was asked. So a bare name is looked up on ``env``'s PATH alone, a relative
+    PATH entry (``.`` is one) is skipped, and the path returned is absolute,
+    which CreateProcess runs without a search. A name with a directory part
+    must be absolute.
+    """
+    source = os.environ if env is None else env
+    found = {key.upper(): value for key, value in source.items()
+             if key.upper() in ("PATH", "PATHEXT")}
+    return _search(name, found.get("PATH", ""), found.get("PATHEXT", ""))
+
+
+@functools.lru_cache(maxsize=64)
+def _search(name: str, path: str, pathext: str) -> str | None:
+    head, tail = os.path.split(name)
+    if head:
+        if not os.path.isabs(name):
+            return None
+        directories = [head]
+    else:
+        directories = [d.strip('"') for d in path.split(os.pathsep)]
+        directories = [d for d in directories if d and os.path.isabs(d)]
+    suffixes = [""]
+    if IS_WINDOWS:
+        # As cmd.exe does: a name that already ends in one of PATHEXT is
+        # taken as it is, any other is tried with each.
+        extensions = [e for e in (pathext or _DEFAULT_PATHEXT).split(os.pathsep)
+                      if e.startswith(".")]
+        if not any(tail.lower().endswith(e.lower()) for e in extensions):
+            suffixes = extensions
+    for directory in directories:
+        for suffix in suffixes:
+            candidate = os.path.join(directory, tail + suffix)
+            if os.path.isfile(candidate) and (IS_WINDOWS or os.access(candidate, os.X_OK)):
+                return candidate
+    return None
 
 
 def child_environment(base: dict[str, str] | None = None) -> dict[str, str]:

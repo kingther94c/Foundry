@@ -226,6 +226,10 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   produce an untrusted segmentation -> ASK. The segmenter is its own module
   with table-driven tests (these are the 300 most security-sensitive lines in
   the project).
+- Programs Foundry starts ([D-049](decision-log.md)) -- git, PowerShell for
+  commands, `taskkill`, MCP servers -- are started by an absolute path that
+  `winapi.find_program` found on PATH. Windows otherwise looks in the current
+  directory first, and that is usually the repository.
 - The circuit breaker table (step 0, before everything): see the explicit table
   in requirements §4.1 (including write protection for
   `<workspace>/.foundry/` -- the counterpart to the approval persistence

@@ -917,9 +917,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if sys.platform == "win32":
         import subprocess
 
+        from foundry.core.winapi import find_program
+
         try:
+            shell = find_program("powershell.exe")
+            if shell is None:
+                raise FileNotFoundError("powershell.exe")
             result = subprocess.run(
-                ["powershell.exe", "-NoProfile", "-Command", "$PSVersionTable.PSVersion.Major"],
+                [shell, "-NoProfile", "-Command", "$PSVersionTable.PSVersion.Major"],
                 capture_output=True, timeout=20,
             )
             console.print(f"powershell {result.stdout.decode('utf-8', 'replace').strip()}")

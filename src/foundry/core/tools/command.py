@@ -29,6 +29,7 @@ from foundry.core.winapi import (
     ProcessJob,
     child_environment,
     decode_output,
+    find_program,
     taskkill_tree,
 )
 from foundry.core.workspace import PathRejected
@@ -109,6 +110,12 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
     """
     argv = (POWERSHELL + [command + _EXIT_CODE_EPILOGUE] if IS_WINDOWS
             else ["/bin/sh", "-c", command])
+    if IS_WINDOWS:
+        # powershell.exe from PATH, not a copy in the current directory (D-049).
+        shell = find_program(argv[0], env)
+        if shell is None:
+            raise ToolError(f"{argv[0]} was not found on PATH")
+        argv = [shell, *argv[1:]]
     creationflags = 0
     if IS_WINDOWS:
         creationflags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW

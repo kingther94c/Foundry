@@ -16,7 +16,7 @@ from typing import Any
 from foundry.core.conversation import ToolSchema
 from foundry.core.errors import InvalidToolCall, ToolError
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput, truncate_middle
-from foundry.core.winapi import CREATE_NO_WINDOW, IS_WINDOWS, decode_output
+from foundry.core.winapi import CREATE_NO_WINDOW, IS_WINDOWS, decode_output, find_program
 
 # A repository's own .git/config is attacker-controlled input whenever the repo
 # arrived as an archive, off a share, or was touched by an approved command.
@@ -82,9 +82,13 @@ def run_git(args: list[str], cwd: Path, timeout_s: int = 30) -> tuple[int, str, 
     # switches off git's own ownership check everywhere.
     hardening += ["-c", f"safe.directory={cwd.as_posix()}"]
     extra = _DIFF_HARDENING if args and args[0] in _DIFF_COMMANDS else []
+    # Found on PATH, never in the current directory (D-049).
+    git = find_program("git")
+    if git is None:
+        raise ToolError("git is not on PATH")
     try:
         proc = subprocess.run(
-            ["git", *hardening, args[0], *extra, *args[1:]] if args else ["git", *hardening],
+            [git, *hardening, args[0], *extra, *args[1:]] if args else [git, *hardening],
             cwd=str(cwd), env=_git_env(cwd),
             capture_output=True, timeout=timeout_s, creationflags=flags,
         )

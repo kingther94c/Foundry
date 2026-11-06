@@ -19,7 +19,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import signal
 import subprocess
 import threading
@@ -42,6 +41,7 @@ from foundry.core.winapi import (
     IS_WINDOWS,
     ProcessJob,
     child_environment,
+    find_program,
 )
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -108,8 +108,9 @@ class StdioClient:
 
     def start(self) -> None:
         env = self.environment()
-        search = next((v for k, v in env.items() if k.upper() == "PATH"), None)
-        program = shutil.which(self.server.command, path=search)
+        # On PATH only: the current directory -- usually the repository --
+        # is not searched (D-049).
+        program = find_program(self.server.command, env)
         if program is None:
             raise McpError(f"{self.server.command!r} was not found on PATH")
         self._job = ProcessJob()
