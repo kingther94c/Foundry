@@ -207,6 +207,9 @@ What a codex user still notices day to day, next:
     `foundry resume` command (landed, D-059).
 21. ~~`exec` names its session~~ -- `session_started`, first, for
     `exec --resume` (landed, D-060).
+22. ~~Reasoning effort on every protocol~~ -- `backend.effort` for the
+    Responses API and Chat Completions too, and `/effort` mid-session
+    (landed, D-061).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

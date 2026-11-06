@@ -67,6 +67,8 @@ class EventType:
     MODEL_CHANGE = "model_change"
     # The user's notify program was started when a turn ended (D-050).
     NOTIFIED = "notified"
+    # The user chose another reasoning effort with /effort (D-061).
+    EFFORT_CHANGE = "effort_change"
     # The user ran a command at the prompt with `!` (D-055).
     USER_COMMAND = "user_command"
     # The user went back to an earlier point with /rewind (D-056): the history
@@ -80,6 +82,7 @@ class EventType:
 _FSYNC_TYPES = frozenset(
     {EventType.TERMINATION, EventType.APPROVAL, EventType.COMMAND_EXEC, EventType.POLICY_DECISION,
      EventType.RESUMED, EventType.UNDO, EventType.MODE_CHANGE, EventType.MODEL_CHANGE,
+     EventType.EFFORT_CHANGE,
      # Without them a resume cannot follow the history past the compaction
      # or the rewind.
      EventType.COMPACTED, EventType.REWOUND}

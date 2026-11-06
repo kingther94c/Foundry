@@ -104,7 +104,8 @@ def _tool_to_wire(schema: ToolSchema) -> dict[str, Any]:
     }
 
 
-def build_body(request: TurnRequest, *, stream: bool) -> dict[str, Any]:
+def build_body(request: TurnRequest, *, stream: bool,
+               effort: str | None = None) -> dict[str, Any]:
     messages: list[dict[str, Any]] = []
     results: list[ToolResultBlock] = []
     for message in request.messages:
@@ -130,6 +131,9 @@ def build_body(request: TurnRequest, *, stream: bool) -> dict[str, Any]:
         body["temperature"] = request.temperature
     if stream:
         body["stream_options"] = {"include_usage": True}
+    # Opt-in (D-061): a server that does not know the field may reject it.
+    if effort:
+        body["reasoning_effort"] = effort
     return body
 
 
@@ -169,6 +173,8 @@ class OpenAICompatBackend:
     stream: bool = True
     recorder: Any = None
     max_retries: int = 4
+    # reasoning_effort (D-061); None sends nothing.
+    effort: str | None = None
 
     @property
     def endpoint(self) -> str:
@@ -185,7 +191,7 @@ class OpenAICompatBackend:
         return self.caps
 
     def stream_turn(self, request: TurnRequest) -> Iterator[StreamEvent]:
-        body = build_body(request, stream=self.stream)
+        body = build_body(request, stream=self.stream, effort=self.effort)
         if self.recorder is not None:
             self.recorder.record(RequestRecord(model=request.model, body=body,
                                                endpoint=self.endpoint))

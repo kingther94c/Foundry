@@ -212,6 +212,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   another model behind the same endpoint, writes `model_change`, and tells the
   model with the next message; the system prompt is not rebuilt, so the
   prefix the provider binds thinking blocks to is unchanged.
+- `/effort LEVEL` ([D-061](decision-log.md)) changes `backend.effort` for the
+  following requests -- `output_config.effort`, `reasoning.effort` or
+  `reasoning_effort`, as the protocol spells it -- and writes `effort_change`;
+  the model is not told. Each protocol's levels are checked when the
+  configuration loads and when the command is typed; `default` sends none.
 - Rule syntax: `tool` / `tool(pattern)`, fnmatch, with a per-tool target key
   (run_command -> the segmented command string; file tools -> the
   workspace-relative path). The precedence order is fixed, with no numeric
@@ -378,7 +383,7 @@ class ModelBackend(Protocol):
   policy_decision / approval / command_exec / token_usage / capability_probe /
   validation_claim / git_baseline / termination / user_input / tool_reply /
   resumed / undo / mode_change / compacted / model_change / notified /
-  user_command / rewound` (`user_input`, `tool_reply` and
+  user_command / rewound / effort_change` (`user_input`, `tool_reply` and
   `resumed` added for resume, [D-035](decision-log.md); `undo` for undo,
   [D-036](decision-log.md); `mode_change` for plan approval,
   [D-038](decision-log.md); `compacted` for compaction, whose own request and
@@ -386,14 +391,15 @@ class ModelBackend(Protocol):
   `model_change` for `/model`, [D-047](decision-log.md); `notified` for the
   notify program, [D-050](decision-log.md); `user_command` for `!COMMAND`,
   [D-055](decision-log.md); `rewound` for `/rewind`, which keeps the history
-  it left as `compacted` does, [D-056](decision-log.md)). An image
+  it left as `compacted` does, [D-056](decision-log.md); `effort_change` for
+  `/effort`, [D-061](decision-log.md)). An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).
   Artifact contents are stored content-addressed at
   `sessions/<id>/artifacts/<sha256>`, and events reference only the digest.
 - Writes are serialised and every record is flushed as it is written;
   termination, approval, command-completion, policy-decision, resumed, undo,
-  mode-change, model-change, compacted and rewound records are also synced to disk. The reader tolerates a truncated final line,
+  mode-change, model-change, effort-change, compacted and rewound records are also synced to disk. The reader tolerates a truncated final line,
   and no termination event means `interrupted`. Schema migration happens only
   on the read side; historical journals are immutable. One process writes a
   journal at a time: the store holds an OS lock on `sessions/<id>/lock`.

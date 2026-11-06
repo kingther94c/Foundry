@@ -41,7 +41,12 @@ _PROTOCOL_DEFAULTS: dict[str, dict[str, str]] = {
                          "model": "claude-opus-5-5"},
 }
 
+# How hard the model reasons (D-061), as each protocol spells it:
+# output_config.effort for Claude, reasoning.effort and reasoning_effort for
+# the OpenAI shapes.
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+OPENAI_EFFORT_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh")
+ANY_EFFORT = tuple(dict.fromkeys(OPENAI_EFFORT_LEVELS + EFFORT_LEVELS))
 FALLBACK_VALUES = ("default", "off")
 REASONING_SUMMARIES = ("auto", "concise", "detailed", "none")
 MIN_CONTEXT_TOKENS = 1000
@@ -50,9 +55,9 @@ MIN_CONTEXT_TOKENS = 1000
 def _validate_backend_setting(key: str, value: Any) -> None:
     """Range and type checks for backend settings that have them."""
     if key == "effort":
-        if value is not None and value not in EFFORT_LEVELS:
+        if value is not None and value not in ANY_EFFORT:
             raise ConfigError(
-                f"backend.effort must be one of {', '.join(EFFORT_LEVELS)}, got {value!r}"
+                f"backend.effort must be one of {', '.join(ANY_EFFORT)}, got {value!r}"
             )
     elif key == "images":
         if not isinstance(value, bool):
@@ -520,7 +525,17 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
         config.record(key, value, "cli")
 
     _apply_protocol_defaults(config)
+    effort = config.backend.effort
+    if effort is not None and effort not in effort_levels(config.backend.protocol):
+        raise ConfigError(
+            f"backend.effort {effort!r} is not one the {config.backend.protocol} protocol "
+            f"takes: {', '.join(effort_levels(config.backend.protocol))}")
     return config
+
+
+def effort_levels(protocol: str) -> tuple[str, ...]:
+    """The reasoning efforts a protocol takes (D-061)."""
+    return EFFORT_LEVELS if protocol == ANTHROPIC_PROTOCOL else OPENAI_EFFORT_LEVELS
 
 
 def _was_set(config: Config, key: str) -> bool:

@@ -102,7 +102,8 @@ def _tool_to_wire(schema: ToolSchema) -> dict[str, Any]:
 
 
 def build_body(request: TurnRequest, *, stream: bool,
-               reasoning_summary: str | None = None) -> dict[str, Any]:
+               reasoning_summary: str | None = None,
+               effort: str | None = None) -> dict[str, Any]:
     instructions = ""
     items: list[dict[str, Any]] = []
     results: list[ToolResultBlock] = []
@@ -135,9 +136,11 @@ def build_body(request: TurnRequest, *, stream: bool,
         body["max_output_tokens"] = request.max_output_tokens
     if request.temperature is not None:
         body["temperature"] = request.temperature
-    # Opt-in (D-044): a model that does not reason rejects the field.
-    if reasoning_summary:
-        body["reasoning"] = {"summary": reasoning_summary}
+    # Opt-in (D-044, D-061): a model that does not reason rejects the field.
+    reasoning = {key: value for key, value in (("effort", effort),
+                                                ("summary", reasoning_summary)) if value}
+    if reasoning:
+        body["reasoning"] = reasoning
     return body
 
 
@@ -203,6 +206,8 @@ class ResponsesBackend:
     max_retries: int = 4
     # reasoning.summary ("auto", "concise", "detailed"); None sends nothing.
     reasoning_summary: str | None = None
+    # reasoning.effort (D-061); None sends nothing.
+    effort: str | None = None
 
     @property
     def endpoint(self) -> str:
@@ -219,7 +224,7 @@ class ResponsesBackend:
 
     def stream_turn(self, request: TurnRequest) -> Iterator[StreamEvent]:
         body = build_body(request, stream=self.stream,
-                          reasoning_summary=self.reasoning_summary)
+                          reasoning_summary=self.reasoning_summary, effort=self.effort)
         if self.recorder is not None:
             self.recorder.record(RequestRecord(model=request.model, body=body,
                                                endpoint=self.endpoint))

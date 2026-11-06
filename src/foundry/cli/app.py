@@ -325,9 +325,10 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
             f"unknown protocol {config.backend.protocol!r}; "
             f"supported: {', '.join(_PROTOCOLS)}"
         )
-    backend_kwargs: dict = {}
+    # Every protocol takes an effort (D-061); load_config checked it is one
+    # this protocol knows.
+    backend_kwargs: dict = {"effort": config.backend.effort}
     if backend_class is AnthropicBackend:
-        backend_kwargs["effort"] = config.backend.effort
         backend_kwargs["fallbacks"] = (None if config.backend.fallbacks == "off"
                                        else config.backend.fallbacks)
         if config.backend.reasoning_summary == "none":

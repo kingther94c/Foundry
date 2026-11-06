@@ -26,6 +26,7 @@ from rich.syntax import Syntax
 
 from foundry.cli.render import print_plan, sanitize
 from foundry.core.commands import builtin_prompt, expand, parse_command
+from foundry.core.config import effort_levels
 from foundry.core.context import SUMMARY_PREFIX
 from foundry.core.conversation import Message, Role, TextBlock
 from foundry.core.errors import Cancelled, FoundryError, ImageRejected, ToolError
@@ -435,6 +436,7 @@ def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
         ("model", f"{config.backend.model} ({config.backend.protocol}, profile "
                   f"{config.backend.name})"),
         ("mode", runtime.policy.mode.value),
+        ("effort", config.backend.effort or API_DEFAULT_EFFORT),
         ("tokens", f"{usage.input_tokens:,} in ({usage.cached_input_tokens:,} cached), "
                    f"{usage.output_tokens:,} out"),
         ("context", f"about {used:,} of {limit:,} tokens ({100 * used // max(limit, 1)}%)"),
@@ -694,6 +696,42 @@ def set_model(wiring: "Wiring", console: Console, arguments: str = "") -> None:
     return None
 
 
+# What an unset effort is called: none is sent, and the API decides (D-061).
+API_DEFAULT_EFFORT = "the API's default"
+
+
+def set_effort(wiring: "Wiring", console: Console, arguments: str = "") -> None:
+    """``/effort [LEVEL]``: show how hard the model reasons, or change it for
+    the rest of the session (D-061), as codex's /model offers. ``default``
+    sends no effort, leaving it to the API. Only the user can: commands are
+    read from what they type and nowhere else.
+    """
+    backend = wiring.config.backend
+    levels = effort_levels(backend.protocol)
+    level = arguments.strip().lower()
+    current = backend.effort or API_DEFAULT_EFFORT
+    if not level:
+        console.print(f"reasoning effort: [bold]{escape(current)}[/bold]")
+        console.print(f"[dim]usage: /effort LEVEL -- {', '.join(levels)}, or default[/dim]")
+        return None
+    chosen = None if level == "default" else level
+    if chosen is not None and chosen not in levels:
+        console.print(f"[yellow]{backend.protocol} takes {', '.join(levels)}, or "
+                      "default[/yellow]")
+        return None
+    if chosen == backend.effort:
+        console.print(f"[dim]already {escape(current)}[/dim]")
+        return None
+    wiring.session.append(EventType.EFFORT_CHANGE,
+                          {"from": backend.effort, "to": chosen, "by": "repl"})
+    backend.effort = chosen                 # what /status shows
+    wiring.runtime.backend.effort = chosen  # what the next request sends
+    wiring.chosen["effort"] = chosen        # what /new starts with
+    wiring.runtime.events.emit(Notice(
+        f"reasoning effort: {chosen or API_DEFAULT_EFFORT} now (it was {current})"))
+    return None
+
+
 # --- /undo (D-036) ---------------------------------------------------------------------
 
 
@@ -822,6 +860,8 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("approve", "in plan mode: approve the plan and let the work start", approve_plan),
     Command("mode", "show or change what the session may do without asking", set_mode,
             arguments="[NAME]"),
+    Command("effort", "show or change how hard the model reasons", set_effort,
+            arguments="[LEVEL]"),
     Command("model", "show or change the model, on the same endpoint", set_model,
             arguments="[NAME]"),
     Command("undo", "revert this session's newest patch", undo_last),

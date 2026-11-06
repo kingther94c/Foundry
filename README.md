@@ -94,7 +94,7 @@ Claude, put this in `%LOCALAPPDATA%\Foundry\config.toml` (or `$FOUNDRY_HOME`):
 [backend]
 protocol = "anthropic_messages"
 # model = "claude-opus-5-5"     # the default for this protocol
-# effort = "high"               # low | medium | high | xhigh | max; unset leaves the API default
+# effort = "high"               # low | medium | high | xhigh | max; unset leaves the API default; /effort changes it
 # reasoning_summary = "none"    # stop asking for the thinking summary shown as "thinking"
 # max_context_tokens = 1000000  # the model's window; masking starts at half of it
 ```
@@ -109,7 +109,7 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 
 | Command | What it does |
 |---|---|
-| `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/mode [NAME]`, `/model [NAME]`, `/undo`, `/compact [focus]`, `/rewind [N]`, `/image PATH`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`). The model reads your own `FOUNDRY.md` (or `AGENTS.md`) from the Foundry folder, then the repository's from its top down to the working directory |
+| `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/mode [NAME]`, `/model [NAME]`, `/effort [LEVEL]`, `/undo`, `/compact [focus]`, `/rewind [N]`, `/image PATH`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`). The model reads your own `FOUNDRY.md` (or `AGENTS.md`) from the Foundry folder, then the repository's from its top down to the working directory |
 | `foundry exec <task> [--json] [-o FILE] [--output-schema FILE]` | `-` as the task reads it from stdin; unattended execution, which first names its session (the `session_started` event with `--json`, a line on stderr without) for `exec --resume`; every ASK becomes DENY (fail-closed). `--mode accept_edits` lets it patch the workspace (commands still need a rule); `-o` writes its final summary or reply to FILE; `--output-schema` asks for a result matching a JSON Schema, checked by Foundry and printed as the only output |
 | `foundry resume [session] [task]` | continue a recorded session: with no id, pick from this workspace's recent ones (Enter is the newest; not at a terminal, `last`); refused if HEAD moved |
 | `foundry exec --resume <session> [task]` | the same, unattended; the task defaults to carrying on where it stopped |
@@ -166,6 +166,10 @@ What the model shows of its reasoning appears dim under "thinking" before it
 acts: Claude's thinking summaries, the reasoning DeepSeek-style servers stream,
 and -- with `reasoning_summary = "auto"` under `[backend]` -- a Responses
 model's summaries. `show_reasoning = false` under `[runtime]` hides it.
+How hard the model reasons is `effort` under `[backend]`, on every protocol:
+`none | minimal | low | medium | high | xhigh` for the OpenAI shapes (sent as
+`reasoning.effort` or `reasoning_effort`), the levels above for Claude. Unset
+sends none, and `/effort LEVEL` changes it mid-session.
 
 At the prompt, a pasted block -- a stack trace, a log, some code -- is sent as
 one message, and so is what you type between two lines of three double quotes
