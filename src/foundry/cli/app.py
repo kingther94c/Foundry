@@ -482,6 +482,30 @@ def _close(wiring: Wiring, status: TerminalStatus, reason: str) -> None:
             wiring.mcp.close()
 
 
+def farewell(wiring: Wiring) -> str:
+    """What an interactive session says as it ends, as codex does (D-059):
+    the tokens it used and how to continue it. Nothing for a session that
+    never began a conversation."""
+    usage, context = wiring.runtime.context.session_usage, wiring.runtime.context
+    if not context.history and not usage.total:
+        return ""
+    cached = f" ({usage.cached_input_tokens:,} cached)" if usage.cached_input_tokens else ""
+    tokens = f"tokens used: {usage.input_tokens:,} in{cached}, {usage.output_tokens:,} out."
+    if wiring.session.degraded:
+        return (f"{tokens} This session's journal is incomplete "
+                f"({wiring.session.degraded}), so it may not resume.")
+    command = f"foundry resume {wiring.session.session_id}"
+    if not same_path(Path.cwd(), wiring.workspace.root):
+        command += f' --workspace "{wiring.workspace.root}"'
+    return f"{tokens} To continue this session: {command}"
+
+
+def _say_farewell(console: Console, wiring: Wiring) -> None:
+    text = farewell(wiring)
+    if text:
+        console.print(f"[dim]{escape(text)}[/dim]", soft_wrap=True)
+
+
 def _credential_source(config: Config, vault: CredentialVault):
     """The credential this configuration uses. anthropic_messages has its own
     variable and vault field: an OpenAI key must never reach Anthropic, nor the
@@ -596,6 +620,7 @@ def cmd_session(args: argparse.Namespace) -> int:
                 # /new: this session ends, and a fresh one starts in the same
                 # workspace -- a new journal, an empty conversation, no grants.
                 _close(wiring, TerminalStatus.CANCELLED, "the user started a new session")
+                _say_farewell(console, wiring)
                 # The model and mode chosen with /model and /mode carry over, as
                 # if they had been given on the command line (D-047).
                 flags = {**flags, "overrides": {**(flags["overrides"] or {}),
@@ -613,6 +638,7 @@ def cmd_session(args: argparse.Namespace) -> int:
         console.print("\n[yellow]cancelled[/yellow]")
     finally:
         _close(wiring, status, "session ended")
+        _say_farewell(console, wiring)
 
     return EXIT_CODES.get(status, 0)
 

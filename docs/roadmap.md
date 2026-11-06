@@ -203,6 +203,8 @@ What a codex user still notices day to day, next:
     recent sessions and asks which (landed, D-057).
 19. ~~`@path` in a message~~ -- the file goes with it, as read_file shows it
     (landed, D-058).
+20. ~~How to continue, as a session ends~~ -- the tokens used and the
+    `foundry resume` command (landed, D-059).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
