@@ -199,6 +199,8 @@ What a codex user still notices day to day, next:
     to the model with the next message (landed, D-055).
 17. ~~Going back to an earlier message~~ -- `/rewind [N]`, as codex's Esc Esc;
     the files stay as they are (landed, D-056).
+18. ~~A resume picker~~ -- `foundry resume` with no id lists this workspace's
+    recent sessions and asks which (landed, D-057).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

@@ -23,7 +23,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from foundry import __version__
-from foundry.cli.render import Renderer
+from foundry.cli.render import Renderer, safe
 from foundry.cli.repl import NEW_SESSION
 from foundry.cli.repl import attach as _attach
 from foundry.cli.repl import take_images as _take_images
@@ -80,12 +80,14 @@ from foundry.core.resume import (
     find_journal,
     outside_changes,
     read_journal,
+    recent_sessions,
     resolve_session,
     resume_note,
     same_path,
+    summarize,
 )
 from foundry.core.runtime import AgentRuntime, Budget
-from foundry.core.session import AuditLog, EventType, SessionStore, is_locked
+from foundry.core.session import AuditLog, EventType, SessionStore
 from foundry.core.tools.base import ReadTracker, ToolContext
 from foundry.core.tools.git import capture_baseline, is_git_repository
 from foundry.core.tools.registry import default_registry
@@ -506,9 +508,65 @@ def _config_args(args: argparse.Namespace, *, mode: Mode | None = None) -> dict:
             "settings": parse_settings(args.config or [])}
 
 
+# How many sessions the resume picker offers, and how much of each one's
+# first message it shows (D-057).
+PICK_LIMIT = 10
+TASK_PREVIEW = 60
+
+
+def _interactive() -> bool:
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _preview(task: str) -> str:
+    """A message's first line, cut to fit a listing."""
+    line = task.strip().splitlines()[0] if task.strip() else "(no message)"
+    return line if len(line) <= TASK_PREVIEW else line[:TASK_PREVIEW - 3] + "..."
+
+
+def _session_line(summary) -> str:
+    style = "green" if summary.status is TerminalStatus.COMPLETED else "yellow"
+    busy = "  [cyan]in use[/cyan]" if summary.in_use else ""
+    return (f"{summary.session_id}  [{style}]{summary.status.value}[/{style}]{busy}  "
+            f"[dim]{safe(_preview(summary.first_task))}[/dim]")
+
+
+def pick_session(console, workspace: Path) -> str | None:
+    """Which of this workspace's recent sessions to resume, as codex's
+    `resume` asks (D-057): Enter is the newest. None: the user chose none.
+    With one session or none there is nothing to choose, and ``last`` says so."""
+    recent = recent_sessions(user_dir() / "sessions", workspace, PICK_LIMIT)
+    if len(recent) < 2:
+        return "last"
+    console.print(f"[bold]recent sessions in {safe(str(workspace))}[/bold]")
+    for number, summary in enumerate(recent, 1):
+        console.print(f" {number:>2}  {_session_line(summary)}", soft_wrap=True)
+    while True:
+        try:
+            answer = console.input("resume which? [1] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return None
+        if not answer:
+            return recent[0].session_id
+        if answer.isdigit() and 1 <= int(answer) <= len(recent):
+            return recent[int(answer) - 1].session_id
+        console.print(f"[yellow]a number from 1 to {len(recent)}, or Enter for the "
+                      "newest; Ctrl+C resumes none[/yellow]")
+
+
 def cmd_session(args: argparse.Namespace) -> int:
     """`run`, and `resume`, which is the same session continued from its journal."""
     console = Console()
+    if getattr(args, "command", None) == "resume" and args.resume is None:
+        # A person at a terminal picks; a script gets the newest (D-057).
+        args.resume = (pick_session(console, Path(args.workspace).resolve())
+                       if _interactive() else "last")
+        if args.resume is None:
+            return EXIT_CODES[TerminalStatus.CANCELLED]
     try:
         flags = _config_args(args)
         wiring = build(Path(args.workspace).resolve(), console=console,
@@ -701,13 +759,9 @@ def cmd_sessions(args: argparse.Namespace) -> int:
         return 0
 
     for entry in entries[:args.limit]:
-        journal = entry / "events.jsonl"
-        if not journal.is_file():
+        if not (entry / "events.jsonl").is_file():
             continue
-        status = SessionStore.terminal_status(journal)
-        style = "green" if status is TerminalStatus.COMPLETED else "yellow"
-        busy = "  [cyan]in use[/cyan]" if is_locked(entry) else ""
-        console.print(f"{entry.name}  [{style}]{status.value}[/{style}]{busy}")
+        console.print(_session_line(summarize(entry)), soft_wrap=True)
     return 0
 
 
@@ -1109,8 +1163,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.set_defaults(func=cmd_session)
 
     resume = sub.add_parser("resume", help="continue a recorded session")
-    resume.add_argument("resume", nargs="?", default="last", metavar="session",
-                        help="the session id (default: last, the newest in this workspace)")
+    resume.add_argument("resume", nargs="?", default=None, metavar="session",
+                        help="the session id, or last for the newest in this workspace "
+                             "(default: at a terminal, pick from the recent ones; "
+                             "otherwise last)")
     resume.add_argument("task", nargs="?", help="run one task then exit")
     resume.add_argument("--workspace", default=".", help="repository the session worked in")
     _image_flag(resume)

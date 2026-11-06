@@ -111,11 +111,11 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 |---|---|
 | `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/mode [NAME]`, `/model [NAME]`, `/undo`, `/compact [focus]`, `/rewind [N]`, `/image PATH`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`). The model reads your own `FOUNDRY.md` (or `AGENTS.md`) from the Foundry folder, then the repository's from its top down to the working directory |
 | `foundry exec <task> [--json] [-o FILE] [--output-schema FILE]` | `-` as the task reads it from stdin; unattended execution; every ASK becomes DENY (fail-closed). `--mode accept_edits` lets it patch the workspace (commands still need a rule); `-o` writes its final summary or reply to FILE; `--output-schema` asks for a result matching a JSON Schema, checked by Foundry and printed as the only output |
-| `foundry resume [session] [task]` | continue a recorded session (default `last`, the newest here); refused if HEAD moved |
+| `foundry resume [session] [task]` | continue a recorded session: with no id, pick from this workspace's recent ones (Enter is the newest; not at a terminal, `last`); refused if HEAD moved |
 | `foundry exec --resume <session> [task]` | the same, unattended; the task defaults to carrying on where it stopped |
 | `foundry undo [session] [--last] [--dry-run] [--yes]` | revert the files a session patched (default `last`); a file edited since is left alone. In a session, `/undo` reverts its newest patch |
 | `foundry record <task> --output f.json` | record a session as a replay fixture |
-| `foundry sessions [id]` | list sessions (and which are in use), or show one |
+| `foundry sessions [id]` | list sessions with each one's first message (and which are in use), or show one |
 | `foundry report [--json]` | patch first-try success rate, command failures, denials, token stats |
 | `foundry login` / `logout` | credential management (DPAPI encrypted) |
 | `foundry doctor` | environment self-check |

@@ -25,8 +25,9 @@ import base64
 import os
 import re
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from foundry.core.conversation import (
     IR_VERSION,
@@ -45,7 +46,13 @@ from foundry.core.context import unbind
 from foundry.core.errors import ResumeError
 from foundry.core.events import PlanStep, TerminalStatus
 from foundry.core.policy.engine import normalize_path
-from foundry.core.session import SCHEMA_VERSION, EventType, JournalRecord, SessionStore
+from foundry.core.session import (
+    SCHEMA_VERSION,
+    EventType,
+    JournalRecord,
+    SessionStore,
+    is_locked,
+)
 from foundry.core.tools.git import GitBaseline
 from foundry.core.tools.plan import steps_from_payload
 
@@ -564,8 +571,13 @@ def resolve_session(sessions: Path, session_id: str, workspace: Path) -> Path:
 
 def latest_session(sessions: Path, workspace: Path) -> str | None:
     """The newest session recorded in this workspace. Ids sort by start time."""
+    return next((entry.name for entry in _workspace_sessions(sessions, workspace)), None)
+
+
+def _workspace_sessions(sessions: Path, workspace: Path) -> Iterator[Path]:
+    """The folders of the sessions recorded in this workspace, newest first."""
     if not sessions.is_dir():
-        return None
+        return
     for entry in sorted((p for p in sessions.iterdir() if p.is_dir()), reverse=True):
         journal = entry / "events.jsonl"
         if not journal.is_file():
@@ -576,8 +588,37 @@ def latest_session(sessions: Path, workspace: Path) -> str | None:
             continue
         recorded = first.payload.get("workspace") if first is not None else None
         if isinstance(recorded, str) and recorded and same_path(recorded, workspace):
-            return entry.name
-    return None
+            yield entry
+
+
+@dataclass(frozen=True, slots=True)
+class SessionSummary:
+    """What the resume picker and `foundry sessions` show of one (D-057)."""
+    session_id: str
+    status: TerminalStatus
+    first_task: str
+    in_use: bool
+
+
+def summarize(session_dir: Path) -> SessionSummary:
+    """How the session ended (``interrupted`` without a record of it), the
+    first message the user sent, and whether a store holds it now."""
+    journal = session_dir / "events.jsonl"
+    first_task = ""
+    try:
+        for record in SessionStore.read_records(journal):
+            if record.type == EventType.USER_INPUT:
+                first_task = str(record.payload.get("text", ""))
+                break
+        status = SessionStore.terminal_status(journal)
+    except (OSError, UnicodeDecodeError):
+        status = TerminalStatus.INTERRUPTED
+    return SessionSummary(session_dir.name, status, first_task, is_locked(session_dir))
+
+
+def recent_sessions(sessions: Path, workspace: Path, limit: int) -> list[SessionSummary]:
+    """This workspace's newest ``limit`` sessions, newest first (D-057)."""
+    return [summarize(entry) for entry in islice(_workspace_sessions(sessions, workspace), limit)]
 
 
 def outside_changes(state: JournalState, current: GitBaseline) -> frozenset[str]:
