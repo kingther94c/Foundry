@@ -359,7 +359,8 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
 # --- built-in rules -------------------------------------------------------
 
 READ_ONLY_TOOLS = ("list_files", "search_text", "read_file", "read_artifact",
-                   "view_image", "git_status", "git_diff", "update_plan", "finish")
+                   "view_image", "repo_map", "git_status", "git_diff", "update_plan",
+                   "finish")
 
 
 def builtin_rules() -> tuple[Rule, ...]:

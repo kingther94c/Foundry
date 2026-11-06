@@ -164,6 +164,10 @@ message, and the model can look at an image in the workspace itself with
 `view_image`. PNG, JPEG, GIF and WebP up to 3.75 MB are sent as they are; for a
 text-only model, set `images = false` under `[backend]`.
 
+In a Python repository the model can ask for a map before it reads:
+`repo_map` outlines the classes, functions and signatures of a file, or of a
+directory with the most-imported files first, within about 3,000 tokens.
+
 ## Design points
 
 - **One loop**: `while the model returns tool calls: policy -> execute -> feed

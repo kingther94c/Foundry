@@ -167,7 +167,17 @@ Each item lands on its own branch with a D-entry, tests and a mutation check.
 7. ~~Images~~ -- attaching one to a task (`-i`, `/image`), a `view_image`
    tool, and an MCP tool's images, where the backend accepts them (landed,
    D-045).
-8. A Python-only repo map (stdlib `ast`).
+8. ~~A Python-only repo map~~ -- the `repo_map` tool, from the standard
+   library's `ast`, ranked by imports (landed, D-046).
+
+With the list above done, the next gaps a codex user would notice day to day
+(2026-11-07):
+
+9. Changing the mode and the model inside a session: `/mode NAME` and
+   `/model NAME` (codex's `/approvals` and `/model`).
+10. A `notify` program run when a turn ends, for long work left unattended.
+11. `exec --output-schema FILE`: the final message as JSON that matches a
+    schema, for scripts.
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
@@ -177,6 +187,7 @@ hosted web search, and interactive PTY sessions for long-running commands.
 
 ~~session resume~~ (landed, D-035) | ~~LLM summarisation compaction~~
 (landed, D-040) | ~~a visible `update_plan`~~ (landed, D-037) | ~~skills and
-slash commands~~ (slash commands and custom prompts landed, D-039) | enabling the subagent seam | an MCP bridge (the IR already
-lines up) | ~~checkpoint/undo~~ (landed as patch undo, D-036) | a Python-only
-repo map (stdlib ast) | research into a restricted-token sandbox.
+slash commands~~ (slash commands and custom prompts landed, D-039) | enabling the subagent seam | ~~an MCP bridge~~ (landed as the
+MCP client, D-043) | ~~checkpoint/undo~~ (landed as patch undo, D-036) | ~~a
+Python-only repo map~~ (landed, D-046) | research into a restricted-token
+sandbox.

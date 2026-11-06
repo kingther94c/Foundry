@@ -1,4 +1,5 @@
-"""The tool surface: the nine V1 tools, and update_plan (D-037).
+"""The tool surface: the nine V1 tools, update_plan (D-037), view_image
+(D-045) and repo_map (D-046).
 
 Kept deliberately small. SWE-agent's ablations found concise, guard-railed tools
 raise success rates more than additional tools do, and every tool is also a
@@ -19,6 +20,7 @@ from foundry.core.tools.git import GitDiff, GitStatus
 from foundry.core.tools.image import ViewImage
 from foundry.core.tools.patch import ApplyPatch
 from foundry.core.tools.plan import UpdatePlan
+from foundry.core.tools.repomap import RepoMap
 
 
 @dataclass(slots=True)
@@ -47,7 +49,7 @@ def default_registry(*, recorder=None, images: bool = True) -> ToolRegistry:
     view_image is not offered (D-045)."""
     registry = ToolRegistry()
     for tool in (
-        ListFiles(), SearchText(), ReadFile(), ReadArtifact(),
+        ListFiles(), SearchText(), ReadFile(), ReadArtifact(), RepoMap(),
         *((ViewImage(),) if images else ()),
         ApplyPatch(), RunCommand(recorder=recorder),
         GitStatus(), GitDiff(), UpdatePlan(), Finish(),

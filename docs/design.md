@@ -18,7 +18,7 @@ foundry/
 │   ├── runtime.py           # AgentRuntime: the one loop
 │   ├── context.py           # ContextManager: projection / truncation / masking / token accounting
 │   ├── policy/              # PolicyEngine: rules, modes, the six-step pipeline, the command segmenter
-│   ├── tools/               # ToolExecutor + the 8 tool implementations + the workspace boundary
+│   ├── tools/               # ToolExecutor + the tool implementations + the workspace boundary
 │   ├── mcp.py               # the MCP client over stdio: servers' tools as policy-checked tools (D-043)
 │   ├── images.py            # images the model is shown: checked, sized, base64 (D-045)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
@@ -287,6 +287,12 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   checked by `core/images.py` from its own bytes -- PNG, JPEG, GIF or WebP, at
   most 3.75 MB, no side over 8000 pixels -- and is never resized. Not offered
   when `backend.images = false`.
+- `repo_map(path?)` ([D-046](decision-log.md)): an outline of Python code from
+  `ast` -- classes, fields, methods, signatures, constants, with the line each
+  starts on. One file gets its whole outline; a directory gets a brief one,
+  files ranked by how many others import them (tests last) and fitted to about
+  3,000 tokens: outlines, then a line of names, then paths, so nothing left
+  out goes unnamed. Read-only; parsing runs nothing; cached by mtime and size.
 
 ## 8. ModelBackend and AuthProvider
 
