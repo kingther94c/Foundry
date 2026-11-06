@@ -197,6 +197,8 @@ What a codex user still notices day to day, next:
     codex shows it under its input (landed, D-054).
 16. ~~`!COMMAND` at the prompt~~ -- a command the user runs, its output told
     to the model with the next message (landed, D-055).
+17. ~~Going back to an earlier message~~ -- `/rewind [N]`, as codex's Esc Esc;
+    the files stay as they are (landed, D-056).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

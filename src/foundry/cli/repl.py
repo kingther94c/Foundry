@@ -26,6 +26,8 @@ from rich.syntax import Syntax
 
 from foundry.cli.render import print_plan, sanitize
 from foundry.core.commands import builtin_prompt, expand, parse_command
+from foundry.core.context import SUMMARY_PREFIX
+from foundry.core.conversation import Message, Role, TextBlock
 from foundry.core.errors import Cancelled, FoundryError, ImageRejected
 from foundry.core.images import MAX_IMAGES_PER_MESSAGE, load as load_image
 from foundry.core.events import Notice, TerminalStatus
@@ -682,6 +684,62 @@ def undo_last(wiring: "Wiring", console: Console, arguments: str = "") -> None:
     return None
 
 
+# How much of a message /rewind shows, so it can be sent again, edited.
+REWIND_SHOWN = 2_000
+REWIND_NOTE = ("The user went back to an earlier point in this conversation: what came "
+               "after it is gone from your view, but nothing in the workspace was "
+               "reverted.{changed} Commands run since may have changed other files; check "
+               "the workspace before relying on it, and read a file again before patching it.")
+
+
+def rewind_points(history: list[Message]) -> list[int]:
+    """Where /rewind can go back to: before each of the user's messages since
+    the conversation, or its last compaction, began."""
+    start = 0
+    for index, message in enumerate(history):
+        if message.role is Role.USER and message.text_content.startswith(SUMMARY_PREFIX):
+            start = index + 1
+    return [index for index in range(start, len(history))
+            if history[index].role is Role.USER
+            and any(isinstance(b, TextBlock) for b in history[index].blocks)]
+
+
+def rewind(wiring: "Wiring", console: Console, arguments: str = "") -> None:
+    """``/rewind [N]``: go back to before your last message, or the Nth last
+    (D-056), as codex's Esc Esc does. The model no longer sees that message
+    or anything after it; the message is shown, to be sent again as it was
+    or edited. Nothing in the workspace changes -- /undo reverts patches --
+    and the model is told so with the next message, with the files it
+    patched after that point.
+    """
+    arguments = arguments.strip()
+    if arguments and not (arguments.isdigit() and int(arguments) >= 1):
+        console.print("[yellow]usage: /rewind [N] -- N, from 1, counts your messages back "
+                      "from the last[/yellow]")
+        return None
+    count = int(arguments or 1)
+    history = wiring.runtime.context.history
+    points = rewind_points(history)
+    if not points:
+        console.print("[dim]nothing to go back to: no message of yours since the "
+                      "conversation, or its last compaction, began[/dim]")
+        return None
+    if count > len(points):
+        console.print(f"[yellow]only {len(points)} of your messages can be gone back "
+                      "to[/yellow]")
+        return None
+    index = points[-count]
+    text, _ = truncate_middle(history[index].text_content, REWIND_SHOWN)
+    changed = wiring.runtime.rewind(index)
+    console.print("[dim]went back to before this message; the model no longer sees it or "
+                  "what followed, and files are as they are (/undo reverts patches):[/dim]")
+    console.print(escape(sanitize(text)), soft_wrap=True)
+    tell_model(wiring, REWIND_NOTE.format(changed=(
+        f" Files you patched after that point are still changed: {', '.join(changed)}."
+        if changed else "")))
+    return None
+
+
 COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("help", "this list", _help),
     Command("status", "session, model, mode, tokens, context and plan", _status),
@@ -696,6 +754,8 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("model", "show or change the model, on the same endpoint", set_model,
             arguments="[NAME]"),
     Command("undo", "revert this session's newest patch", undo_last),
+    Command("rewind", "go back to before your last message, or the Nth last; files stay "
+            "as they are", rewind, arguments="[N]"),
     Command("review", "a read-only review of the uncommitted changes", _review,
             arguments="[focus]"),
     Command("init", "ask the model to write FOUNDRY.md for this repository", _init),

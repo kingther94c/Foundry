@@ -374,18 +374,23 @@ class ModelBackend(Protocol):
   `session_meta / model_request / model_response / tool_call / tool_result /
   policy_decision / approval / command_exec / token_usage / capability_probe /
   validation_claim / git_baseline / termination / user_input / tool_reply /
-  resumed / undo / mode_change / compacted` (`user_input`, `tool_reply` and
+  resumed / undo / mode_change / compacted / model_change / notified /
+  user_command / rewound` (`user_input`, `tool_reply` and
   `resumed` added for resume, [D-035](decision-log.md); `undo` for undo,
   [D-036](decision-log.md); `mode_change` for plan approval,
   [D-038](decision-log.md); `compacted` for compaction, whose own request and
-  response carry `purpose: "compact"`, [D-040](decision-log.md)). An image
+  response carry `purpose: "compact"`, [D-040](decision-log.md);
+  `model_change` for `/model`, [D-047](decision-log.md); `notified` for the
+  notify program, [D-050](decision-log.md); `user_command` for `!COMMAND`,
+  [D-055](decision-log.md); `rewound` for `/rewind`, which keeps the history
+  it left as `compacted` does, [D-056](decision-log.md)). An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).
   Artifact contents are stored content-addressed at
   `sessions/<id>/artifacts/<sha256>`, and events reference only the digest.
 - Writes are serialised and every record is flushed as it is written;
   termination, approval, command-completion, policy-decision, resumed, undo,
-  mode-change and compacted records are also synced to disk. The reader tolerates a truncated final line,
+  mode-change, model-change, compacted and rewound records are also synced to disk. The reader tolerates a truncated final line,
   and no termination event means `interrupted`. Schema migration happens only
   on the read side; historical journals are immutable. One process writes a
   journal at a time: the store holds an OS lock on `sessions/<id>/lock`.

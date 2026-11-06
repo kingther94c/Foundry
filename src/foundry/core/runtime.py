@@ -185,6 +185,9 @@ class AgentRuntime:
     _refreshed: bool = False
     # Journal ordinal of the last successful change to the workspace.
     _last_mutation: int = 0
+    # Each file a tool changed, with the history's length when it did: what
+    # a rewind to before that point leaves changed (D-056).
+    _patched_at: list[tuple[int, str]] = field(default_factory=list)
     # The model's plan (D-037): the session's, replaced whole by update_plan.
     plan: tuple[PlanStep, ...] = ()
     plan_explanation: str = ""
@@ -401,6 +404,8 @@ class AgentRuntime:
         replaced = len(self.context.history)
         self.context.replace_history(self.context.compacted_history(summary))
         self.tool_ctx.read_tracker.clear()
+        # Positions in the old history mean nothing in the new one.
+        self._patched_at = []
         after = self.context.estimated_context_tokens()
         self._journal(EventType.COMPACTED, {
             "reason": "auto" if auto else "user",
@@ -408,14 +413,42 @@ class AgentRuntime:
             "replaced": replaced,
             "tokens_before": before,
             "tokens_after": after,
-            "messages": [
-                {"role": m.role.value,
-                 "blocks": [self._block_payload(b, self._store_image) for b in m.blocks]}
-                for m in self.context.history
-            ],
+            "messages": self._history_payload(),
         })
         self._emit(Compacted(tokens_before=before, tokens_after=after, auto=auto))
         return ""
+
+    def rewind(self, length: int) -> list[str]:
+        """Go back to the conversation's first ``length`` messages (/rewind,
+        D-056) and return the files changed after that point.
+
+        Nothing in the workspace is reverted. The model no longer sees what
+        it read after the point, so every file is read again before it is
+        patched, as after a compaction. The history kept is journaled whole,
+        as a compaction's is, so a resume rebuilds it exactly.
+        """
+        removed = len(self.context.history) - length
+        self.context.truncate(length)
+        self.tool_ctx.read_tracker.clear()
+        changed = list(dict.fromkeys(path for at, path in self._patched_at if at > length))
+        # Those changes now come before the next message, which tells of them:
+        # going back past that message again forgets it too.
+        self._patched_at = [(min(at, length + 1), path) for at, path in self._patched_at]
+        self._journal(EventType.REWOUND, {
+            "keep": length,
+            "removed": removed,
+            "turn": self.context.turn,
+            "turns": list(self.context._turn_of_message),
+            "messages": self._history_payload(),
+        })
+        return changed
+
+    def _history_payload(self) -> list[dict[str, Any]]:
+        return [
+            {"role": m.role.value,
+             "blocks": [self._block_payload(b, self._store_image) for b in m.blocks]}
+            for m in self.context.history
+        ]
 
     def _sample(self, messages: tuple[Message, ...] | None = None, purpose: str = ""):
         request = TurnRequest(
@@ -683,6 +716,8 @@ class AgentRuntime:
         changed = not output.is_error or bool(output.metadata.get("applied"))
         if op.kind is ToolKind.MUTATOR and op.tool != "run_command" and changed:
             self._last_mutation = max(self._last_mutation, ordinal)
+            at = len(self.context.history)
+            self._patched_at.extend((at, path) for path in op.args.get("paths") or ())
         self._reply(call, content, is_error=output.is_error, images=tuple(output.images))
         if planned:
             self._emit(PlanUpdated(call.call_id, self.plan, self.plan_explanation))

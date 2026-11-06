@@ -199,6 +199,17 @@ class ContextManager:
             and unbind(self._sent[index]) is self._sent[index]
         }
 
+    def truncate(self, length: int) -> None:
+        """Forget every message from position ``length`` on (/rewind, D-056).
+        What is kept is unchanged, so the reasoning in it stays bound to it."""
+        if not 0 <= length <= len(self.history):
+            raise ValueError("a rewind keeps part of the history, not more than it")
+        del self.history[length:]
+        del self._turn_of_message[length:]
+        # A request's first message is the system message.
+        self._sent = self._sent[:length + 1]
+        self._unbound = {index for index in self._unbound if index <= length}
+
     def append(self, message: Message) -> None:
         self.history.append(message)
         self._turn_of_message.append(self._turn)

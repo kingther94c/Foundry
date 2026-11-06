@@ -69,6 +69,9 @@ class EventType:
     NOTIFIED = "notified"
     # The user ran a command at the prompt with `!` (D-055).
     USER_COMMAND = "user_command"
+    # The user went back to an earlier point with /rewind (D-056): the history
+    # it kept.
+    REWOUND = "rewound"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced
@@ -77,8 +80,9 @@ class EventType:
 _FSYNC_TYPES = frozenset(
     {EventType.TERMINATION, EventType.APPROVAL, EventType.COMMAND_EXEC, EventType.POLICY_DECISION,
      EventType.RESUMED, EventType.UNDO, EventType.MODE_CHANGE, EventType.MODEL_CHANGE,
-     # Without it a resume cannot follow the history past the compaction.
-     EventType.COMPACTED}
+     # Without them a resume cannot follow the history past the compaction
+     # or the rewind.
+     EventType.COMPACTED, EventType.REWOUND}
 )
 
 _ARTIFACT_ID = re.compile(r"[0-9a-f]{64}")

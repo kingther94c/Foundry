@@ -356,6 +356,22 @@ def _fold_requests(records: list[JournalRecord],
             original = None
             last_request, last_turn = index, turn
             continue
+        if record.type == EventType.REWOUND:
+            # /rewind (D-056): the history it kept, with each message's round.
+            raw, kept = record.payload.get("messages"), record.payload.get("turns")
+            turn = max(_int(record.payload.get("turn")), last_turn)
+            if (not isinstance(raw, list) or not isinstance(kept, list)
+                    or len(raw) != len(kept) or not all(type(t) is int for t in kept)
+                    or any(a > b for a, b in zip(kept, kept[1:]))
+                    or (kept and not (0 <= kept[0] and kept[-1] <= turn))):
+                raise ResumeError(f"inconsistent journal at record {record.ordinal}: "
+                                  "a rewind without the history it kept")
+            history = [decode_message(m, load) for m in raw]
+            turns = list(kept)
+            answered = False
+            original = None
+            last_request, last_turn = index, turn
+            continue
         if record.type == EventType.MODEL_RESPONSE:
             responses += 1
             answered = True
@@ -412,6 +428,9 @@ def _last_sent(records: list[JournalRecord], load=None) -> tuple[Message, ...]:
             continue
         if record.type == EventType.COMPACTED:
             sent = []
+        elif record.type == EventType.REWOUND:
+            # What was kept is unchanged, so it is still the prefix sent.
+            sent = sent[:_int(record.payload.get("keep")) + 1]
         elif record.type == EventType.MODEL_REQUEST:
             raw = record.payload.get("messages")
             sent = raw if isinstance(raw, list) else []
