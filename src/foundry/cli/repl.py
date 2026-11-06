@@ -13,6 +13,8 @@ rather than sent to the model as a task: "/udno" should not start a turn.
 from __future__ import annotations
 
 import re
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -118,15 +120,76 @@ def run_task(wiring: "Wiring", task: RunTask):
         policy.read_only = ""
 
 
+PROMPT = "\n[bold cyan]foundry>[/bold cyan] "
+BLOCK = '"""'
+# How long a paste may pause between lines: far shorter than anyone types.
+PASTE_GAP_S = 0.03
+
+
+def input_waiting(timeout: float = PASTE_GAP_S) -> bool:
+    """Whether more input is already waiting at the terminal (D-052).
+
+    A paste of several lines arrives at once, faster than anyone types, so
+    the lines after the first belong to the same message. Not a terminal --
+    input piped in -- is read a line at a time, as before.
+    """
+    try:
+        if not sys.stdin.isatty():
+            return False
+    except (AttributeError, ValueError):
+        return False
+    if sys.platform == "win32":
+        import msvcrt
+
+        deadline = time.monotonic() + timeout
+        while not msvcrt.kbhit():
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.005)
+        return True
+    import select
+
+    try:
+        return bool(select.select([sys.stdin], [], [], timeout)[0])
+    except (OSError, ValueError):
+        return False
+
+
+def read_message(console: Console) -> str:
+    """One message from the user (D-052): a line; or every line of a paste,
+    which arrive together; or the lines typed between two lines of three double quotes.
+    Ctrl+C inside such a block discards it."""
+    first = console.input(PROMPT)
+    waiting = input_waiting()
+    if first.strip() == BLOCK and not waiting:
+        lines: list[str] = []
+        try:
+            while (line := console.input("[dim]...[/dim] ")).strip() != BLOCK:
+                lines.append(line)
+        except KeyboardInterrupt:
+            console.print("\n[dim](discarded)[/dim]")
+            return ""
+        return "\n".join(lines).strip("\n")
+    lines = [first]
+    while waiting:
+        lines.append(console.input(""))
+        waiting = input_waiting()
+    if len(lines) == 1:
+        return first.strip()
+    text = "\n".join(lines).strip("\n")
+    console.print(f"[dim]({len(lines)} lines, sent as one message)[/dim]")
+    return text
+
+
 def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
-    """Read lines until the session ends; NEW_SESSION if the user asked for one."""
+    """Read messages until the session ends; NEW_SESSION if the user asked for one."""
     while True:
         try:
-            line = console.input("\n[bold cyan]foundry>[/bold cyan] ").strip()
+            line = read_message(console)
         except (EOFError, KeyboardInterrupt):
             console.print()
             return TerminalStatus.CANCELLED
-        if not line:
+        if not line.strip():
             continue
         task: object = RunTask(line)
         parsed = parse_command(line)
@@ -188,7 +251,8 @@ def _help(wiring: "Wiring", console: Console, arguments: str) -> None:
             console.print(f"  [cyan]{escape(usage):<{width}}[/cyan]  "
                           f"{escape(prompt.description or '(no description)')} [dim]({source})[/dim]",
                           soft_wrap=True)
-    console.print("[dim]anything else you type is a task for the model[/dim]")
+    console.print("[dim]anything else you type is a task for the model; a pasted block "
+                  'is one message, and so is what you type between two lines of """[/dim]')
     return None
 
 

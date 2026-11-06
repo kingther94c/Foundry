@@ -167,6 +167,10 @@ acts: Claude's thinking summaries, the reasoning DeepSeek-style servers stream,
 and -- with `reasoning_summary = "auto"` under `[backend]` -- a Responses
 model's summaries. `show_reasoning = false` under `[runtime]` hides it.
 
+At the prompt, a pasted block -- a stack trace, a log, some code -- is sent as
+one message, and so is what you type between two lines of three double quotes
+(Ctrl+C inside discards it).
+
 Images: `foundry run -i shot.png "why is this button cut off?"` (or `exec -i`)
 attaches a screenshot to the task, `/image PATH` attaches one to your next
 message, and the model can look at an image in the workspace itself with
