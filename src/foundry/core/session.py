@@ -61,6 +61,8 @@ class EventType:
     UNDO = "undo"
     # Added for plan approval (D-038): the policy mode changed mid-session.
     MODE_CHANGE = "mode_change"
+    # The history was replaced by the user's messages and a summary (D-040).
+    COMPACTED = "compacted"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced
@@ -68,7 +70,9 @@ class EventType:
 # what survives a killed process.
 _FSYNC_TYPES = frozenset(
     {EventType.TERMINATION, EventType.APPROVAL, EventType.COMMAND_EXEC, EventType.POLICY_DECISION,
-     EventType.RESUMED, EventType.UNDO, EventType.MODE_CHANGE}
+     EventType.RESUMED, EventType.UNDO, EventType.MODE_CHANGE,
+     # Without it a resume cannot follow the history past the compaction.
+     EventType.COMPACTED}
 )
 
 _ARTIFACT_ID = re.compile(r"[0-9a-f]{64}")

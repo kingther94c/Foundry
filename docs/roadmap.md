@@ -153,9 +153,8 @@ Each item lands on its own branch with a D-entry, tests and a mutation check.
 
 1. ~~Slash commands and custom prompts~~ -- `/help /status /diff /plan /approve
    /undo /review /init /new`, `~/.foundry/prompts/` (landed, D-039).
-2. Compaction by summary: `/compact`, and automatic compaction before the
-   context fills (the reserved `Compacted` record), so a long session goes on
-   instead of ending `partial(context exhausted)`.
+2. ~~Compaction by summary~~ -- `/compact [focus]`, and automatically once
+   masking leaves the context past 80% of the window (landed, D-040).
 3. Project instructions layered as codex does: a global file under
    `~/.foundry/`, then the repository's from its root down to the working
    directory.
@@ -174,8 +173,8 @@ hosted web search, and interactive PTY sessions for long-running commands.
 
 ## V2 candidates (explicitly no commitment to order)
 
-~~session resume~~ (landed, D-035) | LLM summarisation compaction (the
-Compacted event is already reserved) | ~~a visible `update_plan`~~ (landed, D-037) | ~~skills and
+~~session resume~~ (landed, D-035) | ~~LLM summarisation compaction~~
+(landed, D-040) | ~~a visible `update_plan`~~ (landed, D-037) | ~~skills and
 slash commands~~ (slash commands and custom prompts landed, D-039) | enabling the subagent seam | an MCP bridge (the IR already
 lines up) | ~~checkpoint/undo~~ (landed as patch undo, D-036) | a Python-only
 repo map (stdlib ast) | research into a restricted-token sandbox.

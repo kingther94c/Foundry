@@ -320,6 +320,7 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
         git_baseline=baseline,
         credentials=source,
         persist_rule=_rule_writer(home, policy),
+        auto_compact=config.auto_compact,
     )
     if missing_credential:
         # Say it before spending a round trip on a request that cannot succeed.

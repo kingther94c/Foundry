@@ -14,6 +14,12 @@ output older than a few rounds, whatever the context held, made Foundry forget
 files it had just read while a sixth of the window was in use: working on its
 own repository it re-read the same handful of files round after round and ran
 out of tool rounds before writing a test.
+
+Masking cannot touch the last few rounds, so a session whose recent rounds
+alone fill the window still ran out. Summary compaction (D-040) is the step
+after it: the runtime asks the model for a handoff summary, and the history
+becomes the user's own messages plus that summary. ``compacted_history``
+builds the replacement; the model call is the runtime's.
 """
 
 from __future__ import annotations
@@ -29,6 +35,7 @@ from foundry.core.conversation import (
     Usage,
 )
 from foundry.core.redaction import Redactor, default_redactor
+from foundry.core.tools.base import truncate_middle
 
 MASK_AFTER_TURNS = 5
 # The share of the context window the projection may fill before old outputs
@@ -36,6 +43,23 @@ MASK_AFTER_TURNS = 5
 # what a long session meets first.
 MASK_ABOVE_FRACTION = 0.5
 MASK_NOTICE = "[output elided to save context; re-run the tool if you need it again]"
+# Past this share of the window, after masking, the runtime compacts (D-040):
+# masking has done what it can, and termination is still a round or two away.
+COMPACT_ABOVE_FRACTION = 0.8
+# What a compacted history may hold, as shares of the window: the user's own
+# messages, newest first, and the model's summary. Together well under the
+# compaction threshold, so one compaction cannot set off the next.
+COMPACT_USER_FRACTION = 0.1
+COMPACT_SUMMARY_FRACTION = 0.15
+# Less than this left of the user's share is not worth a cut-down message.
+_MIN_KEPT_CHARS = 200
+SUMMARY_PREFIX = (
+    "This conversation was compacted to free context. Earlier replies and tool "
+    "output are gone; the user's messages from before it are kept above, and "
+    "below is the summary you wrote of the work so far. Re-read a file before "
+    "patching it, and run a command again rather than trusting its remembered "
+    "output.\n\n"
+)
 
 
 def _estimate_tokens(messages) -> int:
@@ -75,6 +99,7 @@ class ContextManager:
     mask_after_turns: int = MASK_AFTER_TURNS
     mask_above_fraction: float = MASK_ABOVE_FRACTION
     reserve_output_tokens: int = 8_000
+    compact_above_fraction: float = COMPACT_ABOVE_FRACTION
 
     redactor: Redactor = field(default_factory=default_redactor)
     history: list[Message] = field(default_factory=list)
@@ -184,3 +209,53 @@ class ContextManager:
 
     def context_exhausted(self) -> bool:
         return self.estimated_context_tokens() > (self.max_context_tokens - self.reserve_output_tokens)
+
+    # -- compaction (D-040) -------------------------------------------------
+
+    def needs_compaction(self) -> bool:
+        """Whether masking has left too much: the projection is past the
+        compaction threshold and there is model output to summarise."""
+        return (self.compactable()
+                and self.estimated_context_tokens()
+                > int(self.max_context_tokens * self.compact_above_fraction))
+
+    def compactable(self) -> bool:
+        """Something besides the user's messages to compact. Right after a
+        compaction there is not, so a summary is never summarised again
+        before the model has done anything since."""
+        return any(m.role is not Role.USER for m in self.history)
+
+    def compacted_history(self, summary: str) -> list[Message]:
+        """The history a compaction leaves: the user's messages, the newest
+        that fit in their share of the window, oldest first; then the summary.
+
+        The first message that does not fit is cut to what is left and is the
+        oldest kept: the newest are the ones the work in hand answers. A
+        summary from an earlier compaction is not kept as a user message: the
+        new summary was written from it.
+        """
+        budget = int(self.max_context_tokens * COMPACT_USER_FRACTION) * 4
+        kept: list[Message] = []
+        for message in reversed(self.history):
+            if message.role is not Role.USER:
+                continue
+            text = message.text_content
+            if not text.strip() or text.startswith(SUMMARY_PREFIX):
+                continue
+            if len(text) > budget:
+                if budget >= _MIN_KEPT_CHARS or not kept:
+                    kept.append(Message.text(Role.USER, truncate_middle(text, budget)[0]))
+                break
+            budget -= len(text)
+            kept.append(Message.text(Role.USER, text))
+        kept.reverse()
+        summary, _ = truncate_middle(
+            self.redactor.scrub(summary.strip()),
+            int(self.max_context_tokens * COMPACT_SUMMARY_FRACTION) * 4)
+        return [*kept, Message.text(Role.USER, SUMMARY_PREFIX + summary)]
+
+    def replace_history(self, messages: list[Message]) -> None:
+        """Make ``messages`` the whole history, all of them from this round,
+        so nothing in it is masked."""
+        self.history = list(messages)
+        self._turn_of_message = [self._turn] * len(self.history)

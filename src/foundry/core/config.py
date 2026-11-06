@@ -117,6 +117,9 @@ class Config:
     # Reserved (OQ-19): nothing prunes sessions yet. Deleting a developer's
     # journals on a default they never chose is not a change to make quietly.
     session_retention_days: int = 30
+    # Summary compaction before the context fills (D-040); off, a long task
+    # ends partial(context window exhausted) as before.
+    auto_compact: bool = True
     rules: list[Rule] = field(default_factory=list)
     provenance: dict[str, Provenance] = field(default_factory=dict)
 
@@ -236,6 +239,15 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
             )
         setattr(config, key, value)
         config.record(key, value, layer)
+
+    if "auto_compact" in runtime:
+        value = runtime["auto_compact"]
+        if not isinstance(value, bool):
+            raise ConfigError(
+                f"auto_compact must be true or false, got {type(value).__name__} ({value!r})"
+            )
+        config.auto_compact = value
+        config.record("auto_compact", value, layer)
 
     if "mode" in runtime:
         try:

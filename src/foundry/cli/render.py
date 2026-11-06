@@ -21,6 +21,7 @@ from foundry.core.events import (
     ApprovalChoice,
     ApprovalKind,
     ApprovalRequest,
+    Compacted,
     ErrorEvent,
     Event,
     MessageDelta,
@@ -163,6 +164,11 @@ class Renderer:
                 self.console.print(safe(event.summary))
         elif isinstance(event, PlanUpdated):
             print_plan(self.console, event.steps, event.explanation)
+        elif isinstance(event, Compacted):
+            how = "automatically" if event.auto else "on request"
+            self.console.print(
+                f"[dim]context compacted {how}: about {event.tokens_before:,} tokens "
+                f"down to {event.tokens_after:,}[/dim]")
         elif isinstance(event, TurnComplete):
             pass  # the text already streamed
 

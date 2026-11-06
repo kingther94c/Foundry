@@ -97,7 +97,9 @@ The components added relative to v0.1, and why:
   per-round token accounting (reading the real usage fields), and a clean
   termination as the context approaches its ceiling (V1 does no LLM
   summarisation compaction; the evidence is arXiv 2508.21433, which shows
-  masking and LLM summarisation to be equivalent).
+  masking and LLM summarisation to be equivalent). Since V2, a summary
+  compaction runs when masking is not enough
+  ([D-040](decision-log.md)).
 - **The event stream protocol** (architecture critique #4): typed events
   (`turn_started / message_delta / tool_begin / tool_output_delta / tool_end /
   approval_request / token_count / turn_complete / error / termination`) plus a
@@ -680,8 +682,10 @@ compensating control for a no-sandbox V1.
 
 A sandbox (an honest trusted host); session resume (the schema is ready, the
 feature is V2 -- since landed, [D-035](decision-log.md)); LLM summarisation
-compaction (V1 uses masking + a clean termination); MCP (aligning the internal
+compaction (V1 uses masking + a clean termination; since landed,
+[D-040](decision-log.md)); MCP (aligning the internal
 representation with its shapes is enough); subagents (a seam is left);
 multi-repository tasks; browser/network tools; embeddings/RAG; automatic
-commits; skills and slash commands (V2); Claude consumer OAuth; NTLM/Kerberos
+commits; skills and slash commands (V2; slash commands since landed,
+[D-039](decision-log.md)); Claude consumer OAuth; NTLM/Kerberos
 proxies.

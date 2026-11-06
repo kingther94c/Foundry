@@ -21,7 +21,7 @@ from rich.syntax import Syntax
 
 from foundry.cli.render import print_plan, sanitize
 from foundry.core.commands import builtin_prompt, expand, parse_command
-from foundry.core.errors import FoundryError
+from foundry.core.errors import Cancelled, FoundryError
 from foundry.core.events import Notice, TerminalStatus
 from foundry.core.policy.engine import Mode
 from foundry.core.prompts import PROJECT_DOC_NAMES, mode_line, system_prompt
@@ -257,6 +257,17 @@ def _plan(wiring: "Wiring", console: Console, arguments: str) -> None:
     return None
 
 
+def _compact(wiring: "Wiring", console: Console, arguments: str) -> None:
+    """Summarise the conversation now rather than when it fills (D-040)."""
+    try:
+        failed = wiring.runtime.compact(auto=False, focus=arguments)
+    except Cancelled:
+        failed = "compaction cancelled"
+    if failed:
+        console.print(f"[yellow]{escape(failed)}; the conversation is unchanged[/yellow]")
+    return None
+
+
 def _init(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
     root = wiring.workspace.root
     existing = [name for name in PROJECT_DOC_NAMES if (root / name).exists()]
@@ -393,6 +404,8 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("status", "session, model, mode, tokens, context and plan", _status),
     Command("diff", "every uncommitted change, and which of them this session made", _diff),
     Command("plan", "the model's current plan", _plan),
+    Command("compact", "summarise the conversation so far to free context", _compact,
+            arguments="[focus]"),
     Command("approve", "in plan mode: approve the plan and let the work start", approve_plan),
     Command("undo", "revert this session's newest patch", undo_last),
     Command("review", "a read-only review of the uncommitted changes", _review,

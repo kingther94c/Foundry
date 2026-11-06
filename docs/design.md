@@ -150,9 +150,16 @@ async def run_turn(user_input):
   fits again; the system prompt, the task, and the last N rounds (5 by default)
   are always kept in full. Below that threshold nothing is masked
   ([D-031](decision-log.md)). The evidence: equivalent to LLM summarisation with
-  zero extra dependencies (arXiv 2508.21433; SWE-agent +3pt). LLM
-  summarisation compaction is V2, and will enter the log as a `Compacted` event
-  when it lands (openhands condensation-as-event).
+  zero extra dependencies (arXiv 2508.21433; SWE-agent +3pt).
+- **Compaction by summary** ([D-040](decision-log.md)): masking cannot touch
+  the last rounds, so once the projection is still past 80% of the window, the
+  runtime asks the model for a handoff summary and the history becomes the
+  user's own messages (newest first within 10% of the window) plus the summary
+  (at most 15%, with the plan appended). `/compact [focus]` does it on request;
+  `runtime.auto_compact = false` turns the automatic one off. It enters the log
+  as a `compacted` record (openhands condensation-as-event); a failure changes
+  nothing and is not retried until the next task, and files read before it
+  are read again before a patch.
 - Token accounting: accumulate the real usage, and as the backend's context
   ceiling approaches, terminate cleanly as `partial(context_exhausted)` --
   never let the request 400.
@@ -303,15 +310,16 @@ class ModelBackend(Protocol):
   `session_meta / model_request / model_response / tool_call / tool_result /
   policy_decision / approval / command_exec / token_usage / capability_probe /
   validation_claim / git_baseline / termination / user_input / tool_reply /
-  resumed / undo / mode_change` (`user_input`, `tool_reply` and `resumed` added
-  for resume, [D-035](decision-log.md); `undo` for undo,
+  resumed / undo / mode_change / compacted` (`user_input`, `tool_reply` and
+  `resumed` added for resume, [D-035](decision-log.md); `undo` for undo,
   [D-036](decision-log.md); `mode_change` for plan approval,
-  [D-038](decision-log.md)).
+  [D-038](decision-log.md); `compacted` for compaction, whose own request and
+  response carry `purpose: "compact"`, [D-040](decision-log.md)).
   Artifact contents are stored content-addressed at
   `sessions/<id>/artifacts/<sha256>`, and events reference only the digest.
 - Writes are serialised and every record is flushed as it is written;
-  termination, approval, command-completion, policy-decision, resumed, undo and
-  mode-change records are also synced to disk. The reader tolerates a truncated final line,
+  termination, approval, command-completion, policy-decision, resumed, undo,
+  mode-change and compacted records are also synced to disk. The reader tolerates a truncated final line,
   and no termination event means `interrupted`. Schema migration happens only
   on the read side; historical journals are immutable. One process writes a
   journal at a time: the store holds an OS lock on `sessions/<id>/lock`.

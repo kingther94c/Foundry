@@ -278,6 +278,21 @@ def _fold_requests(records: list[JournalRecord]) -> tuple[list[Message], list[in
     answered = False  # a response was recorded since the last request
     last_request, last_turn = -1, 0
     for index, record in enumerate(records):
+        # A compaction's own request and response are not the conversation;
+        # the compacted record that follows says what the history became.
+        if record.payload.get("purpose"):
+            continue
+        if record.type == EventType.COMPACTED:
+            raw = record.payload.get("messages")
+            if not isinstance(raw, list) or not raw:
+                raise ResumeError(f"inconsistent journal at record {record.ordinal}: "
+                                  "a compaction without the history it left")
+            history = [decode_message(m) for m in raw]
+            turn = max(_int(record.payload.get("turn")), last_turn)
+            turns = [turn] * len(history)
+            answered = False
+            last_request, last_turn = index, turn
+            continue
         if record.type == EventType.MODEL_RESPONSE:
             responses += 1
             answered = True
@@ -312,6 +327,8 @@ def _fold_requests(records: list[JournalRecord]) -> tuple[list[Message], list[in
 
 def _tail_message(record: JournalRecord) -> Message | None:
     payload = record.payload
+    if payload.get("purpose"):
+        return None
     if record.type == EventType.MODEL_RESPONSE:
         calls = payload.get("tool_calls", [])
         if not isinstance(calls, list):

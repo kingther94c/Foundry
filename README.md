@@ -108,7 +108,7 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 
 | Command | What it does |
 |---|---|
-| `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/undo`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`) |
+| `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/undo`, `/compact [focus]`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`) |
 | `foundry exec <task> [--json]` | unattended execution; every ASK becomes DENY (fail-closed) |
 | `foundry resume [session] [task]` | continue a recorded session (default `last`, the newest here); refused if HEAD moved |
 | `foundry exec --resume <session> [task]` | the same, unattended; the task defaults to carrying on where it stopped |
@@ -121,6 +121,11 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 
 Exit codes: `completed=0 partial=10 blocked=11 failed=12 cancelled=13
 interrupted=14`
+
+A long task does not simply run out of context: old tool output is masked
+first, and when that is not enough the model summarises the work so far and the
+conversation continues from the summary (`/compact` does it on request;
+`auto_compact = false` under `[runtime]` in `config.toml` turns it off).
 
 ## Design points
 

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from foundry.core.backends.base import ModelBackend, TextDelta, TurnFinished, UsageUpdate
+from foundry.core.commands import builtin_prompt
 from foundry.core.context import ContextManager
 from foundry.core.conversation import Message, Role, ToolUseBlock, TurnRequest
 from foundry.core.errors import (
@@ -34,6 +35,7 @@ from foundry.core.events import (
     ApprovalChoice,
     ApprovalKind,
     ApprovalRequest,
+    Compacted,
     ErrorEvent,
     EventSink,
     MessageDelta,
@@ -178,6 +180,10 @@ class AgentRuntime:
     # The model's plan (D-037): the session's, replaced whole by update_plan.
     plan: tuple[PlanStep, ...] = ()
     plan_explanation: str = ""
+    # Summary compaction before the context fills (D-040). One failed attempt
+    # stops it for the rest of the task: each attempt is a paid call.
+    auto_compact: bool = True
+    _compact_failed: bool = False
 
     # -- helpers ----------------------------------------------------------
 
@@ -218,6 +224,7 @@ class AgentRuntime:
         # interactive session silently died: once the running total passed the
         # limit, a later question produced no work at all and the REPL exited.
         self.budget.reset()
+        self._compact_failed = False
 
         while True:
             if self._cancelled:
@@ -230,6 +237,18 @@ class AgentRuntime:
             reason = self.budget.check(self.context.session_usage.total)
             if reason:
                 return self._terminate(TerminalStatus.PARTIAL, reason)
+
+            if (self.auto_compact and not self._compact_failed
+                    and self.context.needs_compaction()):
+                try:
+                    failed = self.compact(auto=True)
+                except Cancelled:
+                    return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
+                if failed:
+                    self._compact_failed = True
+                    self._emit(Notice(f"{failed}; carrying on without it", level="warning"))
+                if self._cancelled:
+                    return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
 
             if self.context.context_exhausted():
                 return self._terminate(TerminalStatus.PARTIAL, "context window exhausted")
@@ -292,9 +311,64 @@ class AgentRuntime:
                 if self._cancelled:
                     return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
 
-    def _sample(self):
+    def compact(self, *, auto: bool, focus: str = "") -> str:
+        """Replace the history with the user's messages and the model's summary
+        of the work (D-040). Returns why it did not, or "" when it did.
+
+        The summary request carries the same tools as any other, since a
+        history holding tool calls is refused without them, and says not to
+        use them; a call it makes anyway is ignored. Files read before are
+        read again before a patch: their contents are no longer in context.
+        """
+        if not self.context.compactable():
+            return "nothing to compact yet"
+        before = self.context.estimated_context_tokens()
+        self._emit(Notice("compacting the conversation to free context", level="info"))
+        prompt = builtin_prompt("compact").strip()
+        if focus:
+            prompt += f"\n\nThe user asks the summary to give particular attention to: {focus}"
+        messages = (*self.context.project(), Message.text(Role.USER, prompt))
+        try:
+            turn = self._sample(messages, purpose="compact")
+        except Cancelled:
+            raise
+        except FoundryError as exc:
+            return f"compaction failed: {_explain(exc)}"
+        self.context.record_usage(turn.usage)
+        self._emit(TokenCount(turn.usage, self.context.session_usage))
+        self._journal(EventType.TOKEN_USAGE, {
+            "input_tokens": turn.usage.input_tokens,
+            "output_tokens": turn.usage.output_tokens,
+            "cached_input_tokens": turn.usage.cached_input_tokens,
+            "purpose": "compact",
+        })
+        summary = turn.text.strip()
+        if not summary:
+            return "compaction failed: the model wrote no summary"
+        if self.plan:
+            summary += "\n\nYour plan, as update_plan last set it:\n" + "\n".join(
+                f"- [{step.status.value}] {step.step}" for step in self.plan)
+        replaced = len(self.context.history)
+        self.context.replace_history(self.context.compacted_history(summary))
+        self.tool_ctx.read_tracker.clear()
+        after = self.context.estimated_context_tokens()
+        self._journal(EventType.COMPACTED, {
+            "reason": "auto" if auto else "user",
+            "turn": self.context.turn,
+            "replaced": replaced,
+            "tokens_before": before,
+            "tokens_after": after,
+            "messages": [
+                {"role": m.role.value, "blocks": [self._block_payload(b) for b in m.blocks]}
+                for m in self.context.history
+            ],
+        })
+        self._emit(Compacted(tokens_before=before, tokens_after=after, auto=auto))
+        return ""
+
+    def _sample(self, messages: tuple[Message, ...] | None = None, purpose: str = ""):
         request = TurnRequest(
-            messages=self.context.project(),
+            messages=self.context.project() if messages is None else messages,
             tools=self.registry.schemas(),
             model=self.model,
         )
@@ -302,7 +376,7 @@ class AgentRuntime:
         # transcript is the source of truth" is only a slogan: replay, resume,
         # and any audit of what was actually sent all read this record. The
         # Authorization header is the one thing deliberately absent.
-        self._journal(EventType.MODEL_REQUEST, {
+        payload: dict[str, Any] = {
             "model": self.model,
             # The round, so a resumed session masks exactly what this one would.
             "turn": self.context.turn,
@@ -315,14 +389,21 @@ class AgentRuntime:
                 }
                 for message in request.messages
             ],
-        })
+        }
+        # A request outside the conversation -- a compaction's -- says so, and
+        # neither it nor its response is part of the history a resume rebuilds.
+        if purpose:
+            payload["purpose"] = purpose
+        self._journal(EventType.MODEL_REQUEST, payload)
 
         text_parts: list[str] = []
         finished = None
         for event in self.backend.stream_turn(request):
             if isinstance(event, TextDelta):
                 text_parts.append(event.text)
-                self._emit(MessageDelta(event.text))
+                # A summary is the model talking to itself, not to the user.
+                if not purpose:
+                    self._emit(MessageDelta(event.text))
             elif isinstance(event, UsageUpdate):
                 pass  # carried on the finished turn
             elif isinstance(event, TurnFinished):
@@ -342,6 +423,8 @@ class AgentRuntime:
         # after the last response, which is the one a resumed session needs.
         if finished.opaque is not None:
             response["opaque"] = self._block_payload(finished.opaque)
+        if purpose:
+            response["purpose"] = purpose
         self._journal(EventType.MODEL_RESPONSE, response)
         for notice in finished.notices:
             self._emit(Notice(notice, level="warning"))

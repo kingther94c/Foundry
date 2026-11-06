@@ -102,6 +102,10 @@ class ReadTracker:
     def forget(self, relative: str) -> None:
         self._read.discard(relative)
 
+    def clear(self) -> None:
+        """Forget every read: the model's context no longer holds them."""
+        self._read.clear()
+
 
 def truncate_middle(text: str, limit: int) -> tuple[str, bool]:
     """Keep the head and tail, drop the middle, and say how much was dropped.

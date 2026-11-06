@@ -24,6 +24,7 @@ class SessionReport:
     status: TerminalStatus
     model: str = ""
     turns: int = 0
+    compactions: int = 0
     tool_calls: int = 0
     patches_applied: int = 0
     patches_rejected: int = 0
@@ -45,7 +46,11 @@ def analyse(journal: Path) -> SessionReport:
         if record.type == EventType.SESSION_META:
             report.model = payload.get("model", "")
         elif record.type == EventType.MODEL_REQUEST:
-            report.turns += 1
+            # A compaction's summary request is not a round of the task.
+            if not payload.get("purpose"):
+                report.turns += 1
+        elif record.type == EventType.COMPACTED:
+            report.compactions += 1
         elif record.type == EventType.TOOL_CALL:
             report.tool_calls += 1
             # A patch the parser refused, or one policy denied, never reaches an

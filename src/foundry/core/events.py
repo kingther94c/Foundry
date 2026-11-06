@@ -214,6 +214,18 @@ class PlanUpdated:
     kind: Literal["plan_updated"] = "plan_updated"
 
 
+@dataclass(frozen=True, slots=True)
+class Compacted:
+    """The history was replaced by the user's messages and the model's summary
+    of the work (D-040). Token figures are the runtime's estimates of the
+    projected context, before and after."""
+
+    tokens_before: int
+    tokens_after: int
+    auto: bool
+    kind: Literal["compacted"] = "compacted"
+
+
 Event = (
     TurnStarted
     | MessageDelta
@@ -228,6 +240,7 @@ Event = (
     | ErrorEvent
     | Notice
     | PlanUpdated
+    | Compacted
 )
 
 
