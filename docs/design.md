@@ -284,7 +284,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   through the same truncation and redaction path as every other tool.
 - `finish(status, summary, claims)`: the task close-out tool; the runtime
   verifies the claims and the git state per requirements §6.3 and then emits a
-  Termination (D-017).
+  Termination (D-017). Under `exec --output-schema` ([D-051](decision-log.md))
+  it also takes `result`, required with `completed` and checked against the
+  schema by `core/json_schema.py` (a subset of JSON Schema; a schema using
+  more is refused before the run); the result is carried by the termination
+  record and event and is what `exec` prints.
 - `update_plan(explanation?, plan)` ([D-037](decision-log.md)): replaces the
   session's plan (at most 20 one-line steps, at most one `in_progress`; empty
   clears it). Read-only and always allowed; the runtime keeps the plan, emits

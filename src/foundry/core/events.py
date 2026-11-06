@@ -14,7 +14,7 @@ import dataclasses
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 from foundry.core.conversation import Usage
 
@@ -175,6 +175,9 @@ class Termination:
     status: TerminalStatus
     reason: str
     summary: str = ""
+    # The value finish passed as `result` under exec --output-schema (D-051),
+    # or None.
+    result: Any = None
     kind: Literal["termination"] = "termination"
 
 
@@ -409,6 +412,14 @@ class EventSink:
         if type(value) is tuple:
             items = tuple(self._scrub_value(item) for item in value)
             return value if all(a is b for a, b in zip(items, value)) else items
+        # A run's result (D-051) is JSON: lists and objects, keys included.
+        if type(value) is list:
+            items = [self._scrub_value(item) for item in value]
+            return value if all(a is b for a, b in zip(items, value)) else items
+        if type(value) is dict:
+            pairs = [(self._scrub_value(k), self._scrub_value(v)) for k, v in value.items()]
+            return value if all(a is k and b is v for (a, b), (k, v)
+                                in zip(pairs, value.items())) else dict(pairs)
         if dataclasses.is_dataclass(value) and not isinstance(value, type):
             changed = {}
             for f in dataclasses.fields(value):

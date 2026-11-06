@@ -15,6 +15,7 @@ DENY; no tool ever blocks on input itself.
 from __future__ import annotations
 
 import base64
+import json
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -156,6 +157,9 @@ class TurnOutcome:
     text: str
     summary: str = ""
     claims: tuple[ValidationClaim, ...] = ()
+    # finish's `result` as JSON text under exec --output-schema (D-051);
+    # None when there is none.
+    result_json: str | None = None
 
 
 @dataclass(slots=True)
@@ -646,6 +650,8 @@ class AgentRuntime:
                 status=TerminalStatus(output.metadata["status"]), text="",
                 summary=output.metadata["summary"],
                 claims=tuple(output.metadata["claims"]),
+                result_json=(json.dumps(output.metadata["result"], ensure_ascii=False)
+                             if "result" in output.metadata else None),
             )
             self._emit(ToolEnd(call.call_id, op.tool, True, "finalizing",
                                duration_ms=duration_ms))
@@ -840,7 +846,7 @@ class AgentRuntime:
                 self._emit(Notice(f"finish reported completed with {len(unfinished)} plan "
                                   "step(s) not marked completed", level="warning"))
 
-        return self._terminate(status, reason, summary)
+        return self._terminate(status, reason, summary, result_json=outcome.result_json)
 
     def _refresh_credentials(self) -> bool:
         """Re-acquire once per session, and only retry if the value changed.
@@ -876,7 +882,8 @@ class AgentRuntime:
             self._emit(Notice(f"could not collect final Git evidence: {exc}", level="warning"))
             return None
 
-    def _terminate(self, status: TerminalStatus, reason: str, summary: str = "") -> TurnOutcome:
+    def _terminate(self, status: TerminalStatus, reason: str, summary: str = "",
+                   result_json: str | None = None) -> TurnOutcome:
         # The sink holds a tail of streamed text so a credential cannot straddle
         # two deltas unseen. Every path here is followed by an event that would
         # release it anyway; flushing first makes that independent of ordering.
@@ -899,12 +906,15 @@ class AgentRuntime:
                         "the record of what was allowed and denied is incomplete.")
             self._emit(Notice(f"audit log degraded: {audit_degraded}", level="warning"))
 
-        self._journal(EventType.TERMINATION, {"status": status.value, "reason": reason,
-                                              "summary": summary})
+        record: dict[str, Any] = {"status": status.value, "reason": reason, "summary": summary}
+        result = json.loads(result_json) if result_json is not None else None
+        if result_json is not None:
+            record["result"] = result
+        self._journal(EventType.TERMINATION, record)
         if self.session is not None:
             self.session._terminated = True
-        self._emit(Termination(status, reason, summary))
+        self._emit(Termination(status, reason, summary, result=result))
         # A budget or context termination has no model summary; the reason is
         # the only explanation the caller gets, so it must survive.
         text = summary or reason
-        return TurnOutcome(status=status, text=text, summary=text)
+        return TurnOutcome(status=status, text=text, summary=text, result_json=result_json)

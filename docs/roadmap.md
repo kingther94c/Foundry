@@ -182,8 +182,10 @@ With the list above done, the next gaps a codex user would notice day to day
     sent for the API to drop, and warn about, every round (landed, D-048).
 11. ~~A `notify` program run when a turn ends~~ -- `notify = [...]` in the
     user's config, told the turn's JSON as codex tells it (landed, D-050).
-12. `exec --output-schema FILE`: the final message as JSON that matches a
-    schema, for scripts.
+12. ~~`exec --output-schema FILE`~~ -- finish's `result`, checked against the
+    schema by Foundry and printed as the run's only output (landed, D-051).
+
+Every item of this list has landed (2026-11-07).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

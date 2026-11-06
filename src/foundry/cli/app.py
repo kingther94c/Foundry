@@ -17,6 +17,7 @@ import sys
 from enum import Enum
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.markup import escape
@@ -63,6 +64,7 @@ from foundry.core.events import (
     Termination,
 )
 from foundry.core.httpc import HttpClient
+from foundry.core.json_schema import check_schema
 from foundry.core.notify import Notifier
 from foundry.core.policy.engine import Mode, PolicyEngine, builtin_rules
 from foundry.core.prompts import (
@@ -745,6 +747,7 @@ FINISH_REMINDER = (
     "This run is unattended: nobody will read a reply. Call finish now to report "
     "the outcome, citing the event_id of each command that supports it."
 )
+RESULT_REMINDER = " Pass the result it asks for as `result`, matching the schema given for it."
 
 
 def _run_unattended(runtime: AgentRuntime, task: str, images: tuple = ()):
@@ -757,8 +760,36 @@ def _run_unattended(runtime: AgentRuntime, task: str, images: tuple = ()):
     """
     outcome = runtime.run_turn(task, images)
     if outcome.status is None:
-        outcome = runtime.run_turn(FINISH_REMINDER)
+        asks_result = getattr(runtime.registry.tools.get("finish"), "result_schema", None)
+        outcome = runtime.run_turn(FINISH_REMINDER + (RESULT_REMINDER if asks_result is not None
+                                                      else ""))
     return outcome
+
+
+# The most a schema file may hold: it goes into every request, in finish.
+MAX_SCHEMA_BYTES = 64_000
+
+
+def _load_output_schema(path: Path) -> Any:
+    """exec --output-schema (D-051): a JSON Schema file of the subset
+    json_schema enforces. OSError or ValueError, with what is wrong."""
+    if path.stat().st_size > MAX_SCHEMA_BYTES:
+        raise ValueError(f"larger than {MAX_SCHEMA_BYTES // 1000} KB")
+    try:
+        schema = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"not JSON: {exc}") from exc
+    check_schema(schema)
+    return schema
+
+
+def _result_text(outcome) -> str | None:
+    """The run's result as the JSON a script reads, scrubbed; None when
+    finish passed none."""
+    if outcome is None or outcome.result_json is None:
+        return None
+    return json.dumps(default_redactor().scrub_obj(json.loads(outcome.result_json)),
+                      ensure_ascii=False)
 
 
 def cmd_exec(args: argparse.Namespace) -> int:
@@ -771,6 +802,14 @@ def cmd_exec(args: argparse.Namespace) -> int:
     if args.task is None and args.resume is None:
         console.print("[red]exec needs a task, or --resume SESSION to continue one[/red]")
         return 2
+    schema = None
+    if getattr(args, "output_schema", None):
+        try:
+            schema = _load_output_schema(Path(args.output_schema))
+        except (OSError, ValueError) as exc:
+            console.print(f"[red]--output-schema {escape(args.output_schema)}: "
+                          f"{escape(str(exc))}[/red]")
+            return 2
     try:
         if args.resume is not None and args.task is None:
             # Continuing a finished session needs to be told what to do next;
@@ -792,6 +831,8 @@ def cmd_exec(args: argparse.Namespace) -> int:
 
     wiring.runtime.approval = None  # nobody to ask
     wiring.runtime.policy.interactive = False
+    if schema is not None:
+        wiring.runtime.registry.get("finish").result_schema = schema
     # The permissions paragraph says so, in a mode whose own line speaks of
     # approval.
     wiring.runtime.context.system_prompt = system_prompt(wiring.runtime.policy)
@@ -827,10 +868,22 @@ def cmd_exec(args: argparse.Namespace) -> int:
             # tools at all, this is the *only* reachable outcome.
             reason = ("the model ended its turn without calling finish, even when "
                       "reminded; only finish reports completion, with the evidence for it")
-        if not args.json and outcome.text:
-            print(outcome.text)
-        if args.output_last_message:
-            _write_last_message(Path(args.output_last_message), outcome.text, console)
+        if schema is not None:
+            # stdout is the result and nothing else, for a script to parse;
+            # without one the summary goes to stderr and the exit code says why.
+            result = _result_text(outcome)
+            if result is not None:
+                if not args.json:
+                    print(result)
+                if args.output_last_message:
+                    _write_last_message(Path(args.output_last_message), result, console)
+            elif not args.json and outcome.text:
+                print(outcome.text, file=sys.stderr)
+        else:
+            if not args.json and outcome.text:
+                print(outcome.text)
+            if args.output_last_message:
+                _write_last_message(Path(args.output_last_message), outcome.text, console)
     except KeyboardInterrupt:
         wiring.runtime.cancel()
         status = TerminalStatus.CANCELLED
@@ -1047,6 +1100,9 @@ def build_parser() -> argparse.ArgumentParser:
                               "defaults to carrying on where it stopped")
     execute.add_argument("-o", "--output-last-message", metavar="FILE",
                          help="write the run's final summary or reply to FILE")
+    execute.add_argument("--output-schema", metavar="FILE",
+                         help="a JSON Schema the run's result must match; the result is "
+                              "printed as JSON, and written by -o")
     _image_flag(execute)
     _config_flags(execute, modes=(Mode.DONT_ASK, Mode.PLAN, Mode.ACCEPT_EDITS))
     execute.set_defaults(func=cmd_exec)

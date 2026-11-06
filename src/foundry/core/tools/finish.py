@@ -9,12 +9,14 @@ command event by ordinal, and the runtime checks the journal before honouring a
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
 from foundry.core.conversation import ToolSchema
 from foundry.core.errors import InvalidToolCall
 from foundry.core.events import TerminalStatus
+from foundry.core.json_schema import embedded, problems
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput
 
 CLAIMABLE = ("completed", "partial", "blocked", "failed")
@@ -34,12 +36,33 @@ class ValidationClaim:
         }
 
 
+RESULT_NOTE = (
+    " This run asks for a result: pass it as `result`, a value matching the "
+    "schema given for it, whenever status is completed (and with any other "
+    "status if you have one). It is the run's output, read by a program."
+)
+
+
 @dataclass(slots=True)
 class Finish:
     name: str = "finish"
     kind: ToolKind = ToolKind.READ_ONLY  # produces no side effect of its own
+    # exec --output-schema (D-051): the shape the run's result must have,
+    # already checked by json_schema.check_schema; None asks for no result.
+    result_schema: Any = None
 
     def schema(self) -> ToolSchema:
+        schema = self._schema()
+        if self.result_schema is None:
+            return schema
+        result, definitions = embedded(self.result_schema, "#/properties/result")
+        parameters = {**schema.parameters,
+                      "properties": {**schema.parameters["properties"], "result": result},
+                      **definitions}
+        return ToolSchema(name=schema.name, description=schema.description + RESULT_NOTE,
+                          parameters=parameters)
+
+    def _schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,
             description=(
@@ -80,7 +103,9 @@ class Finish:
         )
 
     def validate(self, args: dict[str, Any]) -> Operation:
-        extra = set(args) - {"status", "summary", "claims"}
+        known = {"status", "summary", "claims"} | ({"result"} if self.result_schema is not None
+                                                   else set())
+        extra = set(args) - known
         if extra:
             raise InvalidToolCall(f"unknown argument(s): {', '.join(sorted(extra))}")
 
@@ -109,20 +134,44 @@ class Finish:
                 raise InvalidToolCall("expected_exit_code must be an integer")
             claims.append(ValidationClaim(text, event_id, exit_code))
 
+        checked: dict[str, Any] = {"status": status, "summary": summary, "claims": claims}
+        if self.result_schema is not None:
+            checked.update(self._result(args, status))
         return Operation(
-            tool=self.name, kind=self.kind,
-            args={"status": status, "summary": summary, "claims": claims},
+            tool=self.name, kind=self.kind, args=checked,
             display=f"finish: {status}", target=status,
         )
+
+    def _result(self, args: dict[str, Any], status: str) -> dict[str, Any]:
+        """The run's result, checked against its schema (D-051); required for
+        completed, since a script reads it."""
+        if "result" not in args:
+            if status == "completed":
+                raise InvalidToolCall("this run asks for a result: pass `result`, matching "
+                                      "the schema given for it, with status completed")
+            return {}
+        value = args["result"]
+        try:
+            json.dumps(value, allow_nan=False)
+        except ValueError as exc:
+            raise InvalidToolCall("result must be plain JSON (no NaN or Infinity)") from exc
+        wrong = problems(value, self.result_schema)
+        if wrong:
+            raise InvalidToolCall("result does not match the schema given for it: "
+                                  + "; ".join(wrong))
+        return {"result": value}
 
     def execute(self, op: Operation, ctx: ToolContext) -> ToolOutput:
         # Verification lives in the runtime, which owns the journal; this tool
         # only carries the request there.
-        return ToolOutput(content="(finalizing)", metadata={
+        metadata = {
             "status": op.args["status"],
             "summary": op.args["summary"],
             "claims": op.args["claims"],
-        })
+        }
+        if "result" in op.args:
+            metadata["result"] = op.args["result"]
+        return ToolOutput(content="(finalizing)", metadata=metadata)
 
 
 @dataclass(frozen=True, slots=True)
