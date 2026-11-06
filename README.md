@@ -95,6 +95,7 @@ Claude, put this in `%LOCALAPPDATA%\Foundry\config.toml` (or `$FOUNDRY_HOME`):
 protocol = "anthropic_messages"
 # model = "claude-opus-5-5"     # the default for this protocol
 # effort = "high"               # low | medium | high | xhigh | max; unset leaves the API default
+# reasoning_summary = "none"    # stop asking for the thinking summary shown as "thinking"
 # max_context_tokens = 1000000  # the model's window; masking starts at half of it
 ```
 
@@ -151,6 +152,11 @@ A long task does not simply run out of context: old tool output is masked
 first, and when that is not enough the model summarises the work so far and the
 conversation continues from the summary (`/compact` does it on request;
 `auto_compact = false` under `[runtime]` in `config.toml` turns it off).
+
+What the model shows of its reasoning appears dim under "thinking" before it
+acts: Claude's thinking summaries, the reasoning DeepSeek-style servers stream,
+and -- with `reasoning_summary = "auto"` under `[backend]` -- a Responses
+model's summaries. `show_reasoning = false` under `[runtime]` hides it.
 
 ## Design points
 

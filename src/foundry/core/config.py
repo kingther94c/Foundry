@@ -43,6 +43,7 @@ _PROTOCOL_DEFAULTS: dict[str, dict[str, str]] = {
 
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 FALLBACK_VALUES = ("default", "off")
+REASONING_SUMMARIES = ("auto", "concise", "detailed", "none")
 MIN_CONTEXT_TOKENS = 1000
 
 
@@ -52,6 +53,12 @@ def _validate_backend_setting(key: str, value: Any) -> None:
         if value is not None and value not in EFFORT_LEVELS:
             raise ConfigError(
                 f"backend.effort must be one of {', '.join(EFFORT_LEVELS)}, got {value!r}"
+            )
+    elif key == "reasoning_summary":
+        if value is not None and value not in REASONING_SUMMARIES:
+            raise ConfigError(
+                "backend.reasoning_summary must be one of "
+                f"{', '.join(REASONING_SUMMARIES)}, got {value!r}"
             )
     elif key == "fallbacks":
         if value not in FALLBACK_VALUES:
@@ -103,6 +110,10 @@ class BackendConfig:
     effort: str | None = None
     fallbacks: str = "default"
     max_context_tokens: int | None = None
+    # The reasoning summary asked for (D-044). Unset: anthropic_messages asks
+    # for its summary, responses asks for nothing (a model that does not reason
+    # rejects the field). "none" asks for nothing anywhere.
+    reasoning_summary: str | None = None
 
 
 _SERVER_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}\Z")
@@ -200,6 +211,8 @@ class Config:
     # Summary compaction before the context fills (D-040); off, a long task
     # ends partial(context window exhausted) as before.
     auto_compact: bool = True
+    # Whether the model's reasoning is shown (D-044); the journal keeps it.
+    show_reasoning: bool = True
     # From the user's own files only: each one is a program Foundry starts.
     mcp_servers: dict[str, McpServerConfig] = field(default_factory=dict)
     rules: list[Rule] = field(default_factory=list)
@@ -322,14 +335,16 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         setattr(config, key, value)
         config.record(key, value, layer)
 
-    if "auto_compact" in runtime:
-        value = runtime["auto_compact"]
+    for key in ("auto_compact", "show_reasoning"):
+        if key not in runtime:
+            continue
+        value = runtime[key]
         if not isinstance(value, bool):
             raise ConfigError(
-                f"auto_compact must be true or false, got {type(value).__name__} ({value!r})"
+                f"{key} must be true or false, got {type(value).__name__} ({value!r})"
             )
-        config.auto_compact = value
-        config.record("auto_compact", value, layer)
+        setattr(config, key, value)
+        config.record(key, value, layer)
 
     if "mode" in runtime:
         try:
@@ -381,7 +396,7 @@ def _apply_env(config: Config) -> None:
 # The runtime table's settings, for ``-c`` to check a name against: an
 # unknown one is a typo, not a setting nobody reads.
 _RUNTIME_KEYS = ("max_tool_rounds", "max_tool_calls", "max_output_bytes", "command_timeout_s",
-                 "session_retention_days", "auto_compact", "mode")
+                 "session_retention_days", "auto_compact", "show_reasoning", "mode")
 # Secrets may come only from the environment or the credential store, never
 # from a command line other processes can read (requirements section 4.3).
 _SECRET_KEYS = frozenset({"api_key", "headers"})

@@ -317,10 +317,15 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         backend_kwargs["effort"] = config.backend.effort
         backend_kwargs["fallbacks"] = (None if config.backend.fallbacks == "off"
                                        else config.backend.fallbacks)
+        if config.backend.reasoning_summary == "none":
+            backend_kwargs["thinking_display"] = None
         if config.backend.max_context_tokens is not None:
             backend_kwargs["caps"] = dataclasses.replace(
                 AnthropicBackend().caps,
                 max_context_tokens=config.backend.max_context_tokens)
+    elif (backend_class is ResponsesBackend
+          and config.backend.reasoning_summary not in (None, "none")):
+        backend_kwargs["reasoning_summary"] = config.backend.reasoning_summary
     backend = backend_class(
         base_url=config.backend.base_url, model=config.backend.model, api_key=api_key,
         extra_headers=config.backend.headers, stream=config.backend.stream,
@@ -356,6 +361,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         credentials=source,
         persist_rule=_rule_writer(home, policy),
         auto_compact=config.auto_compact,
+        show_reasoning=config.show_reasoning,
     )
     if missing_credential:
         # Say it before spending a round trip on a request that cannot succeed.

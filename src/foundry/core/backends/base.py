@@ -34,12 +34,26 @@ class UsageUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class ReasoningComplete:
+    """A finished stretch of the model's reasoning, as the provider shows it --
+    a summary, or the raw text some Chat Completions servers stream (D-044).
+
+    Whole, never in pieces, so the redactor sees it as one string; and it is
+    never part of the conversation the runtime keeps. Adding a stream event is
+    additive: a consumer that does not know it skips it.
+    """
+
+    text: str
+    kind: Literal["reasoning"] = "reasoning"
+
+
+@dataclass(frozen=True, slots=True)
 class TurnFinished:
     turn: ModelTurn
     kind: Literal["turn_finished"] = "turn_finished"
 
 
-StreamEvent = TextDelta | ToolCallComplete | UsageUpdate | TurnFinished
+StreamEvent = TextDelta | ToolCallComplete | UsageUpdate | ReasoningComplete | TurnFinished
 
 
 @dataclass(frozen=True, slots=True)

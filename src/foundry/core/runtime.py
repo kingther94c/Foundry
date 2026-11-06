@@ -18,7 +18,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from foundry.core.backends.base import ModelBackend, TextDelta, TurnFinished, UsageUpdate
+from foundry.core.backends.base import (ModelBackend, ReasoningComplete, TextDelta,
+                                        TurnFinished, UsageUpdate)
 from foundry.core.commands import builtin_prompt
 from foundry.core.context import ContextManager
 from foundry.core.conversation import Message, Role, ToolUseBlock, TurnRequest
@@ -42,6 +43,7 @@ from foundry.core.events import (
     Notice,
     PlanStep,
     PlanUpdated,
+    Reasoning,
     StepStatus,
     TerminalStatus,
     Termination,
@@ -184,6 +186,9 @@ class AgentRuntime:
     # stops it for the rest of the task: each attempt is a paid call.
     auto_compact: bool = True
     _compact_failed: bool = False
+    # Whether the model's reasoning reaches subscribers (D-044); the journal
+    # keeps it either way.
+    show_reasoning: bool = True
 
     # -- helpers ----------------------------------------------------------
 
@@ -397,6 +402,7 @@ class AgentRuntime:
         self._journal(EventType.MODEL_REQUEST, payload)
 
         text_parts: list[str] = []
+        reasoning: list[str] = []
         finished = None
         for event in self.backend.stream_turn(request):
             if isinstance(event, TextDelta):
@@ -404,6 +410,11 @@ class AgentRuntime:
                 # A summary is the model talking to itself, not to the user.
                 if not purpose:
                     self._emit(MessageDelta(event.text))
+            elif isinstance(event, ReasoningComplete):
+                if event.text:
+                    reasoning.append(event.text)
+                    if not purpose and self.show_reasoning:
+                        self._emit(Reasoning(event.text))
             elif isinstance(event, UsageUpdate):
                 pass  # carried on the finished turn
             elif isinstance(event, TurnFinished):
@@ -423,6 +434,8 @@ class AgentRuntime:
         # after the last response, which is the one a resumed session needs.
         if finished.opaque is not None:
             response["opaque"] = self._block_payload(finished.opaque)
+        if reasoning:
+            response["reasoning"] = reasoning
         if purpose:
             response["purpose"] = purpose
         self._journal(EventType.MODEL_RESPONSE, response)

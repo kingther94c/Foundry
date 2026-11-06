@@ -162,7 +162,8 @@ Each item lands on its own branch with a D-entry, tests and a mutation check.
    `-c key=value`, `--profile`, and `exec --output-last-message` (landed, D-042).
 5. ~~An MCP client~~ -- stdio servers' tools offered to the model under the
    same policy pipeline (landed, D-043).
-6. Reasoning summaries shown where the provider streams them.
+6. ~~Reasoning summaries shown where the provider streams them~~ (landed,
+   D-044).
 7. Images: attaching one to a task, and a `view_image` tool, where the backend
    accepts them.
 8. A Python-only repo map (stdlib `ast`).

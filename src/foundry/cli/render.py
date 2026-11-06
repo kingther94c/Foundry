@@ -28,6 +28,7 @@ from foundry.core.events import (
     Notice,
     PlanStep,
     PlanUpdated,
+    Reasoning,
     StepStatus,
     TerminalStatus,
     Termination,
@@ -39,6 +40,8 @@ from foundry.core.events import (
 )
 
 PATCH_PREVIEW_LINES = 120
+# Reasoning past this many lines is cut unless the renderer is verbose (D-044).
+REASONING_LINES = 8
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 _OSC = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
@@ -127,7 +130,9 @@ class Renderer:
             self.console.print()
             self._streaming = False
 
-        if isinstance(event, ToolBegin):
+        if isinstance(event, Reasoning):
+            self._reasoning(event.text)
+        elif isinstance(event, ToolBegin):
             # The plan it sets is drawn instead; a line saying so adds nothing.
             if event.tool != "update_plan":
                 self.console.print(f"[cyan]->[/cyan] {safe(event.display)}")
@@ -171,6 +176,22 @@ class Renderer:
                 f"down to {event.tokens_after:,}[/dim]")
         elif isinstance(event, TurnComplete):
             pass  # the text already streamed
+
+    def _reasoning(self, text: str) -> None:
+        """Dim and indented, so it reads as the model's aside rather than its
+        answer; cut to a few lines unless verbose. Model text: escaped."""
+        lines = sanitize(text).strip().splitlines()
+        if not lines:
+            return
+        shown = lines if self.verbose else lines[:REASONING_LINES]
+        self.console.print("[dim italic]thinking[/dim italic]", highlight=False)
+        for line in shown:
+            self.console.print(f"[dim]  {escape(line)}[/dim]", highlight=False)
+        if len(shown) < len(lines):
+            rest = len(lines) - len(shown)
+            self.console.print(
+                f"[dim]  ... {rest} more line{'s' if rest != 1 else ''}[/dim]",
+                highlight=False)
 
     # -- approval ---------------------------------------------------------
 

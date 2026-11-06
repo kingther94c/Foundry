@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator
 
 from foundry.core.backends.base import (
+    ReasoningComplete,
     RequestRecord,
     StreamEvent,
     TextDelta,
@@ -108,6 +109,19 @@ def _usage_from(payload: dict[str, Any] | None) -> Usage:
     )
 
 
+def _reasoning_text(part: Any) -> str:
+    """Reasoning some Chat Completions servers add beside the answer (D-044):
+    `reasoning_content` (DeepSeek, vLLM) or `reasoning` (OpenRouter, newer
+    vLLM). Never sent back -- DeepSeek refuses a request that replays it."""
+    if not isinstance(part, dict):
+        return ""
+    for key in ("reasoning_content", "reasoning"):
+        value = part.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
 @dataclass(slots=True)
 class OpenAICompatBackend:
     base_url: str
@@ -158,6 +172,7 @@ class OpenAICompatBackend:
         message = choices[0].get("message", {})
 
         text = message.get("content") or ""
+        reasoning = _reasoning_text(message).strip()
         # `or "{}"`, not a dict default: a present-but-null `arguments` -- the
         # shape a gateway produces for a no-argument call when an upstream
         # proto3 field is unset -- put None into ToolUseBlock.arguments, and
@@ -176,6 +191,8 @@ class OpenAICompatBackend:
             model=payload.get("model", body["model"]),
         )
         events: list[StreamEvent] = []
+        if reasoning:
+            events.append(ReasoningComplete(reasoning))
         if text:
             events.append(TextDelta(text))
         events.extend(ToolCallComplete(c) for c in calls)
@@ -187,6 +204,8 @@ class OpenAICompatBackend:
 
     def _stream(self, body: dict[str, Any]) -> Iterator[StreamEvent]:
         text_parts: list[str] = []
+        # Reasoning streams first and is shown whole once the answer starts.
+        thinking: list[str] = []
         # Tool call fragments arrive interleaved and keyed by index, not id.
         partial: dict[int, dict[str, str]] = {}
         usage = Usage()
@@ -228,7 +247,16 @@ class OpenAICompatBackend:
                 if choice.get("finish_reason"):
                     finish_reason = choice["finish_reason"]
 
+                piece = _reasoning_text(delta)
+                if piece:
+                    thinking.append(piece)
                 content = delta.get("content")
+                # Tool calls are yielded at the end, after the flush below.
+                if thinking and content:
+                    reasoning = "".join(thinking).strip()
+                    thinking.clear()
+                    if reasoning:
+                        yield ReasoningComplete(reasoning)
                 if content:
                     text_parts.append(content)
                     yield TextDelta(content)
@@ -261,6 +289,9 @@ class OpenAICompatBackend:
                 "the response stream carried no content before its terminator; "
                 "the provider closed the turn without answering"
             )
+        reasoning = "".join(thinking).strip()
+        if reasoning:
+            yield ReasoningComplete(reasoning)
         for c in calls:
             yield ToolCallComplete(c)
 

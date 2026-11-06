@@ -195,7 +195,8 @@ def test_body_shape_on_the_wire(server):
         {"type": "text", "text": "What does run() return?"}]}]
     assert body["cache_control"] == {"type": "ephemeral"}
     assert body["thinking"] == {"type": "adaptive", "block_binding":
-                                {"prefix_mismatch_behavior": "drop_block"}}
+                                {"prefix_mismatch_behavior": "drop_block"},
+                                "display": "summarized"}
     assert body["fallbacks"] == "default"
     for absent in ("output_config", "tool_choice", "temperature"):
         assert absent not in body

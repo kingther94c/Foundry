@@ -82,6 +82,16 @@ class MessageDelta:
 
 
 @dataclass(frozen=True, slots=True)
+class Reasoning:
+    """What the model showed of its reasoning before acting: a provider's
+    summary, or a server's raw reasoning text (D-044). Never part of the
+    conversation, and scrubbed whole like any other event."""
+
+    text: str
+    kind: Literal["reasoning"] = "reasoning"
+
+
+@dataclass(frozen=True, slots=True)
 class ToolBegin:
     call_id: str
     tool: str
@@ -229,6 +239,7 @@ class Compacted:
 Event = (
     TurnStarted
     | MessageDelta
+    | Reasoning
     | ToolBegin
     | ToolOutputDelta
     | ToolEnd

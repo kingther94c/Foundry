@@ -72,9 +72,9 @@ class ModelTurn:         # the product of one sampling
 ```python
 # events.py -- two queues (codex): the UI submits Ops, core broadcasts Events
 Op    = UserInput | ApprovalDecision | Interrupt | Shutdown
-Event = TurnStarted | MessageDelta | ToolBegin | ToolOutputDelta | ToolEnd \
+Event = TurnStarted | MessageDelta | Reasoning | ToolBegin | ToolOutputDelta | ToolEnd \
       | ToolRejected | ApprovalRequest | TokenCount | TurnComplete | Termination \
-      | Error | Notice | PlanUpdated
+      | Error | Notice | PlanUpdated | Compacted
 PROTOCOL_VERSION = 1
 ```
 
@@ -93,6 +93,10 @@ PROTOCOL_VERSION = 1
 - `PlanUpdated{call_id, steps: [{step, status}], explanation}`
   ([D-037](decision-log.md)): the whole plan after each `update_plan`; an empty
   `call_id` means a resume restored it.
+- `Reasoning{text}` ([D-044](decision-log.md)): a finished stretch of the
+  model's reasoning, before the answer it led to; whole, so it is scrubbed as
+  one string. `runtime.show_reasoning = false` stops it; the journal keeps it
+  on the `model_response` either way.
 
 ## 4. AgentRuntime: the shape of the loop
 
@@ -306,6 +310,12 @@ class ModelBackend(Protocol):
   `system_prompt_variant`.
 - Streaming: line-by-line SSE parsing (httpc.py); an idle timeout; a dropped
   stream is retried as a TransientError (up to the ceiling).
+- Reasoning ([D-044](decision-log.md)): each adapter yields
+  `ReasoningComplete(text)` when a stretch of reasoning is complete -- an
+  Anthropic thinking block (asked for with `display: "summarized"`), a
+  Responses reasoning item's summary (asked for only when
+  `backend.reasoning_summary` is set), or the `reasoning_content` a Chat
+  Completions server streams. It is never sent back.
 - AuthProvider / CredentialSource: `acquire(scope) -> SecretHandle`,
   `refresh()`, `invalidate()`, `logout()`; **a SecretHandle is not a printable
   string**, only httpc's header injection point can resolve it, and the

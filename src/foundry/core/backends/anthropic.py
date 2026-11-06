@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator
 
 from foundry.core.backends.base import (
+    ReasoningComplete,
     RequestRecord,
     StreamEvent,
     TextDelta,
@@ -50,6 +51,9 @@ BETA_THINKING_BINDING = "thinking-binding-controls-2026-08-01"
 BETA_FALLBACK = "server-side-fallback-2026-07-01"
 DEFAULT_MAX_TOKENS_STREAM = 64000
 DEFAULT_MAX_TOKENS_SINGLE = 16000
+# Current models leave a thinking block's text empty unless asked for a
+# summary; the summary costs nothing extra (D-044).
+THINKING_DISPLAY = "summarized"
 
 _STOP_REASONS = {
     "end_turn": StopReason.END_TURN,
@@ -137,7 +141,8 @@ def _build_messages(messages: tuple[Message, ...]) -> list[dict[str, Any]]:
 
 
 def build_body(request: TurnRequest, *, stream: bool, effort: str | None = None,
-               fallbacks: str | None = "default") -> dict[str, Any]:
+               fallbacks: str | None = "default",
+               thinking_display: str | None = THINKING_DISPLAY) -> dict[str, Any]:
     system = "\n\n".join(m.text_content for m in request.messages
                          if m.role is Role.SYSTEM)
     if request.max_output_tokens is not None:
@@ -155,6 +160,8 @@ def build_body(request: TurnRequest, *, stream: bool, effort: str | None = None,
     body["cache_control"] = {"type": "ephemeral"}
     body["thinking"] = {"type": "adaptive",
                         "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
+    if thinking_display:
+        body["thinking"]["display"] = thinking_display
     if effort:
         body["output_config"] = {"effort": effort}
     if request.temperature is not None:
@@ -277,6 +284,15 @@ def _raise_api_error(event: dict[str, Any]) -> None:
     raise FatalError(f"the API reported {kind}: {message}", payload=detail)
 
 
+def _reasoning_of(block: dict[str, Any] | None) -> str:
+    """A thinking block's readable text: its summary, or nothing when the
+    display was omitted. Redacted thinking has none to show."""
+    if not block or block.get("type") != "thinking":
+        return ""
+    text = block.get("thinking")
+    return text.strip() if isinstance(text, str) else ""
+
+
 def _close_block(blocks: dict[int, dict[str, Any]], raw_json: dict[int, str],
                  index: int) -> None:
     """At content_block_stop a tool-use block's input becomes the parsed JSON."""
@@ -311,6 +327,7 @@ class AnthropicBackend:
     max_retries: int = 4
     effort: str | None = None
     fallbacks: str | None = "default"
+    thinking_display: str | None = THINKING_DISPLAY
 
     @property
     def endpoint(self) -> str:
@@ -337,7 +354,8 @@ class AnthropicBackend:
 
     def _body(self, request: TurnRequest, *, stream: bool) -> dict[str, Any]:
         return build_body(request, stream=stream, effort=self.effort,
-                          fallbacks=self.fallbacks)
+                          fallbacks=self.fallbacks,
+                          thinking_display=self.thinking_display)
 
     def stream_turn(self, request: TurnRequest) -> Iterator[StreamEvent]:
         body = self._body(request, stream=self.stream)
@@ -363,6 +381,10 @@ class AnthropicBackend:
             _raise_api_error(payload)
         turn = _turn_from_json(payload, default_model)
         events: list[StreamEvent] = []
+        for block in payload["content"]:
+            reasoning = _reasoning_of(block) if isinstance(block, dict) else ""
+            if reasoning:
+                events.append(ReasoningComplete(reasoning))
         if turn.text:
             events.append(TextDelta(turn.text))
         events.extend(ToolCallComplete(c) for c in turn.tool_calls)
@@ -440,7 +462,12 @@ class AnthropicBackend:
                 # Unknown delta types are ignored.
 
             elif kind == "content_block_stop":
-                _close_block(blocks, raw_json, event.get("index", 0))
+                index = event.get("index", 0)
+                _close_block(blocks, raw_json, index)
+                # Shown when the block is complete, before the answer it led to.
+                reasoning = _reasoning_of(blocks.get(index))
+                if reasoning:
+                    yield ReasoningComplete(reasoning)
 
             elif kind == "message_delta":
                 delta = event.get("delta") or {}

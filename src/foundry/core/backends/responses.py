@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator
 
 from foundry.core.backends.base import (
+    ReasoningComplete,
     RequestRecord,
     StreamEvent,
     TextDelta,
@@ -79,7 +80,8 @@ def _tool_to_wire(schema: ToolSchema) -> dict[str, Any]:
     }
 
 
-def build_body(request: TurnRequest, *, stream: bool) -> dict[str, Any]:
+def build_body(request: TurnRequest, *, stream: bool,
+               reasoning_summary: str | None = None) -> dict[str, Any]:
     instructions = ""
     items: list[dict[str, Any]] = []
     for message in request.messages:
@@ -105,6 +107,9 @@ def build_body(request: TurnRequest, *, stream: bool) -> dict[str, Any]:
         body["max_output_tokens"] = request.max_output_tokens
     if request.temperature is not None:
         body["temperature"] = request.temperature
+    # Opt-in (D-044): a model that does not reason rejects the field.
+    if reasoning_summary:
+        body["reasoning"] = {"summary": reasoning_summary}
     return body
 
 
@@ -117,6 +122,24 @@ def _usage_from(payload: dict[str, Any] | None) -> Usage:
         output_tokens=payload.get("output_tokens", 0),
         cached_input_tokens=details.get("cached_tokens", 0),
     )
+
+
+def _reasoning_of(item: Any) -> str:
+    """A reasoning item's readable text: its summary, or else the reasoning
+    text an open-weights model returns in its content. Never replayed."""
+    if not isinstance(item, dict) or item.get("type") != "reasoning":
+        return ""
+    for key, part_type in (("summary", "summary_text"), ("content", "reasoning_text")):
+        parts = [p.get("text") for p in item.get(key) or []
+                 if isinstance(p, dict) and p.get("type") == part_type]
+        text = "\n\n".join(p.strip() for p in parts if isinstance(p, str) and p.strip())
+        if text:
+            return text
+    return ""
+
+
+def _reasonings(output: Any) -> list[ReasoningComplete]:
+    return [ReasoningComplete(text) for text in map(_reasoning_of, output or []) if text]
 
 
 def _parse_output(output: list[dict[str, Any]]) -> tuple[str, tuple[ToolUseBlock, ...]]:
@@ -134,7 +157,7 @@ def _parse_output(output: list[dict[str, Any]]) -> tuple[str, tuple[ToolUseBlock
                 name=item.get("name", ""),
                 arguments=item.get("arguments", "{}"),
             ))
-        # reasoning items are opaque and deliberately not interpreted
+        # Reasoning items are shown (_reasoning_of) but never replayed.
     return "".join(text_parts), tuple(calls)
 
 
@@ -150,6 +173,8 @@ class ResponsesBackend:
     stream: bool = True
     recorder: Any = None
     max_retries: int = 4
+    # reasoning.summary ("auto", "concise", "detailed"); None sends nothing.
+    reasoning_summary: str | None = None
 
     @property
     def endpoint(self) -> str:
@@ -165,7 +190,8 @@ class ResponsesBackend:
         return self.caps
 
     def stream_turn(self, request: TurnRequest) -> Iterator[StreamEvent]:
-        body = build_body(request, stream=self.stream)
+        body = build_body(request, stream=self.stream,
+                          reasoning_summary=self.reasoning_summary)
         if self.recorder is not None:
             self.recorder.record(RequestRecord(model=request.model, body=body,
                                                endpoint=self.endpoint))
@@ -186,7 +212,7 @@ class ResponsesBackend:
             stop_reason=StopReason.TOOL_USE if calls else StopReason.END_TURN,
             model=payload.get("model", body["model"]),
         )
-        events: list[StreamEvent] = []
+        events: list[StreamEvent] = list(_reasonings(payload.get("output")))
         if text:
             events.append(TextDelta(text))
         events.extend(ToolCallComplete(c) for c in calls)
@@ -201,6 +227,7 @@ class ResponsesBackend:
         usage = Usage()
         model = body["model"]
         completed = False
+        shown_reasoning = False
 
         try:
             stream = open_retrying_stream(
@@ -241,6 +268,10 @@ class ResponsesBackend:
 
             elif kind == "response.output_item.done":
                 item = event.get("item") or {}
+                reasoning = _reasoning_of(item)
+                if reasoning:
+                    shown_reasoning = True
+                    yield ReasoningComplete(reasoning)
                 if item.get("type") == "function_call":
                     calls.append(ToolUseBlock(
                         call_id=item.get("call_id") or item.get("id", ""),
@@ -256,9 +287,14 @@ class ResponsesBackend:
                 completed = True
                 if not calls and not text_parts:
                     # Some gateways only send the terminal event.
+                    if not shown_reasoning:
+                        yield from _reasonings(response.get("output"))
                     text, parsed = _parse_output(response.get("output", []))
                     if text:
                         text_parts.append(text)
+                        # Shown like streamed text: the screen draws deltas, so
+                        # without one a REPL showed no answer at all.
+                        yield TextDelta(text)
                     calls.extend(parsed)
 
             elif kind == "response.failed" or kind == "error":
