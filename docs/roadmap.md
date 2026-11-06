@@ -191,6 +191,8 @@ What a codex user still notices day to day, next:
 
 13. ~~A message of several lines at the prompt~~ -- a paste is one message,
     and so is a block between lines of three quotes (landed, D-052).
+14. ~~`exec -`~~ -- the task read from stdin, as `codex exec -` reads it
+    (landed, D-053).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

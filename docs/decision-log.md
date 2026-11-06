@@ -341,3 +341,11 @@
 - **What it may not weaken**: only the task prompt reads messages; approval questions read a single line as before. A slash command's pasted continuation becomes its arguments, as `parse_command` already allowed.
 - **Rejected**: a trailing backslash to continue a line (a Windows path ends in one); `prompt_toolkit` or a full-screen UI (a dependency the corporate machines this targets may not install; the stdlib console already gives line editing and history); bracketed paste (the Windows console's line input does not pass the markers through).
 - **Deferred**: a key for a new line inside a typed message (it needs raw console input), and editing an earlier message.
+
+## D-053 exec - reads the task from stdin
+- **Date**: 2026-11-07 · **Status**: confirmed (item 14)
+- **Background**: a long task -- a bug report, a spec, a prompt a script fills in -- does not fit a command line, and Windows quoting mangles one with quotes in it. `codex exec -` reads the prompt from stdin.
+- **Decision**: `foundry exec -` reads the task whole from stdin, at most 1 MB. A byte-order mark decides the encoding (UTF-8, or UTF-16 as PowerShell 5.1's `Out-File` writes it); without one it is UTF-8, or else the console's code page, as command output is decoded (`winapi.decode_output`). Line ends become `\n` and the ends are trimmed. A terminal on stdin, no stdin, nothing but blank lines, or more than the limit is refused with exit 2 before anything starts. A task named on the command line never reads stdin.
+- **What it may not weaken**: the task is the user's, as one typed is; nothing else is read from stdin, and approvals in exec stay off (ASK is DENY).
+- **Rejected**: reading stdin whenever no task is given (a script that forgets the task would hang on an open pipe); appending stdin to a task given on the command line (two sources for one task, and a pipe a script did not mean to send).
+- **Note**: Windows PowerShell 5.1 sends a string piped to a program as `$OutputEncoding`, ASCII by default, so non-ASCII text arrives as `?`; setting `$OutputEncoding = [Text.UTF8Encoding]::new($false)` first, redirecting a file in cmd (`foundry exec - < task.md`), or PowerShell 7 keeps it.

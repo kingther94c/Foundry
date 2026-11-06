@@ -90,6 +90,7 @@ from foundry.core.tools.base import ReadTracker, ToolContext
 from foundry.core.tools.git import capture_baseline, is_git_repository
 from foundry.core.tools.registry import default_registry
 from foundry.core.undo import apply_undo, other_changes, plan_undo, read_source, undo_payload
+from foundry.core.winapi import decode_output
 from foundry.core.workspace import PathRejected, Workspace
 
 TRUST_FILE = "trusted.json"
@@ -768,6 +769,35 @@ def _run_unattended(runtime: AgentRuntime, task: str, images: tuple = ()):
 
 # The most a schema file may hold: it goes into every request, in finish.
 MAX_SCHEMA_BYTES = 64_000
+# The most `exec -` reads from stdin: a task longer than this is a mistake.
+MAX_STDIN_TASK_BYTES = 1_000_000
+_BOMS = ((b"\xef\xbb\xbf", "utf-8"), (b"\xff\xfe", "utf-16-le"), (b"\xfe\xff", "utf-16-be"))
+
+
+def _task_from_stdin() -> str:
+    """`exec -` (D-053): the task, read whole from stdin, as `codex exec -`
+    reads it. UTF-8, or what a byte-order mark says (PowerShell 5.1's files
+    are UTF-16), or else the console's code page. ValueError when there is
+    nothing to read, or nobody piped anything in."""
+    stream = sys.stdin
+    if stream is None or stream.isatty():
+        raise ValueError("exec - reads the task from stdin; pipe it in, as "
+                         "`Get-Content task.md | foundry exec -`")
+    buffer = getattr(stream, "buffer", None)
+    data = (buffer.read(MAX_STDIN_TASK_BYTES + 1) if buffer is not None
+            else stream.read(MAX_STDIN_TASK_BYTES + 1).encode("utf-8"))
+    if len(data) > MAX_STDIN_TASK_BYTES:
+        raise ValueError(f"the task on stdin is larger than {MAX_STDIN_TASK_BYTES // 1_000_000} MB")
+    for mark, encoding in _BOMS:
+        if data.startswith(mark):
+            text = data[len(mark):].decode(encoding, errors="replace")
+            break
+    else:
+        text = decode_output(data).text
+    text = text.replace("\r\n", "\n").strip()
+    if not text:
+        raise ValueError("stdin held no task")
+    return text
 
 
 def _load_output_schema(path: Path) -> Any:
@@ -802,6 +832,12 @@ def cmd_exec(args: argparse.Namespace) -> int:
     if args.task is None and args.resume is None:
         console.print("[red]exec needs a task, or --resume SESSION to continue one[/red]")
         return 2
+    if args.task == "-":
+        try:
+            args.task = _task_from_stdin()
+        except (OSError, ValueError) as exc:
+            console.print(f"[red]{escape(str(exc))}[/red]")
+            return 2
     schema = None
     if getattr(args, "output_schema", None):
         try:
@@ -1092,7 +1128,7 @@ def build_parser() -> argparse.ArgumentParser:
     undo.set_defaults(func=cmd_undo)
 
     execute = sub.add_parser("exec", help="run one task headlessly (approvals are denied)")
-    execute.add_argument("task", nargs="?")
+    execute.add_argument("task", nargs="?", help="the task; - reads it from stdin")
     execute.add_argument("--workspace", default=".")
     execute.add_argument("--json", action="store_true", help="emit the event stream as JSONL")
     execute.add_argument("--resume", metavar="SESSION",
