@@ -63,6 +63,7 @@ from foundry.core.events import (
     Termination,
 )
 from foundry.core.httpc import HttpClient
+from foundry.core.notify import Notifier
 from foundry.core.policy.engine import Mode, PolicyEngine, builtin_rules
 from foundry.core.prompts import (
     environment_paragraph,
@@ -369,6 +370,8 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         persist_rule=_rule_writer(home, policy),
         auto_compact=config.auto_compact,
         show_reasoning=config.show_reasoning,
+        notifier=Notifier(tuple(config.notify), workspace.root) if config.notify else None,
+        scrub=default_redactor().scrub,
     )
     if missing_credential:
         # Say it before spending a round trip on a request that cannot succeed.

@@ -56,6 +56,7 @@ from foundry.core.events import (
     TurnStarted,
     new_id,
 )
+from foundry.core.notify import payload as notify_payload
 from foundry.core.policy.engine import POLICY_VERSION, Decision, PolicyEngine, Verdict
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput
@@ -193,6 +194,10 @@ class AgentRuntime:
     # Each image's artifact id, by its data: every request repeats the
     # history, and an image is stored once, not once a round (D-045).
     _image_ids: dict = field(default_factory=dict)
+    # The user's program told when a turn ends (D-050): notify.Notifier.
+    notifier: object | None = None
+    scrub: Callable[[str], str] | None = None   # what leaves for the notifier
+    _notify_failed: bool = False
 
     # -- helpers ----------------------------------------------------------
 
@@ -219,6 +224,33 @@ class AgentRuntime:
 
     def run_turn(self, user_input: str, images: tuple = ()) -> TurnOutcome:
         """``images`` are ImageBlocks the user attached to this message (D-045)."""
+        outcome = self._run_turn(user_input, images)
+        self._notify(user_input, outcome)
+        return outcome
+
+    def _notify(self, user_input: str, outcome: TurnOutcome) -> None:
+        """Tell the user's program the turn has ended (D-050). Not when the
+        user stopped it: they are at the keyboard."""
+        if self.notifier is None or outcome.status is TerminalStatus.CANCELLED:
+            return
+        data = notify_payload(
+            session_id=self.session.session_id if self.session is not None else "",
+            cwd=str(self.tool_ctx.workspace.root),
+            status=outcome.status.value if outcome.status is not None else None,
+            user_input=user_input, last_message=outcome.text, scrub=self.scrub)
+        program = self.notifier.argv[0]
+        try:
+            pid = self.notifier.send(data)
+        except (OSError, ValueError) as exc:
+            self._journal(EventType.NOTIFIED, {"program": program, "error": str(exc)})
+            if not self._notify_failed:
+                self._notify_failed = True
+                self._emit(Notice(f"notify: could not start {program}: {exc}",
+                                  level="warning"))
+            return
+        self._journal(EventType.NOTIFIED, {"program": program, "pid": pid})
+
+    def _run_turn(self, user_input: str, images: tuple) -> TurnOutcome:
         # The request records carry every message the model was sent; this is
         # for input that never reached one, which a resumed session still owes
         # an answer to.

@@ -224,6 +224,9 @@ class Config:
     show_reasoning: bool = True
     # From the user's own files only: each one is a program Foundry starts.
     mcp_servers: dict[str, McpServerConfig] = field(default_factory=dict)
+    # A program run when a turn ends (D-050), from the user's own files only:
+    # the program and its arguments; the turn's JSON is added as the last.
+    notify: tuple[str, ...] = ()
     rules: list[Rule] = field(default_factory=list)
     provenance: dict[str, Provenance] = field(default_factory=dict)
 
@@ -233,6 +236,14 @@ class Config:
     def explain(self, key: str) -> str:
         entry = self.provenance.get(key)
         return f"{key} = {entry.value!r} (from {entry.layer})" if entry else f"{key} is unset"
+
+
+def _parse_notify(raw: Any) -> tuple[str, ...]:
+    if not isinstance(raw, list) or not all(isinstance(a, str) and a.strip() and "\0" not in a
+                                            for a in raw):
+        raise ConfigError('notify must be a list of strings, the program and its arguments, '
+                          'as notify = ["notify-send", "Foundry"] ([] for none)')
+    return tuple(raw)
 
 
 def _parse_rules(raw: Any, layer: Layer, *, allow_permitted: bool) -> list[Rule]:
@@ -378,6 +389,15 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
                               "in your own config.toml")
         config.mcp_servers.update(_parse_mcp_servers(data["mcp_servers"]))
         config.record("mcp_servers", sorted(config.mcp_servers), layer)
+
+    if "notify" in data:
+        # A program to run, as an MCP server is, and told what the session
+        # did: a repository naming one would run code of its choosing.
+        if not connection_allowed:
+            raise ConfigError(f"{layer} config may not set notify; set it in your own "
+                              "config.toml")
+        config.notify = _parse_notify(data["notify"])
+        config.record("notify", list(config.notify), layer)
 
     if "permissions" in data:
         layer_enum = Layer.PROJECT if layer.startswith("project") else (

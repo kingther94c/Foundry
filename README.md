@@ -148,6 +148,15 @@ protocol = "anthropic_messages"
 model = "claude-opus-5-5"
 ```
 
+To hear when long work stops, name a program at the top of `config.toml`; it
+is started when a turn ends, with a JSON description of the turn as its last
+argument (`type`, `session-id`, `cwd`, `status`, `input-messages`,
+`last-assistant-message`, as codex's `notify` sends):
+
+```toml
+notify = ["python", "C:/tools/notify.py"]   # not a .bat or .cmd: cmd.exe would read the payload
+```
+
 A long task does not simply run out of context: old tool output is masked
 first, and when that is not enough the model summarises the work so far and the
 conversation continues from the summary (`/compact` does it on request;

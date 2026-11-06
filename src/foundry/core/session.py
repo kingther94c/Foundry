@@ -65,6 +65,8 @@ class EventType:
     COMPACTED = "compacted"
     # The user chose another model mid-session with /model (D-047).
     MODEL_CHANGE = "model_change"
+    # The user's notify program was started when a turn ended (D-050).
+    NOTIFIED = "notified"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced

@@ -298,6 +298,12 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   `read_only = true`. A call is `tools/call` with a timeout and the cancel
   flag; the result's text is truncated like a command's. A failing server is a
   warning and a `capability_probe` record, never a failed session.
+- `notify` ([D-050](decision-log.md)): a program from the user's own config,
+  started when a turn ends with the turn's JSON as its last argument (codex's
+  `agent-turn-complete`), found on PATH, without a shell, with the command
+  environment and its output discarded; nothing waits for it. Not when the
+  user stopped the turn; a batch file is refused, since cmd.exe would read the
+  model's words in the payload as commands.
 - `view_image` ([D-045](decision-log.md)): a read-only, workspace-bound tool
   that returns the image on its result (`ToolOutput.images`). An image is
   checked by `core/images.py` from its own bytes -- PNG, JPEG, GIF or WebP, at

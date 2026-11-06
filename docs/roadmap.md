@@ -180,7 +180,8 @@ With the list above done, the next gaps a codex user would notice day to day
     rebuilt permissions paragraph or a resume's new system prompt, the blocks
     made before the change are left out of later requests, instead of being
     sent for the API to drop, and warn about, every round (landed, D-048).
-11. A `notify` program run when a turn ends, for long work left unattended.
+11. ~~A `notify` program run when a turn ends~~ -- `notify = [...]` in the
+    user's config, told the turn's JSON as codex tells it (landed, D-050).
 12. `exec --output-schema FILE`: the final message as JSON that matches a
     schema, for scripts.
 
