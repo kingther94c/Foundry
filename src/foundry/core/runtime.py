@@ -209,7 +209,8 @@ class AgentRuntime:
         self._cancelled = True
 
     def files_changed(self, ordinal: int, paths: list[str]) -> None:
-        """Files changed outside the tools -- by an undo -- at journal ``ordinal``.
+        """Files changed outside the tools -- by an undo, or a command the user
+        ran (whose files are not known) -- at journal ``ordinal``.
 
         A command run before then can no longer vouch for the workspace, and
         each of these files is read again before it is patched.

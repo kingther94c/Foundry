@@ -224,6 +224,15 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
     )
 
 
+def combined_output(result: CommandResult) -> str:
+    """What a command printed, stdout then stderr, as the model reads it."""
+    stdout = decode_output(result.stdout).text
+    stderr = decode_output(result.stderr).text
+    if not stderr.strip():
+        return stdout
+    return f"{stdout}\n[stderr]\n{stderr}" if stdout.strip() else f"[stderr]\n{stderr}"
+
+
 @dataclass(slots=True)
 class RunCommand:
     name: str = "run_command"
@@ -322,11 +331,7 @@ class RunCommand:
             "multi_statement": multi_statement,
         })
 
-        stdout = decode_output(result.stdout).text
-        stderr = decode_output(result.stderr).text
-        combined = stdout
-        if stderr.strip():
-            combined = f"{stdout}\n[stderr]\n{stderr}" if stdout.strip() else f"[stderr]\n{stderr}"
+        combined = combined_output(result)
 
         artifact_id = ""
         body, truncated = truncate_middle(combined, ctx.max_output_bytes)

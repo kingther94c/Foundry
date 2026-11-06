@@ -195,6 +195,8 @@ What a codex user still notices day to day, next:
     (landed, D-053).
 15. ~~How much context is left, in view~~ -- a line above the prompt, as
     codex shows it under its input (landed, D-054).
+16. ~~`!COMMAND` at the prompt~~ -- a command the user runs, its output told
+    to the model with the next message (landed, D-055).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

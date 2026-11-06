@@ -1,7 +1,8 @@
 """The interactive session: its prompt, and the commands typed at it (D-039).
 
-A line that starts with ``/name`` is a command; anything else is a task for
-the model. Commands are read from the user's input and nowhere else -- nothing
+A line that starts with ``/name`` is a command, one that starts with ``!`` a
+shell command the user runs (D-055); anything else is a task for the
+model. Commands are read from the user's input and nowhere else -- nothing
 the model writes and nothing a tool prints reaches this table -- so the ones
 that change what the session may do (/approve, /undo) are the user's alone.
 
@@ -31,7 +32,10 @@ from foundry.core.events import Notice, TerminalStatus
 from foundry.core.policy.engine import Mode
 from foundry.core.prompts import PROJECT_DOC_NAMES, mode_line, system_prompt
 from foundry.core.session import EventType, SessionStore
+from foundry.core.tools.base import truncate_middle
+from foundry.core.tools.command import combined_output, run_process
 from foundry.core.tools.git import collect_evidence, run_git
+from foundry.core.winapi import child_environment
 from foundry.core.undo import (
     Outcome,
     Plan,
@@ -213,6 +217,9 @@ def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
             return TerminalStatus.CANCELLED
         if not line.strip():
             continue
+        if line.startswith(SHELL):
+            run_shell(wiring, console, line[len(SHELL):].strip())
+            continue
         task: object = RunTask(line)
         parsed = parse_command(line)
         if parsed is not None:
@@ -237,6 +244,63 @@ def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
                           "the session is still open.[/yellow]")
             continue
         return outcome.status
+
+
+# A message that starts with this is a command the user runs (D-055).
+SHELL = "!"
+SHELL_USAGE = ("usage: !COMMAND runs COMMAND in the workspace; the model is told "
+               "what it printed with your next message")
+SHELL_NOTE = ("The user ran this command in the workspace themselves ({header}). It was "
+              "not run by you, so it cannot support a claim in finish: run it yourself "
+              "to cite it.\n$ {command}\n{output}")
+
+
+def run_shell(wiring: "Wiring", console: Console, command: str) -> None:
+    """``!COMMAND``: run COMMAND for the user, as codex's prompt does (D-055).
+
+    It is the user's command, so no policy or approval stands in front of it,
+    but it runs as the model's would: from the workspace root, with the same
+    minimal environment and time limit, and nothing on its input. What it
+    printed is shown, and the model is told it, scrubbed and cut to the same
+    size, with the next message. It may have changed anything, so no command
+    run before it can vouch for the workspace any more.
+    """
+    if not command:
+        console.print(f"[yellow]{SHELL_USAGE}[/yellow]")
+        return
+    context = wiring.runtime.tool_ctx
+    timeout_s = context.max_command_timeout_s
+    try:
+        result = run_process(command, cwd=str(wiring.workspace.root), timeout_s=timeout_s,
+                             env=child_environment(context.env_policy))
+    except KeyboardInterrupt:
+        _user_ran(wiring, {"command": command, "exit_code": None, "timed_out": False,
+                           "stopped": True, "duration_ms": None})
+        console.print("[yellow]stopped; the model is not told about it[/yellow]")
+        return
+    except FoundryError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        return
+    _user_ran(wiring, {"command": command, "exit_code": result.exit_code,
+                       "timed_out": result.timed_out, "stopped": False,
+                       "duration_ms": result.duration_ms})
+    scrub = wiring.runtime.context.redactor.scrub
+    printed = combined_output(result).replace("\r\n", "\n")
+    output, _ = truncate_middle(scrub(printed).rstrip(),
+                                context.max_output_bytes)
+    header = (f"timed out after {timeout_s}s, process tree terminated" if result.timed_out
+              else f"exit code {result.exit_code} in {result.duration_ms}ms")
+    if output:
+        console.print(escape(sanitize(output)), soft_wrap=True)
+    console.print(f"[dim]({header}; the model sees this with your next message)[/dim]")
+    tell_model(wiring, SHELL_NOTE.format(header=header, command=scrub(command),
+                                         output=output or "(no output)"))
+
+
+def _user_ran(wiring: "Wiring", record: dict) -> None:
+    """Journal a command the user ran; it may have changed any file."""
+    ordinal = wiring.session.append(EventType.USER_COMMAND, record)
+    wiring.runtime.files_changed(ordinal, [])
 
 
 def dispatch(wiring: "Wiring", console: Console, name: str, arguments: str) -> object:
@@ -273,8 +337,9 @@ def _help(wiring: "Wiring", console: Console, arguments: str) -> None:
             console.print(f"  [cyan]{escape(usage):<{width}}[/cyan]  "
                           f"{escape(prompt.description or '(no description)')} [dim]({source})[/dim]",
                           soft_wrap=True)
-    console.print("[dim]anything else you type is a task for the model; a pasted block "
-                  'is one message, and so is what you type between two lines of """[/dim]')
+    console.print("[dim]!COMMAND runs COMMAND in the workspace and tells the model what "
+                  "it printed. Anything else you type is a task for the model; a pasted "
+                  'block is one message, and so is what you type between two lines of """[/dim]')
     return None
 
 
