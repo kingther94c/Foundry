@@ -43,6 +43,7 @@ from foundry.core.config import (
     user_dir,
 )
 from foundry.core.context import ContextManager
+from foundry.core.mcp import McpServers, start_servers
 from foundry.core.errors import (
     AuthError,
     ConfigError,
@@ -107,6 +108,8 @@ class Wiring:
     prompts: dict[str, CustomPrompt] = field(default_factory=dict)
     # Where the system prompt's instructions came from (D-041), for /status.
     instructions: tuple[str, ...] = ()
+    # The MCP servers this session started (D-043); closed with it.
+    mcp: McpServers | None = None
 
 
 def _trusted_paths(home: Path) -> set[str]:
@@ -262,13 +265,28 @@ def _reopen(sessions: Path, session_id: str, root: Path,
 def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
               session: SessionStore, state: JournalState | None, outside: frozenset[str], *,
               home: Path, console: Console) -> Wiring:
+    registry = default_registry(recorder=session)
+    # Started before the rules are checked, so a rule for a server's tool is
+    # not reported as one that can never match (D-043).
+    mcp = (start_servers(config.mcp_servers, workspace.root, registry)
+           if config.mcp_servers else McpServers())
+    try:
+        return _assemble_with(workspace, config, trusted, baseline, session, state, outside,
+                              home=home, console=console, registry=registry, mcp=mcp)
+    except BaseException:
+        mcp.close()
+        raise
+
+
+def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline,
+                   session: SessionStore, state: JournalState | None, outside: frozenset[str],
+                   *, home: Path, console: Console, registry, mcp: McpServers) -> Wiring:
     policy = PolicyEngine(
         rules=list(builtin_rules()) + list(config.rules),
         mode=config.mode,
         dirty_files=set(baseline.dirty_paths) | set(baseline.untracked_paths) | set(outside),
     )
 
-    registry = default_registry(recorder=session)
     dead = policy.dead_rules(registry.names())
     for rule in dead:
         console.print(f"[yellow]warning:[/yellow] rule for unknown tool {rule.tool!r} "
@@ -345,7 +363,8 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
     wiring = Wiring(workspace=workspace, config=config, runtime=runtime,
                     renderer=renderer, session=session, home=home, trusted=trusted,
                     prompts=load_custom_prompts(home, workspace.root, trusted=trusted),
-                    instructions=instructions.sources)
+                    instructions=instructions.sources, mcp=mcp)
+    _announce_mcp(mcp, session, sink)
     if state is not None:
         # Evidence starts over (D-035): the command history, the files read and
         # the session grants are this run's own, so nothing from before the
@@ -368,6 +387,20 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
         wiring.note = resume_note(state, outside, config.mode.value)
         runtime.plan, runtime.plan_explanation = state.plan, state.plan_explanation
     return wiring
+
+
+def _announce_mcp(mcp: McpServers, session: SessionStore, sink: EventSink) -> None:
+    """Which servers came up with which tools, in the journal and on screen:
+    the tools a session was offered are part of its record."""
+    for name, tools in mcp.tools.items():
+        session.append(EventType.CAPABILITY_PROBE, {"mcp_server": name, "tools": tools})
+        sink.emit(Notice(f"MCP server {name}: {len(tools)} tool(s)", level="info"))
+    for name, why in mcp.failures.items():
+        session.append(EventType.CAPABILITY_PROBE, {"mcp_server": name, "tools": [],
+                                                    "error": why})
+        sink.emit(Notice(f"MCP server {name} is not available: {why}", level="warning"))
+    for skipped in mcp.skipped:
+        sink.emit(Notice(f"MCP tool not offered: {skipped}", level="warning"))
 
 
 def _announce_resume(wiring: Wiring) -> None:
@@ -414,7 +447,11 @@ def _close(wiring: Wiring, status: TerminalStatus, reason: str) -> None:
             wiring.session.record_termination(status, reason)
     except OSError:
         pass
-    wiring.session.close()
+    try:
+        wiring.session.close()
+    finally:
+        if wiring.mcp is not None:
+            wiring.mcp.close()
 
 
 def _credential_source(config: Config, vault: CredentialVault):

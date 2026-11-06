@@ -15,6 +15,7 @@ could redirect a token to a host of its choosing.
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -104,6 +105,84 @@ class BackendConfig:
     max_context_tokens: int | None = None
 
 
+_SERVER_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}\Z")
+_MCP_KEYS = frozenset({"command", "args", "env", "env_vars", "startup_timeout_s",
+                       "tool_timeout_s", "read_only", "enabled"})
+
+
+@dataclass(frozen=True, slots=True)
+class McpServerConfig:
+    """One MCP server the user's own configuration starts (D-043)."""
+
+    name: str
+    command: str
+    args: tuple[str, ...] = ()
+    # Plain values for the server's environment. Secrets belong in env_vars:
+    # the names of variables passed through from Foundry's own environment.
+    env: tuple[tuple[str, str], ...] = ()
+    env_vars: tuple[str, ...] = ()
+    startup_timeout_s: float = 20.0
+    tool_timeout_s: float = 120.0
+    # The user vouches that these tools change nothing: they are then offered
+    # in plan mode and /review too -- still asking first unless a rule allows.
+    read_only: bool = False
+    enabled: bool = True
+
+
+def _strings(value: Any, what: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ConfigError(f"{what} must be a list of strings")
+    return tuple(value)
+
+
+def _seconds(value: Any, what: str, ceiling: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= ceiling:
+        raise ConfigError(f"{what} must be a number of seconds above 0 and at most {ceiling:g}")
+    return float(value)
+
+
+def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
+    if not isinstance(raw, dict):
+        raise ConfigError("mcp_servers must be tables, as [mcp_servers.<name>]")
+    servers: dict[str, McpServerConfig] = {}
+    for name, entry in raw.items():
+        where = f"mcp_servers.{name}"
+        if not _SERVER_NAME.match(name):
+            raise ConfigError(f"{where}: a server name is letters, digits, _ and -, "
+                              "at most 32 of them")
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{where} must be a table")
+        unknown = sorted(set(entry) - _MCP_KEYS)
+        if unknown:
+            raise ConfigError(f"{where}: no setting {unknown[0]!r} "
+                              f"(known: {', '.join(sorted(_MCP_KEYS))})")
+        command = entry.get("command")
+        if not isinstance(command, str) or not command.strip():
+            raise ConfigError(f"{where}.command must name the program to run")
+        env = entry.get("env", {})
+        if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str)
+                                                for k, v in env.items()):
+            raise ConfigError(f"{where}.env must be a table of strings")
+        flags = {}
+        for flag in ("read_only", "enabled"):
+            if flag in entry:
+                if not isinstance(entry[flag], bool):
+                    raise ConfigError(f"{where}.{flag} must be true or false")
+                flags[flag] = entry[flag]
+        servers[name] = McpServerConfig(
+            name=name, command=command.strip(),
+            args=_strings(entry.get("args", []), f"{where}.args"),
+            env=tuple(sorted(env.items())),
+            env_vars=_strings(entry.get("env_vars", []), f"{where}.env_vars"),
+            startup_timeout_s=_seconds(entry.get("startup_timeout_s", 20),
+                                       f"{where}.startup_timeout_s", 300),
+            tool_timeout_s=_seconds(entry.get("tool_timeout_s", 120),
+                                    f"{where}.tool_timeout_s", 3600),
+            **flags,
+        )
+    return servers
+
+
 @dataclass(slots=True)
 class Config:
     backend: BackendConfig = field(default_factory=BackendConfig)
@@ -121,6 +200,8 @@ class Config:
     # Summary compaction before the context fills (D-040); off, a long task
     # ends partial(context window exhausted) as before.
     auto_compact: bool = True
+    # From the user's own files only: each one is a program Foundry starts.
+    mcp_servers: dict[str, McpServerConfig] = field(default_factory=dict)
     rules: list[Rule] = field(default_factory=list)
     provenance: dict[str, Provenance] = field(default_factory=dict)
 
@@ -264,6 +345,15 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
             )
         config.mode = mode
         config.record("mode", runtime["mode"], layer)
+
+    if "mcp_servers" in data:
+        # Each entry is a program to run. A repository naming one would be a
+        # clone running code of its choosing the moment a session starts.
+        if not connection_allowed:
+            raise ConfigError(f"{layer} config may not start MCP servers; configure them "
+                              "in your own config.toml")
+        config.mcp_servers.update(_parse_mcp_servers(data["mcp_servers"]))
+        config.record("mcp_servers", sorted(config.mcp_servers), layer)
 
     if "permissions" in data:
         layer_enum = Layer.PROJECT if layer.startswith("project") else (

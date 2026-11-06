@@ -99,7 +99,9 @@ class Rule:
         ``pytest``. A DENY or ASK fires if any part matches, which only makes
         them stricter.
         """
-        if self.tool not in ("*", op.tool):
+        # A tool may be a pattern too -- `mcp__docs__*` for every tool one MCP
+        # server offers (D-043). Case-sensitive, as tool names are.
+        if self.tool != op.tool and not fnmatch.fnmatchcase(op.tool, self.tool):
             return False
         parts = targets if targets is not None else ({op.target},)
 
@@ -410,7 +412,8 @@ class PolicyEngine:
         names = set(known_tools)
         return [
             r for r in self.rules
-            if r.layer is not Layer.BUILTIN and r.tool != "*" and r.tool not in names
+            if r.layer is not Layer.BUILTIN
+            and not any(fnmatch.fnmatchcase(name, r.tool) for name in names)
         ]
 
     # -- the pipeline -----------------------------------------------------

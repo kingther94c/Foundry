@@ -1,0 +1,529 @@
+"""An MCP client over stdio (D-043): another program's tools, under Foundry's policy.
+
+A server is a program the user names in their own config.toml. Foundry starts
+it with the same scrubbed environment a command gets (plus what the entry adds),
+speaks JSON-RPC 2.0 to it one message per line, lists its tools, and offers each
+to the model as ``mcp__<server>__<tool>``. Nothing about a call is the
+server's to decide: every one goes through the policy pipeline like any other
+mutator -- refused in plan mode, asked about otherwise unless a rule allows it
+-- and its output is untrusted content, truncated and scrubbed like a
+command's.
+
+The process runs under a job object, so closing the session ends the server
+and everything it started.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import threading
+import time
+from collections import deque
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+from foundry import __version__
+from foundry.core.config import McpServerConfig
+from foundry.core.conversation import ToolSchema
+from foundry.core.errors import Cancelled, FoundryError, InvalidToolCall, ToolError
+from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput, truncate_middle
+from foundry.core.winapi import (
+    CREATE_NEW_PROCESS_GROUP,
+    CREATE_NO_WINDOW,
+    IS_WINDOWS,
+    ProcessJob,
+    child_environment,
+)
+
+PROTOCOL_VERSION = "2025-06-18"
+MAX_MESSAGE_BYTES = 8 * 1024 * 1024
+MAX_TOOLS_PER_SERVER = 100
+MAX_ARGUMENT_BYTES = 64_000
+MAX_SCHEMA_BYTES = 16_000
+MAX_DESCRIPTION_CHARS = 2_000
+TOOL_NAME_MAX = 64          # what OpenAI-compatible APIs accept
+_LIST_PAGES = 20
+_NOT_NAME = re.compile(r"[^A-Za-z0-9_-]")
+_EMPTY_SCHEMA = {"type": "object", "properties": {}}
+
+
+class McpError(FoundryError):
+    category = "mcp"
+
+
+def tool_name(server: str, tool: str) -> str:
+    """``mcp__<server>__<tool>`` in the characters every provider accepts; a
+    name too long keeps a digest of the whole, so two never collide by being
+    cut at the same place."""
+    name = _NOT_NAME.sub("_", f"mcp__{server}__{tool}")
+    if len(name) > TOOL_NAME_MAX:
+        digest = hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
+        name = name[:TOOL_NAME_MAX - 9] + "_" + digest
+    return name
+
+
+# --- the connection ---------------------------------------------------------------
+
+
+class StdioClient:
+    """One server process and the JSON-RPC conversation with it."""
+
+    def __init__(self, server: McpServerConfig, cwd: Path,
+                 environ: dict[str, str] | None = None) -> None:
+        self.server = server
+        self.cwd = cwd
+        self._environ = dict(os.environ if environ is None else environ)
+        self._process: subprocess.Popen | None = None
+        self._job: ProcessJob | None = None
+        self._send_lock = threading.Lock()
+        self._cond = threading.Condition()
+        self._pending: set[int] = set()
+        self._responses: dict[int, dict] = {}
+        self._next_id = 0
+        self._stopped = ""
+        self._stderr: deque[str] = deque(maxlen=20)
+        self.server_info: dict[str, Any] = {}
+        self.capabilities: dict[str, Any] = {}
+
+    # -- process ---------------------------------------------------------------
+
+    def environment(self) -> dict[str, str]:
+        """What a command would get -- credential-shaped names removed -- plus
+        the variables the entry passes through by name, and its plain values."""
+        env = child_environment(self._environ)
+        for name in self.server.env_vars:
+            if name in self._environ:
+                env[name] = self._environ[name]
+        env.update(dict(self.server.env))
+        return env
+
+    def start(self) -> None:
+        env = self.environment()
+        search = next((v for k, v in env.items() if k.upper() == "PATH"), None)
+        program = shutil.which(self.server.command, path=search)
+        if program is None:
+            raise McpError(f"{self.server.command!r} was not found on PATH")
+        self._job = ProcessJob()
+        try:
+            self._process = subprocess.Popen(
+                [program, *self.server.args], cwd=self.cwd, env=env,
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                creationflags=(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW) if IS_WINDOWS else 0,
+                start_new_session=not IS_WINDOWS,
+            )
+        except OSError as exc:
+            self._job.close()
+            raise McpError(f"could not start {self.server.command}: {exc}") from exc
+        if IS_WINDOWS and self._job.active:
+            self._job.assign(int(self._process._handle))  # type: ignore[attr-defined]
+        threading.Thread(target=self._read_stdout, daemon=True,
+                         name=f"mcp-{self.server.name}-out").start()
+        threading.Thread(target=self._read_stderr, daemon=True,
+                         name=f"mcp-{self.server.name}-err").start()
+
+        result = self.request("initialize", {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "foundry", "version": __version__},
+        }, timeout=self.server.startup_timeout_s)
+        if not isinstance(result.get("protocolVersion"), str):
+            raise McpError("its reply to initialize names no protocol version")
+        self.server_info = result.get("serverInfo") if isinstance(result.get("serverInfo"), dict) else {}
+        self.capabilities = (result.get("capabilities")
+                             if isinstance(result.get("capabilities"), dict) else {})
+        self.notify("notifications/initialized")
+
+    @property
+    def running(self) -> bool:
+        return self._process is not None and self._process.poll() is None
+
+    def close(self) -> None:
+        """End the server: its input closed, a moment to exit, then the job
+        object -- which also ends anything it started."""
+        process, self._process = self._process, None
+        if process is None:
+            return
+        try:
+            if process.stdin is not None:
+                process.stdin.close()
+        except OSError:
+            pass
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            if not (IS_WINDOWS and self._job is not None and self._job.terminate()):
+                self._kill(process)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        if self._job is not None:
+            self._job.close()   # kill-on-close: whatever it left behind ends too
+        if not IS_WINDOWS:
+            self._kill(process)
+
+    @staticmethod
+    def _kill(process: subprocess.Popen) -> None:
+        if IS_WINDOWS:
+            process.kill()
+            return
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            pass
+
+    def stderr_tail(self) -> str:
+        return " | ".join(self._stderr)
+
+    def _stopped_reason(self) -> str:
+        tail = self.stderr_tail()
+        return self._stopped + (f"; it said: {tail[-400:]}" if tail else "")
+
+    # -- messages --------------------------------------------------------------
+
+    def _send(self, message: dict) -> None:
+        data = (json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8")
+        process = self._process
+        if process is None or process.stdin is None:
+            raise McpError("the server is not running")
+        with self._send_lock:
+            try:
+                process.stdin.write(data)
+                process.stdin.flush()
+            except (OSError, ValueError) as exc:
+                raise McpError(f"the server is not running ({self._stopped_reason() or exc})") from exc
+
+    def notify(self, method: str, params: dict | None = None) -> None:
+        message: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
+        if params is not None:
+            message["params"] = params
+        self._send(message)
+
+    def request(self, method: str, params: dict | None = None, *, timeout: float,
+                cancelled: Callable[[], bool] | None = None) -> dict:
+        with self._cond:
+            self._next_id += 1
+            rid = self._next_id
+            self._pending.add(rid)
+        message: dict[str, Any] = {"jsonrpc": "2.0", "id": rid, "method": method}
+        if params is not None:
+            message["params"] = params
+        try:
+            self._send(message)
+            reply = self._wait(rid, method, timeout, cancelled)
+        finally:
+            with self._cond:
+                self._pending.discard(rid)
+                self._responses.pop(rid, None)
+        if "error" in reply:
+            error = reply["error"]
+            text = error.get("message") if isinstance(error, dict) else str(error)
+            raise McpError(f"{method} failed: {str(text)[:300]}")
+        result = reply.get("result")
+        if not isinstance(result, dict):
+            raise McpError(f"{method} returned no result")
+        return result
+
+    def _wait(self, rid: int, method: str, timeout: float,
+              cancelled: Callable[[], bool] | None) -> dict:
+        deadline = time.monotonic() + timeout
+        with self._cond:
+            while rid not in self._responses:
+                if self._stopped:
+                    raise McpError(self._stopped_reason())
+                if cancelled is not None and cancelled():
+                    break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                self._cond.wait(min(remaining, 0.1))
+            reply = self._responses.get(rid)
+        if reply is not None:
+            return reply
+        interrupted = cancelled is not None and cancelled()
+        try:
+            self.notify("notifications/cancelled", {
+                "requestId": rid, "reason": "interrupted" if interrupted else "timed out"})
+        except McpError:
+            pass
+        if interrupted:
+            raise Cancelled(f"{method} interrupted")
+        raise McpError(f"{method} timed out after {timeout:g}s")
+
+    def _read_stdout(self) -> None:
+        process = self._process
+        stream = process.stdout if process is not None else None
+        try:
+            while stream is not None:
+                line = stream.readline(MAX_MESSAGE_BYTES + 1)
+                if not line:
+                    break
+                if len(line) > MAX_MESSAGE_BYTES:
+                    # Skip the rest of it; whatever was waiting for it fails.
+                    while line and not line.endswith(b"\n"):
+                        line = stream.readline(MAX_MESSAGE_BYTES)
+                    self._fail_pending(f"a reply over {MAX_MESSAGE_BYTES} bytes")
+                    continue
+                self._dispatch(line)
+        except (OSError, ValueError):
+            pass
+        finally:
+            code = process.poll() if process is not None else None
+            if code is None and process is not None:
+                try:
+                    code = process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    code = None
+            with self._cond:
+                self._stopped = ("the server stopped" if code is None
+                                 else f"the server stopped (exit code {code})")
+                self._cond.notify_all()
+
+    def _read_stderr(self) -> None:
+        process = self._process
+        stream = process.stderr if process is not None else None
+        try:
+            while stream is not None:
+                line = stream.readline(4096)
+                if not line:
+                    break
+                text = " ".join(line.decode("utf-8", errors="replace").split())
+                if text:
+                    self._stderr.append(text[:300])
+        except (OSError, ValueError):
+            pass
+
+    def _fail_pending(self, reason: str) -> None:
+        with self._cond:
+            for rid in self._pending:
+                self._responses[rid] = {"error": {"message": reason}}
+            self._cond.notify_all()
+
+    def _dispatch(self, line: bytes) -> None:
+        try:
+            message = json.loads(line.decode("utf-8", errors="replace"))
+        except ValueError:
+            return   # a log line printed to stdout: not a message, not ours to act on
+        if not isinstance(message, dict):
+            return
+        if "method" in message:
+            if "id" in message:
+                # A request from the server. Foundry offers it nothing but a
+                # ping: no sampling, no roots, no elicitation.
+                reply: dict[str, Any] = {"jsonrpc": "2.0", "id": message["id"]}
+                if message.get("method") == "ping":
+                    reply["result"] = {}
+                else:
+                    reply["error"] = {"code": -32601, "message": "not offered by this client"}
+                try:
+                    self._send(reply)
+                except McpError:
+                    pass
+            return   # notifications: progress, logs -- nothing to act on
+        rid = message.get("id")
+        with self._cond:
+            if rid in self._pending:
+                self._responses[rid] = message
+                self._cond.notify_all()
+
+    # -- the protocol's two calls Foundry makes ----------------------------------
+
+    def list_tools(self) -> list[dict]:
+        if "tools" not in self.capabilities:
+            return []
+        tools: list[dict] = []
+        cursor = None
+        for _ in range(_LIST_PAGES):
+            result = self.request("tools/list", {"cursor": cursor} if cursor else {},
+                                  timeout=self.server.startup_timeout_s)
+            page = result.get("tools")
+            if not isinstance(page, list):
+                raise McpError("tools/list returned no list of tools")
+            tools.extend(t for t in page if isinstance(t, dict))
+            cursor = result.get("nextCursor")
+            if not isinstance(cursor, str) or not cursor or len(tools) >= MAX_TOOLS_PER_SERVER:
+                break
+        return tools[:MAX_TOOLS_PER_SERVER]
+
+    def call_tool(self, name: str, arguments: dict, *,
+                  cancelled: Callable[[], bool] | None = None) -> dict:
+        return self.request("tools/call", {"name": name, "arguments": arguments},
+                            timeout=self.server.tool_timeout_s, cancelled=cancelled)
+
+
+# --- a server's tool, as Foundry offers it ----------------------------------------
+
+
+def render_result(result: dict) -> str:
+    """The text of a tools/call result. Content Foundry cannot show yet is
+    named, not dropped, so the model knows it was there."""
+    parts: list[str] = []
+    content = result.get("content")
+    for item in content if isinstance(content, list) else []:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("type")
+        if kind == "text" and isinstance(item.get("text"), str):
+            parts.append(item["text"])
+        elif kind in ("image", "audio"):
+            parts.append(f"[{kind} content ({item.get('mimeType', 'unknown type')}) not shown]")
+        elif kind == "resource_link":
+            parts.append(f"[resource link: {item.get('uri', '?')}]")
+        elif kind == "resource" and isinstance(item.get("resource"), dict):
+            resource = item["resource"]
+            if isinstance(resource.get("text"), str):
+                parts.append(resource["text"])
+            else:
+                parts.append(f"[binary resource {resource.get('uri', '?')} not shown]")
+        else:
+            parts.append(f"[{kind or 'unknown'} content not shown]")
+    if not parts and "structuredContent" in result:
+        parts.append(json.dumps(result["structuredContent"], ensure_ascii=False, indent=2))
+    return "\n".join(parts)
+
+
+@dataclass(slots=True)
+class McpTool:
+    name: str
+    kind: ToolKind
+    client: StdioClient
+    server: str
+    remote: str
+    description: str
+    parameters: dict[str, Any]
+
+    def schema(self) -> ToolSchema:
+        return ToolSchema(name=self.name, description=self.description,
+                          parameters=self.parameters)
+
+    def validate(self, args: dict[str, Any]) -> Operation:
+        if not isinstance(args, dict):
+            raise InvalidToolCall(f"{self.name} takes an object of arguments")
+        missing = [k for k in self.parameters.get("required", []) or []
+                   if isinstance(k, str) and k not in args]
+        if missing:
+            raise InvalidToolCall(f"{self.name} needs {', '.join(missing)}")
+        text = json.dumps(args, sort_keys=True, ensure_ascii=False)
+        if len(text.encode("utf-8")) > MAX_ARGUMENT_BYTES:
+            raise InvalidToolCall(f"{self.name}: arguments over {MAX_ARGUMENT_BYTES} bytes")
+        shown = text if len(text) <= 300 else text[:297] + "..."
+        return Operation(
+            tool=self.name, kind=self.kind, args=args,
+            display=f"{self.server}: {self.remote} {shown}",
+            # Rules match on the arguments, so a rule can allow a tool only
+            # for some of them.
+            target=text,
+            digest=hashlib.sha256(f"{self.name}\x00{text}".encode("utf-8")).hexdigest()[:16],
+        )
+
+    def execute(self, op: Operation, ctx: ToolContext) -> ToolOutput:
+        try:
+            result = self.client.call_tool(self.remote, op.args, cancelled=ctx.cancelled)
+        except McpError as exc:
+            raise ToolError(f"MCP server {self.server}: {exc}") from exc
+        text = render_result(result) or "(no output)"
+        body, truncated = truncate_middle(text, ctx.max_output_bytes)
+        artifact_id = ""
+        if truncated and ctx.artifacts is not None:
+            artifact_id = ctx.artifacts.put_text(text).artifact_id
+            body += f"\n\n[full output saved; read_artifact artifact_id=\"{artifact_id}\"]"
+        return ToolOutput(content=body, is_error=result.get("isError") is True,
+                          truncated=truncated, artifact_id=artifact_id,
+                          metadata={"mcp_server": self.server, "mcp_tool": self.remote})
+
+
+def _tool(client: StdioClient, spec: dict, taken: set[str]) -> McpTool | str:
+    """The tool, or why it is not offered."""
+    remote = spec.get("name")
+    if not isinstance(remote, str) or not remote:
+        return "a tool with no name"
+    name = tool_name(client.server.name, remote)
+    if name in taken:
+        return f"{remote}: its name {name} is taken"
+    schema = spec.get("inputSchema")
+    if not isinstance(schema, dict) or schema.get("type") != "object":
+        schema = dict(_EMPTY_SCHEMA)
+    if len(json.dumps(schema)) > MAX_SCHEMA_BYTES:
+        return f"{remote}: its argument schema is over {MAX_SCHEMA_BYTES} bytes"
+    description = spec.get("description") if isinstance(spec.get("description"), str) else ""
+    description = (" ".join(description.split())[:MAX_DESCRIPTION_CHARS]
+                   + f" (from the MCP server {client.server.name!r})").strip()
+    kind = ToolKind.READ_ONLY if client.server.read_only else ToolKind.MUTATOR
+    return McpTool(name=name, kind=kind, client=client, server=client.server.name,
+                   remote=remote, description=description, parameters=schema)
+
+
+# --- every configured server -------------------------------------------------------
+
+
+@dataclass(slots=True)
+class McpServers:
+    clients: list[StdioClient] = field(default_factory=list)
+    # server -> the names of its tools, as offered
+    tools: dict[str, list[str]] = field(default_factory=dict)
+    # server -> why it is not available
+    failures: dict[str, str] = field(default_factory=dict)
+    # tools a server listed that are not offered, and why
+    skipped: list[str] = field(default_factory=list)
+
+    def close(self) -> None:
+        for client in self.clients:
+            client.close()
+
+    def summary(self) -> str:
+        parts = [f"{name}: {len(names)} tool(s)" for name, names in self.tools.items()]
+        parts += [f"{name}: not available ({why})" for name, why in self.failures.items()]
+        return "; ".join(parts)
+
+
+def start_servers(servers: dict[str, McpServerConfig], cwd: Path, registry, *,
+                  environ: dict[str, str] | None = None) -> McpServers:
+    """Start every enabled server at once, and register the tools of those
+    that came up. A server that fails is reported, never fatal."""
+    found = McpServers()
+    enabled = [s for s in servers.values() if s.enabled]
+    clients = {s.name: StdioClient(s, cwd, environ) for s in enabled}
+    results: dict[str, list[dict] | str] = {}
+
+    def run(client: StdioClient) -> None:
+        try:
+            client.start()
+            results[client.server.name] = client.list_tools()
+        except FoundryError as exc:
+            results[client.server.name] = str(exc)
+        except Exception as exc:  # noqa: BLE001 - a broken server must not end the session
+            results[client.server.name] = f"{type(exc).__name__}: {exc}"
+
+    threads = [threading.Thread(target=run, args=(c,), daemon=True) for c in clients.values()]
+    for thread in threads:
+        thread.start()
+    for thread, client in zip(threads, clients.values()):
+        # start() bounds each request; this bounds a server that hangs between them.
+        thread.join(client.server.startup_timeout_s * 2 + 5)
+
+    taken = set(registry.names())
+    for server in enabled:
+        client = clients[server.name]
+        outcome = results.get(server.name, "it did not answer in time")
+        if isinstance(outcome, str):
+            found.failures[server.name] = outcome
+            client.close()
+            continue
+        found.clients.append(client)
+        names = found.tools.setdefault(server.name, [])
+        for spec in outcome:
+            tool = _tool(client, spec, taken)
+            if isinstance(tool, str):
+                found.skipped.append(f"{server.name}: {tool}")
+                continue
+            registry.register(tool)
+            taken.add(tool.name)
+            names.append(tool.name)
+    return found

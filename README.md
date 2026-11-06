@@ -127,6 +127,18 @@ interrupted=14`
 secret) and `--profile NAME`, a `[profiles.NAME]` table in your `config.toml`
 holding `backend`, `runtime` and `permissions` like the file itself:
 
+MCP servers go in the same file; their tools reach the model as
+`mcp__<server>__<tool>`, and each call asks first unless a rule allows it
+(`tool = "mcp__docs__*"`):
+
+```toml
+[mcp_servers.docs]
+command = "uvx"
+args = ["our-docs-mcp"]
+env_vars = ["DOCS_TOKEN"]   # passed through by name; secrets never go in the file
+# read_only = true          # you vouch it changes nothing: offered in plan mode too
+```
+
 ```toml
 profile = "work"          # the default; --profile or FOUNDRY_PROFILE choose another
 

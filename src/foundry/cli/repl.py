@@ -182,6 +182,8 @@ def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
         ("context", f"about {used:,} of {limit:,} tokens ({100 * used // max(limit, 1)}%)"),
         ("notes", ", ".join(wiring.instructions) or "no FOUNDRY.md or AGENTS.md loaded"),
     ]
+    if wiring.mcp is not None and wiring.mcp.summary():
+        rows.append(("mcp", wiring.mcp.summary()))
     if runtime.plan:
         done = sum(step.status.value == "completed" for step in runtime.plan)
         rows.append(("plan", f"{done} of {len(runtime.plan)} steps completed"))

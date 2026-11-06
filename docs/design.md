@@ -19,6 +19,7 @@ foundry/
 │   ├── context.py           # ContextManager: projection / truncation / masking / token accounting
 │   ├── policy/              # PolicyEngine: rules, modes, the six-step pipeline, the command segmenter
 │   ├── tools/               # ToolExecutor + the 8 tool implementations + the workspace boundary
+│   ├── mcp.py               # the MCP client over stdio: servers' tools as policy-checked tools (D-043)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
 │   ├── auth.py              # AuthProvider + DPAPI storage
 │   ├── session.py           # SessionStore (JSONL) + the audit log
@@ -174,6 +175,7 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
     1. the pre_tool callback (a configured Python callable, or a stdin-JSON subprocess; may rewrite the input)
     2. DENY rules (merged across every layer; a hit ends it -- no ALLOW can flip it);
        then plan mode and read-only tasks (/review) refuse every mutator, before any ASK (D-039)
+       (a rule's tool may be a pattern, such as mcp__docs__*, matched case-sensitively; D-043)
     3. ASK rules
     4. the mode baseline (default/accept_edits/plan/dont_ask)
     5. ALLOW rules
@@ -268,6 +270,13 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   `PlanUpdated`, and records it in the call's `tool_result` (`plan`), from
   which a resume restores it. `finish` lists the steps not marked completed and
   decides nothing over them.
+- MCP tools ([D-043](decision-log.md)): each `[mcp_servers.<name>]` in the
+  user's own config is started at session start under a job object, with the
+  command environment plus its `env` and `env_vars`; its tools are registered
+  as `mcp__<server>__<tool>`, mutators to the policy unless the entry says
+  `read_only = true`. A call is `tools/call` with a timeout and the cancel
+  flag; the result's text is truncated like a command's. A failing server is a
+  warning and a `capability_probe` record, never a failed session.
 
 ## 8. ModelBackend and AuthProvider
 
