@@ -210,6 +210,20 @@ class ContextManager:
         self._sent = self._sent[:length + 1]
         self._unbound = {index for index in self._unbound if index <= length}
 
+    def unanswered_calls(self) -> list[ToolUseBlock]:
+        """The calls in the model's newest message that have no result yet:
+        what a stopped task leaves (D-062). A request carrying one is refused
+        by every provider."""
+        for index in range(len(self.history) - 1, -1, -1):
+            if self.history[index].role is Role.ASSISTANT:
+                break
+        else:
+            return []
+        answered = {block.call_id for message in self.history[index + 1:]
+                    for block in message.blocks if isinstance(block, ToolResultBlock)}
+        return [block for block in self.history[index].blocks
+                if isinstance(block, ToolUseBlock) and block.call_id not in answered]
+
     def append(self, message: Message) -> None:
         self.history.append(message)
         self._turn_of_message.append(self._turn)

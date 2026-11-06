@@ -210,6 +210,8 @@ What a codex user still notices day to day, next:
 22. ~~Reasoning effort on every protocol~~ -- `backend.effort` for the
     Responses API and Chat Completions too, and `/effort` mid-session
     (landed, D-061).
+23. ~~Ctrl+C stops the turn, not the session~~ -- the prompt comes back with
+    the conversation kept, each call left answered (landed, D-062).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

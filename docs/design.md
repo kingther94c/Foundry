@@ -137,6 +137,12 @@ async def run_turn(user_input):
 - The cancellation propagation chain belongs to the runtime: Ctrl+C ->
   Interrupt op -> cancel the in-flight HTTP read -> TerminateJobObject kills
   the child process tree -> `Termination(cancelled)` is written to disk.
+  At the interactive prompt it ends the task, not the session
+  ([D-062](decision-log.md)): `AgentRuntime.interrupted()` answers each call
+  of the model's last message still without a result -- the running one as
+  stopped, with what it changed unknown (a mutator other than `run_command`
+  counts as a change), the rest as not run -- and the prompt comes back. An
+  abort at an approval ends its task the same way.
 - An asyncio core; blocking tool bodies run in `asyncio.to_thread`.
 
 ## 5. ContextManager

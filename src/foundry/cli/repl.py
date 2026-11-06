@@ -125,8 +125,16 @@ def run_task(wiring: "Wiring", task: RunTask):
     policy.read_only = task.read_only
     try:
         return wiring.runtime.run_turn(with_note(wiring, task.text), take_images(wiring))
+    except KeyboardInterrupt:
+        # Ctrl+C stops the turn, not the session, as codex's does (D-062); a
+        # second one, while this is said, still ends the session.
+        return wiring.runtime.interrupted()
     finally:
         policy.read_only = ""
+
+
+STOPPED = "[yellow]stopped; the session is still open (Ctrl+C at the prompt ends it)[/yellow]"
+STOPPED_NOTE = "The user stopped your previous turn before it finished."
 
 
 PROMPT = "\n[bold cyan]foundry>[/bold cyan] "
@@ -248,6 +256,12 @@ def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
         if outcome.status is TerminalStatus.BLOCKED:
             console.print("[yellow]that turn could not be completed; "
                           "the session is still open.[/yellow]")
+            continue
+        # Stopped by the user -- Ctrl+C, or (a)bort at an approval -- the task
+        # ends and the conversation stays (D-062).
+        if outcome.status is TerminalStatus.CANCELLED:
+            console.print(STOPPED)
+            tell_model(wiring, STOPPED_NOTE)
             continue
         return outcome.status
 
@@ -524,7 +538,9 @@ def _compact(wiring: "Wiring", console: Console, arguments: str) -> None:
     """Summarise the conversation now rather than when it fills (D-040)."""
     try:
         failed = wiring.runtime.compact(auto=False, focus=arguments)
-    except Cancelled:
+    except (Cancelled, KeyboardInterrupt):
+        # Ctrl+C stops the summary, not the session (D-062); the history is
+        # replaced only once a summary is in.
         failed = "compaction cancelled"
     if failed:
         console.print(f"[yellow]{escape(failed)}; the conversation is unchanged[/yellow]")

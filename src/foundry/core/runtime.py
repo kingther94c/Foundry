@@ -105,6 +105,14 @@ def _explain(exc: Exception) -> str:
     return f"{exc}: {detail[:300]}"
 
 
+# What a call the user's Ctrl+C or abort left is answered with (D-062).
+STOPPED_WHILE_RUNNING = ("Interrupted: the user stopped the task while this call was running, "
+                         "so whether it finished, and what it changed, is not known. Check "
+                         "before relying on it.")
+STOPPED_BEFORE_RUNNING = ("Not run: the user stopped the task before this call was executed. "
+                          "Nothing was changed by it; call it again if it is still needed.")
+
+
 @dataclass(slots=True)
 class Budget:
     max_tool_rounds: int = 40
@@ -181,6 +189,9 @@ class AgentRuntime:
     persist_rule: object | None = None   # callable(Operation) -> None, for "always"
     failures: FailureTracker = field(default_factory=FailureTracker)
     _cancelled: bool = False
+    # The call whose tool is running, with its operation: what a Ctrl+C in
+    # the middle of it leaves unknown (D-062).
+    _running: tuple[ToolUseBlock, Operation] | None = None
     _finish: TurnOutcome | None = None
     _refreshed: bool = False
     # Journal ordinal of the last successful change to the workspace.
@@ -210,6 +221,16 @@ class AgentRuntime:
 
     def cancel(self) -> None:
         self._cancelled = True
+
+    def interrupted(self) -> TurnOutcome:
+        """Ctrl+C reached the task (D-062): the calls it left are answered and
+        it ends as cancelled -- the task, not the session, which the caller
+        may go on with."""
+        if self.session is not None and self.session._terminated:
+            # The task had already ended; the Ctrl+C came as that was said.
+            return TurnOutcome(status=TerminalStatus.CANCELLED, text="interrupted by user",
+                               summary="interrupted by user")
+        return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
 
     def files_changed(self, ordinal: int, paths: list[str]) -> None:
         """Files changed outside the tools -- by an undo, or a command the user
@@ -624,7 +645,10 @@ class AgentRuntime:
         else:
             self._audit(op, f"ALLOW:{decision.rule_id}", "auto")
 
+        # Not cleared on the way out of a Ctrl+C: that is when it is read.
+        self._running = (call, op)
         self._execute(call, op)
+        self._running = None
 
     def _execute(self, call: ToolUseBlock, op: Operation) -> None:
         tool = self.registry.get(op.tool)
@@ -793,7 +817,7 @@ class AgentRuntime:
         return self._image_ids[block.data]
 
     def _reply(self, call: ToolUseBlock, content: str, *, is_error: bool = False,
-               images: tuple = ()) -> None:
+               images: tuple = ()) -> int:
         self.context.append_tool_result(call.call_id, content, is_error=is_error,
                                         images=images)
         # What the model will read, word for word. The next request carries it
@@ -802,7 +826,25 @@ class AgentRuntime:
                                   "content": content, "is_error": is_error}
         if images:
             record["images"] = [self._block_payload(i, self._store_image) for i in images]
-        self._journal(EventType.TOOL_REPLY, record)
+        return self._journal(EventType.TOOL_REPLY, record)
+
+    def _answer_left(self) -> None:
+        """Give each call the stopped task left a result (D-062), so the
+        conversation can go on: a request with a call left unanswered is
+        refused by every provider. One stopped while its tool ran may have
+        changed something, so no command before it vouches for the workspace.
+        """
+        running, self._running = self._running, None
+        for call in self.context.unanswered_calls():
+            if running is None or running[0].call_id != call.call_id:
+                self._reply(call, STOPPED_BEFORE_RUNNING, is_error=True)
+                continue
+            op = running[1]
+            ordinal = self._reply(call, STOPPED_WHILE_RUNNING, is_error=True)
+            # As a result would (run_command is evidence, not a change).
+            if op.kind is ToolKind.MUTATOR and op.tool != "run_command":
+                self.files_changed(ordinal, list(op.args.get("paths") or ()))
+            self._emit(ToolEnd(call.call_id, op.tool, False, "interrupted"))
 
     def _ask(self, op: Operation, decision: Decision) -> ApprovalChoice:
         if self.approval is None:
@@ -920,6 +962,11 @@ class AgentRuntime:
 
     def _terminate(self, status: TerminalStatus, reason: str, summary: str = "",
                    result_json: str | None = None) -> TurnOutcome:
+        if status is TerminalStatus.CANCELLED:
+            self._answer_left()
+            # Honoured, so spent (D-062): a Ctrl+C or an abort stops the task
+            # it came in, and the next one starts afresh.
+            self._cancelled = False
         # The sink holds a tail of streamed text so a credential cannot straddle
         # two deltas unseen. Every path here is followed by an event that would
         # release it anyway; flushing first makes that independent of ordering.
