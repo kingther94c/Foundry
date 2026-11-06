@@ -90,6 +90,10 @@ PROTOCOL_VERSION = 1
   front end comes for free.
 - Before rendering any model or tool text, the UI strips ANSI/OSC sequences and
   escapes rich markup (terminal injection is a real attack surface).
+- On a terminal the renderer keeps a transient `working (12s, Ctrl+C to stop)`
+  line up from `TurnStarted` or `ToolBegin` until the next thing it draws or
+  asks ([D-069](decision-log.md)); the REPL and `_close` take it down however
+  a task or the session ends.
 - Every string an event carries passes the redactor on its way out, nested
   ones included (a plan's steps sit inside a tuple).
 - `ToolEnd{call_id, tool, ok, summary, duration_ms, output}`: for

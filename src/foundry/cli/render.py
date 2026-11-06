@@ -9,11 +9,14 @@ rewrite the terminal title or push data into the clipboard (OSC 52).
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 
 from rich.console import Console
+from rich.live import Live
 from rich.markup import escape
 from rich.panel import Panel
+from rich.spinner import Spinner
 from rich.syntax import Syntax
 from rich.text import Text
 
@@ -38,6 +41,7 @@ from foundry.core.events import (
     ToolEnd,
     ToolRejected,
     TurnComplete,
+    TurnStarted,
 )
 
 PATCH_PREVIEW_LINES = 120
@@ -108,11 +112,63 @@ def print_plan(console, steps: tuple[PlanStep, ...], explanation: str = "") -> N
         console.print(f"  {_STEP_MARK[step.status]} {text}", highlight=False)
 
 
+def elapsed(seconds: float) -> str:
+    """``7s``, ``2m 05s``, ``1h 02m``."""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60:02}s"
+    return f"{seconds // 3600}h {seconds % 3600 // 60:02}m"
+
+
+# The line that says Foundry is working (D-069), redrawn this often.
+WORKING_REFRESH_PER_S = 4
+
+
+class Working:
+    """``working (12s, Ctrl+C to stop)``: what a live display redraws while
+    the model is asked or a tool runs, the time counted from ``started``."""
+
+    def __init__(self, what: str, started: float, clock=time.monotonic) -> None:
+        self.what = what
+        self.started = started
+        self.clock = clock
+        self.spinner = Spinner("line", style="cyan")
+
+    def text(self) -> str:
+        return f"{self.what} ({elapsed(self.clock() - self.started)}, Ctrl+C to stop)"
+
+    def __rich_console__(self, console, options):
+        self.spinner.update(text=Text(self.text(), style="dim"))
+        yield self.spinner
+
+
 @dataclass(slots=True)
 class Renderer:
     console: Console = field(default_factory=Console)
     verbose: bool = False
     _streaming: bool = False
+    # The working line while it is up (D-069); None otherwise.
+    _live: Live | None = None
+
+    def work(self, what: str) -> None:
+        """Put up the working line (D-069): only on a terminal, where it can
+        be redrawn in place and taken down without a trace."""
+        self.idle()
+        if not self.console.is_terminal or self.console.is_dumb_terminal:
+            return
+        self._live = Live(Working(what, time.monotonic()), console=self.console,
+                          transient=True, refresh_per_second=WORKING_REFRESH_PER_S,
+                          redirect_stdout=False, redirect_stderr=False)
+        self._live.start()
+
+    def idle(self) -> None:
+        """Take the working line down, before anything else is printed or
+        asked: a line being redrawn cannot share the screen with a prompt."""
+        live, self._live = self._live, None
+        if live is not None:
+            live.stop()
 
     def show_disclosure(self, workspace: str, model: str, mode: str) -> None:
         self.console.print(Panel(
@@ -125,6 +181,15 @@ class Renderer:
         )
 
     def handle(self, event: Event) -> None:
+        self.idle()
+        self._handle(event)
+        # Up again while the model is asked, or a tool runs (D-069).
+        if isinstance(event, TurnStarted):
+            self.work("working")
+        elif isinstance(event, ToolBegin):
+            self.work("running")
+
+    def _handle(self, event: Event) -> None:
         if isinstance(event, MessageDelta):
             self.console.print(safe(event.text), end="", markup=False, highlight=False)
             self._streaming = True
@@ -221,6 +286,7 @@ class Renderer:
     # -- approval ---------------------------------------------------------
 
     def ask_approval(self, request: ApprovalRequest) -> ApprovalChoice:
+        self.idle()
         self.console.print()
         if request.approval_kind is ApprovalKind.PATCH and request.detail:
             # The summary first: a large envelope used to scroll the file list

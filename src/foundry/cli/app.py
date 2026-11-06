@@ -470,6 +470,7 @@ def _announce_resume(wiring: Wiring) -> None:
 
 
 def _close(wiring: Wiring, status: TerminalStatus, reason: str) -> None:
+    wiring.renderer.idle()
     # A journal write can fail (full volume, a backup agent holding the
     # file); losing the exit code over it would be worse than the lost line.
     try:

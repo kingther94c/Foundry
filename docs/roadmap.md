@@ -224,6 +224,8 @@ What a codex user still notices day to day, next:
     marked (landed, D-067).
 29. ~~What a command printed, in view~~ -- its last lines and its exit code
     under it, as codex shows them (landed, D-068).
+30. ~~Working, and for how long~~ -- a line with the time taken while the
+    model is asked or a tool runs (landed, D-069).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

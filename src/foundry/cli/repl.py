@@ -206,6 +206,7 @@ def run_task(wiring: "Wiring", task: RunTask):
         return wiring.runtime.interrupted()
     finally:
         policy.read_only = ""
+        wiring.renderer.idle()
 
 
 STOPPED = "[yellow]stopped; the session is still open (Ctrl+C at the prompt ends it)[/yellow]"
