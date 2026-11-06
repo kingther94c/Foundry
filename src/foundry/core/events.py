@@ -114,6 +114,9 @@ class ToolEnd:
     ok: bool
     summary: str
     duration_ms: int = 0
+    # The last lines a command printed, for the person watching (D-068);
+    # empty for every other tool.
+    output: str = ""
     kind: Literal["tool_end"] = "tool_end"
 
 

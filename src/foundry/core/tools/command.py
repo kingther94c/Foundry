@@ -224,6 +224,19 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
     )
 
 
+# What the person watching is shown of a command's output (D-068): its last
+# lines, as codex shows them under the command. The model reads all of it.
+OUTPUT_TAIL_LINES = 20
+OUTPUT_TAIL_CHARS = 4000
+
+
+def output_tail(text: str) -> str:
+    """The last lines of ``text`` without the blank ones it ends with: at most
+    OUTPUT_TAIL_LINES lines and OUTPUT_TAIL_CHARS characters, the end kept."""
+    tail = "\n".join(text.rstrip().splitlines()[-OUTPUT_TAIL_LINES:])
+    return tail[-OUTPUT_TAIL_CHARS:]
+
+
 def combined_output(result: CommandResult) -> str:
     """What a command printed, stdout then stderr, as the model reads it."""
     stdout = decode_output(result.stdout).text
@@ -372,5 +385,6 @@ class RunCommand:
                 "timed_out": result.timed_out,
                 "timeout_s": timeout_s,
                 "output_incomplete": result.output_incomplete,
+                "output_tail": output_tail(combined),
             },
         )

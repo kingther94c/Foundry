@@ -222,6 +222,8 @@ What a codex user still notices day to day, next:
     as codex's review presets (landed, D-066).
 28. ~~The endpoint's models~~ -- `/model` alone lists them, the session's
     marked (landed, D-067).
+29. ~~What a command printed, in view~~ -- its last lines and its exit code
+    under it, as codex shows them (landed, D-068).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

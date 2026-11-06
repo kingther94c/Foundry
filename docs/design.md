@@ -92,6 +92,12 @@ PROTOCOL_VERSION = 1
   escapes rich markup (terminal injection is a real attack surface).
 - Every string an event carries passes the redactor on its way out, nested
   ones included (a plan's steps sit inside a tuple).
+- `ToolEnd{call_id, tool, ok, summary, duration_ms, output}`: for
+  `run_command`, `summary` is the exit code and `output` the last lines the
+  command printed (at most 20 and 4,000 characters), shown under it -- 5 lines,
+  all with `-v` ([D-068](decision-log.md)); empty for other tools.
+  `ToolOutputDelta` is reserved for streaming a command's output live, and not
+  emitted yet.
 - `PlanUpdated{call_id, steps: [{step, status}], explanation}`
   ([D-037](decision-log.md)): the whole plan after each `update_plan`; an empty
   `call_id` means a resume restored it.

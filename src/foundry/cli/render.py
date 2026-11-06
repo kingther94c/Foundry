@@ -43,6 +43,9 @@ from foundry.core.events import (
 PATCH_PREVIEW_LINES = 120
 # Reasoning past this many lines is cut unless the renderer is verbose (D-044).
 REASONING_LINES = 8
+# A command's output under it (D-068): its last lines, the rest with -v.
+COMMAND_OUTPUT_LINES = 5
+COMMAND_OUTPUT_LINE_CHARS = 240
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 _OSC = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
@@ -141,8 +144,12 @@ class Renderer:
             if event.tool == "update_plan" and event.ok:
                 return
             mark = "[green]ok[/green]" if event.ok else "[red]failed[/red]"
-            detail = f" {safe(event.summary)}" if self.verbose and event.summary else ""
+            # A command's exit code is always worth the few words (D-068).
+            said = self.verbose or event.tool == "run_command"
+            detail = f" {safe(event.summary)}" if said and event.summary else ""
             self.console.print(f"   {mark}{detail}")
+            if event.output:
+                self._command_output(event.output)
         elif isinstance(event, ToolRejected):
             # The most safety-relevant thing the system does is refuse a
             # destructive command; it used to produce no output at all.
@@ -180,6 +187,20 @@ class Renderer:
             self.console.print(f"[dim]{again}session {safe(event.session_id)}[/dim]")
         elif isinstance(event, TurnComplete):
             pass  # the text already streamed
+
+    def _command_output(self, text: str) -> None:
+        """The last lines a command printed (D-068), dim and indented under
+        it. A command prints anything: control sequences are stripped, and it
+        goes out as plain text, so a bracket in it is never read as markup."""
+        lines = sanitize(text).splitlines()
+        shown = lines if self.verbose else lines[-COMMAND_OUTPUT_LINES:]
+        if len(shown) < len(lines):
+            self.console.print(Text("     ...", style="dim"))
+        for line in shown:
+            line = line.rstrip()
+            if len(line) > COMMAND_OUTPUT_LINE_CHARS:
+                line = line[:COMMAND_OUTPUT_LINE_CHARS - 3] + "..."
+            self.console.print(Text(f"     {line}", style="dim"), soft_wrap=True)
 
     def _reasoning(self, text: str) -> None:
         """Dim and indented, so it reads as the model's aside rather than its
