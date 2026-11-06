@@ -428,9 +428,13 @@ class ModelBackend(Protocol):
   `command_exec` events (the event_id exists and the exit code matches), and
   (c) HEAD not having moved; otherwise it is downgraded to `partial`.
   Read-only tasks take the `completed(no_changes)` path. A journal holds one
-  termination per run, plus one for each blocked turn an interactive session
-  went on past; its status is the last one's unless a later `resumed` record
-  starts a run that has not ended, which reads as `interrupted`.
+  termination per run, plus one for each task an interactive session went on
+  past -- every one, since only the user ends such a session
+  ([D-063](decision-log.md)); its status is the last one's unless a later
+  `resumed` record starts a run that has not ended, which reads as
+  `interrupted`. Before an interactive session sends anything after a task
+  that ended, `AgentRuntime.answer_left_calls()` answers the calls it left:
+  `finish` as accepted with its status, the rest as not run.
 - **Resume** ([D-035](decision-log.md), `core/resume.py`). The history is each
   `model_request`'s messages taken where they first appear (never masked
   there), then what followed the last request: its `model_response` (with the

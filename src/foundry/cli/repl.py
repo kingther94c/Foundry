@@ -134,6 +134,7 @@ def run_task(wiring: "Wiring", task: RunTask):
 
 
 STOPPED = "[yellow]stopped; the session is still open (Ctrl+C at the prompt ends it)[/yellow]"
+TASK_ENDED = "[dim]the session is still open: ask more, /new for a fresh one, /exit to end it[/dim]"
 STOPPED_NOTE = "The user stopped your previous turn before it finished."
 
 
@@ -221,7 +222,8 @@ def read_message(console: Console, prompt: str = PROMPT) -> str:
 
 
 def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
-    """Read messages until the session ends; NEW_SESSION if the user asked for one."""
+    """Read messages until the user ends the session; NEW_SESSION if they
+    asked for another. A task's ending is not the session's (D-063)."""
     while True:
         try:
             line = read_message(console, prompt_for(wiring))
@@ -245,6 +247,8 @@ def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
             if not isinstance(task, RunTask):
                 continue
         outcome = run_task(wiring, task)
+        # The conversation goes on, so what the task left is answered (D-063).
+        wiring.runtime.answer_left_calls()
         if outcome.status is None:
             continue
         # A dropped stream or an unreachable provider ends the *turn*, not the
@@ -263,7 +267,9 @@ def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
             console.print(STOPPED)
             tell_model(wiring, STOPPED_NOTE)
             continue
-        return outcome.status
+        # finish, a budget or a full context ended the task, which said how;
+        # the user decides when the session ends, as codex's does (D-063).
+        console.print(TASK_ENDED)
 
 
 # `@path`, or `@"a path"`, in a message the user typed attaches that file

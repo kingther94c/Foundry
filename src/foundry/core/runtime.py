@@ -192,6 +192,8 @@ class AgentRuntime:
     # The call whose tool is running, with its operation: what a Ctrl+C in
     # the middle of it leaves unknown (D-062).
     _running: tuple[ToolUseBlock, Operation] | None = None
+    # How the last task ended, for the calls it left (D-063).
+    _ended: tuple[TerminalStatus, str] | None = None
     _finish: TurnOutcome | None = None
     _refreshed: bool = False
     # Journal ordinal of the last successful change to the workspace.
@@ -846,6 +848,23 @@ class AgentRuntime:
                 self.files_changed(ordinal, list(op.args.get("paths") or ()))
             self._emit(ToolEnd(call.call_id, op.tool, False, "interrupted"))
 
+    def answer_left_calls(self) -> None:
+        """Answer the calls the last task left as it ended -- finish, and any
+        after it or after a budget stopped it -- when the conversation goes on
+        (D-063): a request with a call left unanswered is refused by every
+        provider. An unattended run ends instead, and a resume answers them
+        as it rebuilds the history.
+        """
+        status, reason = self._ended or (TerminalStatus.INTERRUPTED, "")
+        ended = status.value + ("" if reason in ("", "reported by the agent") else f": {reason}")
+        for call in self.context.unanswered_calls():
+            if call.name == "finish":
+                self._reply(call, f"finish was accepted: the task ended with status {ended}.")
+            else:
+                self._reply(call, f"Not run: the task ended ({ended}) before this call was "
+                                  "executed. Nothing was changed by it; call it again if it is "
+                                  "still needed.", is_error=True)
+
     def _ask(self, op: Operation, decision: Decision) -> ApprovalChoice:
         if self.approval is None:
             return ApprovalChoice.DENY  # fail closed
@@ -994,6 +1013,7 @@ class AgentRuntime:
         if result_json is not None:
             record["result"] = result
         self._journal(EventType.TERMINATION, record)
+        self._ended = (status, reason)
         if self.session is not None:
             self.session._terminated = True
         self._emit(Termination(status, reason, summary, result=result))
