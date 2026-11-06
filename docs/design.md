@@ -74,9 +74,9 @@ class ModelTurn:         # the product of one sampling
 ```python
 # events.py -- two queues (codex): the UI submits Ops, core broadcasts Events
 Op    = UserInput | ApprovalDecision | Interrupt | Shutdown
-Event = TurnStarted | MessageDelta | Reasoning | ToolBegin | ToolOutputDelta | ToolEnd \
-      | ToolRejected | ApprovalRequest | TokenCount | TurnComplete | Termination \
-      | Error | Notice | PlanUpdated | Compacted
+Event = SessionStarted | TurnStarted | MessageDelta | Reasoning | ToolBegin \
+      | ToolOutputDelta | ToolEnd | ToolRejected | ApprovalRequest | TokenCount \
+      | TurnComplete | Termination | Error | Notice | PlanUpdated | Compacted
 PROTOCOL_VERSION = 1
 ```
 
@@ -95,6 +95,9 @@ PROTOCOL_VERSION = 1
 - `PlanUpdated{call_id, steps: [{step, status}], explanation}`
   ([D-037](decision-log.md)): the whole plan after each `update_plan`; an empty
   `call_id` means a resume restored it.
+- `SessionStarted{session_id, workspace, model, resumed}`
+  ([D-060](decision-log.md)): `exec`'s first event, so a script knows what
+  `exec --resume` takes.
 - `Reasoning{text}` ([D-044](decision-log.md)): a finished stretch of the
   model's reasoning, before the answer it led to; whole, so it is scrubbed as
   one string. `runtime.show_reasoning = false` stops it; the journal keeps it

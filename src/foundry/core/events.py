@@ -239,8 +239,21 @@ class Compacted:
     kind: Literal["compacted"] = "compacted"
 
 
+@dataclass(frozen=True, slots=True)
+class SessionStarted:
+    """Which session an unattended run records, before anything else it says
+    (D-060): what `exec --resume` takes to continue it."""
+
+    session_id: str
+    workspace: str
+    model: str
+    resumed: bool = False
+    kind: Literal["session_started"] = "session_started"
+
+
 Event = (
-    TurnStarted
+    SessionStarted
+    | TurnStarted
     | MessageDelta
     | Reasoning
     | ToolBegin

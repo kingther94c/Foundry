@@ -29,6 +29,7 @@ from foundry.core.events import (
     PlanStep,
     PlanUpdated,
     Reasoning,
+    SessionStarted,
     StepStatus,
     TerminalStatus,
     Termination,
@@ -174,6 +175,9 @@ class Renderer:
             self.console.print(
                 f"[dim]context compacted {how}: about {event.tokens_before:,} tokens "
                 f"down to {event.tokens_after:,}[/dim]")
+        elif isinstance(event, SessionStarted):
+            again = "resumed " if event.resumed else ""
+            self.console.print(f"[dim]{again}session {safe(event.session_id)}[/dim]")
         elif isinstance(event, TurnComplete):
             pass  # the text already streamed
 

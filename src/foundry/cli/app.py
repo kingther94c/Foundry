@@ -60,6 +60,7 @@ from foundry.core.events import (
     EventSink,
     Notice,
     PlanUpdated,
+    SessionStarted,
     TerminalStatus,
     Termination,
 )
@@ -962,6 +963,10 @@ def cmd_exec(args: argparse.Namespace) -> int:
             print(json.dumps(_event_payload(event), ensure_ascii=False), flush=True)
 
         wiring.runtime.events.subscribe(as_json)
+    # First, so a script knows what to resume before anything can go wrong.
+    wiring.runtime.events.emit(SessionStarted(
+        session_id=wiring.session.session_id, workspace=str(wiring.workspace.root),
+        model=wiring.config.backend.model, resumed=wiring.resumed is not None))
     _announce_resume(wiring)
     for raw in args.image or []:
         if not _attach(wiring, console, raw):

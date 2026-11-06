@@ -205,6 +205,8 @@ What a codex user still notices day to day, next:
     (landed, D-058).
 20. ~~How to continue, as a session ends~~ -- the tokens used and the
     `foundry resume` command (landed, D-059).
+21. ~~`exec` names its session~~ -- `session_started`, first, for
+    `exec --resume` (landed, D-060).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
