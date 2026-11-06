@@ -232,6 +232,8 @@ What a codex user still notices day to day, next:
     `FILE=value`, as codex's prompts take them (landed, D-071).
 33. ~~`-C DIR`~~ -- the directory to work in, as codex spells it (landed,
     D-072).
+34. ~~How long a task took~~ -- `worked for 1m 12s` as it ends, as codex says
+    it (landed, D-073).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

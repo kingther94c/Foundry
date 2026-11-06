@@ -94,6 +94,9 @@ PROTOCOL_VERSION = 1
 - On a terminal the model's text is rendered as Markdown a line at a time
   ([D-070](decision-log.md)), each whole line stripped of control sequences
   and printed as `Text`; elsewhere it is printed as the model wrote it.
+- A task's end is followed by `worked for 1m 12s` (under a second, nothing):
+  from its first `TurnStarted` to its `TurnComplete` or `Termination`
+  ([D-073](decision-log.md)).
 - On a terminal the renderer keeps a transient `working (12s, Ctrl+C to stop)`
   line up from `TurnStarted` or `ToolBegin` until the next thing it draws or
   asks ([D-069](decision-log.md)); the REPL and `_close` take it down however

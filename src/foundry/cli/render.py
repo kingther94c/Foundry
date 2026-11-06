@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 from rich.console import Console
 from rich.live import Live
@@ -154,6 +155,9 @@ class Renderer:
     _live: Live | None = None
     # The model's text being rendered as Markdown (D-070), while it streams.
     _markdown: MarkdownLines | None = None
+    # When the task now running started (D-073); None between tasks.
+    _task_started: float | None = None
+    clock: Callable[[], float] = time.monotonic
 
     def work(self, what: str) -> None:
         """Put up the working line (D-069): only on a terminal, where it can
@@ -188,6 +192,18 @@ class Renderer:
         line taken down."""
         self.idle()
         self._end_text()
+        # However it ended, the next task's time starts with the next task.
+        self._task_started = None
+
+    def _worked(self) -> None:
+        """``worked for 1m 12s`` as a task ends (D-073), as codex says it;
+        nothing for an answer that took under a second."""
+        started, self._task_started = self._task_started, None
+        if started is None:
+            return
+        seconds = self.clock() - started
+        if seconds >= 1:
+            self.console.print(f"[dim]worked for {elapsed(seconds)}[/dim]")
 
     def handle(self, event: Event) -> None:
         self.idle()
@@ -198,6 +214,8 @@ class Renderer:
         self._handle(event)
         # Up again while the model is asked, or a tool runs (D-069).
         if isinstance(event, TurnStarted):
+            if self._task_started is None:
+                self._task_started = self.clock()
             self.work("working")
         elif isinstance(event, ToolBegin):
             self.work("running")
@@ -267,6 +285,7 @@ class Renderer:
             )
             if event.summary:
                 self.console.print(safe(event.summary))
+            self._worked()
         elif isinstance(event, PlanUpdated):
             print_plan(self.console, event.steps, event.explanation)
         elif isinstance(event, Compacted):
@@ -278,7 +297,7 @@ class Renderer:
             again = "resumed " if event.resumed else ""
             self.console.print(f"[dim]{again}session {safe(event.session_id)}[/dim]")
         elif isinstance(event, TurnComplete):
-            pass  # the text already streamed
+            self._worked()      # the text already streamed
 
     def _command_output(self, text: str) -> None:
         """The last lines a command printed (D-068), dim and indented under

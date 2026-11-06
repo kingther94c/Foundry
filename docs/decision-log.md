@@ -483,3 +483,10 @@
 - **Decision**: `-C`, `--cd` and `--workspace` are three names for the one setting on `run`, `resume`, `exec`, `undo` and `record`, so `foundry -C DIR` works too (a flag first means `run`, D-042). Nothing else changes: the directory is resolved and checked as `--workspace`'s always was.
 - **What it may not weaken**: it is the same destination under another name, so every check made against the workspace -- the trust question, containment, the dirty-file guard, a resume's workspace match -- is made against the directory the user named. `-c` (a setting) and `-C` (a directory) are told apart by case, as codex tells them.
 - **Rejected**: `--cd` alone without `-C` (codex users type the short one); dropping `--workspace` (scripts use it).
+
+## D-073 How long a task took
+- **Date**: 2026-11-07 · **Status**: confirmed (item 34)
+- **Background**: the working line (D-069) counts while a task runs and is gone when it ends; afterwards nothing said how long the task took. codex closes each turn with `Worked for 1m 12s`.
+- **Decision**: when a task ends -- the model's answer (`turn_complete`) or a termination (finish, a budget, Ctrl+C) -- the renderer prints `worked for 1m 12s`, dim, under it: the time from the task's first request to its end, across all its rounds and tool calls. Nothing for under a second. A task that ends without either event (an exception) clears its start when the REPL settles, so the next task's time is its own. In `exec`, each pass of the loop (the reminder to call `finish` starts another) is timed on its own.
+- **What it may not weaken**: nothing new is read or written; the line is Foundry's own words and a time.
+- **Rejected**: the time per round or per tool (`-v` and the working line already show what is happening); the time in the journal (it has the timestamps).
