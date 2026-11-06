@@ -190,12 +190,17 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
 - A read-only task sets `PolicyEngine.read_only` for its turn (`/review`,
   [D-039](decision-log.md)): every mutator is refused at step 2 with that
   reason, whatever the mode, and the field is cleared when the turn ends.
-- The mode is fixed for a session but for one move: `/approve` in an
-  interactive session in plan mode ([D-038](decision-log.md)) switches it to
-  `default` or `accept_edits`, builds the system prompt's permissions paragraph
-  again, writes `mode_change`, and starts the next turn with a note saying so.
-  Each `policy_decision` records the `mode` it was made in. A resume starts in
-  the configured mode.
+- The mode changes only when the user says so at the session's prompt:
+  `/approve` in plan mode ([D-038](decision-log.md)) switches it to `default`
+  or `accept_edits`, and `/mode NAME` ([D-047](decision-log.md)) to any of the
+  four. Either builds the system prompt's permissions paragraph again, writes
+  `mode_change`, and tells the model with the next message. Each
+  `policy_decision` records the `mode` it was made in. A resume starts in the
+  configured mode; `/new` keeps what `/mode` chose.
+- `/model NAME` ([D-047](decision-log.md)) sends the following requests to
+  another model behind the same endpoint, writes `model_change`, and tells the
+  model with the next message; the system prompt is not rebuilt, so the
+  prefix the provider binds thinking blocks to is unchanged.
 - Rule syntax: `tool` / `tool(pattern)`, fnmatch, with a per-tool target key
   (run_command -> the segmented command string; file tools -> the
   workspace-relative path). The precedence order is fixed, with no numeric

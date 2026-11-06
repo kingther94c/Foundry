@@ -12,6 +12,7 @@ rather than sent to the model as a task: "/udno" should not start a turn.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -379,6 +380,96 @@ def approve_plan(wiring: "Wiring", console: Console, arguments: str = "") -> Run
                    + " Carry out the plan, and keep it current with update_plan.")
 
 
+# --- /mode and /model (D-047) ----------------------------------------------------------
+
+# Either spelling: `accept_edits` as the config writes it, `accept-edits` as a
+# command line would.
+_MODE_NAMES = {m.value: m for m in Mode} | {m.value.replace("_", "-"): m for m in Mode}
+# A model id as providers and gateways spell them: `claude-opus-5-5`,
+# `us.anthropic.claude-...:0`, `openai/gpt-5`, `qwen2.5-coder:32b`.
+_MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}")
+
+
+def tell_model(wiring: "Wiring", text: str) -> None:
+    """Say ``text`` to the model with the user's next message: the
+    conversation grows, and nothing already sent is rewritten."""
+    wiring.note = f"{wiring.note}\n\n{text}" if wiring.note else text
+
+
+def set_mode(wiring: "Wiring", console: Console, arguments: str = "") -> None:
+    """``/mode [NAME]``: show the mode, or change it -- what ``--mode`` sets
+    at the start, chosen again mid-session. Only the user can: commands are
+    read from what they type and nowhere else.
+
+    The permissions paragraph is built again, as /approve does (D-038), so the
+    model is never told rules that no longer hold; the change is journaled
+    and said to the model with the next message.
+    """
+    runtime = wiring.runtime
+    policy = runtime.policy
+    name = arguments.strip().lower()
+    if not name:
+        console.print(f"this session is in [bold]{policy.mode.value}[/bold] mode")
+        for mode in Mode:
+            console.print(f"  {mode.value:<13} {escape(mode_line(mode))}", soft_wrap=True)
+        console.print("[dim]usage: /mode NAME[/dim]")
+        return None
+    mode = _MODE_NAMES.get(name)
+    if mode is None:
+        console.print(f"[yellow]there is no {escape(name)!r} mode; the modes are "
+                      f"{', '.join(m.value for m in Mode)}[/yellow]")
+        return None
+    if mode is policy.mode:
+        console.print(f"[dim]already in {mode.value} mode[/dim]")
+        return None
+    before = policy.mode
+    policy.mode = mode
+    runtime.context.system_prompt = system_prompt(policy)
+    wiring.session.append(EventType.MODE_CHANGE, {"from": before.value, "to": mode.value,
+                                                  "by": "repl",
+                                                  "reason": "the user typed /mode"})
+    wiring.chosen["mode"] = mode
+    then = "; type /approve when its plan is ready" if mode is Mode.PLAN else ""
+    runtime.events.emit(Notice(f"this session is in {mode.value} mode now{then}"))
+    tell_model(wiring, f"The user switched this session from {before.value} to "
+                       f"{mode.value} mode. {mode_line(mode)}")
+    return None
+
+
+def set_model(wiring: "Wiring", console: Console, arguments: str = "") -> None:
+    """``/model [NAME]``: show the model, or change it for the rest of the
+    session -- another model behind the same endpoint and credential. A
+    different endpoint is a different session: ``--profile``.
+
+    The system prompt is left as it is: the request after the change sends
+    the same conversation to the new model, with a line saying so.
+    """
+    runtime = wiring.runtime
+    backend = wiring.config.backend
+    name = arguments.strip()
+    if not name:
+        console.print(f"this session uses [bold]{escape(runtime.model)}[/bold] "
+                      f"({backend.protocol}, profile {escape(backend.name)})")
+        console.print("[dim]usage: /model NAME -- another model on the same endpoint; for "
+                      "another endpoint, start a session with --profile[/dim]")
+        return None
+    if not _MODEL_NAME.fullmatch(name):
+        console.print("[yellow]a model name is letters, digits and . _ : / @ + -, starting "
+                      "with a letter or digit, at most 200 characters[/yellow]")
+        return None
+    if name == runtime.model:
+        console.print(f"[dim]already on {escape(name)}[/dim]")
+        return None
+    before = runtime.model
+    runtime.model = name
+    backend.model = name            # what /status shows, and what /new starts on
+    wiring.session.append(EventType.MODEL_CHANGE, {"from": before, "to": name, "by": "repl"})
+    wiring.chosen["model"] = name
+    runtime.events.emit(Notice(f"this session uses {name} now (it was {before})"))
+    tell_model(wiring, f"The user switched this session from the model {before} to {name}.")
+    return None
+
+
 # --- /undo (D-036) ---------------------------------------------------------------------
 
 
@@ -449,6 +540,10 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
             arguments="[focus]"),
     Command("image", "attach an image to your next message", _image, arguments="PATH"),
     Command("approve", "in plan mode: approve the plan and let the work start", approve_plan),
+    Command("mode", "show or change what the session may do without asking", set_mode,
+            arguments="[NAME]"),
+    Command("model", "show or change the model, on the same endpoint", set_model,
+            arguments="[NAME]"),
     Command("undo", "revert this session's newest patch", undo_last),
     Command("review", "a read-only review of the uncommitted changes", _review,
             arguments="[focus]"),

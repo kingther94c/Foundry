@@ -173,10 +173,16 @@ Each item lands on its own branch with a D-entry, tests and a mutation check.
 With the list above done, the next gaps a codex user would notice day to day
 (2026-11-07):
 
-9. Changing the mode and the model inside a session: `/mode NAME` and
-   `/model NAME` (codex's `/approvals` and `/model`).
-10. A `notify` program run when a turn ends, for long work left unattended.
-11. `exec --output-schema FILE`: the final message as JSON that matches a
+9. ~~Changing the mode and the model inside a session~~ -- `/mode NAME` and
+   `/model NAME` (landed, D-047).
+10. Requests that keep Anthropic's thinking blocks valid: newer Claude models
+    bind each one to the conversation before it, and on an enforced account a
+    request that rewrote that prefix -- the permissions paragraph after
+    `/approve` or `/mode`, a masked tool result, a compaction -- is refused
+    with a 400. Make those edits append-only, or drop the thinking blocks that
+    follow an edit.
+11. A `notify` program run when a turn ends, for long work left unattended.
+12. `exec --output-schema FILE`: the final message as JSON that matches a
     schema, for scripts.
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,

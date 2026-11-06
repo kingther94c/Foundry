@@ -114,6 +114,8 @@ class Wiring:
     mcp: McpServers | None = None
     # Images for the next message: -i, then /image (D-045).
     images: list = field(default_factory=list)
+    # What the user chose with /mode and /model (D-047): /new keeps it.
+    chosen: dict = field(default_factory=dict)
 
 
 def _trusted_paths(home: Path) -> set[str]:
@@ -448,6 +450,12 @@ def _announce_resume(wiring: Wiring) -> None:
         events.emit(Notice(
             f"it had been switched to {state.mode} mode before it stopped; a resume starts "
             f"in {mode.value} mode, as configured{again}", level="info"))
+    model = wiring.config.backend.model
+    if state.switched_model and state.switched_model != model:
+        events.emit(Notice(
+            f"it had been switched to the model {state.switched_model} before it stopped; a "
+            f"resume continues on {model}, as configured (-m {state.switched_model} goes on "
+            "with the other)", level="info"))
 
 
 def _close(wiring: Wiring, status: TerminalStatus, reason: str) -> None:
@@ -523,6 +531,10 @@ def cmd_session(args: argparse.Namespace) -> int:
                 # /new: this session ends, and a fresh one starts in the same
                 # workspace -- a new journal, an empty conversation, no grants.
                 _close(wiring, TerminalStatus.CANCELLED, "the user started a new session")
+                # The model and mode chosen with /model and /mode carry over, as
+                # if they had been given on the command line (D-047).
+                flags = {**flags, "overrides": {**(flags["overrides"] or {}),
+                                                **wiring.chosen} or None}
                 try:
                     wiring = build(wiring.workspace.root, home=wiring.home, console=console,
                                    **flags)

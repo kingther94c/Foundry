@@ -195,6 +195,8 @@ class JournalState:
     # The mode the user last switched the session to (D-038), "" if never. A
     # resume starts in the configured mode, as it starts every grant over.
     mode: str = ""
+    # The model /model last chose (D-047); a resume runs on the configured one.
+    switched_model: str = ""
 
 
 def _status(raw: Any) -> TerminalStatus:
@@ -275,11 +277,14 @@ def read_journal(path: Path) -> JournalState:
     plan: tuple[PlanStep, ...] = ()
     plan_explanation = ""
     mode = ""
+    switched_model = ""
     for record in records:
         if record.type == EventType.TOOL_RESULT and "plan" in record.payload:
             plan, plan_explanation = steps_from_payload(record.payload["plan"])
         elif record.type == EventType.MODE_CHANGE and isinstance(record.payload.get("to"), str):
             mode = record.payload["to"]
+        elif record.type == EventType.MODEL_CHANGE and isinstance(record.payload.get("to"), str):
+            switched_model = record.payload["to"]
 
     undone: list[str] = []
     for record in records[last_request + 1:]:
@@ -311,6 +316,7 @@ def read_journal(path: Path) -> JournalState:
         plan=plan,
         plan_explanation=plan_explanation,
         mode=mode,
+        switched_model=switched_model,
     )
 
 
