@@ -144,6 +144,9 @@ class JournalState:
     # same call, so only the runtime and the user need it back.
     plan: tuple[PlanStep, ...] = ()
     plan_explanation: str = ""
+    # The mode the user last switched the session to (D-038), "" if never. A
+    # resume starts in the configured mode, as it starts every grant over.
+    mode: str = ""
 
 
 def _status(raw: Any) -> TerminalStatus:
@@ -222,9 +225,12 @@ def read_journal(path: Path) -> JournalState:
 
     plan: tuple[PlanStep, ...] = ()
     plan_explanation = ""
+    mode = ""
     for record in records:
         if record.type == EventType.TOOL_RESULT and "plan" in record.payload:
             plan, plan_explanation = steps_from_payload(record.payload["plan"])
+        elif record.type == EventType.MODE_CHANGE and isinstance(record.payload.get("to"), str):
+            mode = record.payload["to"]
 
     undone: list[str] = []
     for record in records[last_request + 1:]:
@@ -255,6 +261,7 @@ def read_journal(path: Path) -> JournalState:
         undone=tuple(undone),
         plan=plan,
         plan_explanation=plan_explanation,
+        mode=mode,
     )
 
 
@@ -465,8 +472,8 @@ def _names(names: list[str]) -> str:
     return shown
 
 
-def resume_note(state: JournalState, outside: frozenset[str]) -> str:
-    """What the model is told before its first task after a resume."""
+def resume_note(state: JournalState, outside: frozenset[str], mode: str = "") -> str:
+    """What the model is told before its first task after a resume, in ``mode``."""
     ended = state.status.value + (f" ({state.reason})" if state.reason else "")
     lines = [f"This session was resumed. When it stopped, its status was {ended}."]
     if outside:
@@ -477,6 +484,10 @@ def resume_note(state: JournalState, outside: frozenset[str]) -> str:
         lines.append("After it stopped, the user undid patches it had made: these files hold "
                      "what they held before them again, or were removed if the session had "
                      f"created them: {_names(sorted(state.undone))}.")
+    if state.mode and mode and state.mode != mode:
+        lines.append(f"Before it stopped, the user had switched this session to {state.mode} "
+                     f"mode. That does not carry over a resume: this run is in {mode} mode, "
+                     "as the system prompt says.")
     lines.append("Commands run before this resume cannot be cited in finish claims; run them "
                  "again. Read a file again before patching it.")
     return "\n".join(lines)

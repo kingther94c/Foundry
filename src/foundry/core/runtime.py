@@ -379,6 +379,9 @@ class AgentRuntime:
             "reason": decision.reason, "rule_id": decision.rule_id, "step": decision.step,
             "policy_digest": decision.policy_digest,
             "operation_digest": decision.operation_digest,
+            # The digest covers the rules, not the mode, and the mode can change
+            # within a session (D-038).
+            "mode": self.policy.mode.value,
             # The digest identifies which rules were in force; the version says
             # how to read them. Without it a replay tool comparing two journals
             # cannot tell a rule change from an evaluator change.

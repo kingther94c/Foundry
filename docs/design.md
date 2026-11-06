@@ -169,6 +169,12 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
     6. interactive approval (headless: DENY)
 ```
 
+- The mode is fixed for a session but for one move: `/approve` in an
+  interactive session in plan mode ([D-038](decision-log.md)) switches it to
+  `default` or `accept_edits`, builds the system prompt's permissions paragraph
+  again, writes `mode_change`, and starts the next turn with a note saying so.
+  Each `policy_decision` records the `mode` it was made in. A resume starts in
+  the configured mode.
 - Rule syntax: `tool` / `tool(pattern)`, fnmatch, with a per-tool target key
   (run_command -> the segmented command string; file tools -> the
   workspace-relative path). The precedence order is fixed, with no numeric
@@ -292,13 +298,15 @@ class ModelBackend(Protocol):
   `session_meta / model_request / model_response / tool_call / tool_result /
   policy_decision / approval / command_exec / token_usage / capability_probe /
   validation_claim / git_baseline / termination / user_input / tool_reply /
-  resumed / undo` (`user_input`, `tool_reply` and `resumed` added for resume,
-  [D-035](decision-log.md); `undo` for undo, [D-036](decision-log.md)).
+  resumed / undo / mode_change` (`user_input`, `tool_reply` and `resumed` added
+  for resume, [D-035](decision-log.md); `undo` for undo,
+  [D-036](decision-log.md); `mode_change` for plan approval,
+  [D-038](decision-log.md)).
   Artifact contents are stored content-addressed at
   `sessions/<id>/artifacts/<sha256>`, and events reference only the digest.
 - Writes are serialised and every record is flushed as it is written;
-  termination, approval, command-completion, policy-decision, resumed and undo
-  records are also synced to disk. The reader tolerates a truncated final line,
+  termination, approval, command-completion, policy-decision, resumed, undo and
+  mode-change records are also synced to disk. The reader tolerates a truncated final line,
   and no termination event means `interrupted`. Schema migration happens only
   on the read side; historical journals are immutable. One process writes a
   journal at a time: the store holds an OS lock on `sessions/<id>/lock`.

@@ -29,23 +29,37 @@ def base_system_prompt() -> str:
     return resources.files("foundry.prompts").joinpath("system.md").read_text(encoding="utf-8")
 
 
+_MODE_TEXT = {
+    Mode.DEFAULT: "Edits and commands need approval each time unless a rule allows them.",
+    Mode.ACCEPT_EDITS: ("Patches inside the workspace apply without asking. Commands still "
+                        "need approval, and files that already had uncommitted changes when "
+                        "this session started still need approval."),
+    Mode.PLAN: ("Plan mode: you may read and search, but edits and commands are refused "
+                "until the user approves your plan, which they do by typing /approve. Lay "
+                "the plan out with update_plan and explain it in your reply; do not try to "
+                "work around the restriction."),
+    Mode.DONT_ASK: ("Unattended: anything not explicitly allowed by a rule is denied. "
+                    "Nobody is available to approve, or to read a reply: end the "
+                    "task by calling `finish`, whatever the outcome."),
+}
+
+
+def mode_line(mode: Mode) -> str:
+    """What the model is told a mode allows: the permissions paragraph's own
+    line, so a note about a change of mode cannot drift from it."""
+    return _MODE_TEXT[mode]
+
+
+def system_prompt(policy: PolicyEngine) -> str:
+    """The base prompt and the permissions paragraph, as a session sends them.
+    Built again whenever the policy's mode changes (D-038), so the model is never
+    told rules that no longer hold."""
+    return base_system_prompt() + "\n\n" + permissions_paragraph(policy)
+
+
 def permissions_paragraph(policy: PolicyEngine) -> str:
     lines = ["# What is allowed right now"]
-
-    mode_text = {
-        Mode.DEFAULT: "Edits and commands need approval each time unless a rule allows them.",
-        Mode.ACCEPT_EDITS: ("Patches inside the workspace apply without asking. Commands still "
-                            "need approval, and files that already had uncommitted changes when "
-                            "this session started still need approval."),
-        Mode.PLAN: ("Plan mode: you may read and search, but edits and commands are refused "
-                    "until the user approves your plan. Lay the plan out with update_plan "
-                    "and explain it in your reply; do not try to work around the "
-                    "restriction."),
-        Mode.DONT_ASK: ("Unattended: anything not explicitly allowed by a rule is denied. "
-                        "Nobody is available to approve, or to read a reply: end the "
-                        "task by calling `finish`, whatever the outcome."),
-    }[policy.mode]
-    lines.append(mode_text)
+    lines.append(mode_line(policy.mode))
 
     def one_line(text: str, limit: int = 120) -> str:
         """Rule text is repository-supplied. Rendering it raw let a deny rule's

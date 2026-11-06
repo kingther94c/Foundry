@@ -59,6 +59,8 @@ class EventType:
     RESUMED = "resumed"
     # Added for undo (D-036): which recorded changes were reverted.
     UNDO = "undo"
+    # Added for plan approval (D-038): the policy mode changed mid-session.
+    MODE_CHANGE = "mode_change"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced
@@ -66,7 +68,7 @@ class EventType:
 # what survives a killed process.
 _FSYNC_TYPES = frozenset(
     {EventType.TERMINATION, EventType.APPROVAL, EventType.COMMAND_EXEC, EventType.POLICY_DECISION,
-     EventType.RESUMED, EventType.UNDO}
+     EventType.RESUMED, EventType.UNDO, EventType.MODE_CHANGE}
 )
 
 _ARTIFACT_ID = re.compile(r"[0-9a-f]{64}")

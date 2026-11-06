@@ -47,10 +47,10 @@ from foundry.core.events import (
 from foundry.core.httpc import HttpClient
 from foundry.core.policy.engine import Mode, PolicyEngine, builtin_rules
 from foundry.core.prompts import (
-    base_system_prompt,
     environment_paragraph,
     load_project_doc,
-    permissions_paragraph,
+    mode_line,
+    system_prompt,
 )
 from foundry.core.redaction import default_redactor
 from foundry.core.resume import (
@@ -298,7 +298,7 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
     )
 
     context = ContextManager(
-        system_prompt=base_system_prompt() + "\n\n" + permissions_paragraph(policy),
+        system_prompt=system_prompt(policy),
         project_doc=load_project_doc(workspace.root, trusted=trusted),
         environment=environment_paragraph(workspace.root, baseline, config.backend.model),
         max_context_tokens=backend.capabilities().max_context_tokens,
@@ -347,7 +347,7 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
             "legacy": state.legacy,
         })
         wiring.resumed, wiring.outside = state, outside
-        wiring.note = resume_note(state, outside)
+        wiring.note = resume_note(state, outside, config.mode.value)
         runtime.plan, runtime.plan_explanation = state.plan, state.plan_explanation
     return wiring
 
@@ -380,6 +380,12 @@ def _announce_resume(wiring: Wiring) -> None:
     if state.plan:
         # No call set it this time: an empty call_id says it was restored.
         events.emit(PlanUpdated("", state.plan, state.plan_explanation))
+    mode = wiring.config.mode
+    if state.mode and state.mode != mode.value:
+        again = "; type /approve to approve its plan again" if mode is Mode.PLAN else ""
+        events.emit(Notice(
+            f"it had been switched to {state.mode} mode before it stopped; a resume starts "
+            f"in {mode.value} mode, as configured{again}", level="info"))
 
 
 def _with_note(wiring: Wiring, task: str) -> str:
@@ -465,6 +471,12 @@ def _repl(wiring: Wiring, console: Console) -> TerminalStatus:
             else:
                 console.print("[dim]no plan: the model has not set one in this session[/dim]")
             continue
+        if task == "/approve":
+            # Approved, the work starts at once: what the user approved is
+            # the plan, so the next turn carries it out.
+            task = _approve_plan(wiring, console)
+            if task is None:
+                continue
         outcome = wiring.runtime.run_turn(_with_note(wiring, task))
         if outcome.status is None:
             continue
@@ -479,6 +491,50 @@ def _repl(wiring: Wiring, console: Console) -> TerminalStatus:
                           "the session is still open.[/yellow]")
             continue
         return outcome.status
+
+
+_APPROVE_INTO = {"y": Mode.DEFAULT, "e": Mode.ACCEPT_EDITS}
+
+
+def _approve_plan(wiring: Wiring, console: Console) -> str | None:
+    """``/approve``: end plan mode as the user chooses (D-038), and return the
+    task that starts the work -- or None, with nothing changed.
+
+    Only the user can do this, by typing it at the prompt: nothing the model
+    writes, and nothing a tool prints, reaches the REPL's commands. The
+    permissions paragraph is built again, so the model is never told rules that
+    no longer hold, and the change is journaled.
+    """
+    runtime = wiring.runtime
+    policy = runtime.policy
+    if policy.mode is not Mode.PLAN:
+        console.print(f"[dim]nothing to approve: this session is in {policy.mode.value} "
+                      "mode, not plan mode[/dim]")
+        return None
+    if runtime.plan:
+        print_plan(console, runtime.plan, runtime.plan_explanation)
+    else:
+        console.print("[dim]the model has not set a plan with update_plan; approving lets "
+                      "it act on what it described[/dim]")
+    try:
+        answer = console.input("approve the plan? (y)es, ask before each edit / (e)dits "
+                               "apply without asking / (n)o, keep planning: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        answer = ""
+    mode = _APPROVE_INTO.get(answer[:1])
+    if mode is None:
+        console.print("[dim]still in plan mode[/dim]")
+        return None
+
+    policy.mode = mode
+    runtime.context.system_prompt = system_prompt(policy)
+    wiring.session.append(EventType.MODE_CHANGE, {"from": Mode.PLAN.value, "to": mode.value,
+                                                  "by": "repl",
+                                                  "reason": "the user approved the plan"})
+    runtime.events.emit(Notice(f"plan approved: this session is in {mode.value} mode now"))
+    return ("The user approved your plan, so plan mode is over. " + mode_line(mode)
+            + " Carry out the plan, and keep it current with update_plan.")
 
 
 def _show_plan(console: Console, plan: Plan, others: list[str]) -> None:

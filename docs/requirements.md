@@ -240,7 +240,9 @@ both accept_edits and approval persistence):
 - `accept_edits`: apply_patch inside the workspace -> ALLOW; otherwise as
   default.
 - `plan`: apply_patch and non-read-only run_command -> DENY (with the reason
-  returned to the model); switch modes once the plan is approved.
+  returned to the model); switch modes once the plan is approved -- the user
+  types `/approve` and picks `default` or `accept_edits`
+  ([D-038](decision-log.md)).
 - `dont_ask`: nothing matched -> **DENY** (fail-closed; headless reuses these
   semantics). There is no mode in which "nothing matched" means allowed.
 
