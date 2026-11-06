@@ -24,7 +24,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.syntax import Syntax
 
-from foundry.cli.render import print_plan, sanitize
+from foundry.cli.render import print_plan, safe, sanitize
 from foundry.core.commands import builtin_prompt, expand, parse_command
 from foundry.core.config import effort_levels
 from foundry.core.context import SUMMARY_PREFIX
@@ -35,7 +35,7 @@ from foundry.core.events import Notice, TerminalStatus
 from foundry.core.policy.engine import Mode, Verdict
 from foundry.core.prompts import PROJECT_DOC_NAMES, mode_line, system_prompt
 from foundry.core.session import EventType, SessionStore
-from foundry.core.tools.base import truncate_middle
+from foundry.core.tools.base import ToolKind, truncate_middle
 from foundry.core.tools.command import combined_output, run_process
 from foundry.core.tools.files import ReadFile
 from foundry.core.tools.git import collect_evidence, run_git
@@ -754,6 +754,53 @@ def set_effort(wiring: "Wiring", console: Console, arguments: str = "") -> None:
     return None
 
 
+# --- /mcp (D-064) ----------------------------------------------------------------------
+
+# How much of a tool's description /mcp shows: enough to tell tools apart.
+MCP_DESCRIPTION_SHOWN = 60
+NO_MCP = ("[dim]no MCP servers: an [mcp_servers.NAME] table in your config.toml starts "
+          "one[/dim]")
+
+
+def show_mcp(wiring: "Wiring", console: Console, arguments: str = "") -> None:
+    """``/mcp``: the MCP servers the user's configuration names, whether
+    each is running, and the tools it offers, as codex's /mcp lists them
+    (D-064). Only a server's program is shown, not its arguments, which may
+    carry a secret; what a server says of its tools is its own text, so it
+    is cleaned of terminal controls before it is shown.
+    """
+    servers = wiring.config.mcp_servers
+    mcp = wiring.mcp
+    if not servers:
+        console.print(NO_MCP)
+        return None
+    clients = {client.server.name: client for client in mcp.clients}
+    for name, server in servers.items():
+        if not server.enabled:
+            state = "[dim]disabled[/dim]"
+        elif name in mcp.failures:
+            state = f"[yellow]not available:[/yellow] {safe(mcp.failures[name])}"
+        elif name in clients and not clients[name].running:
+            state = "[yellow]stopped:[/yellow] its tools fail until a new session starts it"
+        else:
+            state = "[green]running[/green]"
+        program = Path(server.command).name
+        console.print(f"[bold]{escape(name)}[/bold] [dim]({escape(program)})[/dim] {state}",
+                      soft_wrap=True)
+        for tool_name in mcp.tools.get(name, ()):
+            tool = wiring.runtime.registry.tools[tool_name]
+            kind = "read-only" if tool.kind is ToolKind.READ_ONLY else "may change things"
+            # Listed under its server, the tool need not say whose it is.
+            about = sanitize(tool.description.removesuffix(f" (from the MCP server {name!r})"))
+            if len(about) > MCP_DESCRIPTION_SHOWN:
+                about = about[:MCP_DESCRIPTION_SHOWN - 3].rstrip() + "..."
+            console.print(f"  {escape(tool_name)} [dim]{kind}[/dim] {escape(about)}",
+                          soft_wrap=True)
+    for skipped in mcp.skipped:
+        console.print(f"[yellow]not offered:[/yellow] {safe(skipped)}", soft_wrap=True)
+    return None
+
+
 # --- /undo (D-036) ---------------------------------------------------------------------
 
 
@@ -875,6 +922,7 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("help", "this list", _help),
     Command("status", "session, model, mode, tokens, context and plan", _status),
     Command("diff", "every uncommitted change, and which of them this session made", _diff),
+    Command("mcp", "the MCP servers, and the tools each offers", show_mcp),
     Command("plan", "the model's current plan", _plan),
     Command("compact", "summarise the conversation so far to free context", _compact,
             arguments="[focus]"),

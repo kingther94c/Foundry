@@ -214,6 +214,8 @@ What a codex user still notices day to day, next:
     the conversation kept, each call left answered (landed, D-062).
 24. ~~A task's ending is not the session's~~ -- after `finish` or a budget the
     prompt comes back; only the user ends the session (landed, D-063).
+25. ~~`/mcp`~~ -- the servers, how each is, and the tools each offers
+    (landed, D-064).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

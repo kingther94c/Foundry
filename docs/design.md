@@ -316,7 +316,9 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   as `mcp__<server>__<tool>`, mutators to the policy unless the entry says
   `read_only = true`. A call is `tools/call` with a timeout and the cancel
   flag; the result's text is truncated like a command's. A failing server is a
-  warning and a `capability_probe` record, never a failed session.
+  warning and a `capability_probe` record, never a failed session. `/mcp`
+  ([D-064](decision-log.md)) lists the servers, how each is, and their tools,
+  showing a server's program but not its arguments.
 - `notify` ([D-050](decision-log.md)): a program from the user's own config,
   started when a turn ends with the turn's JSON as its last argument (codex's
   `agent-turn-complete`), found on PATH, without a shell, with the command
