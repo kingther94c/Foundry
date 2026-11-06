@@ -88,6 +88,12 @@ class SessionLocked(ResumeError):
     category = "session_locked"
 
 
+class PromptError(FoundryError):
+    """A custom prompt that cannot be sent as typed; nothing was sent (D-071)."""
+
+    category = "prompt"
+
+
 class UndoError(FoundryError):
     """A session's changes cannot be undone from here; nothing was changed."""
 

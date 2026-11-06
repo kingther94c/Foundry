@@ -27,11 +27,11 @@ from rich.markup import escape
 from rich.syntax import Syntax
 
 from foundry.cli.render import print_plan, safe, sanitize
-from foundry.core.commands import builtin_prompt, expand, parse_command
+from foundry.core.commands import builtin_prompt, expand, parse_command, usage_hint
 from foundry.core.config import effort_levels
 from foundry.core.context import SUMMARY_PREFIX
 from foundry.core.conversation import Message, Role, TextBlock
-from foundry.core.errors import Cancelled, FoundryError, ImageRejected, ToolError
+from foundry.core.errors import Cancelled, FoundryError, ImageRejected, PromptError, ToolError
 from foundry.core.images import MAX_IMAGES_PER_MESSAGE, from_bytes as image_from_bytes
 from foundry.core.images import load as load_image
 from foundry.core.events import Notice, TerminalStatus
@@ -481,10 +481,15 @@ def dispatch(wiring: "Wiring", console: Console, name: str, arguments: str) -> o
         return command.run(wiring, console, arguments)
     prompt = wiring.prompts.get(name)
     if prompt is not None:
+        try:
+            text = expand(prompt, arguments)
+        except PromptError as exc:
+            console.print(f"[yellow]{escape(str(exc))}[/yellow]", soft_wrap=True)
+            return None
         source = "this repository's" if prompt.from_repository else "your"
         console.print(f"[dim]/{name}: sending {source} prompt {escape(str(prompt.path))}[/dim]",
                       soft_wrap=True)
-        return RunTask(expand(prompt, arguments))
+        return RunTask(text)
     console.print(f"[yellow]unknown command /{escape(name)}; /help lists the commands[/yellow]")
     return None
 
@@ -502,7 +507,7 @@ def _help(wiring: "Wiring", console: Console, arguments: str) -> None:
         console.print("custom prompts:")
         for prompt in custom:
             source = "repository" if prompt.from_repository else "yours"
-            usage = f"/{prompt.name} {prompt.argument_hint}".rstrip()
+            usage = f"/{prompt.name} {usage_hint(prompt)}".rstrip()
             console.print(f"  [cyan]{escape(usage):<{width}}[/cyan]  "
                           f"{escape(prompt.description or '(no description)')} [dim]({source})[/dim]",
                           soft_wrap=True)

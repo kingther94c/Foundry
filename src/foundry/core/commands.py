@@ -20,10 +20,14 @@ from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
+from foundry.core.errors import PromptError
+
 PROMPT_MAX_BYTES = 24_000
 _COMMAND = re.compile(r"/([A-Za-z][A-Za-z0-9_-]*)(?:\s+(.*))?\Z", re.DOTALL)
 _NAME = re.compile(r"[a-z][a-z0-9_-]*\Z")
-_PLACEHOLDER = re.compile(r"\$(\$|ARGUMENTS|[1-9])")
+# $$, $ARGUMENTS, $1..$9, and a named one (D-071): a whole word in capitals,
+# so $FILE and $TICKET_ID are, and $PSVersionTable and $env:PATH are not.
+_PLACEHOLDER = re.compile(r"\$(\$|ARGUMENTS|[1-9]|[A-Z][A-Z0-9_]*\b)")
 
 
 def parse_command(line: str) -> tuple[str, str] | None:
@@ -97,14 +101,55 @@ def load_custom_prompts(home: Path, workspace: Path | None, *,
     return prompts
 
 
+def named_placeholders(body: str) -> list[str]:
+    """The named placeholders a prompt uses -- ``$FILE``, ``$TICKET_ID`` --
+    in the order they first appear (D-071)."""
+    names: list[str] = []
+    for match in _PLACEHOLDER.finditer(body):
+        token = match.group(1)
+        if token not in ("$", "ARGUMENTS") and not token.isdigit() and token not in names:
+            names.append(token)
+    return names
+
+
+def usage_hint(prompt: CustomPrompt) -> str:
+    """What /help shows after the prompt's name: its own argument-hint, or
+    else the named values it needs."""
+    if prompt.argument_hint:
+        return prompt.argument_hint
+    return " ".join(f"{name}=..." for name in named_placeholders(prompt.body))
+
+
 def expand(prompt: CustomPrompt, arguments: str) -> str:
     """Fill ``$ARGUMENTS`` (everything after the name), ``$1``..``$9`` (its
-    words, quotes respected) and ``$$`` (a dollar sign). A prompt without
-    placeholders gets the arguments appended, so nothing typed is lost."""
+    words, quotes respected), ``$NAME`` (from a ``NAME=value`` word, D-071)
+    and ``$$`` (a dollar sign). A prompt without placeholders gets the
+    arguments appended, so nothing typed is lost.
+
+    A word is a named value only when the prompt uses that name, so
+    ``DEBUG=1`` stays an ordinary word for a prompt without ``$DEBUG``. A
+    named placeholder with no value is a PromptError: the prompt is not sent
+    with a hole in it."""
     try:
         words = shlex.split(arguments)
     except ValueError:
         words = arguments.split()
+
+    names = named_placeholders(prompt.body)
+    given: dict[str, str] = {}
+    positional: list[str] = []
+    for word in words:
+        key, sep, value = word.partition("=")
+        if sep and key in names:
+            given[key] = value
+        else:
+            positional.append(word)
+    missing = [name for name in names if name not in given]
+    if missing:
+        raise PromptError(
+            f"/{prompt.name} needs " + " ".join(f"{name}=..." for name in missing)
+            + "; a $NAME in a prompt is filled from NAME=value, and $$NAME is a "
+            "literal $NAME")
 
     used = False
 
@@ -116,8 +161,10 @@ def expand(prompt: CustomPrompt, arguments: str) -> str:
         used = True
         if token == "ARGUMENTS":
             return arguments
+        if not token.isdigit():
+            return given[token]
         index = int(token) - 1
-        return words[index] if index < len(words) else ""
+        return positional[index] if index < len(positional) else ""
 
     text = _PLACEHOLDER.sub(fill, prompt.body)
     if arguments and not used:

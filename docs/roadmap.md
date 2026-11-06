@@ -228,6 +228,8 @@ What a codex user still notices day to day, next:
     model is asked or a tool runs (landed, D-069).
 31. ~~The answer as Markdown~~ -- rendered a line at a time on a terminal,
     as codex renders it (landed, D-070).
+32. ~~Named placeholders in custom prompts~~ -- `$FILE` filled from
+    `FILE=value`, as codex's prompts take them (landed, D-071).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
