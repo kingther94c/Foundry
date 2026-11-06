@@ -180,6 +180,7 @@ def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
         ("tokens", f"{usage.input_tokens:,} in ({usage.cached_input_tokens:,} cached), "
                    f"{usage.output_tokens:,} out"),
         ("context", f"about {used:,} of {limit:,} tokens ({100 * used // max(limit, 1)}%)"),
+        ("notes", ", ".join(wiring.instructions) or "no FOUNDRY.md or AGENTS.md loaded"),
     ]
     if runtime.plan:
         done = sum(step.status.value == "completed" for step in runtime.plan)

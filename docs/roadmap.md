@@ -155,9 +155,9 @@ Each item lands on its own branch with a D-entry, tests and a mutation check.
    /undo /review /init /new`, `~/.foundry/prompts/` (landed, D-039).
 2. ~~Compaction by summary~~ -- `/compact [focus]`, and automatically once
    masking leaves the context past 80% of the window (landed, D-040).
-3. Project instructions layered as codex does: a global file under
-   `~/.foundry/`, then the repository's from its root down to the working
-   directory.
+3. ~~Project instructions layered as codex does~~ -- the user's own file from
+   the Foundry folder, then the repository's from its top down to the working
+   directory (landed, D-041).
 4. The CLI flags codex users expect: `-m/--model`, `--mode`, `-c key=value`,
    `--profile`, and `exec --output-last-message`.
 5. An MCP client: stdio servers' tools offered to the model under the same

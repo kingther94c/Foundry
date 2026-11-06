@@ -360,7 +360,9 @@ The V1 rules:
   compatibility), declaring the build/test commands and repository caveats, and
   injects it into the context (trust-gated, with a byte ceiling); verification
   command precedence: specified in the task > declared in the repository file >
-  chosen by the model.
+  chosen by the model. Since V2 the user's own file from the Foundry folder
+  comes first, and the repository's are read from its top down to the working
+  directory ([D-041](decision-log.md)).
 - **The honest position on "a corporate fixed DENY cannot be overridden"**
   (security critique #4): within an untampered installation, no runtime route
   (a task, an approval, a CLI flag) can relax a managed DENY -- that is

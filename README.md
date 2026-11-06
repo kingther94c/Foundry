@@ -108,7 +108,7 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 
 | Command | What it does |
 |---|---|
-| `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/undo`, `/compact [focus]`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`) |
+| `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/undo`, `/compact [focus]`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`). The model reads your own `FOUNDRY.md` (or `AGENTS.md`) from the Foundry folder, then the repository's from its top down to the working directory |
 | `foundry exec <task> [--json]` | unattended execution; every ASK becomes DENY (fail-closed) |
 | `foundry resume [session] [task]` | continue a recorded session (default `last`, the newest here); refused if HEAD moved |
 | `foundry exec --resume <session> [task]` | the same, unattended; the task defaults to carrying on where it stopped |

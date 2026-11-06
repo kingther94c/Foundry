@@ -55,7 +55,12 @@ from foundry.core.events import (
 )
 from foundry.core.httpc import HttpClient
 from foundry.core.policy.engine import Mode, PolicyEngine, builtin_rules
-from foundry.core.prompts import environment_paragraph, load_project_doc, system_prompt
+from foundry.core.prompts import (
+    environment_paragraph,
+    load_instructions,
+    repository_docs,
+    system_prompt,
+)
 from foundry.core.redaction import default_redactor
 from foundry.core.resume import (
     CONTINUE_PROMPT,
@@ -94,6 +99,8 @@ class Wiring:
     home: Path | None = None
     trusted: bool = False
     prompts: dict[str, CustomPrompt] = field(default_factory=dict)
+    # Where the system prompt's instructions came from (D-041), for /status.
+    instructions: tuple[str, ...] = ()
 
 
 def _trusted_paths(home: Path) -> set[str]:
@@ -127,8 +134,8 @@ def _confirm_trust(console: Console, home: Path, workspace: Path, *,
     """
     if str(workspace) in _trusted_paths(home):
         return True
-    has_input = (workspace / ".foundry" / "config.toml").is_file() or any(
-        (workspace / name).is_file() for name in ("FOUNDRY.md", "AGENTS.md")
+    has_input = (workspace / ".foundry" / "config.toml").is_file() or bool(
+        repository_docs(workspace)  # from the repository's top down (D-041)
     ) or (workspace / ".foundry" / "prompts").is_dir()  # custom prompts (D-039)
     if not has_input:
         return False
@@ -295,9 +302,10 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
         **backend_kwargs,
     )
 
+    instructions = load_instructions(workspace.root, home, trusted=trusted)
     context = ContextManager(
         system_prompt=system_prompt(policy),
-        project_doc=load_project_doc(workspace.root, trusted=trusted),
+        project_doc=instructions.text,
         environment=environment_paragraph(workspace.root, baseline, config.backend.model),
         max_context_tokens=backend.capabilities().max_context_tokens,
     )
@@ -327,7 +335,8 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
         sink.emit(Notice(missing_credential, level="warning"))
     wiring = Wiring(workspace=workspace, config=config, runtime=runtime,
                     renderer=renderer, session=session, home=home, trusted=trusted,
-                    prompts=load_custom_prompts(home, workspace.root, trusted=trusted))
+                    prompts=load_custom_prompts(home, workspace.root, trusted=trusted),
+                    instructions=instructions.sources)
     if state is not None:
         # Evidence starts over (D-035): the command history, the files read and
         # the session grants are this run's own, so nothing from before the
