@@ -159,6 +159,13 @@ async def run_turn(user_input):
   are always kept in full. Below that threshold nothing is masked
   ([D-031](decision-log.md)). The evidence: equivalent to LLM summarisation with
   zero extra dependencies (arXiv 2508.21433; SWE-agent +3pt).
+- **Thinking and the prefix** ([D-048](decision-log.md)): a masked result, a
+  rebuilt permissions paragraph or a resume's new system prompt changes what
+  Anthropic bound each earlier thinking block to. The context compares each
+  projection with the last request sent and, from the first difference on,
+  leaves those blocks out of this and every later request (text and tool
+  calls stay); blocks before the difference, and replies made after it, are
+  sent. The history itself keeps every reply as received.
 - **Compaction by summary** ([D-040](decision-log.md)): masking cannot touch
   the last rounds, so once the projection is still past 80% of the window, the
   runtime asks the model for a handoff summary and the history becomes the

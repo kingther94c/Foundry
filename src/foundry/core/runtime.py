@@ -386,6 +386,10 @@ class AgentRuntime:
             tools=self.registry.schemas(),
             model=self.model,
         )
+        if messages is None:
+            # The conversation's own request: the next is compared with it
+            # (D-048). A compaction's request is outside the conversation.
+            self.context.mark_sent()
         # The journal has to hold enough to rebuild the request, or "the
         # transcript is the source of truth" is only a slogan: replay, resume,
         # and any audit of what was actually sent all read this record. The

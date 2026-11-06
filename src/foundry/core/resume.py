@@ -41,6 +41,7 @@ from foundry.core.conversation import (
     ToolUseBlock,
     Usage,
 )
+from foundry.core.context import unbind
 from foundry.core.errors import ResumeError
 from foundry.core.events import PlanStep, TerminalStatus
 from foundry.core.policy.engine import normalize_path
@@ -197,6 +198,9 @@ class JournalState:
     mode: str = ""
     # The model /model last chose (D-047); a resume runs on the configured one.
     switched_model: str = ""
+    # The last request of the conversation as sent (D-048): a resume compares
+    # its first request with it.
+    last_sent: tuple[Message, ...] = ()
 
 
 def _status(raw: Any) -> TerminalStatus:
@@ -317,6 +321,7 @@ def read_journal(path: Path) -> JournalState:
         plan_explanation=plan_explanation,
         mode=mode,
         switched_model=switched_model,
+        last_sent=_last_sent(records, load),
     )
 
 
@@ -332,6 +337,7 @@ def _fold_requests(records: list[JournalRecord],
     turns: list[int] = []
     responses = 0
     answered = False  # a response was recorded since the last request
+    original = None   # the opaque block of the latest response, as received
     last_request, last_turn = -1, 0
     for index, record in enumerate(records):
         # A compaction's own request and response are not the conversation;
@@ -347,11 +353,15 @@ def _fold_requests(records: list[JournalRecord],
             turn = max(_int(record.payload.get("turn")), last_turn)
             turns = [turn] * len(history)
             answered = False
+            original = None
             last_request, last_turn = index, turn
             continue
         if record.type == EventType.MODEL_RESPONSE:
             responses += 1
             answered = True
+            opaque = record.payload.get("opaque")
+            original = (decode_block({"kind": "opaque", **opaque}) if isinstance(opaque, dict)
+                        else None)
             continue
         if record.type != EventType.MODEL_REQUEST:
             continue
@@ -375,10 +385,37 @@ def _fold_requests(records: list[JournalRecord],
                               "does not continue the conversation before it")
         answered = False
         for message in body[len(history):]:
-            history.append(message)
+            history.append(_as_received(message, original))
             turns.append(max(turn - 1, turns[-1] if turns else 0))
         last_request, last_turn = index, max(last_turn, turn)
     return history, turns, last_request, last_turn
+
+
+def _as_received(message: Message, original) -> Message:
+    """The reply as it was received. A request sent after an edit carries it
+    without its bound reasoning (D-048), and if that request was the first to
+    carry it, that is the copy the fold sees; the response record kept the
+    original, and the live history has it."""
+    if message.role is not Role.ASSISTANT or original is None:
+        return message
+    whole = Message(role=message.role, blocks=(
+        *(b for b in message.blocks if not isinstance(b, OpaqueBlock)), original))
+    return whole if whole != message and unbind(whole) == message else message
+
+
+def _last_sent(records: list[JournalRecord], load=None) -> tuple[Message, ...]:
+    """The conversation's last request as it was sent, system message
+    included; nothing after a compaction, which starts a new prefix (D-048)."""
+    sent: list = []
+    for record in records:
+        if record.payload.get("purpose"):
+            continue
+        if record.type == EventType.COMPACTED:
+            sent = []
+        elif record.type == EventType.MODEL_REQUEST:
+            raw = record.payload.get("messages")
+            sent = raw if isinstance(raw, list) else []
+    return tuple(decode_message(m, load) for m in sent)
 
 
 def _tail_message(record: JournalRecord, load=None) -> Message | None:

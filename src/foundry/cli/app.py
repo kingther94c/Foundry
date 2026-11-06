@@ -382,7 +382,8 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         # Evidence starts over (D-035): the command history, the files read and
         # the session grants are this run's own, so nothing from before the
         # resume can vouch for the workspace as it is now.
-        context.restore(list(state.history), list(state.turns), state.turn, state.usage)
+        context.restore(list(state.history), list(state.turns), state.turn, state.usage,
+                        sent=state.last_sent)
         if context.context_exhausted():
             raise ResumeError(f"session {state.session_id}'s context is full; start a new session")
         session.append(EventType.RESUMED, {

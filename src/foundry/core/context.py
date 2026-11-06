@@ -24,11 +24,13 @@ builds the replacement; the model call is the runtime's.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field, replace
 
 from foundry.core.conversation import (
     ImageBlock,
     Message,
+    OpaqueBlock,
     Role,
     TextBlock,
     ToolResultBlock,
@@ -93,6 +95,41 @@ def _masked(message: Message) -> Message:
     ))
 
 
+# Reasoning a provider binds to the conversation before it (D-048): Anthropic's
+# thinking blocks, which ride verbatim in the assistant's opaque block. Once
+# anything before one changes, replaying it is wasted -- the API drops it under
+# drop_block (D-032), and reports the drop again on every later request.
+BOUND_PROVIDER = "anthropic"
+BOUND_TYPES = frozenset({"thinking", "redacted_thinking"})
+
+
+def unbind(message: Message) -> Message:
+    """``message`` without its bound reasoning; the same object when it has
+    none. Text and tool calls stay verbatim; an opaque block left empty goes,
+    and the adapter rebuilds the turn from its text and calls."""
+    if message.role is not Role.ASSISTANT:
+        return message
+    blocks: list = []
+    changed = False
+    for block in message.blocks:
+        if isinstance(block, OpaqueBlock) and block.provider == BOUND_PROVIDER:
+            try:
+                content = json.loads(block.data)
+            except ValueError:
+                content = None
+            if isinstance(content, list):
+                kept = [c for c in content
+                        if not (isinstance(c, dict) and c.get("type") in BOUND_TYPES)]
+                if len(kept) != len(content):
+                    changed = True
+                    if kept:
+                        blocks.append(OpaqueBlock(provider=block.provider,
+                                                  data=json.dumps(kept)))
+                    continue
+        blocks.append(block)
+    return Message(role=message.role, blocks=tuple(blocks)) if changed else message
+
+
 @dataclass(slots=True)
 class ContextManager:
     """Owns history, the token budget, and the projection into model context."""
@@ -112,6 +149,13 @@ class ContextManager:
     session_usage: Usage = field(default_factory=Usage)
     _turn_of_message: list[int] = field(default_factory=list)
     _turn: int = 0
+    # The conversation's last request as sent, and the positions whose bound
+    # reasoning is no longer sent because something before them changed (D-048).
+    _sent: tuple[Message, ...] = ()
+    _unbound: set[int] = field(default_factory=set)
+    # unbind() parses the reply's JSON; a projection runs several times a
+    # round, so each reply is stripped once, keyed by the message itself.
+    _stripped: dict[int, tuple[Message, Message]] = field(default_factory=dict)
 
     # -- history ----------------------------------------------------------
 
@@ -125,11 +169,13 @@ class ContextManager:
         return self._turn
 
     def restore(self, history: list[Message], turns: list[int], turn: int,
-                usage: Usage | None = None) -> None:
+                usage: Usage | None = None, sent: tuple[Message, ...] = ()) -> None:
         """Take over a resumed session's history, as its journal recorded it.
 
         Tool results go through the redactor again, as on the way in; the rest
         is the journal's own copy, which was scrubbed when it was written.
+        ``sent`` is the last request as the journal recorded it: what the next
+        one is compared with, and which reasoning had stopped being sent.
         """
         if len(history) != len(turns):
             raise ValueError("every restored message needs the round it belongs to")
@@ -146,6 +192,12 @@ class ContextManager:
         self._turn = turn
         if usage is not None:
             self.session_usage = usage
+        self._sent = tuple(sent)
+        self._unbound = {
+            index for index in range(1, min(len(self._sent), len(self.history) + 1))
+            if unbind(self.history[index - 1]) is not self.history[index - 1]
+            and unbind(self._sent[index]) is self._sent[index]
+        }
 
     def append(self, message: Message) -> None:
         self.history.append(message)
@@ -179,6 +231,48 @@ class ContextManager:
         return Message.text(Role.SYSTEM, "\n\n".join(parts))
 
     def project(self) -> tuple[Message, ...]:
+        """What the next request sends: the masked transcript, without the
+        reasoning a change before it has invalidated (D-048)."""
+        return self._bind(self._masked_projection())[0]
+
+    def mark_sent(self) -> None:
+        """The projection was sent as the conversation's next request: later
+        requests are compared with it."""
+        self._sent, self._unbound = self._bind(self._masked_projection())
+
+    def _bind(self, projected: tuple[Message, ...]) -> tuple[tuple[Message, ...], set[int]]:
+        """Strip the bound reasoning that can no longer be valid.
+
+        Each thinking block is bound to everything sent before it. Where this
+        projection first differs from the last request sent -- a rebuilt
+        permissions paragraph, a masked result, a resume's new system prompt --
+        every block from there on was made against the old prefix, so it is
+        left out, now and on every later request. Blocks before the change
+        keep their prefix and stay; blocks made after it are bound to the new
+        one. Appending, which is all a turn normally does, changes nothing.
+        """
+        unbound = set(self._unbound)
+        out = [self._unbind(m) if index in unbound else m for index, m in enumerate(projected)]
+        for index in range(min(len(out), len(self._sent))):
+            if out[index] != self._sent[index]:
+                for later in range(index, len(out)):
+                    stripped = self._unbind(out[later])
+                    if stripped is not out[later]:
+                        unbound.add(later)
+                        out[later] = stripped
+                break
+        return tuple(out), unbound
+
+    def _unbind(self, message: Message) -> Message:
+        cached = self._stripped.get(id(message))
+        if cached is not None and cached[0] is message:
+            return cached[1]
+        stripped = unbind(message)
+        if stripped is not message:
+            self._stripped[id(message)] = (message, stripped)
+        return stripped
+
+    def _masked_projection(self) -> tuple[Message, ...]:
         """The full transcript while it fits under the masking threshold.
 
         Past it, tool outputs are masked oldest first, and only until the
@@ -267,3 +361,6 @@ class ContextManager:
         so nothing in it is masked."""
         self.history = list(messages)
         self._turn_of_message = [self._turn] * len(self.history)
+        # A new prefix: nothing from before it is sent again.
+        self._sent, self._unbound = (), set()
+        self._stripped.clear()

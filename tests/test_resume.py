@@ -108,7 +108,8 @@ def _restored(state, *, max_context=128_000, reserve=8_000, redactor=None) -> Co
     extra = {"redactor": redactor} if redactor is not None else {}
     context = ContextManager(system_prompt="t", max_context_tokens=max_context,
                              reserve_output_tokens=reserve, **extra)
-    context.restore(list(state.history), list(state.turns), state.turn, state.usage)
+    context.restore(list(state.history), list(state.turns), state.turn, state.usage,
+                    sent=state.last_sent)
     return context
 
 

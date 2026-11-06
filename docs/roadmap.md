@@ -175,12 +175,11 @@ With the list above done, the next gaps a codex user would notice day to day
 
 9. ~~Changing the mode and the model inside a session~~ -- `/mode NAME` and
    `/model NAME` (landed, D-047).
-10. Requests that keep Anthropic's thinking blocks valid: newer Claude models
-    bind each one to the conversation before it, and on an enforced account a
-    request that rewrote that prefix -- the permissions paragraph after
-    `/approve` or `/mode`, a masked tool result, a compaction -- is refused
-    with a 400. Make those edits append-only, or drop the thinking blocks that
-    follow an edit.
+10. ~~Thinking kept valid after Foundry's own edits~~ -- Anthropic binds each
+    thinking block to the conversation before it; after a masked result, a
+    rebuilt permissions paragraph or a resume's new system prompt, the blocks
+    made before the change are left out of later requests, instead of being
+    sent for the API to drop, and warn about, every round (landed, D-048).
 11. A `notify` program run when a turn ends, for long work left unattended.
 12. `exec --output-schema FILE`: the final message as JSON that matches a
     schema, for scripts.
