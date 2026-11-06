@@ -106,7 +106,10 @@ PROTOCOL_VERSION = 1
 - `ToolEnd{call_id, tool, ok, summary, duration_ms, output}`: for
   `run_command`, `summary` is the exit code and `output` the last lines the
   command printed (at most 20 and 4,000 characters), shown under it -- 5 lines,
-  all with `-v` ([D-068](decision-log.md)); empty for other tools.
+  all with `-v` ([D-068](decision-log.md)); for `apply_patch`, what landed:
+  each file as `updated src/app.py (+2 -1)` and its unified diff (at most 400
+  lines, no line cut), shown under it -- 40 lines, all with `-v`
+  ([D-075](decision-log.md)); empty for other tools.
 - `ToolOutputDelta{call_id, text, stream}` ([D-074](decision-log.md)): the
   newest complete line a running command printed -- on whichever pipe ended a
   line last -- at most every half second and only when it changed; on a

@@ -757,7 +757,8 @@ class AgentRuntime:
         self._emit(ToolEnd(call.call_id, op.tool, not output.is_error,
                            _tool_end_summary(op, output, content),
                            duration_ms=duration_ms,
-                           output=output.metadata.get("output_tail", "")))
+                           output=(output.metadata.get("output_tail", "")
+                                   or output.metadata.get("diff", ""))))
 
     def _canonicalize_paths(self, op: Operation) -> Operation:
         """Give policy the spelling the filesystem agrees with.

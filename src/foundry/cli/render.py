@@ -53,6 +53,9 @@ REASONING_LINES = 8
 # A command's output under it (D-068): its last lines, the rest with -v.
 COMMAND_OUTPUT_LINES = 5
 COMMAND_OUTPUT_LINE_CHARS = 240
+# What a patch changed, under it (D-075): its first lines, the rest with -v.
+PATCH_DIFF_LINES = 40
+_DIFF_STYLE = (("@@", "cyan"), ("+", "green"), ("-", "red"), (" ", "dim"), ("(", "dim"))
 
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 _OSC = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
@@ -275,7 +278,9 @@ class Renderer:
             said = self.verbose or event.tool == "run_command"
             detail = f" {safe(event.summary)}" if said and event.summary else ""
             self.console.print(f"   {mark}{detail}")
-            if event.output:
+            if event.output and event.tool == "apply_patch":
+                self._patch_diff(event.output)
+            elif event.output:
                 self._command_output(event.output)
         elif isinstance(event, ToolRejected):
             # The most safety-relevant thing the system does is refuse a
@@ -329,6 +334,22 @@ class Renderer:
             if len(line) > COMMAND_OUTPUT_LINE_CHARS:
                 line = line[:COMMAND_OUTPUT_LINE_CHARS - 3] + "..."
             self.console.print(Text(f"     {line}", style="dim"), soft_wrap=True)
+
+    def _patch_diff(self, text: str) -> None:
+        """What a patch changed (D-075), as codex shows an edit: each file's
+        name with its added and removed lines, then its diff, coloured. The
+        files' text is anyone's: stripped, and printed as Text, never markup."""
+        lines = sanitize(text).splitlines()
+        shown = lines if self.verbose else lines[:PATCH_DIFF_LINES]
+        for line in shown:
+            style = next((s for mark, s in _DIFF_STYLE if line.startswith(mark)), "bold")
+            line = line.rstrip()
+            if len(line) > COMMAND_OUTPUT_LINE_CHARS:
+                line = line[:COMMAND_OUTPUT_LINE_CHARS - 3] + "..."
+            self.console.print(Text(f"     {line}", style=style), soft_wrap=True)
+        if len(shown) < len(lines):
+            self.console.print(Text(f"     ... {len(lines) - len(shown)} more lines "
+                                    "(-v shows them)", style="dim"))
 
     def _reasoning(self, text: str) -> None:
         """Dim and indented, so it reads as the model's aside rather than its

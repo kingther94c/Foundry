@@ -236,6 +236,8 @@ What a codex user still notices day to day, next:
     it (landed, D-073).
 35. ~~The newest line of a running command~~ -- in the working line while it
     runs, so a long build is visibly alive (landed, D-074).
+36. ~~What a patch changed, in view~~ -- each file's diff under the patch once
+    it lands, asked about or not, as codex shows an edit (landed, D-075).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

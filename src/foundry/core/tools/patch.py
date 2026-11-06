@@ -55,6 +55,52 @@ REPLACE_CLOSE = ">>>>>>> REPLACE"
 MAX_EDIT_FAILURES_PER_FILE = 3
 TMP_SUFFIX = ".foundry-tmp"
 
+# What the person watching is shown of a patch once it lands (D-075): each
+# file's diff, as codex shows an edit. The model is told only what was
+# applied. A line is never cut -- the redactor recognizes a credential only
+# whole -- so one too long is replaced by its length; the whole is bounded.
+DIFF_CONTEXT_LINES = 3
+DIFF_MAX_LINES = 400
+DIFF_MAX_LINE_CHARS = 1000
+# A deleted file's lines are shown only if it is text of at most this size.
+DIFF_MAX_DELETED_BYTES = 1_000_000
+
+
+def file_diff(header: str, old: str | None, new: str) -> list[str]:
+    """``header (+a -b)``, then the hunks of the unified diff from ``old`` to
+    ``new``; just the header when ``old`` could not be read as text."""
+    if old is None:
+        return [header]
+    lines = list(difflib.unified_diff(old.splitlines(), new.splitlines(),
+                                      n=DIFF_CONTEXT_LINES, lineterm=""))[2:]
+    added = sum(1 for line in lines if line.startswith("+"))
+    removed = sum(1 for line in lines if line.startswith("-"))
+    # The file's line, its mark aside.
+    body = [line if len(line) - 1 <= DIFF_MAX_LINE_CHARS
+            else f"{line[0]}({len(line) - 1} characters)" for line in lines]
+    return [f"{header} (+{added} -{removed})", *body]
+
+
+def bounded_diff(lines: list[str]) -> str:
+    """At most DIFF_MAX_LINES of ``lines``, saying how many more there were."""
+    if len(lines) <= DIFF_MAX_LINES:
+        return "\n".join(lines)
+    rest = len(lines) - DIFF_MAX_LINES
+    return "\n".join([*lines[:DIFF_MAX_LINES], f"({rest} more lines)"])
+
+
+def _text_of(path: Path) -> str | None:
+    """A file about to be deleted, as text, for its diff; None if it is
+    larger than DIFF_MAX_DELETED_BYTES or not UTF-8."""
+    try:
+        if path.stat().st_size > DIFF_MAX_DELETED_BYTES:
+            return None
+        raw = path.read_bytes()
+        raw = raw[3:] if raw.startswith(b"\xef\xbb\xbf") else raw
+        return raw.decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
 
 class PatchParseError(InvalidToolCall):
     """The patch envelope itself is malformed."""
@@ -394,6 +440,18 @@ class _Planned:
     move_target: Path | None = None
     move_relative: str = ""
     notes: list[str] = field(default_factory=list)
+    # The text before, which its diff is shown from (D-075); lines are split
+    # whatever their endings.
+    old_text: str | None = ""
+
+
+def _header(item: _Planned) -> str:
+    """What happened to the file, as the diff shown for it begins."""
+    if item.op.action == "delete":
+        return f"deleted {item.relative}"
+    if item.move_target is not None:
+        return f"updated and moved {item.relative} -> {item.move_relative}"
+    return f"{'created' if item.op.action == 'add' else 'updated'} {item.relative}"
 
 
 @dataclass(slots=True)
@@ -531,9 +589,11 @@ class ApplyPatch:
         applied: list[str] = []
         # Each file's content before and after, for undo; never shown to the model.
         changes: list[dict[str, Any]] = []
+        shown: list[str] = []
         for item in planned:
             try:
                 self._apply_one(item, ctx, applied, changes)
+                shown.extend(file_diff(_header(item), item.old_text, item.new_text))
             except OSError as exc:
                 self.failures[item.op.path] = self.failures.get(item.op.path, 0) + 1
                 rejected.append(f"{item.relative}: {type(exc).__name__}: {exc}")
@@ -555,6 +615,8 @@ class ApplyPatch:
         metadata: dict[str, Any] = {"applied": len(applied), "rejected": len(rejected)}
         if changes:
             metadata["changes"] = changes
+        if shown:
+            metadata["diff"] = bounded_diff(shown)
         return ToolOutput(content=content, is_error=bool(rejected), metadata=metadata)
 
     def _apply_one(self, item: _Planned, ctx: ToolContext, applied: list[str],
@@ -638,7 +700,8 @@ class ApplyPatch:
         if file_op.action == "delete":
             if not path.is_file():
                 raise ToolError("file does not exist")
-            return _Planned(file_op, path, resolved.relative, "", "\n", False)
+            return _Planned(file_op, path, resolved.relative, "", "\n", False,
+                            old_text=_text_of(path))
 
         if file_op.action == "add":
             if path.exists():
@@ -692,7 +755,8 @@ class ApplyPatch:
             rungs.append(result.rung)
 
         return _Planned(file_op, path, resolved.relative, working, line_ending, had_bom,
-                        rungs, move_target, move_relative, notes)
+                        rungs, move_target, move_relative, notes,
+                        old_text=text)
 
     @staticmethod
     def _explain(index: int, near: list[str], relative: str) -> str:
