@@ -28,7 +28,8 @@ foundry/
 │   └── winapi.py            # ctypes: DPAPI, Job Objects, reparse tags
 ├── cli/                     # the terminal UI: event subscriber + approval UI (rich); repl.py, the
 │                            #   interactive prompt and its slash commands (D-039); a paste or a
-│                            #   block between lines of three quotes is one message (D-052)
+│                            #   block between lines of three quotes is one message (D-052);
+│                            #   markdown.py, the model's answer as Markdown a line at a time (D-070)
 ├── prompts/                 # versioned assets: the base system prompt, the patch format description, the permissions section template
 └── __main__.py              # entry point: bootstraps in UTF-8 mode
 ```
@@ -90,6 +91,9 @@ PROTOCOL_VERSION = 1
   front end comes for free.
 - Before rendering any model or tool text, the UI strips ANSI/OSC sequences and
   escapes rich markup (terminal injection is a real attack surface).
+- On a terminal the model's text is rendered as Markdown a line at a time
+  ([D-070](decision-log.md)), each whole line stripped of control sequences
+  and printed as `Text`; elsewhere it is printed as the model wrote it.
 - On a terminal the renderer keeps a transient `working (12s, Ctrl+C to stop)`
   line up from `TurnStarted` or `ToolBegin` until the next thing it draws or
   asks ([D-069](decision-log.md)); the REPL and `_close` take it down however

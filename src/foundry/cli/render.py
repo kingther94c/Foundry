@@ -20,6 +20,7 @@ from rich.spinner import Spinner
 from rich.syntax import Syntax
 from rich.text import Text
 
+from foundry.cli.markdown import MarkdownLines
 from foundry.core.events import (
     ApprovalChoice,
     ApprovalKind,
@@ -151,6 +152,8 @@ class Renderer:
     _streaming: bool = False
     # The working line while it is up (D-069); None otherwise.
     _live: Live | None = None
+    # The model's text being rendered as Markdown (D-070), while it streams.
+    _markdown: MarkdownLines | None = None
 
     def work(self, what: str) -> None:
         """Put up the working line (D-069): only on a terminal, where it can
@@ -180,8 +183,18 @@ class Renderer:
             f"[dim]model[/dim] {safe(model)}   [dim]mode[/dim] {safe(mode)}"
         )
 
+    def settle(self) -> None:
+        """A task is over: the text still held is printed, and the working
+        line taken down."""
+        self.idle()
+        self._end_text()
+
     def handle(self, event: Event) -> None:
         self.idle()
+        if isinstance(event, MessageDelta):
+            self._text(event.text)
+            return
+        self._end_text()
         self._handle(event)
         # Up again while the model is asked, or a tool runs (D-069).
         if isinstance(event, TurnStarted):
@@ -189,16 +202,30 @@ class Renderer:
         elif isinstance(event, ToolBegin):
             self.work("running")
 
-    def _handle(self, event: Event) -> None:
-        if isinstance(event, MessageDelta):
-            self.console.print(safe(event.text), end="", markup=False, highlight=False)
-            self._streaming = True
+    def _text(self, text: str) -> None:
+        """The model's text: on a terminal, as Markdown a line at a time
+        (D-070); elsewhere -- a pipe, a log -- as it comes, exactly as the
+        model wrote it. Either way stripped of control sequences, and never
+        read as markup (escaping it as well printed list[int] as list\\[int])."""
+        if self.console.is_terminal and not self.console.is_dumb_terminal:
+            if self._markdown is None:
+                self._markdown = MarkdownLines(sanitize)
+            for renderable in self._markdown.feed(text):
+                self.console.print(renderable)
             return
+        self.console.print(sanitize(text), end="", markup=False, highlight=False)
+        self._streaming = True
 
+    def _end_text(self) -> None:
+        """The text has ended: the rest of it, and the line it was on."""
+        if self._markdown is not None:
+            for renderable in self._markdown.finish():
+                self.console.print(renderable)
         if self._streaming:
             self.console.print()
             self._streaming = False
 
+    def _handle(self, event: Event) -> None:
         if isinstance(event, Reasoning):
             self._reasoning(event.text)
         elif isinstance(event, ToolBegin):
