@@ -12,6 +12,7 @@ import builtins
 import pytest
 
 from foundry.cli import app
+from foundry.core import session as session_module
 from foundry.core.events import EXIT_CODES, TerminalStatus
 from foundry.core.resume import recent_sessions, summarize
 from foundry.core.session import EventType, SessionStore
@@ -196,6 +197,10 @@ def test_run_never_asks(home, repo, monkeypatch):
 
 
 def test_the_picked_session_resumes(home, repo, monkeypatch):
+    # Ids have a second's resolution: two sessions started in one second
+    # would sort by their random part.
+    ids = iter(["20261107T000001-0000000a", "20261107T000002-0000000b"])
+    monkeypatch.setattr(session_module, "new_session_id", lambda: next(ids))
     first = _wire(repo, home, [turn(text="one")])
     first.runtime.run_turn("the first task")
     app._close(first, TerminalStatus.CANCELLED, "done")

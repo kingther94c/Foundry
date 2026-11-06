@@ -173,6 +173,8 @@ one message, and so is what you type between two lines of three double quotes
 the prompt says how much of the context window is left (yellow under 20%).
 `!git log --oneline -5` runs a command in the workspace without asking -- it is
 yours -- and the model is told what it printed with your next message.
+`@src/app.py` (or `@"a path"`) in a message attaches that file, as `read_file`
+would show it.
 
 Images: `foundry run -i shot.png "why is this button cut off?"` (or `exec -i`)
 attaches a screenshot to the task, `/image PATH` attaches one to your next

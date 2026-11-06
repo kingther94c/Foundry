@@ -28,16 +28,18 @@ from foundry.cli.render import print_plan, sanitize
 from foundry.core.commands import builtin_prompt, expand, parse_command
 from foundry.core.context import SUMMARY_PREFIX
 from foundry.core.conversation import Message, Role, TextBlock
-from foundry.core.errors import Cancelled, FoundryError, ImageRejected
+from foundry.core.errors import Cancelled, FoundryError, ImageRejected, ToolError
 from foundry.core.images import MAX_IMAGES_PER_MESSAGE, load as load_image
 from foundry.core.events import Notice, TerminalStatus
-from foundry.core.policy.engine import Mode
+from foundry.core.policy.engine import Mode, Verdict
 from foundry.core.prompts import PROJECT_DOC_NAMES, mode_line, system_prompt
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.base import truncate_middle
 from foundry.core.tools.command import combined_output, run_process
+from foundry.core.tools.files import ReadFile
 from foundry.core.tools.git import collect_evidence, run_git
 from foundry.core.winapi import child_environment
+from foundry.core.workspace import PathRejected
 from foundry.core.undo import (
     Outcome,
     Plan,
@@ -222,9 +224,10 @@ def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
         if line.startswith(SHELL):
             run_shell(wiring, console, line[len(SHELL):].strip())
             continue
-        task: object = RunTask(line)
         parsed = parse_command(line)
-        if parsed is not None:
+        if parsed is None:
+            task: object = RunTask(attach_mentions(wiring, console, line))
+        else:
             task = dispatch(wiring, console, *parsed)
             if task == _EXIT:
                 return TerminalStatus.CANCELLED
@@ -246,6 +249,73 @@ def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
                           "the session is still open.[/yellow]")
             continue
         return outcome.status
+
+
+# `@path`, or `@"a path"`, in a message the user typed attaches that file
+# (D-058). Not after a word character, so an e-mail address is not one.
+_MENTION = re.compile(r'(?<![\w@])@(?:"([^"\r\n]+)"|([^\s"\'`]+))')
+# What ends a sentence rather than a path: "see @a.py, then".
+_MENTION_TRAILING = ".,;:!?)]}"
+# What looks meant as a file, so a miss is worth saying: a separator or an
+# extension. `@property` in pasted code is not.
+_LOOKS_LIKE_A_FILE = re.compile(r"[/\\]|\.\w{1,10}$")
+MAX_MENTIONS = 10
+MENTION_NOTE = "The user attached this file with @, as read_file shows it:\n{content}"
+
+
+def attach_mentions(wiring: "Wiring", console: Console, text: str) -> str:
+    """``@path`` in a message the user typed: the file goes with the
+    message, as read_file would show it -- numbered, the first window, cut to
+    a tool result's size -- and counts as read (D-058). Only a file in the
+    workspace, at most ten, each once; a policy rule that refuses reading it
+    refuses this too, while one that would ask is answered by the user having
+    typed it. What is attached is scrubbed; the message itself is unchanged.
+    """
+    attached: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in _MENTION.finditer(text):
+        quoted, bare = match.group(1), match.group(2)
+        name = quoted if quoted is not None else bare.rstrip(_MENTION_TRAILING)
+        if not name:
+            continue
+        try:
+            resolved = wiring.workspace.resolve(name)
+            found = resolved.absolute.is_file()
+        except (PathRejected, OSError):
+            found = False
+        if not found:
+            if quoted is not None or _LOOKS_LIKE_A_FILE.search(name):
+                console.print(f"[dim]@{escape(name)}: no such file in the workspace; "
+                              "sent as written[/dim]", soft_wrap=True)
+            continue
+        if resolved.relative in seen:
+            continue
+        if len(seen) == MAX_MENTIONS:
+            console.print(f"[yellow]at most {MAX_MENTIONS} files go with one message; "
+                          f"@{escape(name)} does not[/yellow]", soft_wrap=True)
+            continue
+        seen.add(resolved.relative)
+        tool = ReadFile()
+        operation = tool.validate({"path": resolved.relative})
+        decision, _ = wiring.runtime.policy.evaluate(operation)
+        if decision.verdict is Verdict.DENY:
+            console.print(f"[yellow]@{escape(name)}: not attached, the policy refuses "
+                          f"reading it ({escape(decision.reason)})[/yellow]", soft_wrap=True)
+            continue
+        try:
+            output = tool.execute(operation, wiring.runtime.tool_ctx)
+        except ToolError as exc:
+            console.print(f"[yellow]@{escape(name)}: not attached, {escape(str(exc))}[/yellow]",
+                          soft_wrap=True)
+            continue
+        attached.append((resolved.relative, output.content))
+    if not attached:
+        return text
+    console.print(f"[dim]attached {escape(', '.join(path for path, _ in attached))}[/dim]",
+                  soft_wrap=True)
+    scrub = wiring.runtime.context.redactor.scrub
+    return "\n\n".join([text, *(MENTION_NOTE.format(content=scrub(content))
+                                 for _, content in attached)])
 
 
 # A message that starts with this is a command the user runs (D-055).
@@ -340,8 +410,9 @@ def _help(wiring: "Wiring", console: Console, arguments: str) -> None:
                           f"{escape(prompt.description or '(no description)')} [dim]({source})[/dim]",
                           soft_wrap=True)
     console.print("[dim]!COMMAND runs COMMAND in the workspace and tells the model what "
-                  "it printed. Anything else you type is a task for the model; a pasted "
-                  'block is one message, and so is what you type between two lines of """[/dim]')
+                  "it printed. Anything else you type is a task for the model, and @path "
+                  "in it attaches that file; a pasted block is one message, and so is "
+                  'what you type between two lines of """[/dim]')
     return None
 
 
