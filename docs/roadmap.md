@@ -158,8 +158,8 @@ Each item lands on its own branch with a D-entry, tests and a mutation check.
 3. ~~Project instructions layered as codex does~~ -- the user's own file from
    the Foundry folder, then the repository's from its top down to the working
    directory (landed, D-041).
-4. The CLI flags codex users expect: `-m/--model`, `--mode`, `-c key=value`,
-   `--profile`, and `exec --output-last-message`.
+4. ~~The CLI flags codex users expect~~ -- `-m/--model`, `--mode`,
+   `-c key=value`, `--profile`, and `exec --output-last-message` (landed, D-042).
 5. An MCP client: stdio servers' tools offered to the model under the same
    policy pipeline (the IR already lines up).
 6. Reasoning summaries shown where the provider streams them.

@@ -109,7 +109,7 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 | Command | What it does |
 |---|---|
 | `foundry` / `foundry run [task]` | interactive session (the default); `/help` lists its commands -- `/status`, `/diff`, `/plan`, `/approve` (plan mode), `/undo`, `/compact [focus]`, `/review [focus]` (read-only), `/init`, `/new`, `/exit` -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`). The model reads your own `FOUNDRY.md` (or `AGENTS.md`) from the Foundry folder, then the repository's from its top down to the working directory |
-| `foundry exec <task> [--json]` | unattended execution; every ASK becomes DENY (fail-closed) |
+| `foundry exec <task> [--json] [-o FILE]` | unattended execution; every ASK becomes DENY (fail-closed). `--mode accept_edits` lets it patch the workspace (commands still need a rule); `-o` writes its final summary or reply to FILE |
 | `foundry resume [session] [task]` | continue a recorded session (default `last`, the newest here); refused if HEAD moved |
 | `foundry exec --resume <session> [task]` | the same, unattended; the task defaults to carrying on where it stopped |
 | `foundry undo [session] [--last] [--dry-run] [--yes]` | revert the files a session patched (default `last`); a file edited since is left alone. In a session, `/undo` reverts its newest patch |
@@ -121,6 +121,19 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 
 Exit codes: `completed=0 partial=10 blocked=11 failed=12 cancelled=13
 interrupted=14`
+
+`run`, `resume`, `exec` and `record` take `-m MODEL`, `--mode MODE`,
+`-c key=value` (repeatable, such as `-c runtime.max_tool_rounds=60`; never a
+secret) and `--profile NAME`, a `[profiles.NAME]` table in your `config.toml`
+holding `backend`, `runtime` and `permissions` like the file itself:
+
+```toml
+profile = "work"          # the default; --profile or FOUNDRY_PROFILE choose another
+
+[profiles.work.backend]
+protocol = "anthropic_messages"
+model = "claude-opus-5-5"
+```
 
 A long task does not simply run out of context: old tool output is masked
 first, and when that is not enough the model summarises the work so far and the

@@ -45,6 +45,11 @@ _MODE_TEXT = {
 }
 
 
+UNATTENDED_LINE = ("This run is unattended: nobody is available to approve, so anything "
+                   "that would need approval is refused, and nobody reads a reply: end the "
+                   "task by calling `finish`, whatever the outcome.")
+
+
 def mode_line(mode: Mode) -> str:
     """What the model is told a mode allows: the permissions paragraph's own
     line, so a note about a change of mode cannot drift from it."""
@@ -61,6 +66,10 @@ def system_prompt(policy: PolicyEngine) -> str:
 def permissions_paragraph(policy: PolicyEngine) -> str:
     lines = ["# What is allowed right now"]
     lines.append(mode_line(policy.mode))
+    if not policy.interactive and policy.mode is not Mode.DONT_ASK:
+        # An unattended run in another mode (exec --mode, D-042): the mode's
+        # own line speaks of approval nobody is there to give.
+        lines.append(UNATTENDED_LINE)
 
     def one_line(text: str, limit: int = 120) -> str:
         """Rule text is repository-supplied. Rendering it raw let a deny rule's

@@ -342,7 +342,11 @@ The V1 rules:
   (selected inside the user configuration) > the user's
   `~/.foundry/config.toml` > built-in defaults. **Secrets may come only from
   environment variables or the credential store, and must never appear in
-  repository configuration or ordinary CLI arguments.**
+  repository configuration or ordinary CLI arguments.** The flags are `-m`,
+  `--mode`, `-c key=value` (which refuses `api_key` and `headers`) and
+  `--profile`; a profile is a `[profiles.<name>]` table in the user's own file,
+  chosen by `--profile`, `FOUNDRY_PROFILE` or `profile = "..."`
+  ([D-042](decision-log.md)).
 - **Policy rules**: the rule lists from every layer are **concatenated** and
   then evaluated uniformly as deny > ask > allow (layer order does not affect
   the result; deny-from-anywhere wins); the exception is the **managed layer**

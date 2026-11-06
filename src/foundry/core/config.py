@@ -25,6 +25,7 @@ from foundry.core.policy.engine import Layer, Mode, Rule, Verdict
 
 USER_DIR_ENV = "FOUNDRY_HOME"
 ENV_PREFIX = "FOUNDRY_"
+PROFILE_ENV = "FOUNDRY_PROFILE"
 
 # Settings a repository is never allowed to influence.
 _CONNECTION_KEYS = frozenset({"base_url", "api_key", "model", "protocol", "headers",
@@ -287,8 +288,65 @@ def _apply_env(config: Config) -> None:
             config.record(key, value, "environment")
 
 
+# The runtime table's settings, for ``-c`` to check a name against: an
+# unknown one is a typo, not a setting nobody reads.
+_RUNTIME_KEYS = ("max_tool_rounds", "max_tool_calls", "max_output_bytes", "command_timeout_s",
+                 "session_retention_days", "auto_compact", "mode")
+# Secrets may come only from the environment or the credential store, never
+# from a command line other processes can read (requirements section 4.3).
+_SECRET_KEYS = frozenset({"api_key", "headers"})
+
+
+def parse_settings(items: list[str]) -> dict[str, dict[str, Any]]:
+    """``-c key=value`` settings as a config layer: ``backend.model=x``,
+    ``runtime.max_tool_rounds=60``, or a bare key from either table. The value
+    is read as TOML -- ``60``, ``true``, ``"a b"`` -- and as a plain string when
+    it is not, so ``-c model=gpt-5`` needs no quotes (D-042)."""
+    layer: dict[str, dict[str, Any]] = {}
+    for item in items:
+        name, sep, raw = item.partition("=")
+        name = name.strip()
+        if not sep or not name:
+            raise ConfigError(f"-c expects key=value, got {item!r}")
+        section, dot, key = name.rpartition(".")
+        if not dot:
+            section = "backend" if key in BackendConfig.__dataclass_fields__ else "runtime"
+        if key in _SECRET_KEYS:
+            raise ConfigError(f"-c may not set {name}: secrets come only from the environment "
+                              "or the credential store (foundry login)")
+        known = (section == "backend" and key in BackendConfig.__dataclass_fields__
+                 and key != "name") or (section == "runtime" and key in _RUNTIME_KEYS)
+        if not known:
+            raise ConfigError(f"-c: no setting {name!r}")
+        try:
+            value = tomllib.loads(f"v = {raw}")["v"]
+        except tomllib.TOMLDecodeError:
+            value = raw.strip()
+        layer.setdefault(section, {})[key] = value
+    return layer
+
+
+def _apply_profile(config: Config, data: dict[str, Any], name: str, path: Path,
+                   chosen_by: str) -> None:
+    """A named set of settings from the user's own file, between it and the
+    repository's (requirements section 4.3)."""
+    profiles = data.get("profiles", {})
+    if not isinstance(profiles, dict) or not all(isinstance(p, dict) for p in profiles.values()):
+        raise ConfigError(f"profiles in {path} must be tables, as [profiles.<name>]")
+    if name not in profiles:
+        known = ", ".join(sorted(profiles)) or "none defined"
+        raise ConfigError(f"no profile {name!r} in {path} (profiles: {known})")
+    _apply(config, profiles[name], f"profile {name}",
+           connection_allowed=True, allow_rules_permitted=True)
+    config.backend.name = name
+    config.record("profile", name, chosen_by)
+
+
 def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | None = None,
-                home: Path | None = None) -> Config:
+                home: Path | None = None, profile: str | None = None,
+                settings: dict[str, dict[str, Any]] | None = None) -> Config:
+    """``profile`` and ``settings`` (from ``-c``) are command-line layers
+    (D-042); ``overrides`` are flat keys, applied last."""
     config = Config()
     root = home or user_dir()
 
@@ -297,8 +355,16 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
         _apply(config, _load_toml(managed), "managed",
                connection_allowed=True, allow_rules_permitted=True)
 
-    _apply(config, _load_toml(root / "config.toml"), "user",
-           connection_allowed=True, allow_rules_permitted=True)
+    user = _load_toml(root / "config.toml")
+    _apply(config, user, "user", connection_allowed=True, allow_rules_permitted=True)
+
+    chosen = profile or os.environ.get(PROFILE_ENV) or user.get("profile")
+    if chosen:
+        if not isinstance(chosen, str):
+            raise ConfigError("profile must be the name of a [profiles.<name>] table")
+        chosen_by = ("cli" if profile else "environment" if os.environ.get(PROFILE_ENV)
+                     else "user")
+        _apply_profile(config, user, chosen, root / "config.toml", chosen_by)
 
     if workspace is not None:
         project = workspace / ".foundry" / "config.toml"
@@ -307,6 +373,9 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
                    connection_allowed=False, allow_rules_permitted=False)
 
     _apply_env(config)
+
+    if settings:
+        _apply(config, settings, "cli (-c)", connection_allowed=True, allow_rules_permitted=True)
 
     for key, value in (overrides or {}).items():
         if hasattr(config, key):

@@ -25,6 +25,7 @@ That disclosure is printed on first run and at the start of every session (the
 | **repository file contents** | **untrusted** | may contain injected instructions aimed at the model |
 | **tool output** (command stdout, git diff, read_file results) | **untrusted** | same as above |
 | **in-repository `.foundry/config.toml` and `FOUNDRY.md`** (from the repository's top down to the working directory, D-041) | **untrusted** | require a one-time trust confirmation; can only tighten policy |
+| command-line settings (`-m`, `--mode`, `-c`, `--profile`, D-042) | trusted | typed by the user; `-c` refuses `api_key` and `headers`, since a command line is readable by other processes, and profiles come only from the user's own file |
 | the user's own `FOUNDRY.md` / `AGENTS.md` in the Foundry folder | trusted | written by the user; capped like the repository's, and still guidance, not authority over approvals |
 | **model output** | **untrusted** | it is a request awaiting judgement, not an authorisation |
 

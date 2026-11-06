@@ -35,7 +35,13 @@ from foundry.core.backends.openai_compat import OpenAICompatBackend
 from foundry.core.backends.recording import RecordingBackend
 from foundry.core.backends.responses import ResponsesBackend
 from foundry.core.commands import CustomPrompt, load_custom_prompts
-from foundry.core.config import ANTHROPIC_PROTOCOL, Config, load_config, user_dir
+from foundry.core.config import (
+    ANTHROPIC_PROTOCOL,
+    Config,
+    load_config,
+    parse_settings,
+    user_dir,
+)
 from foundry.core.context import ContextManager
 from foundry.core.errors import (
     AuthError,
@@ -191,8 +197,10 @@ def _rule_writer(home: Path, policy: PolicyEngine):
 
 def build(workspace_path: Path, *, home: Path | None = None,
           overrides: dict | None = None, console: Console | None = None,
-          interactive: bool = True, resume: str | None = None) -> Wiring:
-    """``resume`` names a recorded session to continue: an id, or ``last``."""
+          interactive: bool = True, resume: str | None = None,
+          profile: str | None = None, settings: dict | None = None) -> Wiring:
+    """``resume`` names a recorded session to continue: an id, or ``last``.
+    ``profile`` and ``settings`` come from ``--profile`` and ``-c`` (D-042)."""
     console = console or Console()
     home = home or user_dir()
 
@@ -209,7 +217,8 @@ def build(workspace_path: Path, *, home: Path | None = None,
         )
 
     trusted = _confirm_trust(console, home, workspace.root, interactive=interactive)
-    config = load_config(workspace.root if trusted else None, overrides=overrides, home=home)
+    config = load_config(workspace.root if trusted else None, overrides=overrides, home=home,
+                         profile=profile, settings=settings)
 
     current = capture_baseline(workspace.root)
     state: JournalState | None = None
@@ -422,12 +431,25 @@ def _credential_source(config: Config, vault: CredentialVault):
 # --- commands -------------------------------------------------------------
 
 
+def _config_args(args: argparse.Namespace, *, mode: Mode | None = None) -> dict:
+    """``-m``, ``--mode``, ``-c`` and ``--profile`` as build() takes them (D-042)."""
+    overrides: dict = {}
+    if args.model:
+        overrides["model"] = args.model
+    chosen = mode or (Mode(args.mode) if args.mode else None)
+    if chosen is not None:
+        overrides["mode"] = chosen
+    return {"overrides": overrides or None, "profile": args.profile,
+            "settings": parse_settings(args.config or [])}
+
+
 def cmd_session(args: argparse.Namespace) -> int:
     """`run`, and `resume`, which is the same session continued from its journal."""
     console = Console()
     try:
+        flags = _config_args(args)
         wiring = build(Path(args.workspace).resolve(), console=console,
-                       resume=getattr(args, "resume", None))
+                       resume=getattr(args, "resume", None), **flags)
     except FoundryError as exc:
         console.print(f"[red]{exc}[/red]")
         return EXIT_CODES[TerminalStatus.FAILED]
@@ -449,7 +471,8 @@ def cmd_session(args: argparse.Namespace) -> int:
                 # workspace -- a new journal, an empty conversation, no grants.
                 _close(wiring, TerminalStatus.CANCELLED, "the user started a new session")
                 try:
-                    wiring = build(wiring.workspace.root, home=wiring.home, console=console)
+                    wiring = build(wiring.workspace.root, home=wiring.home, console=console,
+                                   **flags)
                 except FoundryError as exc:
                     console.print(f"[red]{exc}[/red]")
                     return EXIT_CODES[TerminalStatus.FAILED]
@@ -689,15 +712,20 @@ def cmd_exec(args: argparse.Namespace) -> int:
                 console.print("[red]that session completed; give the task to continue "
                               "it with[/red]")
                 return 2
-        wiring = build(Path(args.workspace).resolve(),
-                       overrides={"mode": Mode.DONT_ASK}, console=console,
-                       interactive=False, resume=args.resume)
+        # dont_ask unless --mode chose plan or accept_edits; a configured mode
+        # never decides how much an unattended run may do.
+        wiring = build(Path(args.workspace).resolve(), console=console, interactive=False,
+                       resume=args.resume,
+                       **_config_args(args, mode=Mode(args.mode or Mode.DONT_ASK.value)))
     except FoundryError as exc:
         console.print(f"[red]{exc}[/red]")
         return EXIT_CODES[TerminalStatus.FAILED]
 
     wiring.runtime.approval = None  # nobody to ask
     wiring.runtime.policy.interactive = False
+    # The permissions paragraph says so, in a mode whose own line speaks of
+    # approval.
+    wiring.runtime.context.system_prompt = system_prompt(wiring.runtime.policy)
 
     if args.json:
         # Serialize whatever the event actually carries. A hand-maintained
@@ -727,6 +755,8 @@ def cmd_exec(args: argparse.Namespace) -> int:
                       "reminded; only finish reports completion, with the evidence for it")
         if not args.json and outcome.text:
             print(outcome.text)
+        if args.output_last_message:
+            _write_last_message(Path(args.output_last_message), outcome.text, console)
     except KeyboardInterrupt:
         wiring.runtime.cancel()
         status = TerminalStatus.CANCELLED
@@ -744,11 +774,21 @@ def cmd_exec(args: argparse.Namespace) -> int:
     return EXIT_CODES.get(status, 0)
 
 
+def _write_last_message(path: Path, text: str, console: Console) -> None:
+    """exec --output-last-message (D-042): the run's last word -- the final
+    summary or reply -- for a script to read, scrubbed like the journal. A
+    failure to write it is reported, not fatal: the run itself is done."""
+    try:
+        path.write_text(default_redactor().scrub(text), encoding="utf-8")
+    except OSError as exc:
+        console.print(f"[red]could not write {path}: {exc}[/red]")
+
+
 def cmd_record(args: argparse.Namespace) -> int:
     """Capture a session as a replay fixture for the offline suite."""
     console = Console()
     try:
-        wiring = build(Path(args.workspace).resolve(), console=console)
+        wiring = build(Path(args.workspace).resolve(), console=console, **_config_args(args))
     except FoundryError as exc:
         console.print(f"[red]{exc}[/red]")
         return EXIT_CODES[TerminalStatus.FAILED]
@@ -868,6 +908,20 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _config_flags(parser: argparse.ArgumentParser, *, modes: tuple[Mode, ...] = tuple(Mode)) -> None:
+    """The settings a run can be given on its command line (D-042). They win
+    over every file and the environment; secrets are not among them."""
+    parser.add_argument("-m", "--model", help="the model to use")
+    parser.add_argument("--mode", choices=[m.value for m in modes],
+                        help="the permission mode" + (
+                            " (default dont_ask: nobody is there to approve)"
+                            if Mode.DEFAULT not in modes else ""))
+    parser.add_argument("-c", "--config", action="append", metavar="KEY=VALUE",
+                        help="a setting, such as -c runtime.max_tool_rounds=60 "
+                             "(repeatable; no secrets)")
+    parser.add_argument("--profile", help="a [profiles.<name>] table from your config.toml")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="foundry",
                                      description="A local coding-agent runtime.")
@@ -877,6 +931,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="start a session (default)")
     run.add_argument("task", nargs="?", help="run one task then exit")
     run.add_argument("--workspace", default=".", help="repository to work in")
+    _config_flags(run)
     run.set_defaults(func=cmd_session)
 
     resume = sub.add_parser("resume", help="continue a recorded session")
@@ -884,6 +939,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="the session id (default: last, the newest in this workspace)")
     resume.add_argument("task", nargs="?", help="run one task then exit")
     resume.add_argument("--workspace", default=".", help="repository the session worked in")
+    _config_flags(resume)
     resume.set_defaults(func=cmd_session)
 
     undo = sub.add_parser("undo", help="revert the files a recorded session patched")
@@ -903,12 +959,16 @@ def build_parser() -> argparse.ArgumentParser:
     execute.add_argument("--resume", metavar="SESSION",
                          help="continue a recorded session (an id, or last); the task "
                               "defaults to carrying on where it stopped")
+    execute.add_argument("-o", "--output-last-message", metavar="FILE",
+                         help="write the run's final summary or reply to FILE")
+    _config_flags(execute, modes=(Mode.DONT_ASK, Mode.PLAN, Mode.ACCEPT_EDITS))
     execute.set_defaults(func=cmd_exec)
 
     record = sub.add_parser("record", help="capture a session as a replay fixture")
     record.add_argument("task")
     record.add_argument("--output", required=True, help="fixture file to write")
     record.add_argument("--workspace", default=".")
+    _config_flags(record)
     record.set_defaults(func=cmd_record)
 
     login = sub.add_parser("login", help="store an API key")
@@ -934,9 +994,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
+    argv = sys.argv[1:] if argv is None else list(argv)
+    # `foundry -m gpt-5` is `foundry run -m gpt-5`, as with no arguments at all
+    # (D-042). A bare first word stays a subcommand, so a mistyped one is an
+    # error rather than a task sent to the model.
+    if not argv or (argv[0].startswith("-") and argv[0] not in ("-h", "--help", "--version")):
+        argv = ["run", *argv]
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):
-        args = parser.parse_args((argv or []) + ["run"])
+        args = parser.parse_args(["run"])
     try:
         return args.func(args)
     except FoundryError as exc:
