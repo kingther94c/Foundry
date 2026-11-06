@@ -169,7 +169,8 @@ model's summaries. `show_reasoning = false` under `[runtime]` hides it.
 
 At the prompt, a pasted block -- a stack trace, a log, some code -- is sent as
 one message, and so is what you type between two lines of three double quotes
-(Ctrl+C inside discards it).
+(Ctrl+C inside discards it). Once the conversation has begun, a dim line above
+the prompt says how much of the context window is left (yellow under 20%).
 
 Images: `foundry run -i shot.png "why is this button cut off?"` (or `exec -i`)
 attaches a screenshot to the task, `/image PATH` attaches one to your next

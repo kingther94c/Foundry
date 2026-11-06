@@ -349,3 +349,10 @@
 - **What it may not weaken**: the task is the user's, as one typed is; nothing else is read from stdin, and approvals in exec stay off (ASK is DENY).
 - **Rejected**: reading stdin whenever no task is given (a script that forgets the task would hang on an open pipe); appending stdin to a task given on the command line (two sources for one task, and a pipe a script did not mean to send).
 - **Note**: Windows PowerShell 5.1 sends a string piped to a program as `$OutputEncoding`, ASCII by default, so non-ASCII text arrives as `?`; setting `$OutputEncoding = [Text.UTF8Encoding]::new($false)` first, redirecting a file in cmd (`foundry exec - < task.md`), or PowerShell 7 keeps it.
+
+## D-054 How much of the context window is left, above the prompt
+- **Date**: 2026-11-07 · **Status**: confirmed (item 15)
+- **Background**: codex keeps "N% context left" in view under its input. Here only `/status` said how full the window was, so a long session reached masking and compaction without the user seeing it coming.
+- **Decision**: once the conversation has begun, a dim line above `foundry>` says "N% context left": 100 less the share `/status` shows, from the same estimate (the projected request against `max_context_tokens`), never below 0. Under 20% the line is yellow. A new session shows the plain prompt.
+- **What it may not weaken**: nothing is sent or recorded for it; the estimate is the one the overflow check already makes, and it is shown as an estimate, never as the provider's usage.
+- **Rejected**: a status line fixed at the bottom of the screen (a full-screen UI, rejected in D-052); the share of the window less the output reserve (two figures for one window, with `/status` showing the other); showing it in `exec` (no one reads a prompt there).

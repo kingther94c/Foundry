@@ -193,6 +193,8 @@ What a codex user still notices day to day, next:
     and so is a block between lines of three quotes (landed, D-052).
 14. ~~`exec -`~~ -- the task read from stdin, as `codex exec -` reads it
     (landed, D-053).
+15. ~~How much context is left, in view~~ -- a line above the prompt, as
+    codex shows it under its input (landed, D-054).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

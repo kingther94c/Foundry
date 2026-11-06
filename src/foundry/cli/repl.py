@@ -155,11 +155,33 @@ def input_waiting(timeout: float = PASTE_GAP_S) -> bool:
         return False
 
 
-def read_message(console: Console) -> str:
+# Below this much of the window left, the line turns yellow.
+CONTEXT_LOW_PERCENT = 20
+
+
+def context_left(wiring: "Wiring") -> int:
+    """The share of the context window still free, in percent, by the same
+    estimate /status shows."""
+    context = wiring.runtime.context
+    used, limit = context.estimated_context_tokens(), context.max_context_tokens
+    return max(0, 100 - 100 * used // max(limit, 1))
+
+
+def prompt_for(wiring: "Wiring") -> str:
+    """The prompt; once the conversation has begun, with how much of the
+    context window is left above it, as codex shows it (D-054)."""
+    if not wiring.runtime.context.history:
+        return PROMPT
+    left = context_left(wiring)
+    style = "yellow" if left < CONTEXT_LOW_PERCENT else "dim"
+    return f"\n[{style}]{left}% context left[/{style}]" + PROMPT
+
+
+def read_message(console: Console, prompt: str = PROMPT) -> str:
     """One message from the user (D-052): a line; or every line of a paste,
     which arrive together; or the lines typed between two lines of three double quotes.
     Ctrl+C inside such a block discards it."""
-    first = console.input(PROMPT)
+    first = console.input(prompt)
     waiting = input_waiting()
     if first.strip() == BLOCK and not waiting:
         lines: list[str] = []
@@ -185,7 +207,7 @@ def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
     """Read messages until the session ends; NEW_SESSION if the user asked for one."""
     while True:
         try:
-            line = read_message(console)
+            line = read_message(console, prompt_for(wiring))
         except (EOFError, KeyboardInterrupt):
             console.print()
             return TerminalStatus.CANCELLED
