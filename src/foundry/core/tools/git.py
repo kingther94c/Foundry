@@ -8,6 +8,7 @@ read-only command whitelist -- routing it through run_command would bypass this.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -237,6 +238,25 @@ class GitStatus:
         return ToolOutput(content=body, truncated=truncated)
 
 
+# A revision as git_diff and /review take it (D-066): a branch, a tag, an id,
+# HEAD~2. Never one that starts with "-", which git would read as an option
+# (--output= writes a file), and never one with a space or a control in it.
+_REVISION = re.compile(r"[^-\s\x00-\x1f\x7f][^\s\x00-\x1f\x7f]{0,199}")
+_COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+
+def resolve_commit(revision: str, cwd: Path) -> str:
+    """The full id of the commit ``revision`` names, or ToolError (D-066).
+    Only the id is handed on to git, so a name is never read as an option."""
+    if not _REVISION.fullmatch(revision):
+        raise ToolError(f"{revision!r} is not a branch, tag or commit")
+    code, out, _ = run_git(["rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}"], cwd)
+    commit = out.strip()
+    if code != 0 or not _COMMIT_ID.fullmatch(commit):
+        raise ToolError(f"no commit named {revision!r} in this repository")
+    return commit
+
+
 @dataclass(slots=True)
 class GitDiff:
     name: str = "git_diff"
@@ -246,21 +266,27 @@ class GitDiff:
         return ToolSchema(
             name=self.name,
             description=(
-                "Show uncommitted changes in the workspace repository. "
-                "Example: {\"path\": \"src/app.py\", \"staged\": false}"
+                "Show uncommitted changes in the workspace repository; with base, what "
+                "changed since this branch left that branch or commit; with commit, what one "
+                "commit changed. Example: {\"path\": \"src/app.py\", \"staged\": false}"
             ),
             parameters={
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Limit to one path."},
                     "staged": {"type": "boolean", "description": "Show staged changes instead."},
+                    "base": {"type": "string", "description": (
+                        "A branch, tag or commit: show what changed since this branch left "
+                        "it -- the commits since their merge base, and anything uncommitted.")},
+                    "commit": {"type": "string",
+                               "description": "A commit: show its message and what it changed."},
                 },
                 "additionalProperties": False,
             },
         )
 
     def validate(self, args: dict[str, Any]) -> Operation:
-        extra = set(args) - {"path", "staged"}
+        extra = set(args) - {"path", "staged", "base", "commit"}
         if extra:
             raise InvalidToolCall(f"unknown argument(s): {', '.join(sorted(extra))}")
         path = args.get("path", "")
@@ -269,21 +295,42 @@ class GitDiff:
         staged = args.get("staged", False)
         if not isinstance(staged, bool):
             raise InvalidToolCall("staged must be a boolean")
+        base, commit = args.get("base", ""), args.get("commit", "")
+        for name, value in (("base", base), ("commit", commit)):
+            if not isinstance(value, str):
+                raise InvalidToolCall(f"{name} must be a string")
+            if value and not _REVISION.fullmatch(value):
+                raise InvalidToolCall(f"{name} must name a branch, tag or commit")
+        if sum((staged, bool(base), bool(commit))) > 1:
+            raise InvalidToolCall("give at most one of staged, base and commit")
+        shown = (" --staged" if staged else f" --merge-base {base}" if base
+                 else f" {commit}^!" if commit else "")
         return Operation(tool=self.name, kind=self.kind,
-                         args={"path": path, "staged": staged},
-                         display=f"git diff{' --staged' if staged else ''} {path}".strip(),
-                         target=path)
+                         args={"path": path, "staged": staged, "base": base, "commit": commit},
+                         display=f"git diff{shown} {path}".strip(), target=path)
 
     def execute(self, op: Operation, ctx: ToolContext) -> ToolOutput:
-        args = ["diff"]
-        if op.args["staged"]:
-            args.append("--staged")
+        root = ctx.workspace.root
+        if op.args.get("commit"):
+            # Its message, then its patch; the root commit has no parent to diff.
+            args = ["show", "--format=commit %H%nAuthor: %an%nDate:   %ad%n%n%B",
+                    resolve_commit(op.args["commit"], root)]
+        elif op.args.get("base"):
+            base = resolve_commit(op.args["base"], root)
+            code, out, err = run_git(["merge-base", "HEAD", base], root)
+            if code != 0 or not _COMMIT_ID.fullmatch(out.strip()):
+                raise ToolError(f"this branch and {op.args['base']} share no history")
+            args = ["diff", out.strip()]
+        else:
+            args = ["diff"]
+            if op.args["staged"]:
+                args.append("--staged")
         if op.args["path"]:
             resolved = ctx.workspace.resolve(op.args["path"])
             args += ["--", resolved.relative]
-        code, out, err = run_git(args, ctx.workspace.root)
+        code, out, err = run_git(args, root)
         if code != 0:
-            raise ToolError(f"git diff failed: {err.strip()}")
+            raise ToolError(f"git {args[0]} failed: {err.strip()}")
         body, truncated = truncate_middle(out or "(no changes)", ctx.max_output_bytes)
         artifact_id = ""
         if truncated and ctx.artifacts is not None:

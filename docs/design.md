@@ -207,6 +207,8 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
 - A read-only task sets `PolicyEngine.read_only` for its turn (`/review`,
   [D-039](decision-log.md)): every mutator is refused at step 2 with that
   reason, whatever the mode, and the field is cleared when the turn ends.
+  `/review --base REV` and `/review --commit REV` ([D-066](decision-log.md))
+  review a branch or one commit the same way.
 - The mode changes only when the user says so at the session's prompt:
   `/approve` in plan mode ([D-038](decision-log.md)) switches it to `default`
   or `accept_edits`, and `/mode NAME` ([D-047](decision-log.md)) to any of the
@@ -293,6 +295,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   the same text).
 - `git_status/git_diff`: hardened arguments + stripping `GIT_*` from the
   environment (against the fsmonitor/hooks/pager code execution surface).
+  `git_diff` shows what is not committed, or with `base` what this branch
+  changed since it left a branch or commit (from their merge base, uncommitted
+  work included), or with `commit` one commit's message and patch
+  ([D-066](decision-log.md)); a revision is resolved to a full commit id
+  first, and one that starts with `-` never reaches git.
 - `read_artifact(artifact_id, offset?)`: artifact_id is an opaque token,
   resolved only through an in-memory index for the current session (all path
   semantics are refused), limited to this session's products; its output goes

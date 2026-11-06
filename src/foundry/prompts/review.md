@@ -1,7 +1,5 @@
-Review the uncommitted changes in this repository, as a careful code reviewer would.
-
 This review is read-only: Foundry refuses every edit and every command until it
-ends, so do not try to fix anything. Use `git_status` and `git_diff` to see what
+ends, so do not try to fix anything. Use `git_diff` as said above to see what
 changed, and read the surrounding code wherever you need context to judge a
 change.
 

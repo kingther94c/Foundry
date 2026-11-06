@@ -13,7 +13,7 @@ import builtins
 import pytest
 
 from foundry.cli import app
-from foundry.cli.repl import COMMANDS, REVIEW_READ_ONLY
+from foundry.cli.repl import COMMANDS, REVIEW_READ_ONLY, REVIEW_UNCOMMITTED
 from foundry.core.commands import (
     PROMPT_MAX_BYTES,
     CustomPrompt,
@@ -208,7 +208,8 @@ def test_a_review_changes_nothing_even_where_edits_need_no_approval(repo, tmp_pa
     typist = _repl(wiring, "/review the parser", "now make A 2")
 
     sent = _sent(wiring)
-    assert sent[0] == builtin_prompt("review") + "\n\nThe user asks you to focus on: the parser"
+    assert sent[0] == (f"{REVIEW_UNCOMMITTED}\n\n{builtin_prompt('review')}"
+                       "\n\nThe user asks you to focus on: the parser")
     decisions = {r.payload["call_id"]: r.payload for r in SessionStore.read_records(
         wiring.session.path) if r.type == EventType.POLICY_DECISION}
     for cid in ("p1", "c1"):

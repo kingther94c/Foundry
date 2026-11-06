@@ -41,7 +41,7 @@ from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.base import ToolKind, truncate_middle
 from foundry.core.tools.command import combined_output, run_process
 from foundry.core.tools.files import ReadFile
-from foundry.core.tools.git import collect_evidence, run_git
+from foundry.core.tools.git import collect_evidence, resolve_commit, run_git
 from foundry.core.winapi import CREATE_NO_WINDOW, IS_WINDOWS, child_environment, find_program
 from foundry.core.workspace import PathRejected
 from foundry.core.undo import (
@@ -650,12 +650,47 @@ def _init(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
     return RunTask(builtin_prompt("init"))
 
 
-def _review(wiring: "Wiring", console: Console, arguments: str) -> RunTask:
-    text = builtin_prompt("review")
-    if arguments:
-        text += f"\n\nThe user asks you to focus on: {arguments}"
-    console.print("[dim]reviewing the uncommitted changes; nothing is changed while it "
-                  "runs[/dim]")
+REVIEW_UNCOMMITTED = ("Review the uncommitted changes in this repository, as a careful "
+                      "code reviewer would. `git_status` and `git_diff` show what changed.")
+REVIEW_USAGE = "usage: /review [--base REV | --commit REV] [focus]"
+
+
+def _review(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
+    """``/review [focus]``: the uncommitted changes, read-only (D-039).
+    ``--base REV``: what this branch changed since it left REV, as a pull
+    request shows it; ``--commit REV``: what one commit changed (D-066). The
+    revision is resolved before the task starts, and the model is given its
+    id, so what it reviews is what the user named."""
+    words = arguments.split(maxsplit=2)
+    if words and words[0] in ("--base", "--commit"):
+        if len(words) < 2:
+            console.print(f"[yellow]{REVIEW_USAGE}[/yellow]")
+            return None
+        flag, revision, focus = words[0], words[1], words[2] if len(words) > 2 else ""
+        try:
+            commit = resolve_commit(revision, wiring.workspace.root)
+        except ToolError as exc:
+            console.print(f"[yellow]{escape(str(exc))}[/yellow]")
+            return None
+        if flag == "--base":
+            scope = (f"Review what this branch changed since it left {revision} (commit "
+                     f"{commit}): the commits since their merge base, and anything not yet "
+                     "committed -- as a careful code reviewer would. `git_diff` with "
+                     f'{{"base": "{commit}"}} shows them, and `git_status` what is not '
+                     "committed.")
+            what = f"the changes since {revision} ({commit[:12]})"
+        else:
+            scope = (f"Review what commit {commit} changed, as a careful code reviewer "
+                     f'would. `git_diff` with {{"commit": "{commit}"}} shows its message '
+                     "and its changes.")
+            what = f"commit {commit[:12]}"
+    else:
+        scope, what, focus = REVIEW_UNCOMMITTED, "the uncommitted changes", arguments
+    text = f"{scope}\n\n{builtin_prompt('review')}"
+    if focus:
+        text += f"\n\nThe user asks you to focus on: {focus}"
+    console.print(f"[dim]reviewing {escape(what)}; nothing is changed while it runs[/dim]",
+                  soft_wrap=True)
     return RunTask(text, read_only=REVIEW_READ_ONLY)
 
 
@@ -1017,8 +1052,8 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("undo", "revert this session's newest patch", undo_last),
     Command("rewind", "go back to before your last message, or the Nth last; files stay "
             "as they are", rewind, arguments="[N]"),
-    Command("review", "a read-only review of the uncommitted changes", _review,
-            arguments="[focus]"),
+    Command("review", "a read-only review of the uncommitted changes, a branch's or a "
+            "commit's", _review, arguments="[--base REV | --commit REV] [focus]"),
     Command("init", "ask the model to write FOUNDRY.md for this repository", _init),
     Command("new", "end this session and start a fresh one", _new),
     Command("exit", "end the session", _exit),
