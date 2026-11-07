@@ -374,6 +374,8 @@ What a codex user still notices day to day, next:
     D-131).
 93. ~~`exec --ephemeral`~~ -- a run that keeps no record once it ends
     (landed, D-132).
+94. ~~`exec --fork` and `exec fork`~~ -- a copy of a session continued
+    headlessly (landed, D-133).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

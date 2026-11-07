@@ -1416,10 +1416,16 @@ def cmd_exec(args: argparse.Namespace, read_only: str = "") -> int:
     run, saying why -- as `foundry review`'s is (D-131).
     """
     console = Console(stderr=True)
-    if args.task is None and args.resume is None:
+    if args.fork is not None and args.resume is not None:
+        console.print("[red]--fork and --resume each name the session to go on from; "
+                      "give one[/red]")
+        return 2
+    # A fork goes on from its source as a resume does (D-133).
+    source = args.resume if args.fork is None else args.fork
+    if args.task is None and source is None:
         console.print("[red]exec needs a task, or --resume SESSION to continue one[/red]")
         return 2
-    if args.ephemeral and args.resume is not None:
+    if args.ephemeral and source is not None:
         console.print("[red]--ephemeral starts a session that is not kept; it cannot "
                       "continue one[/red]")
         return 2
@@ -1437,22 +1443,32 @@ def cmd_exec(args: argparse.Namespace, read_only: str = "") -> int:
             console.print(f"[red]--output-schema {escape(args.output_schema)}: "
                           f"{escape(str(exc))}[/red]")
             return 2
+    forked = None
     try:
-        if args.resume is not None and args.task is None:
+        if source is not None and args.task is None:
             # Continuing a finished session needs to be told what to do next;
             # "continue where it stopped" would only finish it again.
-            journal = resolve_session(user_dir() / "sessions", args.resume,
+            journal = resolve_session(user_dir() / "sessions", source,
                                       Path(args.workspace).resolve())
             if SessionStore.terminal_status(journal) is TerminalStatus.COMPLETED:
                 console.print("[red]that session completed; give the task to continue "
                               "it with[/red]")
                 return 2
+        if args.fork is not None:
+            # The copy is made, then resumed with every check a resume makes.
+            args.resume = args.fork
+            stop = _fork(args, console)
+            if stop is not None:
+                return stop
+            forked = args.resume
         # dont_ask unless --mode chose plan or accept_edits; a configured mode
         # never decides how much an unattended run may do.
         wiring = build(Path(args.workspace).resolve(), console=console, interactive=False,
                        resume=args.resume, ephemeral=args.ephemeral,
                        **_config_args(args, mode=Mode(args.mode or Mode.DONT_ASK.value)))
     except FoundryError as exc:
+        if forked is not None:
+            _forget(user_dir() / "sessions", forked)
         console.print(f"[red]{exc}[/red]")
         return EXIT_CODES[TerminalStatus.FAILED]
 
@@ -1572,7 +1588,7 @@ def cmd_review(args: argparse.Namespace) -> int:
     console.print(f"[dim]reviewing {escape(what)}; nothing is changed while it runs[/dim]",
                   soft_wrap=True)
     args.task = f"{text}\n\n{REVIEW_FINISH}"
-    args.resume = args.output_schema = args.mode = None
+    args.resume = args.fork = args.output_schema = args.mode = None
     args.image = []
     return cmd_exec(args, read_only=REVIEW_READ_ONLY)
 
@@ -2075,6 +2091,9 @@ def build_parser() -> argparse.ArgumentParser:
     execute.add_argument("--resume", metavar="SESSION",
                          help="continue a recorded session (an id, or last); the task "
                               "defaults to carrying on where it stopped")
+    execute.add_argument("--fork", metavar="SESSION",
+                         help="continue a copy of a recorded session, apart from it (an "
+                              "id, a name, or last); the task defaults as with --resume")
     execute.add_argument("-o", "--output-last-message", metavar="FILE",
                          help="write the run's final summary or reply to FILE")
     _ephemeral_flag(execute)
@@ -2220,15 +2239,38 @@ def _value_options(parser: argparse.ArgumentParser, command: str) -> set[str]:
 
 def exec_resume(argv: list[str], parser: argparse.ArgumentParser) -> list[str] | None:
     """`foundry exec resume [--last | SESSION] [TASK]`, as codex spells it
-    (D-088), is `foundry exec --resume SESSION|last [TASK]`.
+    (D-088), is `foundry exec --resume SESSION|last [TASK]`; `exec fork ...`
+    is `exec --fork ...` the same way (D-133).
 
-    Only a first word `resume` before any `--` is read this way, so
+    Only a first word `resume` or `fork` before any `--` is read this way, so
     `foundry exec -- resume` is still the task. None: the form is used without
     saying which session. `foundry exec review ...`, as codex spells it too,
     is `foundry review ...` (D-131).
     """
     if not argv or argv[0] != "exec":
         return argv
+    options, words, first = _exec_words(argv, parser)
+    if words and words[0] == "review":
+        return ["review", *argv[1:first], *argv[first + 1:]]
+    if not words or words[0] not in ("resume", "fork"):
+        return argv
+    last = ("--last", False) in options
+    kept = [token for token, value in options if value or token != "--last"]
+    rest = words[1:]
+    if last:
+        session, task = "last", rest
+    elif rest:
+        session, task = rest[0], rest[1:]
+    else:
+        return None
+    return ["exec", *kept, f"--{words[0]}", session, *(["--", *task] if task else [])]
+
+
+def _exec_words(argv: list[str], parser: argparse.ArgumentParser
+                ) -> tuple[list[tuple[str, bool]], list[str], int]:
+    """`foundry exec`'s options, each with whether it is another's value; its
+    words; and where the first word is. What follows a `--` before any word
+    is the task: no words."""
     takes_value = _value_options(parser, "exec")
     options: list[tuple[str, bool]] = []    # (token, is an option's value)
     words: list[str] = []
@@ -2237,9 +2279,8 @@ def exec_resume(argv: list[str], parser: argparse.ArgumentParser) -> list[str] |
     while i < len(argv):
         token = argv[i]
         if token == "--":
-            if not words:
-                return argv
-            words.extend(argv[i + 1:])
+            if words:
+                words.extend(argv[i + 1:])
             break
         if token.startswith("-") and token != "-":
             options.append((token, False))
@@ -2251,20 +2292,7 @@ def exec_resume(argv: list[str], parser: argparse.ArgumentParser) -> list[str] |
             first = first or i
             words.append(token)
         i += 1
-    if words and words[0] == "review":
-        return ["review", *argv[1:first], *argv[first + 1:]]
-    if not words or words[0] != "resume":
-        return argv
-    last = ("--last", False) in options
-    kept = [token for token, value in options if value or token != "--last"]
-    rest = words[1:]
-    if last:
-        session, task = "last", rest
-    elif rest:
-        session, task = rest[0], rest[1:]
-    else:
-        return None
-    return ["exec", *kept, "--resume", session, *(["--", *task] if task else [])]
+    return options, words, first
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2272,7 +2300,8 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else list(argv)
     rewritten = exec_resume(argv, parser)
     if rewritten is None:
-        Console(stderr=True).print("[red]exec resume needs a session id, or --last for the "
+        word = _exec_words(argv, parser)[1][0]
+        Console(stderr=True).print(f"[red]exec {word} needs a session id, or --last for the "
                                    "newest[/red]")
         return 2
     argv = rewritten
