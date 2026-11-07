@@ -283,6 +283,8 @@ What a codex user still notices day to day, next:
 56. ~~The context window on every protocol~~ -- `backend.max_context_tokens`
     no longer Claude's alone, and compaction before the window is full
     (landed, D-095).
+57. ~~The most one reply may be~~ -- `backend.max_output_tokens`, codex's
+    `model_max_output_tokens`, on every protocol (landed, D-096).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

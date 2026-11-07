@@ -115,6 +115,7 @@ base_url = "https://openrouter.ai/api/v1"
 model = "anthropic/claude-sonnet-5.5"
 env_key = "OPENROUTER_API_KEY"                    # this backend's key, and only this
 # max_context_tokens = 1000000   # the model's window, on any protocol (codex's model_context_window)
+# max_output_tokens = 8192        # the most one reply may be (codex's model_max_output_tokens)
 # env_http_headers = { "X-Org-Id" = "CORP_ORG_ID" }   # values from variables; scrubbed
 # query_params = { api-version = "2025-04-01-preview" }   # on every request (Azure)
 ```

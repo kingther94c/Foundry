@@ -58,6 +58,8 @@ REASONING_SUMMARIES = ("auto", "concise", "detailed", "none")
 # has no such setting.
 VERBOSITY_LEVELS = ("low", "medium", "high")
 MIN_CONTEXT_TOKENS = 1000
+# Below this a reply has no room for a tool call (D-096).
+MIN_OUTPUT_TOKENS = 256
 
 
 def _validate_backend_setting(key: str, value: Any) -> None:
@@ -104,6 +106,12 @@ def _validate_backend_setting(key: str, value: Any) -> None:
             raise ConfigError(
                 f"backend.fallbacks must be 'default' or 'off', got {value!r}"
             )
+    elif key == "max_output_tokens":
+        if value is None:
+            return
+        if isinstance(value, bool) or not isinstance(value, int) or value < MIN_OUTPUT_TOKENS:
+            raise ConfigError("backend.max_output_tokens must be a whole number of tokens, at "
+                              f"least {MIN_OUTPUT_TOKENS}, got {value!r}")
     elif key == "max_context_tokens":
         if value is None:
             return
@@ -157,6 +165,10 @@ class BackendConfig:
     # The model's context window, which masking and compaction are planned
     # against, on every protocol (D-095); None keeps the backend's own figure.
     max_context_tokens: int | None = None
+    # The most one reply may be, as codex's model_max_output_tokens (D-096),
+    # on every protocol. None leaves it to the backend: 64,000 tokens for
+    # Claude (16,000 unstreamed), the API's own for the OpenAI shapes.
+    max_output_tokens: int | None = None
     # The reasoning summary asked for (D-044). Unset: anthropic_messages asks
     # for its summary, responses asks for nothing (a model that does not reason
     # rejects the field). "none" asks for nothing anywhere.
@@ -518,6 +530,7 @@ _CALLED_HERE = {
     "model_reasoning_summary": "backend.reasoning_summary",
     "model_verbosity": "backend.verbosity",
     "model_context_window": "backend.max_context_tokens",
+    "model_max_output_tokens": "backend.max_output_tokens",
     "model_auto_compact_token_limit": "runtime.auto_compact_token_limit",
     "approval_policy": "runtime.mode",
     "hide_agent_reasoning": "runtime.show_reasoning (true there is false here)",

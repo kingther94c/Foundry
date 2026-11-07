@@ -371,6 +371,13 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         # and compaction against 128,000 tokens whatever the model held.
         backend.caps = dataclasses.replace(
             backend.caps, max_context_tokens=config.backend.max_context_tokens)
+    window = backend.capabilities().max_context_tokens
+    if (config.backend.max_output_tokens is not None
+            and config.backend.max_output_tokens > window // 2):
+        raise ConfigError(
+            f"backend.max_output_tokens ({config.backend.max_output_tokens:,}) is more than "
+            f"half the model's {window:,}-token window, leaving the conversation too little "
+            "room; lower it, or set backend.max_context_tokens if the window is larger")
 
     instructions = load_instructions(workspace.root, home, trusted=trusted,
                                      max_chars=config.project_doc_max_bytes,
@@ -382,6 +389,11 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         max_context_tokens=backend.capabilities().max_context_tokens,
         compact_above_tokens=config.auto_compact_token_limit,
     )
+    if config.backend.max_output_tokens is not None:
+        # The room kept for the answer is at least what it may be (D-096):
+        # less, and a full context plus a full answer overran the window.
+        context.reserve_output_tokens = max(context.reserve_output_tokens,
+                                            config.backend.max_output_tokens)
 
     renderer = Renderer(console=console)
     sink = EventSink(redactor=default_redactor())
@@ -399,6 +411,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         budget=Budget(max_tool_rounds=config.max_tool_rounds,
                       max_tool_calls=config.max_tool_calls),
         model=config.backend.model,
+        max_output_tokens=config.backend.max_output_tokens,
         audit=AuditLog(home / "audit.jsonl", default_redactor()),
         git_baseline=baseline,
         credentials=source,

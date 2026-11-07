@@ -131,7 +131,9 @@ def build_body(request: TurnRequest, *, stream: bool,
     if request.tools:
         body["tools"] = [_tool_to_wire(t) for t in request.tools]
     if request.max_output_tokens is not None:
-        body["max_tokens"] = request.max_output_tokens
+        # OpenAI's current name (D-096): its reasoning models refuse
+        # max_tokens, and servers that know only that one ignore this.
+        body["max_completion_tokens"] = request.max_output_tokens
     if request.temperature is not None:
         body["temperature"] = request.temperature
     if stream:

@@ -649,3 +649,10 @@
 - **Decision**: `backend.max_context_tokens` sets every protocol's window, as codex's `model_context_window` does; the backend's other capabilities are kept. Automatic compaction starts at the first of 80% of the window, the user's `auto_compact_token_limit` (D-094), and the point the window counts as full -- and since a round checks for compaction before it checks for room, it compacts there rather than ending.
 - **What it may not weaken**: a window too small to hold anything is still refused (at least 1,000 tokens); in a window of 40,000 tokens or more, with the default room for the answer, compaction starts where it did.
 - **Not changed**: masking at half the window; the room kept for the answer.
+
+## D-096 The most one reply may be, as codex's model_max_output_tokens
+- **Date**: 2026-11-07 · **Status**: confirmed (item 57)
+- **Background**: Claude's requests asked for up to 64,000 tokens (16,000 unstreamed) with no way to ask for less -- which a gateway serving a model with a smaller output limit refuses outright -- and the OpenAI shapes never sent a cap at all. codex has `model_max_output_tokens`. Meanwhile the room the context keeps for the answer was fixed at 8,000 tokens, so a larger answer on a full context could overrun the window.
+- **Decision**: `[backend] max_output_tokens = N` (at least 256, codex's name told Foundry's), from the user's file, a profile or `-c`, goes on every request the runtime makes, a compaction's included: `max_tokens` for Claude, `max_output_tokens` on the Responses API, and `max_completion_tokens` on Chat Completions -- OpenAI's current name, since its reasoning models refuse `max_tokens`, while a server that knows only `max_tokens` ignores it. The room kept for the answer becomes the larger of the cap and 8,000.
+- **What it may not weaken**: a cap of more than half the window is refused when the session is built, naming both numbers -- the conversation would have too little room; one under 256 tokens leaves no room for a tool call; unset, every request is what it was.
+- **Not changed**: Claude's default of 64,000 with 8,000 kept for it, which a cap now brings into line.

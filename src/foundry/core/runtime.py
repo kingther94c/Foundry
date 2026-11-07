@@ -197,6 +197,9 @@ class AgentRuntime:
     approval: ApprovalCallback | None = None
     budget: Budget = field(default_factory=Budget)
     model: str = "gpt-5"
+    # backend.max_output_tokens (D-096): every request's cap, None the
+    # backend's own.
+    max_output_tokens: int | None = None
     audit: object | None = None
 
     git_baseline: object | None = None   # tools.git.GitBaseline
@@ -529,6 +532,7 @@ class AgentRuntime:
             messages=self.context.project() if messages is None else messages,
             tools=self.registry.schemas(),
             model=self.model,
+            max_output_tokens=self.max_output_tokens,
         )
         if messages is None:
             # The conversation's own request: the next is compared with it

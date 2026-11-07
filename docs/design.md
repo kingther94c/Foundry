@@ -224,7 +224,9 @@ async def run_turn(user_input):
   sooner, never later; nor does it start past the point the window counts as
   full, where a small window's room for the answer would otherwise end the
   task first ([D-095](decision-log.md)). The window is the backend's own
-  figure, or `backend.max_context_tokens` on any protocol. It enters the log
+  figure, or `backend.max_context_tokens` on any protocol; the room kept for
+  the answer is 8,000 tokens, or `backend.max_output_tokens` when that is more
+  ([D-096](decision-log.md)), which every request then carries. It enters the log
   as a `compacted` record (openhands condensation-as-event); a failure changes
   nothing and is not retried until the next task, and files read before it
   are read again before a patch.
