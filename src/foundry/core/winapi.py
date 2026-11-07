@@ -17,6 +17,7 @@ Everything degrades honestly on non-Windows so the pure-logic tests run anywhere
 from __future__ import annotations
 
 import ctypes
+import fnmatch
 import functools
 import os
 import sys
@@ -335,14 +336,54 @@ def looks_like_credential(name: str) -> bool:
     return any(fragment in upper for fragment in CREDENTIAL_FRAGMENTS)
 
 
-def child_environment(base: dict[str, str] | None = None) -> dict[str, str]:
+def _matches(name: str, patterns) -> bool:
+    upper = name.upper()   # Windows names are not case-sensitive
+    return any(fnmatch.fnmatchcase(upper, pattern.upper()) for pattern in patterns)
+
+
+def child_environment(base: dict[str, str] | None = None, *,
+                      policy=None) -> dict[str, str]:
     """A minimal environment for child processes.
 
     Approving one ``pytest`` should not hand the repository's own test code every
     API key in the developer's shell. The allowlist keeps what a build needs; the
     denylist catches credential-shaped names in anything explicitly passed through.
+
+    ``policy``, the user's [shell_environment_policy] (D-083), changes where it
+    starts and adds, removes and sets variables; a credential-shaped name is
+    passed only when the policy's include names it exactly, and its value is
+    registered with the redactor so the command's output does not show it.
     """
     source = base if base is not None else os.environ
+    if policy is None:
+        return _core_environment(source)
+    if policy.inherit == "all":
+        env = {name: value for name, value in source.items()
+               if not looks_like_credential(name)}
+    elif policy.inherit == "none":
+        env = {}
+    else:
+        env = _core_environment(source, finish=False)
+    exact = {name.upper() for name in policy.include}
+    for name, value in source.items():
+        if not _matches(name, policy.include):
+            continue
+        if looks_like_credential(name):
+            if name.upper() not in exact:
+                continue   # a pattern never carries a secret
+            from foundry.core.redaction import default_redactor
+            default_redactor().register(value)
+        env[name] = value
+    env = {name: value for name, value in env.items() if not _matches(name, policy.exclude)}
+    env.update(dict(policy.set))
+    if policy.include_only is not None:
+        env = {name: value for name, value in env.items()
+               if _matches(name, policy.include_only)}
+    return _finish(env)
+
+
+def _core_environment(source: Mapping[str, str], *, finish: bool = True) -> dict[str, str]:
+    """What a build needs, and no credential-shaped name."""
     keep_exact = {
         "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC",
         "TEMP", "TMP", "HOMEDRIVE", "HOMEPATH", "USERPROFILE", "APPDATA",
@@ -370,7 +411,11 @@ def child_environment(base: dict[str, str] | None = None) -> dict[str, str]:
             continue
         if upper in keep_exact or upper.startswith(keep_prefix):
             env[name] = value
+    return _finish(env) if finish else env
 
+
+def _finish(env: dict[str, str]) -> dict[str, str]:
+    """What Foundry sets for every child, whatever else it is given."""
     # Make Python children speak UTF-8 so their output needs no guessing.
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"

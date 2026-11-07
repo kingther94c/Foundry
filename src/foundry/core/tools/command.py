@@ -384,7 +384,7 @@ class RunCommand:
         ceiling = getattr(ctx, "max_command_timeout_s", MAX_TIMEOUT_S)
         timeout_s = min(op.args["timeout_s"], ceiling)
 
-        env = child_environment(ctx.env_policy)
+        env = child_environment(policy=ctx.env_policy)
         result = run_process(op.args["command"], cwd=str(workdir.absolute),
                              timeout_s=timeout_s, env=env,
                              cancelled=getattr(ctx, "cancelled", None),

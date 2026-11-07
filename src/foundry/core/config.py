@@ -14,6 +14,7 @@ could redirect a token to a host of its choosing.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import re
 import tomllib
@@ -24,6 +25,7 @@ from typing import Any
 
 from foundry.core.errors import ConfigError
 from foundry.core.httpc import _is_loopback
+from foundry.core.winapi import looks_like_credential
 from foundry.core.policy.engine import Layer, Mode, Rule, Verdict
 
 USER_DIR_ENV = "FOUNDRY_HOME"
@@ -189,6 +191,75 @@ class McpServerConfig:
         return f"{parts.scheme}://{host}" + (f":{parts.port}" if parts.port else "")
 
 
+INHERIT = ("core", "all", "none")
+_SHELL_KEYS = frozenset({"inherit", "include", "exclude", "include_only", "set"})
+
+
+@dataclass(frozen=True, slots=True)
+class ShellEnvironmentPolicy:
+    """Which variables a command gets (D-083), as codex's
+    [shell_environment_policy]: run_command's and the user's !COMMAND.
+
+    ``inherit`` is where it starts: ``core``, the variables a build needs
+    (the default, D-049's list); ``all``; or ``none``. ``include`` adds
+    variables by name or pattern, ``exclude`` takes them out, ``set`` gives
+    plain values, and ``include_only``, if given, keeps only what it names.
+    A credential-shaped name is never passed by inheritance or a pattern:
+    only when ``include`` names it exactly, and its value is then scrubbed
+    from whatever the command prints.
+    """
+
+    inherit: str = "core"
+    include: tuple[str, ...] = ()
+    exclude: tuple[str, ...] = ()
+    include_only: tuple[str, ...] | None = None
+    set: tuple[tuple[str, str], ...] = ()
+
+
+def _names(value: Any, what: str) -> tuple[str, ...]:
+    names = _strings(value, what)
+    if not all(name.strip() and "=" not in name and "\0" not in name for name in names):
+        raise ConfigError(f"{what} must name variables, or patterns of them such as UV_*")
+    return names
+
+
+def _parse_shell_environment(raw: Any, current: ShellEnvironmentPolicy,
+                             where: str = "shell_environment_policy") -> ShellEnvironmentPolicy:
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{where} must be a table")
+    if "ignore_default_excludes" in raw:
+        # codex's way to let a secret through every command; here a secret is
+        # passed only by its own name.
+        raise ConfigError(f"{where}.ignore_default_excludes is not offered: a variable "
+                          "whose name looks like a credential is passed only when include "
+                          "names it exactly")
+    unknown = sorted(set(raw) - _SHELL_KEYS)
+    if unknown:
+        raise ConfigError(f"{where}: no setting {unknown[0]!r} "
+                          f"(known: {', '.join(sorted(_SHELL_KEYS))})")
+    changes: dict[str, Any] = {}
+    if "inherit" in raw:
+        if raw["inherit"] not in INHERIT:
+            raise ConfigError(f"{where}.inherit must be one of {', '.join(INHERIT)}")
+        changes["inherit"] = raw["inherit"]
+    for key in ("include", "exclude", "include_only"):
+        if key in raw:
+            changes[key] = _names(raw[key], f"{where}.{key}")
+    if "set" in raw:
+        values = raw["set"]
+        if not isinstance(values, dict) or not all(
+                isinstance(k, str) and k.strip() and "=" not in k and isinstance(v, str)
+                for k, v in values.items()):
+            raise ConfigError(f"{where}.set must be a table of strings")
+        for name in values:
+            if looks_like_credential(name):
+                raise ConfigError(f"{name} looks like a secret, and {where}.set writes its "
+                                  "value into config.toml; keep it in your environment and "
+                                  f"name it in {where}.include")
+        changes["set"] = tuple(sorted(values.items()))
+    return dataclasses.replace(current, **changes)
+
+
 def _strings(value: Any, what: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
         raise ConfigError(f"{what} must be a list of strings")
@@ -309,6 +380,8 @@ class Config:
     # A program run when a turn ends (D-050), from the user's own files only:
     # the program and its arguments; the turn's JSON is added as the last.
     notify: tuple[str, ...] = ()
+    # Which variables commands get (D-083), from the user's own files only.
+    shell_environment: ShellEnvironmentPolicy = field(default_factory=ShellEnvironmentPolicy)
     rules: list[Rule] = field(default_factory=list)
     provenance: dict[str, Provenance] = field(default_factory=dict)
 
@@ -480,6 +553,16 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
                               "config.toml")
         config.notify = _parse_notify(data["notify"])
         config.record("notify", list(config.notify), layer)
+
+    if "shell_environment_policy" in data:
+        # What reaches every command the model runs: a repository widening it
+        # would hand its own test code the user's environment.
+        if not connection_allowed:
+            raise ConfigError(f"{layer} config may not set shell_environment_policy; set it "
+                              "in your own config.toml")
+        config.shell_environment = _parse_shell_environment(
+            data["shell_environment_policy"], config.shell_environment)
+        config.record("shell_environment_policy", config.shell_environment.inherit, layer)
 
     if "permissions" in data:
         layer_enum = Layer.PROJECT if layer.startswith("project") else (

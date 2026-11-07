@@ -313,7 +313,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   `taskkill /T /F` as a backstop; the millisecond window between Popen and
   Assign is listed as a known risk. Output is captured as bytes -> UTF-8 first,
   falling back to the OEM code page (whichever produces fewer U+FFFD wins); the
-  subprocess env is the filtered minimal set + `PYTHONUTF8=1`.
+  subprocess env is the filtered minimal set + `PYTHONUTF8=1`, changed by the
+  user's `[shell_environment_policy]` ([D-083](decision-log.md)): `inherit`
+  (core, all, none), then `include`, `exclude`, `set` and `include_only`; a
+  credential-shaped name only by its exact name in `include`, its value then
+  registered with the redactor. `!COMMAND` gets the same.
 - `apply_patch`: pure in-process Python (the patch body never passes through
   argv or a subprocess -- codex #15003); **per-file atomic semantics**
   (requirements §5.3): after everything is parsed and located, a file with any

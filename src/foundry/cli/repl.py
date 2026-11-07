@@ -468,7 +468,7 @@ def run_shell(wiring: "Wiring", console: Console, command: str) -> None:
     timeout_s = context.max_command_timeout_s
     try:
         result = run_process(command, cwd=str(wiring.workspace.root), timeout_s=timeout_s,
-                             env=child_environment(context.env_policy))
+                             env=child_environment(policy=context.env_policy))
     except KeyboardInterrupt:
         _user_ran(wiring, {"command": command, "exit_code": None, "timed_out": False,
                            "stopped": True, "duration_ms": None})

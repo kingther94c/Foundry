@@ -252,6 +252,8 @@ What a codex user still notices day to day, next:
     streamable HTTP, as codex's (landed, D-081).
 43. ~~`foundry mcp list | add | remove`~~ -- the servers in your config.toml
     from the command line, as `codex mcp` (landed, D-082).
+44. ~~Which variables a command gets~~ -- `[shell_environment_policy]`, as
+    codex's, without letting a secret through by a pattern (landed, D-083).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

@@ -169,6 +169,20 @@ do as `display`, and the `reason` it asks):
 notify = ["python", "C:/tools/notify.py"]   # not a .bat or .cmd: cmd.exe would read the payload
 ```
 
+Commands get only what a build needs from your environment (PATH, the proxy
+and certificate variables, toolchain homes and the like), never a variable
+whose name looks like a credential. To hand them more, as codex's
+`[shell_environment_policy]` does:
+
+```toml
+[shell_environment_policy]
+include = ["UV_*", "JAVA_TOOL_OPTIONS", "NPM_TOKEN"]  # a secret only by its exact name; then scrubbed
+exclude = ["CONDA_*"]
+set = { CI = "1" }                                     # plain values, never a secret
+# inherit = "core"   # the default; "all" (still no secrets) or "none"
+# include_only = ["PATH", "SYSTEMROOT", "UV_*"]       # keep only these
+```
+
 A long task does not simply run out of context: old tool output is masked
 first, and when that is not enough the model summarises the work so far and the
 conversation continues from the summary (`/compact` does it on request;
