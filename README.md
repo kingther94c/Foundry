@@ -296,7 +296,10 @@ an interactive session's title says what it is doing -- `Working`, or
 the project's, as codex's; `terminal_title` under `[runtime]` picks other
 items by codex's ids (`activity`, `run-state`, `thread-name`, `thread-id`,
 `project-name`, `current-dir`, `model`, `app-name`), `[]` none, and `/title`
-picks them for one session. A
+picks them for one session. As codex's, `developer_instructions` under
+`[runtime]` is told to the model in every session, after Foundry's own
+instructions, and `compact_prompt` (or `experimental_compact_prompt_file`, an
+absolute path) is what a compaction asks for; a repository may set neither. A
 Responses model's reasoning is also carried from one round to the next, as
 codex carries it: asked for encrypted and sent back with its turn, since
 nothing is stored on the server.

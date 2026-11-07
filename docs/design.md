@@ -411,6 +411,10 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   offered once the session has a goal. The first answers with the goal as
   JSON; the second marks it `complete` (unless it already is), or, while it
   is active, `blocked` or `paused`. Read-only; the runtime journals the change.
+- The system message is assembled in a fixed order: Foundry's instructions
+  and the permissions paragraph, the user's `developer_instructions`
+  ([D-142](decision-log.md)), the notes (`FOUNDRY.md`, the repository's),
+  the skills, then the environment.
 - `spawn_agent(task, read_only=true)` ([D-141](decision-log.md)): a
   sub-agent on the session's backend and rules, in a conversation of its own
   started from the session's system prompt and a brief, run to its end while

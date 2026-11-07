@@ -122,6 +122,7 @@ class Spawner:
         context = ContextManager(
             system_prompt=parent.context.system_prompt,
             project_doc=parent.context.project_doc,
+            developer_instructions=parent.context.developer_instructions,
             environment=parent.context.environment,
             skills=parent.context.skills,
             max_context_tokens=parent.context.max_context_tokens,
@@ -156,6 +157,7 @@ class Spawner:
             stream_max_retries=parent.stream_max_retries, audit=parent.audit,
             git_baseline=parent.git_baseline, credentials=parent.credentials,
             persist_rule=parent.persist_rule, auto_compact=parent.auto_compact,
+            compact_prompt=parent.compact_prompt,
             show_reasoning=False, scrub=parent.scrub, hooks=parent.hooks,
         )
 

@@ -269,6 +269,9 @@ class AgentRuntime:
     # stops it for the rest of the task: each attempt is a paid call.
     auto_compact: bool = True
     _compact_failed: bool = False
+    # What a compaction asks for, as codex's compact_prompt (D-142); "" for
+    # Foundry's own.
+    compact_prompt: str = ""
     # Whether the model's reasoning reaches subscribers (D-044); the journal
     # keeps it either way.
     show_reasoning: bool = True
@@ -684,7 +687,7 @@ class AgentRuntime:
             return self._compact_stop
         before = self.context.estimated_context_tokens()
         self._emit(Notice("compacting the conversation to free context", level="info"))
-        prompt = builtin_prompt("compact").strip()
+        prompt = (self.compact_prompt or builtin_prompt("compact")).strip()
         if focus:
             prompt += f"\n\nThe user asks the summary to give particular attention to: {focus}"
         messages = (*self.context.project(), Message.text(Role.USER, prompt))

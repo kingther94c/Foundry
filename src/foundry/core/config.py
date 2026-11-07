@@ -551,6 +551,14 @@ class Config:
     # What an interactive session's terminal title shows (D-139), as codex's
     # tui.terminal_title: TERMINAL_TITLE_ITEMS, in order; () for no title.
     terminal_title: tuple[str, ...] = DEFAULT_TERMINAL_TITLE
+    # codex's developer_instructions (D-142): told to the model after
+    # Foundry's own instructions; "" for none.
+    developer_instructions: str = ""
+    # codex's compact_prompt, and what its experimental_compact_prompt_file
+    # holds (D-142): what compaction asks the model for; the text first, then
+    # the file's, then Foundry's own.
+    compact_prompt: str = ""
+    compact_prompt_file: str = ""
     # The repository's instruction files (D-086), as codex's settings: how
     # many characters of them are read, shared from the top down (0 reads
     # none), and the names tried in each directory after AGENTS.override.md,
@@ -743,9 +751,34 @@ _NOT_A_SETTING = {
 }
 _NOT_A_SETTING["model_providers"] = _NOT_A_SETTING["model_provider"]
 _NOT_A_SETTING["sandbox_workspace_write"] = _NOT_A_SETTING["sandbox_mode"]
+# codex's replacements for its built-in instructions (D-142). Foundry's carry
+# the rules its runtime checks a finish against.
+_NOT_A_SETTING["model_instructions_file"] = (
+    "Foundry's own instructions are not replaced: they carry the finish and evidence rules "
+    "the runtime checks; add to them with runtime.developer_instructions")
+_NOT_A_SETTING["instructions"] = _NOT_A_SETTING["model_instructions_file"]
+_NOT_A_SETTING["experimental_instructions_file"] = _NOT_A_SETTING["model_instructions_file"]
 _NOT_A_SETTING["tui"] = ("Foundry has no [tui] table: codex's tui.terminal_title is "
                          "runtime.terminal_title here, and its other tui settings have no "
                          "counterpart")
+
+
+def _prompt_file(value: str) -> str:
+    """experimental_compact_prompt_file's text (D-142): read when the
+    configuration is, as codex reads it, so a file that cannot be used is
+    said before a session starts rather than when it compacts."""
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        raise ConfigError("experimental_compact_prompt_file must be an absolute path, got "
+                          f"{value!r}")
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ConfigError(f"could not read experimental_compact_prompt_file {path}: "
+                          f"{getattr(exc, 'strerror', None) or exc}") from exc
+    if not text:
+        raise ConfigError(f"experimental_compact_prompt_file is empty: {path}")
+    return text
 
 
 def _no_setting(layer: str, name: str, known: Any, tables: str) -> ConfigError:
@@ -907,6 +940,23 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         config.terminal_title = title_items(runtime["terminal_title"])
         config.record("terminal_title", list(config.terminal_title), layer)
 
+    for key in ("developer_instructions", "compact_prompt", "experimental_compact_prompt_file"):
+        if key not in runtime:
+            continue
+        # What the model is told is the user's to say (D-142): a repository's
+        # instructions are its AGENTS.md, labelled as the project's.
+        if tighten_only:
+            raise ConfigError(f"{layer} config may not set {key}; set it in your own "
+                              "config.toml (a repository's instructions go in its AGENTS.md)")
+        value = runtime[key]
+        if not isinstance(value, str):
+            raise ConfigError(f"{key} must be text, got {type(value).__name__} ({value!r})")
+        if key == "experimental_compact_prompt_file":
+            config.compact_prompt_file = _prompt_file(value)
+        else:
+            setattr(config, key, value.strip())
+        config.record(key, value.strip(), layer)
+
     for key in ("auto_compact", "show_reasoning", "subagents"):
         if key not in runtime:
             continue
@@ -1008,7 +1058,8 @@ def _apply_env(config: Config) -> None:
 _RUNTIME_KEYS = ("max_tool_rounds", "max_tool_calls", "max_output_bytes", "command_timeout_s",
                  "session_retention_days", "auto_compact", "show_reasoning", "mode",
                  "project_doc_max_bytes", "project_doc_fallback_filenames",
-                 "auto_compact_token_limit", "file_opener", "terminal_title", "subagents")
+                 "auto_compact_token_limit", "file_opener", "terminal_title", "subagents",
+                 "developer_instructions", "compact_prompt", "experimental_compact_prompt_file")
 # Secrets may come only from the environment or the credential store, never
 # from a command line other processes can read (requirements section 4.3).
 _SECRET_KEYS = frozenset({"api_key", "headers"})

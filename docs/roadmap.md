@@ -391,6 +391,8 @@ What a codex user still notices day to day, next:
      one Foundry has no counterpart for (landed, D-140).
 102. ~~Sub-agents~~ -- `spawn_agent`, a task done in a conversation of its
      own (landed, D-141).
+103. ~~`developer_instructions` and `compact_prompt`~~ -- codex's
+     instruction settings (landed, D-142).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

@@ -130,6 +130,10 @@ def unbind(message: Message) -> Message:
     return Message(role=message.role, blocks=tuple(blocks)) if changed else message
 
 
+DEVELOPER_HEADING = ("# Developer instructions\n"
+                     "From the user's configuration (developer_instructions).\n\n")
+
+
 @dataclass(slots=True)
 class ContextManager:
     """Owns history, the token budget, and the projection into model context."""
@@ -137,6 +141,9 @@ class ContextManager:
     system_prompt: str = ""
     project_doc: str = ""
     environment: str = ""
+    # The user's developer_instructions (D-142), between Foundry's own
+    # instructions and the notes.
+    developer_instructions: str = ""
     # The skills the model may load (D-113): each one's name and description.
     skills: str = ""
     max_context_tokens: int = 128_000
@@ -257,8 +264,12 @@ class ContextManager:
     def system_message(self) -> Message:
         """Assembled in a fixed order: base prompt, then the policy-derived
         permissions paragraph (so the model is told the truth about what will be
-        auto-allowed), then the project doc, the skills, then environment facts."""
-        parts = [p for p in (self.system_prompt, self.project_doc, self.skills,
+        auto-allowed), then the user's developer instructions, as codex sends
+        them after its own (D-142), the project doc, the skills, then
+        environment facts."""
+        developer = (DEVELOPER_HEADING + self.developer_instructions
+                     if self.developer_instructions else "")
+        parts = [p for p in (self.system_prompt, developer, self.project_doc, self.skills,
                              self.environment) if p]
         return Message.text(Role.SYSTEM, "\n\n".join(parts))
 

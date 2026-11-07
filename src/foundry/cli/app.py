@@ -472,6 +472,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
     context = ContextManager(
         system_prompt=system_prompt(policy),
         project_doc=instructions.text,
+        developer_instructions=config.developer_instructions,
         environment=environment_paragraph(workspace.root, baseline, config.backend.model),
         # codex's skills.max_context_tokens (D-114) at four characters a
         # token, or its share of the window.
@@ -510,6 +511,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         credentials=source,
         persist_rule=_rule_writer(home, policy),
         auto_compact=config.auto_compact,
+        compact_prompt=config.compact_prompt or config.compact_prompt_file,
         show_reasoning=config.show_reasoning,
         notifier=Notifier(tuple(config.notify), workspace.root) if config.notify else None,
         scrub=default_redactor().scrub,
@@ -528,7 +530,9 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
     wiring = Wiring(workspace=workspace, config=config, runtime=runtime,
                     renderer=renderer, session=session, home=home, trusted=trusted,
                     prompts=load_custom_prompts(home, workspace.root, trusted=trusted),
-                    instructions=instructions.sources, mcp=mcp, skills=skills)
+                    instructions=(("developer_instructions",) if config.developer_instructions
+                                  else ()) + tuple(instructions.sources),
+                    mcp=mcp, skills=skills)
     renderer.title_facts = lambda: _title_facts(wiring)
     if "spawn_agent" in registry.names():
         registry.get("spawn_agent").spawner.wiring = wiring
