@@ -101,6 +101,10 @@ PROTOCOL_VERSION = 1
   Inline code naming an existing file in the workspace is a hyperlink to it
   in the editor `runtime.file_opener` names ([D-106](decision-log.md)), the
   target built from the resolved file, never from the text.
+- `@path` in a typed message attaches the file ([D-058](decision-log.md));
+  a name that is no path there is looked for among `git ls-files --cached
+  --others --exclude-standard`, asked once a message, and attached only when
+  one file's path ends with it ([D-107](decision-log.md)).
 - A task's end is followed by `worked for 1m 12s` (under a second, nothing):
   from its first `TurnStarted` to its `TurnComplete` or `Termination`
   ([D-073](decision-log.md)).

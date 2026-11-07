@@ -308,6 +308,9 @@ What a codex user still notices day to day, next:
 67. ~~A cited file opens in the editor~~ -- `src/app.py:42` in the answer is
     a link to that file at that line, as codex's `file_opener` (landed,
     D-106).
+68. ~~`@name` finds the file~~ -- `@app.py` attaches `src/app.py` when it is
+    the only file git knows by that name, as codex's @ search (landed,
+    D-107).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

@@ -385,6 +385,8 @@ _MENTION_TRAILING = ".,;:!?)]}"
 _LOOKS_LIKE_A_FILE = re.compile(r"[/\\]|\.\w{1,10}$")
 MAX_MENTIONS = 10
 MENTION_NOTE = "The user attached this file with @, as read_file shows it:\n{content}"
+# How many of the files a name matches are said when it matches several.
+MENTION_CHOICES = 5
 
 
 def attach_mentions(wiring: "Wiring", console: Console, text: str) -> str:
@@ -397,21 +399,33 @@ def attach_mentions(wiring: "Wiring", console: Console, text: str) -> str:
     """
     attached: list[tuple[str, str]] = []
     seen: set[str] = set()
+    files: list[str] | None = None
     for match in _MENTION.finditer(text):
         quoted, bare = match.group(1), match.group(2)
         name = quoted if quoted is not None else bare.rstrip(_MENTION_TRAILING)
         if not name:
             continue
-        try:
-            resolved = wiring.workspace.resolve(name)
-            found = resolved.absolute.is_file()
-        except (PathRejected, OSError):
-            found = False
-        if not found:
-            if quoted is not None or _LOOKS_LIKE_A_FILE.search(name):
+        resolved = _file_at(wiring, name)
+        if resolved is None:
+            if quoted is None and not _LOOKS_LIKE_A_FILE.search(name):
+                continue
+            # Not a path here: a file the name ends, as codex's @ finds one
+            # by its name (D-107).
+            if files is None:
+                files = workspace_files(wiring.workspace.root)
+            named = files_named(name, files)
+            if len(named) > 1:
+                shown = ", ".join(named[:MENTION_CHOICES])
+                more = ", ..." if len(named) > MENTION_CHOICES else ""
+                console.print(f"[dim]@{escape(name)}: {len(named)} files are named so "
+                              f"({escape(shown)}{more}); write more of the path; sent as "
+                              "written[/dim]", soft_wrap=True)
+                continue
+            resolved = _file_at(wiring, named[0]) if named else None
+            if resolved is None:
                 console.print(f"[dim]@{escape(name)}: no such file in the workspace; "
                               "sent as written[/dim]", soft_wrap=True)
-            continue
+                continue
         if resolved.relative in seen:
             continue
         if len(seen) == MAX_MENTIONS:
@@ -440,6 +454,35 @@ def attach_mentions(wiring: "Wiring", console: Console, text: str) -> str:
     scrub = wiring.runtime.context.redactor.scrub
     return "\n\n".join([text, *(MENTION_NOTE.format(content=scrub(content))
                                  for _, content in attached)])
+
+
+def _file_at(wiring: "Wiring", name: str):
+    """The workspace's file at ``name``, or None."""
+    try:
+        resolved = wiring.workspace.resolve(name)
+        return resolved if resolved.absolute.is_file() else None
+    except (PathRejected, OSError):
+        return None
+
+
+def workspace_files(root: Path) -> list[str]:
+    """The files git knows in the workspace: tracked, and new ones it does
+    not ignore -- so a file ignored, a secret's usual place, is never found
+    by its name alone. Nothing when git cannot say."""
+    try:
+        code, out, _ = run_git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                               root)
+    except ToolError:
+        return []
+    return [path for path in out.split("\0") if path] if code == 0 else []
+
+
+def files_named(name: str, files: list[str]) -> list[str]:
+    """The files whose path ends with ``name`` -- whole names, a folder or
+    more of the path if it says them -- in any case, as Windows reads one."""
+    wanted = name.replace("\\", "/").lower()
+    return sorted(path for path in files
+                  if path.lower() == wanted or path.lower().endswith("/" + wanted))
 
 
 # A message that starts with this is a command the user runs (D-055).
