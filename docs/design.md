@@ -415,7 +415,12 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   which long-running tools poll through `ToolContext.cancelled`. One task at
   a time per Git top level; at most 8 sessions held open, the least recently
   used closed past that. stdin and stdout are duplicated for the protocol,
-  descriptor 0 then pointed at the null device and 1 at stderr.
+  descriptor 0 then pointed at the null device and 1 at stderr. A client that
+  offers elicitation ([D-104](decision-log.md)) is the session's approval
+  callback instead: `elicitation/create` with the operation's display and
+  why it is asked, the worker waiting on the answer the reading thread hands
+  over, or on the task's cancel flag and the client's going, either of which
+  withdraws the question and aborts.
 - `notify` ([D-050](decision-log.md)): a program from the user's own config,
   started when a turn ends with the turn's JSON as its last argument (codex's
   `agent-turn-complete`), found on PATH, without a shell, with the command

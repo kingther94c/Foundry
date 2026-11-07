@@ -300,6 +300,9 @@ What a codex user still notices day to day, next:
     `list_mcp_resource_templates` and `read_mcp_resource` (landed, D-102).
 64. ~~`foundry mcp-server`~~ -- Foundry as an MCP server over stdio, its tools
     `foundry` and `foundry-reply`, as codex's (landed, D-103).
+65. ~~Approvals asked of the MCP client~~ -- what the mode would ask about put
+    to a client that offers elicitation, as codex's mcp-server asks (landed,
+    D-104).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

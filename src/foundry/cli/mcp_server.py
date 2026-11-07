@@ -4,9 +4,10 @@ over stdio, as ``codex mcp-server`` offers codex (D-103).
 The client -- an agent, an editor -- gets two tools. ``foundry`` starts a
 session on a task in a Git repository and answers with how it ended;
 ``foundry-reply`` gives a session another task. Each task runs as
-``foundry exec`` runs one: nobody is there to approve anything, so what the
-permission mode would ask about is refused, and only ``finish`` reports a task
-completed.
+``foundry exec`` runs one, and only ``finish`` reports a task completed. What
+the permission mode would ask about is asked of a client that offers
+elicitation -- its user answers, as codex's client is asked (D-104) -- and
+refused when it offers none.
 
 stdout carries the protocol and nothing else. What the sessions display goes
 to stderr, as does anything else that prints, so a stray line cannot break a
@@ -15,6 +16,7 @@ message the client is reading.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
@@ -38,11 +40,20 @@ from foundry.cli.app import (
     build,
     unattended,
 )
+from foundry.cli.render import sanitize
 from foundry.cli.repl import with_note
 from foundry.core.config import load_config, settings_layer, user_dir
 from foundry.core.errors import ConfigError, FoundryError
-from foundry.core.events import TerminalStatus, Termination, ToolBegin
+from foundry.core.events import (
+    ApprovalChoice,
+    ApprovalKind,
+    ApprovalRequest,
+    TerminalStatus,
+    Termination,
+    ToolBegin,
+)
 from foundry.core.policy.engine import Mode
+from foundry.core.prompts import system_prompt
 from foundry.core.resume import find_journal, recorded_workspace
 from foundry.core.tools.git import run_git
 
@@ -61,8 +72,20 @@ MAX_OPEN_SESSIONS = 8
 SHUTDOWN_WAIT_S = 10.0
 # The longest message a progress notification carries.
 MAX_PROGRESS_CHARS = 200
-# Nobody is there to approve: default would only refuse what it asks about.
+# Without a client to ask, default would only refuse what it asks about.
 MODES = (Mode.DONT_ASK, Mode.PLAN, Mode.ACCEPT_EDITS)
+# The longest question put to the client: a patch is cut to fit.
+MAX_QUESTION_CHARS = 4000
+# The answers a client is offered, as codex's: yes once, yes for the session,
+# no, or no and stop the task. Not "always": that writes a rule into the
+# user's own config, which is for the user to do at the terminal.
+CHOICES = (ApprovalChoice.ONCE, ApprovalChoice.SESSION, ApprovalChoice.DENY,
+           ApprovalChoice.ABORT)
+ANSWER_SCHEMA = {"type": "object", "properties": {"decision": {
+    "type": "string", "title": "Allow it?", "enum": [choice.value for choice in CHOICES],
+    "enumNames": ["Yes, this once", "Yes, for the rest of this session", "No",
+                  "No, and stop the task"]}}, "required": ["decision"]}
+_ASKING = {ApprovalKind.COMMAND: "run a command", ApprovalKind.PATCH: "change files"}
 
 START = "foundry"
 REPLY = "foundry-reply"
@@ -77,10 +100,10 @@ TOOLS = (
     {"name": START, "title": "Foundry: start a session",
      "description": (
          "Start a Foundry session on a task in a Git repository and wait for it to end. "
-         "Nobody is asked to approve anything: what the permission mode would ask about "
-         "is refused. The answer is the session's last word -- finish's summary, or its "
-         "reply -- with its sessionId and how it ended; give the session another task "
-         "with foundry-reply."),
+         "What the permission mode would ask about is asked of you, if you offer "
+         "elicitation, and refused if you do not. The answer is the session's last word "
+         "-- finish's summary, or its reply -- with its sessionId and how it ended; give "
+         "the session another task with foundry-reply."),
      "inputSchema": {"type": "object", "properties": {
          "prompt": _PROMPT,
          "cwd": {"type": "string",
@@ -111,8 +134,9 @@ _ARGUMENTS = {START: frozenset({"prompt", "cwd", "model", "profile", "mode", "co
 INSTRUCTIONS = (
     "Foundry is a coding agent. Call foundry with a task to have it worked on in a Git "
     "repository; it answers when the task has ended, with the session's sessionId. Give "
-    "that session another task with foundry-reply. Nothing is approved on Foundry's "
-    "behalf: what its permission mode would ask about is refused.")
+    "that session another task with foundry-reply. Nothing is approved on the user's "
+    "behalf: what its permission mode would ask about is asked of the user through "
+    "elicitation, when the client offers it, and refused otherwise.")
 
 
 class _Refused(Exception):
@@ -171,6 +195,12 @@ class Server:
         self._clock = 0
         self._closing = False
         self._workers: list[threading.Thread] = []
+        # Whether the client said at initialize that it can be asked (D-104),
+        # and each question put to it, with its answer once it has come.
+        self._asks = False
+        self._questions: dict[str, dict | None] = {}
+        self._asked = 0
+        self._answers = threading.Condition(self._lock)
 
     # -- messages ------------------------------------------------------------------
 
@@ -186,7 +216,8 @@ class Server:
             return
         method = message.get("method")
         if not isinstance(method, str):
-            return  # a reply: this server asks the client nothing
+            self._answered(message)
+            return
         params = message.get("params")
         if params is None:
             params = {}
@@ -205,7 +236,7 @@ class Server:
         elif method == "ping":
             self._reply(rid, {})
         elif method == "tools/list":
-            self._reply(rid, {"tools": list(TOOLS)})
+            self._reply(rid, {"tools": self._tools()})
         elif method == "tools/call":
             self._call(rid, params)
         else:
@@ -215,11 +246,21 @@ class Server:
         self._error(None, INVALID_REQUEST, f"a message over {MAX_MESSAGE_BYTES} bytes")
 
     def _initialize(self, params: dict) -> dict:
+        offered = params.get("capabilities")
+        self._asks = isinstance(offered, dict) and isinstance(offered.get("elicitation"), dict)
         asked = params.get("protocolVersion")
         return {"protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "foundry", "title": "Foundry", "version": __version__},
                 "instructions": INSTRUCTIONS}
+
+    def _modes(self) -> tuple[Mode, ...]:
+        return MODES + ((Mode.DEFAULT,) if self._asks else ())
+
+    def _tools(self) -> list[dict]:
+        tools = copy.deepcopy(list(TOOLS))
+        tools[0]["inputSchema"]["properties"]["mode"]["enum"] = [m.value for m in self._modes()]
+        return tools
 
     def _send(self, message: dict) -> None:
         data = (json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8")
@@ -288,10 +329,13 @@ class Server:
             return _Task(prompt=prompt, session_id=given["sessionId"].strip())
         mode = None
         if given["mode"] is not None:
-            mode = next((m for m in MODES if m.value == given["mode"]), None)
+            mode = next((m for m in self._modes() if m.value == given["mode"]), None)
+            if mode is None and self._asks:
+                raise _Refused(f"mode is one of {', '.join(m.value for m in self._modes())}")
             if mode is None:
                 raise _Refused(f"mode is one of {', '.join(m.value for m in MODES)}: nobody is "
-                               "there to approve what default would ask about")
+                               "there to approve what default would ask about (a client that "
+                               "offers elicitation is asked)")
         config = arguments.get("config", {})
         if not isinstance(config, dict):
             raise _Refused("config is an object of settings, as -c takes them")
@@ -370,6 +414,8 @@ class Server:
             raise
         entry = _Open(wiring=wiring, place=place, running=rid)
         wiring.runtime.events.subscribe(self._progress(entry))
+        if self._asks:
+            self._let_ask(entry)
         with self._lock:
             self._building -= 1
             self._open[wiring.session.session_id] = entry
@@ -378,6 +424,52 @@ class Server:
         if cancelled:
             wiring.runtime.cancel()
         return entry
+
+    # -- asking the client (D-104) ------------------------------------------------
+
+    def _let_ask(self, entry: _Open) -> None:
+        """What the mode would ask about is asked of the client, not refused."""
+        runtime = entry.wiring.runtime
+        runtime.approval = lambda request: self._ask(entry, request)
+        runtime.policy.interactive = True
+        runtime.context.system_prompt = system_prompt(runtime.policy)
+
+    def _ask(self, entry: _Open, request: ApprovalRequest) -> ApprovalChoice:
+        """An elicitation request, waited on until it is answered -- or until
+        the task is stopped or the client goes, when the client is told the
+        question is moot and the task stops."""
+        runtime = entry.wiring.runtime
+        with self._lock:
+            if self._closing:
+                return ApprovalChoice.ABORT
+            self._asked += 1
+            qid = f"foundry-ask-{self._asked}"
+            self._questions[qid] = None
+        self._send({"jsonrpc": "2.0", "id": qid, "method": "elicitation/create", "params": {
+            "message": _question(request, entry.wiring, runtime.scrub),
+            "requestedSchema": ANSWER_SCHEMA}})
+        with self._answers:
+            try:
+                # The client's going cancels every task at work, this one too.
+                while self._questions[qid] is None and not runtime._cancelled:
+                    self._answers.wait(0.1)
+                reply = self._questions[qid]
+            finally:
+                del self._questions[qid]
+        if reply is None:
+            self._send({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                        "params": {"requestId": qid, "reason": "the task was stopped"}})
+            return ApprovalChoice.ABORT
+        return _decision(reply)
+
+    def _answered(self, message: dict) -> None:
+        """A reply from the client: the answer to a question put to it."""
+        qid = message.get("id")
+        with self._answers:
+            # Only a question's own id: a malformed one (a list) is no key at all.
+            if isinstance(qid, str) and qid in self._questions:
+                self._questions[qid] = message
+                self._answers.notify_all()
 
     def _claim(self, place: str, rid: Any) -> None:
         """Held: one task at a time in a repository, so no session patches a
@@ -530,6 +622,33 @@ def _place(path: Path) -> str:
         code, out = 1, ""
     top = out.strip() if code == 0 and out.strip() else str(path)
     return os.path.normcase(os.path.realpath(top))
+
+
+def _question(request: ApprovalRequest, wiring: Wiring, scrub: Callable[[str], str] | None) -> str:
+    """What the client's user is asked: what would run, and why it is asked
+    -- its display, as the terminal shows it, stripped of control sequences
+    and scrubbed of registered secrets."""
+    what = _ASKING.get(request.approval_kind, f"use {request.tool}")
+    lines = [f"Foundry session {wiring.session.session_id} in {wiring.workspace.root} asks to "
+             f"{what}: {request.display}", f"It asks because: {request.reason}"]
+    if request.detail:
+        lines += ["", request.detail]
+    text = sanitize("\n".join(lines))
+    if scrub is not None:
+        text = scrub(text)
+    if len(text) > MAX_QUESTION_CHARS:
+        text = text[:MAX_QUESTION_CHARS - 3] + "..."
+    return text
+
+
+def _decision(reply: dict) -> ApprovalChoice:
+    """The client's answer: anything but a clear yes is a no."""
+    result = reply.get("result")
+    if not isinstance(result, dict) or result.get("action") != "accept":
+        return ApprovalChoice.DENY
+    content = result.get("content")
+    value = content.get("decision") if isinstance(content, dict) else None
+    return next((choice for choice in CHOICES if choice.value == value), ApprovalChoice.DENY)
 
 
 def _refusal(text: str) -> dict:
