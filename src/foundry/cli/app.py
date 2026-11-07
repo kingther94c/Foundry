@@ -211,8 +211,10 @@ def _confirm_trust(console: Console, home: Path, workspace: Path, *,
         return False
     if not interactive or not sys.stdin or not sys.stdin.isatty():
         console.print(
-            f"[dim]{workspace} provides Foundry instructions; not loading them "
-            "because this run is unattended. Run interactively once to trust it.[/dim]"
+            f"[dim]{escape(str(workspace))} provides Foundry instructions; not loading them "
+            "because this run is unattended. Run Foundry interactively once, or exec "
+            "with --trust, to trust it.[/dim]",
+            soft_wrap=True,
         )
         return False
     console.print(
@@ -265,11 +267,12 @@ def build(workspace_path: Path, *, home: Path | None = None,
           overrides: dict | None = None, console: Console | None = None,
           interactive: bool = True, resume: str | None = None,
           profile: str | None = None, settings: dict | None = None,
-          ephemeral: bool = False) -> Wiring:
+          ephemeral: bool = False, trust: bool = False) -> Wiring:
     """``resume`` names a recorded session to continue: an id, or ``last``.
     ``profile`` and ``settings`` come from ``--profile`` and ``-c`` (D-042).
     ``ephemeral``: the journal goes in a folder of its own, outside the
-    sessions, and is removed as the session closes (D-132)."""
+    sessions, and is removed as the session closes (D-132). ``trust``: the
+    user trusts the workspace by name, as codex's ``--trust`` (D-137)."""
     console = console or Console()
     home = home or user_dir()
 
@@ -284,6 +287,13 @@ def build(workspace_path: Path, *, home: Path | None = None,
             "baseline so it can tell your changes from its own; run 'git init' or "
             "point it at a repository."
         )
+
+    if trust and str(workspace.root) not in _trusted_paths(home):
+        # Asked for on the command line (D-137): kept for later sessions too,
+        # as a yes at the trust prompt is, and kept if this run is not.
+        _remember_trust(home, workspace.root)
+        console.print(f"[dim]trusting {escape(str(workspace.root))} from now on: its "
+                      "instructions and settings are read[/dim]", soft_wrap=True)
 
     # The user's own settings first: which files are instructions, and so
     # whether there is anything to ask about, is theirs to say (D-086).
@@ -1519,6 +1529,7 @@ def cmd_exec(args: argparse.Namespace, read_only: str = "") -> int:
         # never decides how much an unattended run may do.
         wiring = build(Path(args.workspace).resolve(), console=console, interactive=False,
                        resume=args.resume, ephemeral=args.ephemeral,
+                       trust=getattr(args, "trust", False),
                        **_config_args(args, mode=Mode(args.mode or Mode.DONT_ASK.value)))
     except FoundryError as exc:
         if forked is not None:
@@ -2111,6 +2122,13 @@ def _color_flag(parser: argparse.ArgumentParser) -> None:
                              "terminal; the default)")
 
 
+def _trust_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--trust", action="store_true",
+                        help="trust this repository, as a yes when asked does: its "
+                             "instructions and settings are read, in this run and later "
+                             "ones")
+
+
 def _ephemeral_flag(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ephemeral", action="store_true",
                         help="keep no record of the run once it ends: nothing to resume, "
@@ -2222,6 +2240,7 @@ def build_parser() -> argparse.ArgumentParser:
                          help="write the run's final summary or reply to FILE")
     _ephemeral_flag(execute)
     _color_flag(execute)
+    _trust_flag(execute)
     execute.add_argument("--output-schema", metavar="FILE",
                          help="a JSON Schema the run's result must match; the result is "
                               "printed as JSON, and written by -o")
@@ -2247,6 +2266,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="write the review to FILE")
     _ephemeral_flag(review)
     _color_flag(review)
+    _trust_flag(review)
     # Read-only whatever the mode; dont_ask, as nobody is there to approve.
     _config_flags(review, modes=(Mode.DONT_ASK,))
     review.set_defaults(func=cmd_review)

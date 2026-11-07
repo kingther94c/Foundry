@@ -361,7 +361,9 @@ The V1 rules:
   credentials, headers and proxy may come only from machine-local layers. The
   first time any repository-provided configuration or instruction file is used
   in a new directory, a one-time trust prompt appears and is recorded in
-  `~/.foundry/trusted.json`.
+  `~/.foundry/trusted.json`. An unattended run asks nobody: `foundry exec
+  --trust` (and `foundry review --trust`) records the same trust from the
+  command line ([D-137](decision-log.md)).
 - **The repository instruction file ([D-019](decision-log.md), delivered in
   M2)**: V1 reads a `FOUNDRY.md` at the project root (with `AGENTS.md` read for
   compatibility), declaring the build/test commands and repository caveats, and

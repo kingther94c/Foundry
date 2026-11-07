@@ -381,6 +381,8 @@ What a codex user still notices day to day, next:
 96. ~~`foundry policy check`~~ -- what the rules decide for a command,
     without running it (landed, D-135).
 97. ~~`exec --color`~~ -- always, never or auto (landed, D-136).
+98. ~~`exec --trust`~~ -- the repository trusted from the command line, for
+    an unattended run (landed, D-137).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
