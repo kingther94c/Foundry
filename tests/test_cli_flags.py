@@ -198,7 +198,7 @@ def test_a_new_session_keeps_the_flags(repo, tmp_path, monkeypatch):
 
     ends = iter([app.NEW_SESSION, None])
     monkeypatch.setattr(app, "build", build)
-    monkeypatch.setattr(app, "_repl", lambda wiring, console: next(ends) or
+    monkeypatch.setattr(app, "_repl", lambda wiring, console, first=None: next(ends) or
                         app.TerminalStatus.CANCELLED)
     args = _parsed("run", "--workspace", str(repo), "-m", "m1", "-c", "max_tool_rounds=5")
     assert app.cmd_session(args) == app.EXIT_CODES[app.TerminalStatus.CANCELLED]

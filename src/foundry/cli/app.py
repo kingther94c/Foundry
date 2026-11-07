@@ -612,14 +612,20 @@ def cmd_session(args: argparse.Namespace) -> int:
             return 2
     status = TerminalStatus.CANCELLED
     try:
-        if args.task:
+        if args.task and not _interactive():
+            # Nobody at a terminal to go on with (D-078): the task, then the
+            # end, its exit code the task's.
             outcome = wiring.runtime.run_turn(_with_note(wiring, args.task),
                                               _take_images(wiring))
             # Only the finish gate can produce 'completed'. A turn that simply
             # ended is unfinished work, not success.
             status = outcome.status or TerminalStatus.PARTIAL
         else:
-            while (ended := _repl(wiring, console)) == NEW_SESSION:
+            # At a terminal a task given here is the first message, and the
+            # session goes on after it, as `codex "task"` does (D-078).
+            first = args.task
+            while (ended := _repl(wiring, console, first)) == NEW_SESSION:
+                first = None
                 # /new: this session ends, and a fresh one starts in the same
                 # workspace -- a new journal, an empty conversation, no grants.
                 _close(wiring, TerminalStatus.CANCELLED, "the user started a new session")
@@ -1189,7 +1195,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     run = sub.add_parser("run", help="start a session (default)")
-    run.add_argument("task", nargs="?", help="run one task then exit")
+    run.add_argument("task", nargs="?",
+                     help="the first message; at a terminal the session goes on "
+                          "after it, otherwise it ends with it")
     run.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
                      help="repository to work in (default: here)")
     _image_flag(run)
@@ -1201,7 +1209,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="the session id, or last for the newest in this workspace "
                              "(default: at a terminal, pick from the recent ones; "
                              "otherwise last)")
-    resume.add_argument("task", nargs="?", help="run one task then exit")
+    resume.add_argument("task", nargs="?",
+                        help="the first message; at a terminal the session goes on "
+                             "after it, otherwise it ends with it")
     resume.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
                         help="repository the session worked in")
     _image_flag(resume)

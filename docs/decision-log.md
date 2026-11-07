@@ -519,3 +519,10 @@
 - **Decision**: one Ctrl+C at the prompt prints `Ctrl+C again to end the session (it can be resumed), or /exit` and prompts again; a second one in a row ends the session as before. Anything read between them -- a message, a command, an empty line -- starts the count over. End of input (Ctrl+Z, a closed pipe) still ends it at once. The line after a stopped task says `Ctrl+C twice at the prompt, or /exit, ends it`.
 - **What it may not weaken**: nothing runs on a Ctrl+C at the prompt; the session's journal and its ending are as before when it does end.
 - **Rejected**: a time window for the second press (a person who reads the hint and then presses again meant it); clearing a half-typed line (the console's line input gives the text up on Ctrl+C, so there is nothing to clear).
+
+## D-078 `foundry run TASK` goes on after the task
+- **Date**: 2026-11-07 · **Status**: confirmed (item 39)
+- **Background**: `foundry run "what does this repo do?"` answered and exited; a follow-up meant `foundry resume`. `codex "task"` starts its interactive session with that message and stays in it; `codex exec` is the one that ends with the task. A codex user's habit -- ask, then ask more -- met a closed session.
+- **Decision**: at a terminal (stdin and stdout both), the task given to `run` or `resume` is the session's first message, taken exactly as if it had been typed at the prompt -- `@path` attaches, `/status` is a command, Ctrl+C stops it and not the session -- and the prompt comes back after it. It is sent once: a `/new` starts the next session empty. Where nobody is at a terminal (input piped or closed), the run ends with the task and its exit code is the task's, as before; `exec` remains the unattended way to run one task.
+- **What it may not weaken**: nothing the task may do changes; the approvals, the mode and the journal are the interactive session's, as they were.
+- **Rejected**: `foundry "task"` without `run` (D-042: a bare first word stays a subcommand, so a mistyped one is an error, not a message to the model); a flag to keep the old one-shot at a terminal (`/exit`, or Ctrl+C twice, ends the session after the task).

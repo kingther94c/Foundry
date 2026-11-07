@@ -302,9 +302,14 @@ def read_message(console: Console, prompt: str = PROMPT) -> str:
     return text
 
 
-def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
+def repl(wiring: "Wiring", console: Console,
+         first: str | None = None) -> TerminalStatus | str:
     """Read messages until the user ends the session; NEW_SESSION if they
     asked for another. A task's ending is not the session's (D-063).
+
+    ``first`` is the task given on the command line (D-078): taken as if it
+    had been typed at the prompt, and the prompt comes back after it, as
+    ``codex "task"`` goes on.
 
     One Ctrl+C at the prompt only says how to end the session; two in a row
     end it (D-077), as codex asks for. A Ctrl+C meant for a task that had
@@ -313,7 +318,10 @@ def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
     armed = False
     while True:
         try:
-            line = read_message(console, prompt_for(wiring))
+            if first is not None:
+                line, first = first, None
+            else:
+                line = read_message(console, prompt_for(wiring))
         except EOFError:
             console.print()
             return TerminalStatus.CANCELLED
