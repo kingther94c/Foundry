@@ -89,7 +89,6 @@ def test_and_while_a_tool_runs(renderer):
 
 @pytest.mark.parametrize("event", [
     MessageDelta(text="Here is"),
-    Reasoning("thinking it over"),
     TokenCount(Usage(), Usage()),
     ToolEnd("c1", "run_command", True, "exit code 0"),
     Notice("note"),

@@ -314,6 +314,8 @@ What a codex user still notices day to day, next:
 69. ~~A resumed session shows its conversation~~ -- what was typed, the
     answers and each tool call's line, before the prompt, as codex's resume
     (landed, D-108).
+70. ~~The working line after a reasoning summary~~ -- back up, saying the
+    summary's title, as codex's status line (landed, D-109).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

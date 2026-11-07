@@ -112,7 +112,8 @@ PROTOCOL_VERSION = 1
 - On a terminal the renderer keeps a transient `working (12s, Ctrl+C to stop)`
   line up from `TurnStarted` or `ToolBegin` until the next thing it draws or
   asks ([D-069](decision-log.md)); the REPL and `_close` take it down however
-  a task or the session ends.
+  a task or the session ends. A reasoning summary puts it back up after it,
+  saying the summary's bold title ([D-109](decision-log.md)).
 - Every string an event carries passes the redactor on its way out, nested
   ones included (a plan's steps sit inside a tuple).
 - Under a tool's line: nothing when one of Foundry's own read-only tools

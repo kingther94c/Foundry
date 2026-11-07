@@ -740,3 +740,9 @@
 - **As typed**: a message often says more than the user typed -- a custom prompt's or `/review`'s text, a resume's note, a file attached with `@` -- so the journal's `user_input` record now keeps what was typed beside it (`typed`, only when it differs), and the conversation shows that, matched to its message by the message's whole text. The first task a session listing and a resume name is the typed one too: `/review --base main`, not the review's prompt. A journal from before keeps showing the message as sent.
 - **What carries it**: what is shown is the journal's copy, scrubbed when it was written, and every line is stripped of control sequences and never read as markup, as the live session's are; a tool call's line is the tool's own display of its arguments, or its name when they make none.
 - **Not done**: the tool calls' results; the conversation before a compaction, which only its summary holds.
+
+## D-109 After a reasoning summary, the working line says what it is about
+- **Date**: 2026-11-07 · **Status**: confirmed (item 70)
+- **Background**: a reasoning summary arrives while the model is still at work, and printing it took the working line down (D-069) -- so after "thinking" nothing on the screen said Foundry was waiting, however long the model went on. codex's status line shows the summary's title, `Exploring the parser`, until the model's next output.
+- **Decision**: after a summary is printed the working line goes back up, its words the summary's first bold run (`**Exploring the parser**`, at most 80 characters on one line, spaces collapsed), or `working` when it has none; the next thing drawn or asked takes it down, as before.
+- **What carries it**: the title is model text: stripped of control sequences and shown as `Text`, never read as markup; the line is the working line, so it is never drawn off a terminal and is down before an approval question or the prompt.

@@ -244,7 +244,8 @@ What the model shows of its reasoning appears dim under "thinking" before it
 acts: Claude's thinking summaries, the reasoning DeepSeek-style servers stream,
 and -- with `reasoning_summary = "auto"` under `[backend]` -- a Responses
 model's summaries (Chat Completions has none to ask for, so it refuses the
-setting). `show_reasoning = false` under `[runtime]` hides it. A file the
+setting); the working line then says what it is about, the summary's title, as
+codex's does. `show_reasoning = false` under `[runtime]` hides it. A file the
 model cites -- `src/app.py:42` -- is a link that opens it at that line in VS
 Code, on a terminal that shows links (Windows Terminal does), as codex's
 `file_opener`: `file_opener = "cursor"` under `[runtime]` (or

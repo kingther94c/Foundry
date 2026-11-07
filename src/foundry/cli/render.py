@@ -177,6 +177,18 @@ class Working:
         yield self.spinner
 
 
+# The title a reasoning summary opens with -- **Exploring the parser** --
+# which the working line shows while the model goes on (D-109), as codex's
+# status line does.
+_TITLE = re.compile(r"\*\*([^*\n]{1,80})\*\*")
+
+
+def reasoning_title(text: str) -> str:
+    """The summary's first bold words, or nothing."""
+    match = _TITLE.search(sanitize(text))
+    return " ".join(match.group(1).split()) if match else ""
+
+
 @dataclass(slots=True)
 class Renderer:
     console: Console = field(default_factory=Console)
@@ -302,6 +314,9 @@ class Renderer:
     def _handle(self, event: Event) -> None:
         if isinstance(event, Reasoning):
             self._reasoning(event.text)
+            # The model goes on after it: the line goes back up, saying what
+            # the summary says it is doing (D-109).
+            self.work(reasoning_title(event.text) or "working")
         elif isinstance(event, ToolBegin):
             # The plan it sets is drawn instead; a line saying so adds nothing.
             if event.tool != "update_plan":
