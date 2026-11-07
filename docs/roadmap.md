@@ -348,6 +348,9 @@ What a codex user still notices day to day, next:
 81. ~~Background hooks~~ -- `async` hooks started and not waited for, their
     notes heard before the next request or with the next prompt, ended as
     the session closes (landed, D-120).
+82. ~~MCP tool hooks~~ -- `type = "mcp_tool"`: a tool of a server the session
+    has, called with `${...}` filled in from the event, its answer read as a
+    command hook's (landed, D-121).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

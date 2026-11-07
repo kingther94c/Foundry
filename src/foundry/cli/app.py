@@ -445,7 +445,8 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         show_reasoning=config.show_reasoning,
         notifier=Notifier(tuple(config.notify), workspace.root) if config.notify else None,
         scrub=default_redactor().scrub,
-        hooks=(HookSet(config.hooks, cwd=workspace.root, env_policy=config.shell_environment)
+        hooks=(HookSet(config.hooks, cwd=workspace.root, env_policy=config.shell_environment,
+                       mcp={client.server.name: client for client in mcp.clients})
                if config.hooks else None),
         start_sources=["resume" if state is not None else "startup"],
     )

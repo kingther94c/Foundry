@@ -295,11 +295,9 @@ def test_an_event_foundry_does_not_run_is_said(event, message):
 
 
 @pytest.mark.parametrize("handler, message", [
-    ({"type": "mcp_tool", "server": "s", "tool": "t"},
-     "Foundry runs command hooks; an mcp_tool hook is not supported yet"),
     ({"type": "prompt"}, "a prompt hook is skipped by codex too; remove it"),
     ({"type": "agent"}, "an? agent hook is skipped by codex too"),
-    ({"command": "x"}, r'type must be "command"'),
+    ({"command": "x"}, r'type must be "command" or "mcp_tool"'),
     ({"type": "command"}, "command must be a non-empty string"),
     ({"type": "command", "command": "  "}, "command must be a non-empty string"),
     ({"type": "command", "command": "x", "statusmessage": "s"},

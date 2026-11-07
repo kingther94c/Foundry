@@ -1,4 +1,4 @@
-"""Lifecycle hooks, as codex's (D-115 to D-120).
+"""Lifecycle hooks, as codex's (D-115 to D-121).
 
 A hook is a command line the user's own configuration names -- in
 ``hooks.json`` beside ``config.toml``, in a ``[hooks]`` table of it, or in
@@ -27,6 +27,10 @@ written for codex runs here unchanged. Ten of codex's events are run:
   closes: told, and given a second (three at most) to act; neither decides.
 * ``PreCompact`` and ``PostCompact``, around a compaction (``manual`` or
   ``auto``): a hook may stop it before, or the task after.
+
+A hook may instead name a tool of an MCP server the session already has
+(``mcp_tool``): the tool is called with arguments filled in from the event,
+and what it returns is read as a command hook's output.
 
 Like a notify program or an MCP server, a hook is a program Foundry starts,
 so a repository's configuration may not name one. A hook that fails, times
@@ -99,6 +103,10 @@ _FILE_KEYS = frozenset({"description", "hooks"})
 _GROUP_KEYS = frozenset({"matcher", "hooks"})
 _HANDLER_KEYS = frozenset({"type", "command", "commandWindows", "command_windows", "timeout",
                            "async", "statusMessage", "additionalContextLimit"})
+_MCP_KEYS = frozenset({"type", "server", "tool", "input", "timeout", "async", "statusMessage",
+                       "additionalContextLimit"})
+# ${field.nested} in an mcp_tool hook's input, as codex fills it in.
+_PLACEHOLDER = re.compile(r"\$\{([^{}]+)\}")
 # A matcher of names and `|` alone is a list of names, as codex reads it;
 # anything else is a regular expression, searched for.
 _NAMES_ONLY = re.compile(r"[A-Za-z0-9_|]*\Z")
@@ -134,6 +142,11 @@ class Hook:
     # informs and never decides.
     background: bool = False
     source: str = ""      # the file it was read from
+    # codex's `mcp_tool` handler (D-121): the server, the tool, and its
+    # arguments as JSON, with ${field.nested} filled in from the event.
+    mcp_server: str = ""
+    mcp_tool: str = ""
+    mcp_input: str = ""
 
     def matches(self, names: tuple[str, ...]) -> bool:
         if self.matcher in ("", "*"):
@@ -203,28 +216,39 @@ def _handler(entry: Any, event: str, matcher: str, where: str, source: str) -> H
     if not isinstance(entry, dict):
         raise ConfigError(f"{where} must be a table, with type = \"command\" and its command")
     kind = entry.get("type")
-    if kind == "mcp_tool":
-        raise ConfigError(f"{where}: Foundry runs command hooks; an mcp_tool hook is not "
-                          "supported yet")
     if kind in ("prompt", "agent"):
         raise ConfigError(f"{where}: a {kind} hook is skipped by codex too; remove it")
-    if kind != "command":
-        raise ConfigError(f"{where}.type must be \"command\"")
-    unknown = sorted(set(entry) - _HANDLER_KEYS)
+    if kind not in ("command", "mcp_tool"):
+        raise ConfigError(f"{where}.type must be \"command\" or \"mcp_tool\"")
+    keys = _HANDLER_KEYS if kind == "command" else _MCP_KEYS
+    unknown = sorted(set(entry) - keys)
     if unknown:
-        close = difflib.get_close_matches(unknown[0], sorted(_HANDLER_KEYS), n=1)
+        close = difflib.get_close_matches(unknown[0], sorted(keys), n=1)
         raise ConfigError(f"{where}: no setting {unknown[0]!r}"
                           + (f"; did you mean {close[0]!r}?" if close else
-                             f" (a hook takes {', '.join(sorted(_HANDLER_KEYS))})"))
-    command = _text(entry.get("command"), f"{where}.command")
-    if "commandWindows" in entry and "command_windows" in entry:
-        raise ConfigError(f"{where}: commandWindows and command_windows are one setting; "
-                          "give one")
-    windows = entry.get("commandWindows", entry.get("command_windows"))
-    if windows is not None:
-        windows = _text(windows, f"{where}.commandWindows")
-        if IS_WINDOWS:
-            command = windows
+                             f" (a hook takes {', '.join(sorted(keys))})"))
+    mcp: dict[str, str] = {}
+    if kind == "mcp_tool":
+        if event == SESSION_END:
+            raise ConfigError(f"{where}: a SessionEnd hook runs a command; codex runs no "
+                              "mcp_tool hook there either")
+        template = entry.get("input", {})
+        if not isinstance(template, dict):
+            raise ConfigError(f"{where}.input must be a table of the tool's arguments")
+        mcp = {"mcp_server": _text(entry.get("server"), f"{where}.server"),
+               "mcp_tool": _text(entry.get("tool"), f"{where}.tool"),
+               "mcp_input": json.dumps(template, ensure_ascii=False)}
+        command = f"mcp_tool {mcp['mcp_server']}/{mcp['mcp_tool']}"
+    else:
+        command = _text(entry.get("command"), f"{where}.command")
+        if "commandWindows" in entry and "command_windows" in entry:
+            raise ConfigError(f"{where}: commandWindows and command_windows are one setting; "
+                              "give one")
+        windows = entry.get("commandWindows", entry.get("command_windows"))
+        if windows is not None:
+            windows = _text(windows, f"{where}.commandWindows")
+            if IS_WINDOWS:
+                command = windows
     short = event in SHORT_EVENTS
     timeout = entry.get("timeout", SHORT_TIMEOUT_S if short else DEFAULT_TIMEOUT_S)
     if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
@@ -235,9 +259,9 @@ def _handler(entry: Any, event: str, matcher: str, where: str, source: str) -> H
     background = entry.get("async", False)
     if not isinstance(background, bool):
         raise ConfigError(f"{where}.async must be true or false")
-    if event == SESSION_END:
+    if event == SESSION_END or mcp:
         # codex runs these in step whatever they say: a session closing
-        # waits for nothing after them.
+        # waits for nothing after them, and an MCP tool hook is one call.
         background = False
     status = _text(entry.get("statusMessage", ""), f"{where}.statusMessage", empty=True)
     tokens = entry.get("additionalContextLimit", DEFAULT_CONTEXT_TOKENS)
@@ -246,7 +270,44 @@ def _handler(entry: Any, event: str, matcher: str, where: str, source: str) -> H
                           "(0: no limit)")
     return Hook(event=event, matcher=matcher, command=command, timeout_s=timeout,
                 status_message=status.strip(), context_tokens=tokens, background=background,
-                source=source)
+                source=source, **mcp)
+
+
+def fill_input(template: Any, event: dict[str, Any]) -> Any:
+    """An mcp_tool hook's arguments, as codex fills them in: a string that
+    is one ``${field.nested}`` becomes that field's value, whatever its type;
+    one within other text, that text with the value written in (a string as
+    it is, anything else as JSON); objects and arrays throughout. A field the
+    event does not have is a LookupError naming it."""
+    if isinstance(template, dict):
+        return {key: fill_input(value, event) for key, value in template.items()}
+    if isinstance(template, list):
+        return [fill_input(value, event) for value in template]
+    if not isinstance(template, str):
+        return template
+    found = list(_PLACEHOLDER.finditer(template))
+    if not found:
+        return template
+    if len(found) == 1 and found[0].span() == (0, len(template)):
+        return _event_field(event, found[0].group(1))
+    parts: list[str] = []
+    end = 0
+    for match in found:
+        value = _event_field(event, match.group(1))
+        parts += [template[end:match.start()],
+                  value if isinstance(value, str)
+                  else json.dumps(value, ensure_ascii=False, separators=(",", ":"))]
+        end = match.end()
+    return "".join(parts) + template[end:]
+
+
+def _event_field(event: dict[str, Any], path: str) -> Any:
+    value: Any = event
+    for name in path.split("."):
+        if not isinstance(value, dict) or name not in value:
+            raise LookupError(f"hook input placeholder `${{{path}}}` was not found")
+        value = value[name]
+    return value
 
 
 def parse_hooks(events: Any, source: str) -> tuple[Hook, ...]:
@@ -326,6 +387,8 @@ class HookSet:
     cwd: Path | None = None
     env_policy: Any = None              # the user's [shell_environment_policy]
     environ: dict[str, str] | None = None   # the environment to start from
+    # The session's MCP clients, by server, for mcp_tool hooks (D-121).
+    mcp: dict[str, Any] | None = None
     # Background hooks (D-120): their runs as they end, for the runtime to
     # take at its next safe point; their threads; what ends those running.
     _finished: list = field(default_factory=list, compare=False, repr=False)
@@ -387,6 +450,46 @@ class HookSet:
         return [run if run is not None else HookRun(hook, error="stopped")
                 for run, hook in zip(runs, hooks)]
 
+    def _call_tool(self, hook: Hook, data: bytes,
+                   cancelled: Callable[[], bool] | None) -> HookRun:
+        """An mcp_tool hook (D-121), as codex runs one: the tool called on a
+        server the session already has -- not started or restarted for it,
+        and not asked about, since the user named it -- within the hook's
+        timeout or the server's, the shorter. Its text is read as a command
+        hook's stdout; an error result, or no such server, a failure.
+        KeyboardInterrupt when the session is stopped meanwhile."""
+        from foundry.core.errors import Cancelled
+        from foundry.core.mcp import McpError
+
+        began = time.monotonic()
+
+        def ended(**fields: Any) -> HookRun:
+            return HookRun(hook, duration_ms=int((time.monotonic() - began) * 1000), **fields)
+
+        client = (self.mcp or {}).get(hook.mcp_server)
+        if client is None or not client.running:
+            return ended(error=f"could not be run: the MCP server {hook.mcp_server!r} is not "
+                               "connected")
+        try:
+            arguments = fill_input(json.loads(hook.mcp_input), json.loads(data))
+        except LookupError as exc:
+            return ended(error=f"could not be run: {exc.args[0]}")
+        try:
+            result = client.request(
+                "tools/call", {"name": hook.mcp_tool, "arguments": arguments},
+                timeout=min(hook.timeout_s, client.server.tool_timeout_s), cancelled=cancelled)
+        except Cancelled:
+            raise KeyboardInterrupt from None
+        except McpError as exc:
+            return ended(error=f"could not be run: {exc}")
+        content = result.get("content")
+        text = "\n".join(item["text"] for item in content if isinstance(item, dict)
+                         and item.get("type") == "text" and isinstance(item.get("text"), str)
+                         ) if isinstance(content, list) else ""
+        if result.get("isError") is True:
+            return ended(error=f"returned an error: {text}")
+        return ended(exit_code=0, stdout=text)
+
     def _start(self, hook: Hook, data: bytes) -> None:
         """Run a background hook on a thread of its own. Only the session's
         close ends it, not a stopped task: codex lets it finish."""
@@ -428,6 +531,8 @@ class HookSet:
 
     def _run_one(self, hook: Hook, data: bytes,
                  cancelled: Callable[[], bool] | None) -> HookRun:
+        if hook.mcp_server:
+            return self._call_tool(hook, data, cancelled)
         from foundry.core.tools.command import run_program
 
         env = child_environment(self.environ, policy=self.env_policy)

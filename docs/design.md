@@ -28,7 +28,8 @@ foundry/
 │                            #   at a prompt and when the model is done (D-116), as a session
 │                            #   starts and ends and when a task is stopped (D-117), around a
 │                            #   compaction (D-118), at an approval (D-119); `async` ones in the
-│                            #   background, heard at the next safe point (D-120)
+│                            #   background, heard at the next safe point (D-120); mcp_tool ones
+│                            #   call a tool of a server the session has (D-121)
 │   ├── images.py            # images the model is shown: checked, sized, base64 (D-045)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
 │   ├── auth.py              # AuthProvider + DPAPI storage

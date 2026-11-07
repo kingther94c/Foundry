@@ -239,7 +239,10 @@ hook may end the task after one, and a `SessionStart` hook matched on
 `compact` runs after it to put back what the summary left out; an
 `Interrupt` hook is told when you stop a task, and a `SessionEnd` hook when
 the session closes. They run through `cmd /C`, in the workspace, with the
-command environment; one that fails is a warning and the task goes on. One
+command environment -- or, as `"type": "mcp_tool"` with a `server`, a `tool`
+and an `input` that may take `${tool_input.command}` and the like, as a call
+to a tool of an MCP server the session has; one that fails is a warning and
+the task goes on. One
 marked `async` runs in the background: the task does not wait for it, and
 what it says reaches the model before its next request, or with your next
 prompt.
