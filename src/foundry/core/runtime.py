@@ -24,7 +24,7 @@ from foundry.core.backends.base import (ModelBackend, ReasoningComplete, TextDel
                                         TurnFinished, UsageUpdate)
 from foundry.core.commands import builtin_prompt
 from foundry.core.context import ContextManager
-from foundry.core.conversation import Message, Role, ToolUseBlock, TurnRequest
+from foundry.core.conversation import Message, Role, ToolUseBlock, TurnRequest, Usage
 from foundry.core.errors import (
     AuthError,
     Cancelled,
@@ -65,8 +65,10 @@ from foundry.core.hooks import (
     PERMISSION_MODES,
     PERMISSION_REQUEST,
     POST_COMPACT,
+    POST_MODEL_REQUEST,
     POST_TOOL_USE,
     PRE_COMPACT,
+    PRE_MODEL_REQUEST,
     PRE_TOOL_USE,
     READERS,
     SESSION_END,
@@ -308,6 +310,11 @@ class AgentRuntime:
         dropped = "; the answer above was cut off and is not kept" if shown else ""
         self._emit(Notice(f"{exc}; {again} in {_seconds(delay)} (try {attempt} of {attempts})"
                           f"{dropped}", level="warning"))
+        if not cut:
+            # The backend tries again within one request: to the user's
+            # hooks each try is an attempt, as codex's (D-122).
+            self._model_hooks(POST_MODEL_REQUEST, status="failed", error=_explain(exc))
+            self._model_hooks(PRE_MODEL_REQUEST)
 
     def interrupted(self) -> TurnOutcome:
         """Ctrl+C reached the task (D-062): the calls it left are answered and
@@ -682,6 +689,40 @@ class AgentRuntime:
         raise AssertionError("unreachable")  # pragma: no cover
 
     def _sample_once(self, messages: tuple[Message, ...] | None, purpose: str):
+        """One try of a model request, told to the user's model-request
+        hooks before and after (D-122), as codex tells them of each."""
+        self._model_hooks(PRE_MODEL_REQUEST)
+        try:
+            finished = self._attempt(messages, purpose)
+        except (Cancelled, KeyboardInterrupt):
+            self._model_hooks(POST_MODEL_REQUEST, status="cancelled")
+            raise
+        except Exception as exc:
+            self._model_hooks(POST_MODEL_REQUEST, status="failed", error=_explain(exc))
+            raise
+        self._model_hooks(POST_MODEL_REQUEST, status="completed", usage=finished.usage)
+        return finished
+
+    def _model_hooks(self, event: str, *, status: str = "", error: str | None = None,
+                     usage: Usage | None = None) -> None:
+        """The PreModelRequest or PostModelRequest hooks (D-122): told, never
+        asked, with codex's fields. After a try, they run to their end even
+        when a cancel ended it."""
+        if self.hooks is None:
+            return
+        fields: dict[str, Any] = {}
+        if event == POST_MODEL_REQUEST:
+            fields = {"status": status, "error": error, "token_usage": None if usage is None else {
+                "input_tokens": usage.input_tokens,
+                "cached_input_tokens": usage.cached_input_tokens,
+                "output_tokens": usage.output_tokens,
+                # Not counted apart from the output here.
+                "reasoning_output_tokens": 0,
+                "total_tokens": usage.total}}
+        self._run_hooks(event, omit=("permission_mode",), stoppable=event == PRE_MODEL_REQUEST,
+                        **fields)
+
+    def _attempt(self, messages: tuple[Message, ...] | None, purpose: str):
         request = TurnRequest(
             messages=self.context.project() if messages is None else messages,
             tools=self.registry.schemas(),

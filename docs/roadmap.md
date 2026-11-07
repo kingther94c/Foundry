@@ -351,6 +351,8 @@ What a codex user still notices day to day, next:
 82. ~~MCP tool hooks~~ -- `type = "mcp_tool"`: a tool of a server the session
     has, called with `${...}` filled in from the event, its answer read as a
     command hook's (landed, D-121).
+83. ~~Model-request hooks~~ -- PreModelRequest and PostModelRequest, told of
+    each try of a model request, retries included (landed, D-122).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

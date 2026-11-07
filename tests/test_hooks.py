@@ -283,8 +283,9 @@ def test_dash_c_says_where_hooks_go():
 @pytest.mark.parametrize("event, message", [
     ("SubagentStart", "Foundry does not run SubagentStart hooks yet; it runs PreToolUse, "
                       "PermissionRequest, PostToolUse, UserPromptSubmit, Stop, SessionStart, "
-                      "SessionEnd, Interrupt, PreCompact and PostCompact"),
-    ("PreModelRequest", "Foundry does not run PreModelRequest hooks yet"),
+                      "SessionEnd, Interrupt, PreCompact, PostCompact, PreModelRequest and "
+                      "PostModelRequest"),
+    ("SubagentStop", "Foundry does not run SubagentStop hooks yet"),
     ("PreTooluse", "no hook event 'PreTooluse'; did you mean 'PreToolUse'?"),
     ("state", "hooks.state is codex's record of the hooks you reviewed in its /hooks"),
     ("managed_dir", "hooks.managed_dir belongs to codex's requirements.toml"),
@@ -1009,4 +1010,5 @@ def test_slash_hooks_says_where_hooks_go(repo, home):
     assert shown.split() == (f"no hooks: codex's hooks.json format, in {home / 'hooks.json'} or "
                              "a [hooks] table of your config.toml; Foundry runs PreToolUse, "
                              "PermissionRequest, PostToolUse, UserPromptSubmit, Stop, SessionStart, SessionEnd, "
-                             "Interrupt, PreCompact and PostCompact").split()
+                             "Interrupt, PreCompact, PostCompact, PreModelRequest and "
+                             "PostModelRequest").split()

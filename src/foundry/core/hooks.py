@@ -1,10 +1,10 @@
-"""Lifecycle hooks, as codex's (D-115 to D-121).
+"""Lifecycle hooks, as codex's (D-115 to D-122).
 
 A hook is a command line the user's own configuration names -- in
 ``hooks.json`` beside ``config.toml``, in a ``[hooks]`` table of it, or in
 the machine's policy -- run at a point in a turn with what is happening as
 one JSON object on its stdin. The names and shapes are codex's, so a hook
-written for codex runs here unchanged. Ten of codex's events are run:
+written for codex runs here unchanged. Twelve of codex's events are run:
 
 * ``SessionStart``, at a session's first prompt (``startup``, or ``resume``)
   and after a compaction (``compact``): a hook may add a note, or stop the
@@ -27,6 +27,8 @@ written for codex runs here unchanged. Ten of codex's events are run:
   closes: told, and given a second (three at most) to act; neither decides.
 * ``PreCompact`` and ``PostCompact``, around a compaction (``manual`` or
   ``auto``): a hook may stop it before, or the task after.
+* ``PreModelRequest`` and ``PostModelRequest``, around each try of a model
+  request, retries included: told, to log it; nothing they print is read.
 
 A hook may instead name a tool of an MCP server the session already has
 (``mcp_tool``): the tool is called with arguments filled in from the event,
@@ -70,13 +72,17 @@ INTERRUPT = "Interrupt"
 PRE_COMPACT = "PreCompact"
 POST_COMPACT = "PostCompact"
 PERMISSION_REQUEST = "PermissionRequest"
+PRE_MODEL_REQUEST = "PreModelRequest"
+POST_MODEL_REQUEST = "PostModelRequest"
 HOOK_EVENTS = (PRE_TOOL_USE, PERMISSION_REQUEST, POST_TOOL_USE, USER_PROMPT_SUBMIT, STOP,
-               SESSION_START, SESSION_END, INTERRUPT, PRE_COMPACT, POST_COMPACT)
+               SESSION_START, SESSION_END, INTERRUPT, PRE_COMPACT, POST_COMPACT,
+               PRE_MODEL_REQUEST, POST_MODEL_REQUEST)
 # Events codex gives no matcher: every hook of one runs, whatever its
 # matcher says. SessionStart's matcher is tried on its source, SessionEnd's
 # on its reason, which is always "other", PreCompact's and PostCompact's on
 # what started the compaction, "manual" or "auto".
-UNMATCHED_EVENTS = frozenset({USER_PROMPT_SUBMIT, STOP, INTERRUPT})
+UNMATCHED_EVENTS = frozenset({USER_PROMPT_SUBMIT, STOP, INTERRUPT, PRE_MODEL_REQUEST,
+                              POST_MODEL_REQUEST})
 SESSION_END_REASON = "other"
 # Where exit code 2 is a decision, its reason on stderr; elsewhere it is a
 # code like any other but 0.
@@ -84,9 +90,7 @@ _EXIT_2_EVENTS = frozenset({PRE_TOOL_USE, PERMISSION_REQUEST, POST_TOOL_USE,
                             USER_PROMPT_SUBMIT, STOP})
 # codex's other events: named, so a hooks.json carried over says which of
 # its hooks would not run, rather than reading as a typo.
-CODEX_EVENTS = frozenset({
-    "PreModelRequest", "PostModelRequest", "SubagentStart", "SubagentStop",
-})
+CODEX_EVENTS = frozenset({"SubagentStart", "SubagentStop"})
 DEFAULT_TIMEOUT_S = 600
 # SessionEnd and Interrupt hooks hold up a session that is closing or a
 # user who stopped it: a second unless set, three at most, as codex's.
@@ -1058,12 +1062,26 @@ def read_post_compact(runs: list[HookRun]) -> HookVerdict:
     return _read_compact(POST_COMPACT, runs)
 
 
+def read_model_request(runs: list[HookRun]) -> HookVerdict:
+    """PreModelRequest and PostModelRequest answers, as codex reads them:
+    none. What a hook prints is not read, JSON or not; what it writes to
+    stderr is shown, and a run that fails says why."""
+    verdict = HookVerdict()
+    for run in runs:
+        reading = _Reading(run, run.hook.event, verdict)
+        if not reading.failed() and run.stderr.strip():
+            verdict.messages.append(run.stderr.strip())
+        reading.done()
+    return verdict
+
+
 READERS: dict[str, Callable[[list[HookRun]], HookVerdict]] = {
     PRE_TOOL_USE: read_pre_tool_use, PERMISSION_REQUEST: read_permission_request,
     POST_TOOL_USE: read_post_tool_use,
     USER_PROMPT_SUBMIT: read_user_prompt_submit, STOP: read_stop,
     SESSION_START: read_session_start, SESSION_END: read_session_end,
     INTERRUPT: read_interrupt, PRE_COMPACT: read_pre_compact, POST_COMPACT: read_post_compact,
+    PRE_MODEL_REQUEST: read_model_request, POST_MODEL_REQUEST: read_model_request,
 }
 
 

@@ -29,7 +29,8 @@ foundry/
 │                            #   starts and ends and when a task is stopped (D-117), around a
 │                            #   compaction (D-118), at an approval (D-119); `async` ones in the
 │                            #   background, heard at the next safe point (D-120); mcp_tool ones
-│                            #   call a tool of a server the session has (D-121)
+│                            #   call a tool of a server the session has (D-121); around each try
+│                            #   of a model request (D-122)
 │   ├── images.py            # images the model is shown: checked, sized, base64 (D-045)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
 │   ├── auth.py              # AuthProvider + DPAPI storage
@@ -563,7 +564,8 @@ class ModelBackend(Protocol):
   [D-118](decision-log.md); at an approval, and the `approval` a hook gave
   with `hook: "PermissionRequest"`, [D-119](decision-log.md); a background
   hook's runs as they are heard, with `async: true`, and a note it gave in a
-  task as `user_input` with `hook` naming its event, [D-120](decision-log.md)).
+  task as `user_input` with `hook` naming its event, [D-120](decision-log.md);
+  around each try of a model request, [D-122](decision-log.md)).
   An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).

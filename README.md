@@ -237,8 +237,9 @@ calls `finish`), may send the task on with its reason as the next prompt; a
 `PreCompact` hook may keep a compaction from happening and a `PostCompact`
 hook may end the task after one, and a `SessionStart` hook matched on
 `compact` runs after it to put back what the summary left out; an
-`Interrupt` hook is told when you stop a task, and a `SessionEnd` hook when
-the session closes. They run through `cmd /C`, in the workspace, with the
+`Interrupt` hook is told when you stop a task, a `SessionEnd` hook when the
+session closes, and `PreModelRequest` and `PostModelRequest` hooks of each
+try of a model request. They run through `cmd /C`, in the workspace, with the
 command environment -- or, as `"type": "mcp_tool"` with a `server`, a `tool`
 and an `input` that may take `${tool_input.command}` and the like, as a call
 to a tool of an MCP server the session has; one that fails is a warning and
