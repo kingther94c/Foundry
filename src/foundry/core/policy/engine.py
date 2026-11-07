@@ -376,6 +376,13 @@ def builtin_rules() -> tuple[Rule, ...]:
         Rule(tool=name, pattern="*", verdict=Verdict.ALLOW, layer=Layer.BUILTIN,
              rule_id=f"builtin.readonly.{name}", reason="read-only tool")
         for name in READ_ONLY_TOOLS
+    ) + (
+        # A read-only sub-agent changes nothing: each call it makes is put to
+        # these rules, read-only for it -- so it is started unasked, as codex
+        # starts one. One that may change files is put to the user (D-141).
+        Rule(tool="spawn_agent", pattern="read-only", verdict=Verdict.ALLOW,
+             layer=Layer.BUILTIN, rule_id="builtin.readonly.spawn_agent",
+             reason="a read-only sub-agent"),
     )
 
 

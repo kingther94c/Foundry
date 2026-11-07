@@ -304,6 +304,9 @@ class AgentRuntime:
     # The goal's budget ran out in this task: the model is told so before its
     # next request.
     _goal_wrap_up: bool = False
+    # The sub-agent running for this runtime's spawn_agent call (D-141), None
+    # otherwise: a cancel reaches it too.
+    child: "AgentRuntime | None" = None
 
     def __post_init__(self) -> None:
         # A backend that retries says so (D-085). Without this a 429 or a
@@ -316,6 +319,19 @@ class AgentRuntime:
 
     def cancel(self) -> None:
         self._cancelled = True
+        if self.child is not None:
+            self.child.cancel()
+
+    def spent_by_agent(self, usage: Usage, number: int) -> None:
+        """What sub-agent ``number`` spent (D-141), the session's: in its
+        tokens, its budget and its goal's, and in its journal, as its own
+        turns' are -- a resume counts it again."""
+        self.context.session_usage = self.context.session_usage + usage
+        self._journal(EventType.TOKEN_USAGE, {
+            "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
+            "cached_input_tokens": usage.cached_input_tokens, "agent": number,
+        })
+        self._goal_spent(usage)
 
     def _retrying(self, exc: Exception, attempt: int, attempts: int, delay: float,
                   *, cut: bool = False, shown: bool = False) -> None:
@@ -1136,6 +1152,9 @@ class AgentRuntime:
         if output.metadata.get("changes"):
             # Each file's content before and after: what undo restores (D-036).
             result["changes"] = output.metadata["changes"]
+        if output.metadata.get("agent"):
+            # Which sub-agent it was, and where its own journal is (D-141).
+            result["agent"] = output.metadata["agent"]
         planned = op.tool == "update_plan"
         if planned:
             # Kept with the call, so a resumed session shows the plan again.

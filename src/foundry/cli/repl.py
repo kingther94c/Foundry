@@ -736,8 +736,9 @@ CODEX_COMMANDS = {
     "memories": "Foundry keeps no memories between sessions: what should carry over goes in "
                 "AGENTS.md or FOUNDRY.md",
     "experimental": "Foundry has no experimental features to turn on",
-    "agents": "Foundry runs one agent per session: /side asks it on the side, /fork goes on "
-              "in a copy, and another terminal runs another session",
+    "agents": "Foundry's sub-agents work while the session waits, each line of theirs shown "
+              "as 'agent N:' -- ask for one in a message; /side asks on the side, /fork goes "
+              "on in a copy, and another terminal runs another session",
     "setup-default-sandbox": "Foundry has no sandbox (docs/threat-model.md says what that "
                              "leaves)",
     "worktree": "git worktree add ../DIR makes one; foundry -C ../DIR starts a session in it",

@@ -542,6 +542,9 @@ class Config:
     auto_compact_token_limit: int | None = None
     # Whether the model's reasoning is shown (D-044); the journal keeps it.
     show_reasoning: bool = True
+    # Whether the model may start sub-agents (D-141), as codex's multi_agent
+    # feature, on by default as codex's is.
+    subagents: bool = True
     # The editor a file the model cites opens in (D-106), as codex's
     # file_opener: one of FILE_OPENERS, ``none`` for no links.
     file_opener: str = "vscode"
@@ -904,7 +907,7 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         config.terminal_title = title_items(runtime["terminal_title"])
         config.record("terminal_title", list(config.terminal_title), layer)
 
-    for key in ("auto_compact", "show_reasoning"):
+    for key in ("auto_compact", "show_reasoning", "subagents"):
         if key not in runtime:
             continue
         value = runtime[key]
@@ -1005,7 +1008,7 @@ def _apply_env(config: Config) -> None:
 _RUNTIME_KEYS = ("max_tool_rounds", "max_tool_calls", "max_output_bytes", "command_timeout_s",
                  "session_retention_days", "auto_compact", "show_reasoning", "mode",
                  "project_doc_max_bytes", "project_doc_fallback_filenames",
-                 "auto_compact_token_limit", "file_opener", "terminal_title")
+                 "auto_compact_token_limit", "file_opener", "terminal_title", "subagents")
 # Secrets may come only from the environment or the credential store, never
 # from a command line other processes can read (requirements section 4.3).
 _SECRET_KEYS = frozenset({"api_key", "headers"})

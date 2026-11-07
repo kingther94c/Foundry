@@ -30,6 +30,7 @@ from foundry.cli.completion import SHELLS
 from foundry.cli.completion import script as completion_script
 from foundry.cli.render import Renderer, safe
 from foundry.cli.transcript import show_conversation
+from foundry.cli.agents import Spawner
 from foundry.cli.repl import ARCHIVE_SESSION, DELETE_SESSION, FORK_SESSION, NEW_SESSION
 from foundry.cli.repl import RESUME_SESSION
 from foundry.cli.repl import REVIEW_READ_ONLY, review_task
@@ -123,6 +124,7 @@ from foundry.core.skills import (
 from foundry.core.tools.base import ReadTracker, ToolContext
 from foundry.core.tools.command import RunCommand
 from foundry.core.tools.git import capture_baseline, is_git_repository
+from foundry.core.tools.agent import SpawnAgent
 from foundry.core.tools.registry import default_registry
 from foundry.core.undo import apply_undo, other_changes, plan_undo, read_source, undo_payload
 from foundry.core.winapi import decode_output, looks_like_credential
@@ -374,6 +376,9 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
               session: SessionStore, state: JournalState | None, outside: frozenset[str], *,
               home: Path, console: Console) -> Wiring:
     registry = default_registry(recorder=session, images=config.backend.images)
+    if config.subagents:
+        # Its spawner is given the session once there is one (D-141).
+        registry.register(SpawnAgent(Spawner()))
     skills = load_skills(home, workspace.root, trusted=trusted,
                          switches=config.all_skill_switches())
     register_skills(skills, registry)
@@ -525,6 +530,8 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
                     prompts=load_custom_prompts(home, workspace.root, trusted=trusted),
                     instructions=instructions.sources, mcp=mcp, skills=skills)
     renderer.title_facts = lambda: _title_facts(wiring)
+    if "spawn_agent" in registry.names():
+        registry.get("spawn_agent").spawner.wiring = wiring
     _announce_mcp(mcp, session, sink)
     _announce_skills(skills, sink)
     if state is not None:

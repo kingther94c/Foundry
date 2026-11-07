@@ -389,6 +389,8 @@ What a codex user still notices day to day, next:
      where a tab bar shows it (landed, D-139).
 101. ~~The rest of codex's slash commands~~ -- `/cwd`, and a line for each
      one Foundry has no counterpart for (landed, D-140).
+102. ~~Sub-agents~~ -- `spawn_agent`, a task done in a conversation of its
+     own (landed, D-141).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
@@ -398,7 +400,7 @@ hosted web search, and interactive PTY sessions for long-running commands.
 
 ~~session resume~~ (landed, D-035) | ~~LLM summarisation compaction~~
 (landed, D-040) | ~~a visible `update_plan`~~ (landed, D-037) | ~~skills and
-slash commands~~ (slash commands and custom prompts landed, D-039) | enabling the subagent seam | ~~an MCP bridge~~ (landed as the
+slash commands~~ (slash commands and custom prompts landed, D-039) | ~~enabling the subagent seam~~ (landed as `spawn_agent`, D-141) | ~~an MCP bridge~~ (landed as the
 MCP client, D-043) | ~~checkpoint/undo~~ (landed as patch undo, D-036) | ~~a
 Python-only repo map~~ (landed, D-046) | research into a restricted-token
 sandbox.

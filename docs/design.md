@@ -411,6 +411,15 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   offered once the session has a goal. The first answers with the goal as
   JSON; the second marks it `complete` (unless it already is), or, while it
   is active, `blocked` or `paused`. Read-only; the runtime journals the change.
+- `spawn_agent(task, read_only=true)` ([D-141](decision-log.md)): a
+  sub-agent on the session's backend and rules, in a conversation of its own
+  started from the session's system prompt and a brief, run to its end while
+  the call waits; the result is its report. Read-only ones are allowed by a
+  built-in rule and refuse every mutator while they run; `read_only: false`
+  is a mutator, put to the rules and the user. Its journal is
+  `<session>/agents/<id>/events.jsonl`; its tokens are journaled in the
+  session's as `token_usage` with `agent`. Not offered to a sub-agent, nor
+  the goal tools.
 - MCP tools ([D-043](decision-log.md)): each `[mcp_servers.<name>]` in the
   user's own config is started at session start under a job object, with the
   command environment plus its `env` and `env_vars`; its tools are registered
