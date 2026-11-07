@@ -72,7 +72,10 @@ FORK_SESSION = "fork_session"
 # /archive and /delete (D-128): the session ends, then is archived or deleted.
 ARCHIVE_SESSION = "archive_session"
 DELETE_SESSION = "delete_session"
-_ENDS = (NEW_SESSION, FORK_SESSION, ARCHIVE_SESSION, DELETE_SESSION)
+# /resume (D-134): the session goes on as another, the one the wiring names or
+# one the user picks; this one ends, and can be resumed.
+RESUME_SESSION = "resume_session"
+_ENDS = (NEW_SESSION, FORK_SESSION, ARCHIVE_SESSION, DELETE_SESSION, RESUME_SESSION)
 _EXIT = "exit"
 
 DIFF_MAX_LINES = 400
@@ -775,6 +778,14 @@ def _fork(wiring: "Wiring", console: Console, arguments: str) -> str | None:
         console.print(f"[red]cannot fork this session: {escape(str(exc))}[/red]")
         return None
     return FORK_SESSION
+
+
+def _resume(wiring: "Wiring", console: Console, arguments: str) -> str:
+    """``/resume [SESSION]``: another of this workspace's sessions, by id or
+    name or picked from the recent ones, goes on, and this one ends, as
+    codex's /resume (D-134)."""
+    wiring.resuming = arguments
+    return RESUME_SESSION
 
 
 def _goal(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
@@ -1562,6 +1573,9 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("new", "end this session and start a fresh one", _new),
     Command("clear", "clear the terminal, end this session and start a fresh one", _clear),
     Command("fork", "go on in a copy of this session, keeping this one as it is", _fork),
+    Command("resume", "go on in another of this workspace's sessions, picked from the "
+            "recent ones or named; this one ends, and can be resumed", _resume,
+            arguments="[SESSION]"),
     Command("archive", "end this session and archive it: out of every list, kept whole",
             _archive),
     Command("delete", "end this session and delete it for good", _delete),

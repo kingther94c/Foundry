@@ -31,6 +31,7 @@ from foundry.cli.completion import script as completion_script
 from foundry.cli.render import Renderer, safe
 from foundry.cli.transcript import show_conversation
 from foundry.cli.repl import ARCHIVE_SESSION, DELETE_SESSION, FORK_SESSION, NEW_SESSION
+from foundry.cli.repl import RESUME_SESSION
 from foundry.cli.repl import REVIEW_READ_ONLY, review_task
 from foundry.cli.repl import attach as _attach
 from foundry.cli.repl import take_images as _take_images
@@ -145,6 +146,8 @@ class Wiring:
     name: str = ""
     # The fork /fork made of it, for the loop to go on in (D-126).
     forked: str = ""
+    # The session /resume named, "" to pick one (D-134).
+    resuming: str = ""
     # exec --ephemeral (D-132): the folder its journal is in, removed as it
     # closes; None for a session that is kept.
     ephemeral: Path | None = None
@@ -745,6 +748,11 @@ def pick_session(console, workspace: Path | None) -> str | None:
     recent = recent_sessions(user_dir() / "sessions", workspace, PICK_LIMIT)
     if len(recent) < 2:
         return "last"
+    return _ask_which(console, recent, workspace)
+
+
+def _ask_which(console, recent: list, workspace: Path | None) -> str | None:
+    """The one of ``recent`` the user picks; Enter is the first. None: none."""
     where = f" in {safe(str(workspace))}" if workspace is not None else ""
     console.print(f"[bold]recent sessions{where}[/bold]")
     for number, summary in enumerate(recent, 1):
@@ -883,10 +891,14 @@ def cmd_session(args: argparse.Namespace) -> int:
             # At a terminal a task given here is the first message, and the
             # session goes on after it, as `codex "task"` does (D-078).
             first = args.task
-            while (ended := _repl(wiring, console, first)) in (NEW_SESSION, FORK_SESSION):
+            while (ended := _repl(wiring, console, first)) in (NEW_SESSION, FORK_SESSION,
+                                                                RESUME_SESSION):
                 first = None
                 if ended == FORK_SESSION:
                     wiring = _switch_to_fork(wiring, console, flags)
+                    continue
+                if ended == RESUME_SESSION:
+                    wiring = _switch_to_resumed(wiring, console, flags)
                     continue
                 # /new: this session ends, and a fresh one starts in the same
                 # workspace -- a new journal, an empty conversation, no grants.
@@ -1025,6 +1037,47 @@ def _switch_to_fork(wiring: Wiring, console, flags: dict) -> Wiring:
     console.print(f"[dim]now in {forked}, a fork of {source}, which is kept as it "
                   "was[/dim]", soft_wrap=True)
     return fork
+
+
+def _switch_to_resumed(wiring: Wiring, console, flags: dict) -> Wiring:
+    """/resume (D-134): the session /resume named -- or the one picked from
+    this workspace's recent others -- is continued, with every check a
+    resume makes, and this one ends, recorded and resumable. One that cannot
+    be continued is not, and this session goes on."""
+    sessions = (wiring.home or user_dir()) / "sessions"
+    this, target = wiring.session.session_id, wiring.resuming
+    if not target:
+        others = [s for s in recent_sessions(sessions, wiring.workspace.root, PICK_LIMIT + 1)
+                  if s.session_id != this][:PICK_LIMIT]
+        if not others:
+            console.print("[dim]no other session in this workspace to resume[/dim]")
+            return wiring
+        target = _ask_which(console, others, wiring.workspace.root)
+        if target is None:
+            return wiring
+    try:
+        journal = resolve_session(sessions, target, wiring.workspace.root)
+        if journal.parent.name == this:
+            console.print("[dim]that is this session[/dim]")
+            return wiring
+        flags = {**flags, "overrides": {**(flags["overrides"] or {}), **wiring.chosen} or None}
+        resumed = build(wiring.workspace.root, home=wiring.home, console=console,
+                        resume=journal.parent.name, **flags)
+    except FoundryError as exc:
+        console.print(f"[red]cannot resume {safe(target)}: {escape(str(exc))}[/red]; this "
+                      "session goes on", soft_wrap=True)
+        return wiring
+    _close(wiring, TerminalStatus.CANCELLED,
+           f"the user resumed session {resumed.session.session_id}")
+    _say_farewell(console, wiring)
+    resumed.chosen = dict(wiring.chosen)
+    if _interactive():
+        # Where its conversation was, as `foundry resume` shows it (D-108).
+        show_conversation(resumed)
+    _announce_resume(resumed)
+    console.print(f"[dim]now in {resumed.session.session_id}; {this} is kept, and can be "
+                  "resumed[/dim]", soft_wrap=True)
+    return resumed
 
 
 def cmd_undo(args: argparse.Namespace) -> int:

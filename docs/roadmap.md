@@ -376,6 +376,8 @@ What a codex user still notices day to day, next:
     (landed, D-132).
 94. ~~`exec --fork` and `exec fork`~~ -- a copy of a session continued
     headlessly (landed, D-133).
+95. ~~`/resume [SESSION]`~~ -- another of this workspace's sessions, from
+    inside one (landed, D-134).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
