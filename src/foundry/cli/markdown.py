@@ -41,6 +41,34 @@ _INLINE = re.compile(
 Linker = Callable[[str], "str | None"]
 
 
+def _closes(marker: str, line: str) -> bool:
+    """Whether ``line`` closes a fence opened by ``marker``: the same
+    character, as many or more, and nothing else."""
+    stripped = line.strip()
+    return stripped.startswith(marker) and set(stripped) == {marker[0]}
+
+
+def code_blocks(text: str) -> list[tuple[str, str]]:
+    """Each fenced code block of ``text`` as the renderer shows it: its
+    language (empty when none is named) and its lines; one still open at the
+    end is one too (D-123)."""
+    blocks: list[tuple[str, str]] = []
+    fence: tuple[str, str, list[str]] | None = None
+    for line in text.split("\n"):
+        if fence is None:
+            opened = _FENCE.match(line)
+            if opened:
+                fence = (opened.group(1), opened.group(2), [])
+        elif _closes(fence[0], line):
+            blocks.append((fence[1], "\n".join(fence[2])))
+            fence = None
+        else:
+            fence[2].append(line)
+    if fence is not None:
+        blocks.append((fence[1], "\n".join(fence[2])))
+    return blocks
+
+
 def inline(text: str, style: str = "", link: Linker | None = None) -> Text:
     """One line's emphasis, inline code and links, as styled Text; inline
     code that cites a file is a link to it when ``link`` says where."""
@@ -101,8 +129,7 @@ class MarkdownLines:
 
     def _line(self, line: str) -> list[RenderableType]:
         if self.fence is not None:
-            marker = self.fence[0]
-            if line.strip().startswith(marker) and set(line.strip()) == {marker[0]}:
+            if _closes(self.fence[0], line):
                 return [self._code()]
             self.fence[2].append(line)
             return []

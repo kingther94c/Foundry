@@ -26,6 +26,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.syntax import Syntax
 
+from foundry.cli.copying import copy_answer
 from foundry.cli.render import print_plan, safe, sanitize
 from foundry.core.commands import PROMPTS, builtin_prompt, expand, parse_command, usage_hint
 from foundry.core.config import effort_levels
@@ -1321,6 +1322,8 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("help", "this list", _help),
     Command("status", "session, model, mode, tokens, context and plan", _status),
     Command("diff", "every uncommitted change, and which of them this session made", _diff),
+    Command("copy", "copy the latest answer to the clipboard, or its Nth code block",
+            copy_answer, arguments="[N]"),
     Command("mcp", "the MCP servers, and the tools each offers", show_mcp),
     Command("hooks", "the lifecycle hooks this session runs, and from which file", show_hooks),
     Command("skills", "the skills the model may load; $name in a message asks for one",
