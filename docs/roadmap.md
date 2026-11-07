@@ -385,6 +385,8 @@ What a codex user still notices day to day, next:
     an unattended run (landed, D-137).
 99. ~~`/warnings`~~ -- the session's warnings and errors, shown again
     (landed, D-138).
+100. ~~The terminal title, and `/title`~~ -- what the session is doing,
+     where a tab bar shows it (landed, D-139).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

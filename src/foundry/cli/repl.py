@@ -31,10 +31,12 @@ from foundry.cli.exporting import export_conversation
 from foundry.cli.goals import GoalTurns, goal_command
 from foundry.cli.render import print_plan, safe, sanitize
 from foundry.core.commands import PROMPTS, builtin_prompt, expand, parse_command, usage_hint
-from foundry.core.config import effort_levels
+from foundry.core.config import TERMINAL_TITLE_ITEMS, effort_levels, title_items
 from foundry.core.context import SUMMARY_PREFIX
 from foundry.core.conversation import Message, Role, TextBlock
-from foundry.core.errors import Cancelled, FoundryError, ImageRejected, PromptError, ToolError
+from foundry.core.errors import (
+    Cancelled, ConfigError, FoundryError, ImageRejected, PromptError, ToolError,
+)
 from foundry.core.images import MAX_IMAGES_PER_MESSAGE, from_bytes as image_from_bytes
 from foundry.core.images import load as load_image
 from foundry.core.events import Notice, TerminalStatus
@@ -357,6 +359,7 @@ def repl(wiring: "Wiring", console: Console,
                 if first is not None:
                     line, first = first, None
                 else:
+                    wiring.renderer.title("ready")
                     line = read_message(console, prompt_for(wiring))
             except EOFError:
                 console.print()
@@ -1001,6 +1004,36 @@ def _warnings(wiring: "Wiring", console: Console, arguments: str) -> None:
     return None
 
 
+def _title(wiring: "Wiring", console: Console, arguments: str) -> None:
+    """``/title [ITEM...|none]``: what the terminal's title shows, or which
+    items it shows for the rest of this session (D-139), as codex's /title."""
+    renderer = wiring.renderer
+    words = arguments.split()
+    keep = "[runtime] terminal_title in config.toml keeps them"
+    if not words:
+        console.print(f"the terminal title shows {', '.join(renderer.title_items) or 'nothing'}",
+                      soft_wrap=True)
+        for item, what in TERMINAL_TITLE_ITEMS.items():
+            console.print(f"  [bold]{item}[/bold]  [dim]{escape(what)}[/dim]", soft_wrap=True)
+        console.print(f"[dim]/title ITEM... picks them for this session, /title none shows "
+                      f"none; {escape(keep)}[/dim]", soft_wrap=True)
+        return None
+    try:
+        items = () if words == ["none"] else title_items(words)
+    except ConfigError as exc:
+        console.print(f"[yellow]{escape(str(exc))}[/yellow]", soft_wrap=True)
+        return None
+    renderer.title_items = items
+    if items:
+        renderer.title()
+        console.print(f"[dim]the terminal title now shows {', '.join(items)} in this session; "
+                      f"{escape(keep)}[/dim]", soft_wrap=True)
+    else:
+        renderer.clear_title()
+        console.print("[dim]the terminal title is left alone in this session[/dim]")
+    return None
+
+
 def _compact(wiring: "Wiring", console: Console, arguments: str) -> None:
     """Summarise the conversation now rather than when it fills (D-040)."""
     try:
@@ -1551,6 +1584,8 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("status", "session, model, mode, tokens, context and plan", _status),
     Command("diff", "every uncommitted change, and which of them this session made", _diff),
     Command("pwd", "the folder this session works in", _pwd),
+    Command("title", "what the terminal title shows, or pick it for this session", _title,
+            arguments="[ITEM...|none]"),
     Command("rollout", "where this session's journal is", _rollout),
     Command("warnings", "the warnings and errors this session has shown, again", _warnings),
     Command("copy", "copy the latest answer to the clipboard, or its Nth code block",

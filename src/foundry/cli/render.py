@@ -24,6 +24,7 @@ from rich.text import Text
 
 from foundry.cli.file_links import file_link
 from foundry.cli.markdown import MarkdownLines
+from foundry.cli.title import compose as compose_title
 from foundry.core.events import (
     ApprovalChoice,
     ApprovalKind,
@@ -211,6 +212,12 @@ class Renderer:
     # When the task now running started (D-073); None between tasks.
     _task_started: float | None = None
     clock: Callable[[], float] = time.monotonic
+    # The terminal's title (D-139): its items -- none outside an interactive
+    # session -- what they show, read as it is written, and what was written.
+    title_items: tuple[str, ...] = ()
+    title_facts: Callable[[], dict] | None = None
+    _title_state: str = "ready"
+    _title_shown: str | None = None
     # The warnings and errors shown (D-138), for /warnings: (time, level,
     # text), the latest KEPT_WARNINGS of them; ``warnings_dropped`` counts
     # the older ones let go.
@@ -225,10 +232,33 @@ class Renderer:
             del self.warnings[0]
             self.warnings_dropped += 1
 
+    def title(self, state: str | None = None) -> None:
+        """The terminal's title, as its items say while the session is
+        ``state`` -- ready, working, or action, waiting on an answer --
+        written on a terminal only, and only when it changes (D-139)."""
+        if state is not None:
+            self._title_state = state
+        if (not self.title_items or self.title_facts is None
+                or not self.console.is_terminal or self.console.is_dumb_terminal):
+            return
+        text = compose_title(self.title_items, self.title_facts(), self._title_state)
+        if text == (self._title_shown or ""):
+            return
+        self.console.set_window_title(text)
+        self._title_shown = text
+
+    def clear_title(self) -> None:
+        """As the session ends, the title it wrote is cleared, as codex's
+        is: what was there before cannot be read back."""
+        if self._title_shown is not None:
+            self.console.set_window_title("")
+            self._title_shown = None
+
     def work(self, what: str) -> None:
         """Put up the working line (D-069): only on a terminal, where it can
         be redrawn in place and taken down without a trace."""
         self.idle()
+        self.title("working")
         if not self.console.is_terminal or self.console.is_dumb_terminal:
             return
         self._working = Working(what, time.monotonic())
@@ -450,6 +480,14 @@ class Renderer:
     # -- approval ---------------------------------------------------------
 
     def ask_approval(self, request: ApprovalRequest) -> ApprovalChoice:
+        """Asked at the terminal; the title says so while it waits (D-139)."""
+        self.title("action")
+        try:
+            return self._ask_approval(request)
+        finally:
+            self.title("working")
+
+    def _ask_approval(self, request: ApprovalRequest) -> ApprovalChoice:
         self.idle()
         self.console.print()
         if request.approval_kind is ApprovalKind.PATCH and request.detail:

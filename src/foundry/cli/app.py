@@ -263,6 +263,15 @@ def _rule_writer(home: Path, policy: PolicyEngine):
     return persist
 
 
+def _title_facts(wiring: Wiring) -> dict:
+    """What the terminal title's items show (D-139), read each time it is
+    written: /rename and /model change them."""
+    root = wiring.workspace.root
+    return {"app-name": "Foundry", "project-name": root.name, "current-dir": str(root),
+            "thread-name": wiring.name, "thread-id": wiring.session.session_id,
+            "model": wiring.runtime.model}
+
+
 def build(workspace_path: Path, *, home: Path | None = None,
           overrides: dict | None = None, console: Console | None = None,
           interactive: bool = True, resume: str | None = None,
@@ -331,6 +340,8 @@ def build(workspace_path: Path, *, home: Path | None = None,
         _discard(discard)
         raise
     wiring.ephemeral = discard
+    # The terminal's title is an interactive session's (D-139).
+    wiring.renderer.title_items = config.terminal_title if interactive else ()
     return wiring
 
 
@@ -513,6 +524,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
                     renderer=renderer, session=session, home=home, trusted=trusted,
                     prompts=load_custom_prompts(home, workspace.root, trusted=trusted),
                     instructions=instructions.sources, mcp=mcp, skills=skills)
+    renderer.title_facts = lambda: _title_facts(wiring)
     _announce_mcp(mcp, session, sink)
     _announce_skills(skills, sink)
     if state is not None:
@@ -635,6 +647,7 @@ def _announce_resume(wiring: Wiring) -> None:
 
 def _close(wiring: Wiring, status: TerminalStatus, reason: str) -> None:
     wiring.renderer.settle()
+    wiring.renderer.clear_title()
     # A journal write can fail (full volume, a backup agent holding the
     # file); losing the exit code over it would be worse than the lost line.
     try:

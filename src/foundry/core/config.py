@@ -485,6 +485,41 @@ def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
     return servers
 
 
+# The terminal title's items (D-139), by codex's tui.terminal_title ids, and
+# what each shows; then the other ids codex reads for them.
+TERMINAL_TITLE_ITEMS = {
+    "app-name": "Foundry",
+    "project-name": "the workspace folder's name",
+    "current-dir": "the workspace folder",
+    "activity": "Working while a task runs, [ ! ] Action Required while it waits on you",
+    "run-state": "Ready, Working, or Waiting for your answer",
+    "thread-name": "the session's name, from /rename (left out while it has none)",
+    "thread-id": "the session's id",
+    "model": "the model",
+}
+_TITLE_ALIASES = {"project": "project-name", "spinner": "activity", "status": "run-state",
+                  "session-name": "thread-name", "session-id": "thread-id",
+                  "model-name": "model"}
+DEFAULT_TERMINAL_TITLE = ("activity", "thread-name", "project-name")
+
+
+def title_items(raw: Any) -> tuple[str, ...]:
+    """The terminal title's items (D-139), by codex's ids or the others it
+    reads for them, each once; one that is not an item is refused."""
+    if not isinstance(raw, (list, tuple)) or not all(isinstance(item, str) for item in raw):
+        raise ConfigError('terminal_title must be a list of items, as terminal_title = '
+                          '["activity", "project-name"] ([] for no title)')
+    items: list[str] = []
+    for item in raw:
+        name = _TITLE_ALIASES.get(item, item)
+        if name not in TERMINAL_TITLE_ITEMS:
+            raise ConfigError(f"terminal_title: no item {item!r}; the items are "
+                              f"{', '.join(TERMINAL_TITLE_ITEMS)}")
+        if name not in items:
+            items.append(name)
+    return tuple(items)
+
+
 @dataclass(slots=True)
 class Config:
     backend: BackendConfig = field(default_factory=BackendConfig)
@@ -510,6 +545,9 @@ class Config:
     # The editor a file the model cites opens in (D-106), as codex's
     # file_opener: one of FILE_OPENERS, ``none`` for no links.
     file_opener: str = "vscode"
+    # What an interactive session's terminal title shows (D-139), as codex's
+    # tui.terminal_title: TERMINAL_TITLE_ITEMS, in order; () for no title.
+    terminal_title: tuple[str, ...] = DEFAULT_TERMINAL_TITLE
     # The repository's instruction files (D-086), as codex's settings: how
     # many characters of them are read, shared from the top down (0 reads
     # none), and the names tried in each directory after AGENTS.override.md,
@@ -702,6 +740,9 @@ _NOT_A_SETTING = {
 }
 _NOT_A_SETTING["model_providers"] = _NOT_A_SETTING["model_provider"]
 _NOT_A_SETTING["sandbox_workspace_write"] = _NOT_A_SETTING["sandbox_mode"]
+_NOT_A_SETTING["tui"] = ("Foundry has no [tui] table: codex's tui.terminal_title is "
+                         "runtime.terminal_title here, and its other tui settings have no "
+                         "counterpart")
 
 
 def _no_setting(layer: str, name: str, known: Any, tables: str) -> ConfigError:
@@ -859,6 +900,10 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         config.file_opener = value
         config.record("file_opener", value, layer)
 
+    if "terminal_title" in runtime:
+        config.terminal_title = title_items(runtime["terminal_title"])
+        config.record("terminal_title", list(config.terminal_title), layer)
+
     for key in ("auto_compact", "show_reasoning"):
         if key not in runtime:
             continue
@@ -960,7 +1005,7 @@ def _apply_env(config: Config) -> None:
 _RUNTIME_KEYS = ("max_tool_rounds", "max_tool_calls", "max_output_bytes", "command_timeout_s",
                  "session_retention_days", "auto_compact", "show_reasoning", "mode",
                  "project_doc_max_bytes", "project_doc_fallback_filenames",
-                 "auto_compact_token_limit", "file_opener")
+                 "auto_compact_token_limit", "file_opener", "terminal_title")
 # Secrets may come only from the environment or the credential store, never
 # from a command line other processes can read (requirements section 4.3).
 _SECRET_KEYS = frozenset({"api_key", "headers"})
