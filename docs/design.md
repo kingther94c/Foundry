@@ -219,7 +219,9 @@ async def run_turn(user_input):
   runtime asks the model for a handoff summary and the history becomes the
   user's own messages (newest first within 10% of the window) plus the summary
   (at most 15%, with the plan appended). `/compact [focus]` does it on request;
-  `runtime.auto_compact = false` turns the automatic one off. It enters the log
+  `runtime.auto_compact = false` turns the automatic one off, and
+  `runtime.auto_compact_token_limit` ([D-094](decision-log.md)) starts it
+  sooner, never later. It enters the log
   as a `compacted` record (openhands condensation-as-event); a failure changes
   nothing and is not retried until the next task, and files read before it
   are read again before a patch.

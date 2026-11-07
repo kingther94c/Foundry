@@ -219,7 +219,10 @@ set = { CI = "1" }                                     # plain values, never a s
 A long task does not simply run out of context: old tool output is masked
 first, and when that is not enough the model summarises the work so far and the
 conversation continues from the summary (`/compact` does it on request;
-`auto_compact = false` under `[runtime]` in `config.toml` turns it off).
+`auto_compact = false` under `[runtime]` in `config.toml` turns it off). It
+starts once the context passes 80% of the window, or sooner with
+`auto_compact_token_limit = 200000` under `[runtime]`, as codex's
+`model_auto_compact_token_limit`.
 
 What the model shows of its reasoning appears dim under "thinking" before it
 acts: Claude's thinking summaries, the reasoning DeepSeek-style servers stream,

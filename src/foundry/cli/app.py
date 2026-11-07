@@ -378,6 +378,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         project_doc=instructions.text,
         environment=environment_paragraph(workspace.root, baseline, config.backend.model),
         max_context_tokens=backend.capabilities().max_context_tokens,
+        compact_above_tokens=config.auto_compact_token_limit,
     )
 
     renderer = Renderer(console=console)

@@ -568,7 +568,9 @@ def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
         *([("verbosity", config.backend.verbosity)] if config.backend.verbosity else []),
         ("tokens", f"{usage.input_tokens:,} in ({usage.cached_input_tokens:,} cached), "
                    f"{usage.output_tokens:,} out"),
-        ("context", f"about {used:,} of {limit:,} tokens ({100 * used // max(limit, 1)}%)"),
+        ("context", f"about {used:,} of {limit:,} tokens ({100 * used // max(limit, 1)}%)"
+                    + (f"; compacts past {context.compaction_threshold():,}"
+                       if runtime.auto_compact and context.compact_above_tokens else "")),
         ("notes", ", ".join(wiring.instructions) or "no FOUNDRY.md or AGENTS.md loaded"),
     ]
     if wiring.mcp is not None and wiring.mcp.summary():

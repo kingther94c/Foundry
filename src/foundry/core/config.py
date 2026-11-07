@@ -408,6 +408,9 @@ class Config:
     # Summary compaction before the context fills (D-040); off, a long task
     # ends partial(context window exhausted) as before.
     auto_compact: bool = True
+    # Compact past this many tokens when that is sooner than 80% of the
+    # window (D-094), as codex's model_auto_compact_token_limit.
+    auto_compact_token_limit: int | None = None
     # Whether the model's reasoning is shown (D-044); the journal keeps it.
     show_reasoning: bool = True
     # The repository's instruction files (D-086), as codex's settings: how
@@ -514,6 +517,7 @@ _CALLED_HERE = {
     "model_reasoning_summary": "backend.reasoning_summary",
     "model_verbosity": "backend.verbosity",
     "model_context_window": "backend.max_context_tokens",
+    "model_auto_compact_token_limit": "runtime.auto_compact_token_limit",
     "approval_policy": "runtime.mode",
     "hide_agent_reasoning": "runtime.show_reasoning (true there is false here)",
 }
@@ -662,6 +666,19 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         config.record("project_doc_fallback_filenames",
                       list(config.project_doc_fallback_filenames), layer)
 
+    if "auto_compact_token_limit" in runtime:
+        # The user's trade of detail for room: a repository compacting their
+        # session early would summarise away what they were reading.
+        if tighten_only:
+            raise ConfigError(f"{layer} config may not set auto_compact_token_limit; set it "
+                              "in your own config.toml")
+        value = runtime["auto_compact_token_limit"]
+        if isinstance(value, bool) or not isinstance(value, int) or value < MIN_CONTEXT_TOKENS:
+            raise ConfigError("auto_compact_token_limit must be a whole number of tokens, at "
+                              f"least {MIN_CONTEXT_TOKENS}, got {value!r}")
+        config.auto_compact_token_limit = value
+        config.record("auto_compact_token_limit", value, layer)
+
     for key in ("auto_compact", "show_reasoning"):
         if key not in runtime:
             continue
@@ -743,7 +760,8 @@ def _apply_env(config: Config) -> None:
 # unknown one is a typo, not a setting nobody reads.
 _RUNTIME_KEYS = ("max_tool_rounds", "max_tool_calls", "max_output_bytes", "command_timeout_s",
                  "session_retention_days", "auto_compact", "show_reasoning", "mode",
-                 "project_doc_max_bytes", "project_doc_fallback_filenames")
+                 "project_doc_max_bytes", "project_doc_fallback_filenames",
+                 "auto_compact_token_limit")
 # Secrets may come only from the environment or the credential store, never
 # from a command line other processes can read (requirements section 4.3).
 _SECRET_KEYS = frozenset({"api_key", "headers"})

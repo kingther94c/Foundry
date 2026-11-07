@@ -278,6 +278,8 @@ What a codex user still notices day to day, next:
     D-092).
 54. ~~Tab completion~~ -- `foundry completion powershell|bash`, built from the
     parser, as `codex completion` (landed, D-093).
+55. ~~When automatic compaction starts~~ -- `runtime.auto_compact_token_limit`,
+    codex's `model_auto_compact_token_limit`, only ever sooner (landed, D-094).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

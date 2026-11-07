@@ -143,6 +143,10 @@ class ContextManager:
     mask_above_fraction: float = MASK_ABOVE_FRACTION
     reserve_output_tokens: int = 8_000
     compact_above_fraction: float = COMPACT_ABOVE_FRACTION
+    # runtime.auto_compact_token_limit (D-094), codex's
+    # model_auto_compact_token_limit: compact past this many tokens when that
+    # comes before the share above. None: the share alone.
+    compact_above_tokens: int | None = None
 
     redactor: Redactor = field(default_factory=default_redactor)
     history: list[Message] = field(default_factory=list)
@@ -343,8 +347,16 @@ class ContextManager:
         """Whether masking has left too much: the projection is past the
         compaction threshold and there is model output to summarise."""
         return (self.compactable()
-                and self.estimated_context_tokens()
-                > int(self.max_context_tokens * self.compact_above_fraction))
+                and self.estimated_context_tokens() > self.compaction_threshold())
+
+    def compaction_threshold(self) -> int:
+        """Where automatic compaction starts: a share of the window (D-040),
+        or the user's limit when that comes first (D-094) -- never later, so
+        a limit past the window cannot leave a session to run out of it."""
+        threshold = int(self.max_context_tokens * self.compact_above_fraction)
+        if self.compact_above_tokens is not None:
+            threshold = min(threshold, self.compact_above_tokens)
+        return threshold
 
     def compactable(self) -> bool:
         """Something besides the user's messages to compact. Right after a
