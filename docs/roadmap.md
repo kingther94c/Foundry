@@ -250,6 +250,8 @@ What a codex user still notices day to day, next:
     per server, as codex's (landed, D-080).
 42. ~~MCP servers at an address~~ -- `url` and `bearer_token_env_var`, over
     streamable HTTP, as codex's (landed, D-081).
+43. ~~`foundry mcp list | add | remove`~~ -- the servers in your config.toml
+    from the command line, as `codex mcp` (landed, D-082).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

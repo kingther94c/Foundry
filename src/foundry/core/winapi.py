@@ -324,6 +324,17 @@ def _search(name: str, path: str, pathext: str) -> str | None:
     return None
 
 
+# Fragments of a variable's name that make it a credential's.
+CREDENTIAL_FRAGMENTS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL",
+                        "AWS_", "AZURE_", "OPENAI", "ANTHROPIC")
+
+
+def looks_like_credential(name: str) -> bool:
+    """Whether a variable's name says it holds a credential."""
+    upper = name.upper()
+    return any(fragment in upper for fragment in CREDENTIAL_FRAGMENTS)
+
+
 def child_environment(base: dict[str, str] | None = None) -> dict[str, str]:
     """A minimal environment for child processes.
 
@@ -351,13 +362,11 @@ def child_environment(base: dict[str, str] | None = None) -> dict[str, str]:
         "GOPATH", "GOROOT", "CARGO_HOME", "RUSTUP_HOME", "NVM_DIR",
     }
     keep_prefix = ("PYTHON", "PIP_", "NPM_CONFIG_", "NUGET_", "DOTNET_", "MSBUILD")
-    deny_fragment = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL",
-                     "AWS_", "AZURE_", "OPENAI", "ANTHROPIC")
 
     env: dict[str, str] = {}
     for name, value in source.items():
         upper = name.upper()
-        if any(fragment in upper for fragment in deny_fragment):
+        if looks_like_credential(name):
             continue
         if upper in keep_exact or upper.startswith(keep_prefix):
             env[name] = value

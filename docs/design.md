@@ -20,6 +20,7 @@ foundry/
 │   ├── policy/              # PolicyEngine: rules, modes, the six-step pipeline, the command segmenter
 │   ├── tools/               # ToolExecutor + the tool implementations + the workspace boundary
 │   ├── mcp.py               # the MCP client over stdio and HTTP: servers' tools as policy-checked tools (D-043, D-081)
+│   ├── config_edit.py       # `foundry mcp add/remove`: a server's table in the user's config.toml, checked (D-082)
 │   ├── images.py            # images the model is shown: checked, sized, base64 (D-045)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
 │   ├── auth.py              # AuthProvider + DPAPI storage
@@ -368,7 +369,10 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   token from the variable `bearer_token_env_var` names, sent only over https
   or to this machine and registered with the redactor; each request on a
   thread of its own, so Ctrl+C and the timeout cut its connection. `/mcp`
-  shows such a server's scheme and host, not its path.
+  shows such a server's scheme and host, not its path. `foundry mcp list | add
+  | remove` ([D-082](decision-log.md)) manage the tables from the command
+  line: an edit is text, appended or taken out, and written only if the
+  result parses to the old settings with exactly that server added or gone.
 - `notify` ([D-050](decision-log.md)): a program from the user's own config,
   started when a turn ends with the turn's JSON as its last argument (codex's
   `agent-turn-complete`), found on PATH, without a shell, with the command

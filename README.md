@@ -118,6 +118,7 @@ retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 | `foundry sessions [id]` | list sessions with each one's first message (and which are in use), or show one |
 | `foundry report [--json]` | patch first-try success rate, command failures, denials, token stats |
 | `foundry login` / `logout` | credential management (DPAPI encrypted) |
+| `foundry mcp list [--json]` / `add NAME -- COMMAND [ARGS...]` / `add NAME --url URL` / `remove NAME` | the MCP servers in your config.toml, as `codex mcp`: `add` takes `--env KEY=VALUE`, `--env-var NAME` (a secret, passed through by name), `--bearer-token-env-var VAR` and `--read-only`; the file is edited in place, comments kept |
 | `foundry doctor` | environment self-check |
 
 Exit codes: `completed=0 partial=10 blocked=11 failed=12 cancelled=13
@@ -130,8 +131,9 @@ Every command that works in a repository takes `-C DIR` (or `--cd DIR`,
 secret) and `--profile NAME`, a `[profiles.NAME]` table in your `config.toml`
 holding `backend`, `runtime` and `permissions` like the file itself:
 
-MCP servers go in the same file; their tools reach the model as
-`mcp__<server>__<tool>`, and each call asks first unless a rule allows it
+MCP servers go in the same file -- `foundry mcp add docs --env-var DOCS_TOKEN --
+uvx our-docs-mcp` writes the first table below -- and their tools reach the
+model as `mcp__<server>__<tool>`; each call asks first unless a rule allows it
 (`tool = "mcp__docs__*"`):
 
 ```toml

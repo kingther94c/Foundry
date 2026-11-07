@@ -45,6 +45,7 @@ from foundry.core.config import (
     parse_settings,
     user_dir,
 )
+from foundry.core.config_edit import add_server, remove_server, toml_string
 from foundry.core.context import ContextManager
 from foundry.core.mcp import McpServers, start_servers
 from foundry.core.errors import (
@@ -93,7 +94,7 @@ from foundry.core.tools.base import ReadTracker, ToolContext
 from foundry.core.tools.git import capture_baseline, is_git_repository
 from foundry.core.tools.registry import default_registry
 from foundry.core.undo import apply_undo, other_changes, plan_undo, read_source, undo_payload
-from foundry.core.winapi import decode_output
+from foundry.core.winapi import decode_output, looks_like_credential
 from foundry.core.workspace import PathRejected, Workspace
 
 TRUST_FILE = "trusted.json"
@@ -196,8 +197,10 @@ def _rule_writer(home: Path, policy: PolicyEngine):
         config_path = home / "config.toml"
         home.mkdir(parents=True, exist_ok=True)
         existing = config_path.read_text(encoding="utf-8") if config_path.is_file() else ""
-        entry = (f'\n[[permissions]]\ntool = "{op.tool}"\n'
-                 f'pattern = "{pattern}"\ndecision = "allow"\n'
+        # Quoted as TOML: a command with a quote in it, written as it was,
+        # left a config.toml that no longer parsed (found with D-082).
+        entry = (f'\n[[permissions]]\ntool = {toml_string(op.tool)}\n'
+                 f'pattern = {toml_string(pattern)}\ndecision = "allow"\n'
                  f'reason = "approved with \'always\'"\n')
         if entry.strip() in existing:
             return
@@ -1070,6 +1073,118 @@ def cmd_record(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- foundry mcp (D-082) ----------------------------------------------------------------
+
+NO_SERVERS = ("[dim]no MCP servers: `foundry mcp add NAME -- COMMAND` adds one, or "
+              "`foundry mcp add NAME --url URL`[/dim]")
+
+
+def cmd_mcp(args: argparse.Namespace) -> int:
+    """``foundry mcp list | add | remove``, as ``codex mcp``: the servers in
+    the user's own config.toml, from the command line. Listing starts none
+    of them -- /mcp in a session says how each is."""
+    console = Console()
+    path = user_dir() / "config.toml"
+    action = getattr(args, "mcp_command", None) or "list"
+    if action == "add":
+        add_server(path, args.name, _server_entry(args))
+        console.print(f"[green]added[/green] MCP server {escape(args.name)} to "
+                      f"{escape(str(path))}; a new session starts it")
+        return 0
+    if action == "remove":
+        remove_server(path, args.name)
+        console.print(f"[green]removed[/green] MCP server {escape(args.name)} from "
+                      f"{escape(str(path))}")
+        return 0
+    servers = load_config(home=user_dir(), profile=getattr(args, "profile", None)).mcp_servers
+    if getattr(args, "json", False):
+        sys.stdout.write(json.dumps([_server_record(s) for s in servers.values()],
+                                    indent=2) + "\n")
+        return 0
+    if not servers:
+        console.print(NO_SERVERS)
+    for server in servers.values():
+        # As /mcp shows it (D-064, D-081): a program, not its arguments; an
+        # address's host, not its path.
+        state = "enabled" if server.enabled else "disabled"
+        kind = "read-only" if server.read_only else "may change things"
+        console.print(f"[bold]{escape(server.name)}[/bold] [dim]({escape(server.shown_as())})"
+                      f"[/dim] {state}, {kind}", soft_wrap=True)
+        said = []
+        if server.enabled_tools is not None:
+            said.append("only " + (", ".join(server.enabled_tools) or "no tools"))
+        if server.disabled_tools:
+            said.append("never " + ", ".join(server.disabled_tools))
+        if server.env_vars:
+            said.append("passes " + ", ".join(server.env_vars))
+        if server.bearer_token_env_var:
+            said.append(f"token from {server.bearer_token_env_var}")
+        if said:
+            console.print(f"  [dim]{escape(safe('; '.join(said)))}[/dim]", soft_wrap=True)
+    return 0
+
+
+def _server_entry(args: argparse.Namespace) -> dict[str, Any]:
+    """The ``[mcp_servers.<name>]`` settings ``foundry mcp add`` was given."""
+    command = list(args.server_command)
+    entry: dict[str, Any] = {}
+    if args.url is not None:
+        if command:
+            raise ConfigError("a server is a program Foundry starts or an address it reaches: "
+                              "give --url or a command after --, not both")
+        if args.env or args.env_var:
+            raise ConfigError("--env and --env-var are for a server Foundry starts, not one "
+                              "at a --url")
+        entry["url"] = args.url
+        if args.bearer_token_env_var:
+            entry["bearer_token_env_var"] = args.bearer_token_env_var
+    else:
+        if not command:
+            raise ConfigError("give the command that starts the server after --, or its --url")
+        if args.bearer_token_env_var:
+            raise ConfigError("--bearer-token-env-var is for a server at a --url")
+        entry["command"] = command[0]
+        if command[1:]:
+            entry["args"] = command[1:]
+        env: dict[str, str] = {}
+        for item in args.env or []:
+            key, sep, value = item.partition("=")
+            if not sep or not key:
+                raise ConfigError("--env takes KEY=VALUE")   # not echoed: it may be a secret
+            if looks_like_credential(key):
+                # Written into config.toml, and readable on this command
+                # line by other processes meanwhile.
+                raise ConfigError(f"{key} looks like a secret, and --env writes its value into "
+                                  f"config.toml; set it in your environment and pass it "
+                                  f"through with --env-var {key}")
+            env[key] = value
+        if env:
+            entry["env"] = env
+        if args.env_var:
+            entry["env_vars"] = list(args.env_var)
+    if args.read_only:
+        entry["read_only"] = True
+    return entry
+
+
+def _server_record(server) -> dict[str, Any]:
+    """``foundry mcp list --json``: what the listing shows, as data."""
+    return {
+        "name": server.name,
+        "transport": "http" if server.url else "stdio",
+        "where": server.shown_as(),
+        "enabled": server.enabled,
+        "read_only": server.read_only,
+        "enabled_tools": (list(server.enabled_tools)
+                          if server.enabled_tools is not None else None),
+        "disabled_tools": list(server.disabled_tools),
+        "env_vars": list(server.env_vars),
+        "bearer_token_env_var": server.bearer_token_env_var or None,
+        "startup_timeout_s": server.startup_timeout_s,
+        "tool_timeout_s": server.tool_timeout_s,
+    }
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     from foundry.cli.report import render
 
@@ -1279,7 +1394,45 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="check the environment")
     doctor.set_defaults(func=cmd_doctor)
 
+    mcp = sub.add_parser("mcp", help="list, add or remove MCP servers in your config.toml")
+    mcp.set_defaults(func=cmd_mcp)
+    mcp_sub = mcp.add_subparsers(dest="mcp_command")
+    mcp_list = mcp_sub.add_parser("list", help="the MCP servers your configuration names")
+    mcp_list.add_argument("--json", action="store_true")
+    mcp_list.add_argument("--profile", help="as a session with this profile would see them")
+    mcp_add = mcp_sub.add_parser(
+        "add", help="add an MCP server to your config.toml",
+        usage="foundry mcp add NAME [--env KEY=VALUE] [--env-var NAME] [--read-only] "
+              "-- COMMAND [ARGS...]\n       foundry mcp add NAME --url URL "
+              "[--bearer-token-env-var VAR] [--read-only]")
+    mcp_add.add_argument("name", help="letters, digits, _ and -; its tools are mcp__NAME__*")
+    mcp_add.add_argument("--url", help="the address of a server already running "
+                                       "(streamable HTTP)")
+    mcp_add.add_argument("--bearer-token-env-var", metavar="VAR",
+                         help="the environment variable holding its token")
+    mcp_add.add_argument("--env", action="append", metavar="KEY=VALUE",
+                         help="a plain value for the server's environment (repeatable)")
+    mcp_add.add_argument("--env-var", action="append", metavar="NAME",
+                         help="a variable passed through from your environment, by name "
+                              "(repeatable): where a secret goes")
+    mcp_add.add_argument("--read-only", action="store_true",
+                         help="you vouch its tools change nothing")
+    # The command after -- is taken off before parsing (_split_command): a
+    # REMAINDER argument would swallow the options that come after NAME.
+    mcp_add.set_defaults(server_command=[])
+    mcp_remove = mcp_sub.add_parser("remove", help="take an MCP server out of your config.toml")
+    mcp_remove.add_argument("name")
+
     return parser
+
+
+def _split_command(argv: list[str]) -> tuple[list[str], list[str] | None]:
+    """``foundry mcp add NAME ... -- COMMAND ARGS``: the server's command is
+    everything after the first ``--``, its own options included."""
+    if argv[:2] == ["mcp", "add"] and "--" in argv:
+        cut = argv.index("--")
+        return argv[:cut], argv[cut + 1:]
+    return argv, None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1290,7 +1443,10 @@ def main(argv: list[str] | None = None) -> int:
     # error rather than a task sent to the model.
     if not argv or (argv[0].startswith("-") and argv[0] not in ("-h", "--help", "--version")):
         argv = ["run", *argv]
+    argv, server_command = _split_command(argv)
     args = parser.parse_args(argv)
+    if server_command is not None:
+        args.server_command = server_command
     if not getattr(args, "func", None):
         args = parser.parse_args(["run"])
     try:

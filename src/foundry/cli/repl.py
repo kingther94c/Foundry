@@ -943,8 +943,10 @@ def set_effort(wiring: "Wiring", console: Console, arguments: str = "") -> None:
 
 # How much of a tool's description /mcp shows: enough to tell tools apart.
 MCP_DESCRIPTION_SHOWN = 60
-NO_MCP = ("[dim]no MCP servers: an [mcp_servers.NAME] table in your config.toml starts "
-          "one[/dim]")
+# The table's brackets escaped: as markup, [mcp_servers.NAME] was taken for a
+# style and vanished from the line.
+NO_MCP = ("[dim]no MCP servers: `foundry mcp add NAME -- COMMAND` adds one, as does an "
+          "\\[mcp_servers.NAME] table in your config.toml[/dim]")
 
 
 def show_mcp(wiring: "Wiring", console: Console, arguments: str = "") -> None:
