@@ -305,6 +305,9 @@ What a codex user still notices day to day, next:
     D-104).
 66. ~~`foundry mcp get NAME`~~ -- one MCP server's settings in full, as
     `codex mcp get`, a value a credential's name marks hidden (landed, D-105).
+67. ~~A cited file opens in the editor~~ -- `src/app.py:42` in the answer is
+    a link to that file at that line, as codex's `file_opener` (landed,
+    D-106).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

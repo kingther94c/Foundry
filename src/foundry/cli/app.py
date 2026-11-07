@@ -396,7 +396,8 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         context.reserve_output_tokens = max(context.reserve_output_tokens,
                                             config.backend.max_output_tokens)
 
-    renderer = Renderer(console=console)
+    renderer = Renderer(console=console, file_opener=config.file_opener,
+                        workspace=workspace.root)
     sink = EventSink(redactor=default_redactor())
     sink.subscribe(renderer.handle)
 

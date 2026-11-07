@@ -10,6 +10,7 @@ from each whole line, a carriage return is dropped (it would let a line
 overwrite itself on screen), and what is printed is built as rich ``Text``,
 never parsed as console markup. A link is shown as its text and its address;
 it never becomes a terminal hyperlink, whose target the reader cannot see.
+Inline code that cites a file may (D-106): that target is the file shown.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import re
 from typing import Callable
 
 from rich.console import RenderableType
+from rich.style import Style
 from rich.syntax import Syntax
 from rich.text import Text
 
@@ -35,15 +37,21 @@ _INLINE = re.compile(
 )
 
 
-def inline(text: str, style: str = "") -> Text:
-    """One line's emphasis, inline code and links, as styled Text."""
+# A citation's link, or None: the file a span of inline code names (D-106).
+Linker = Callable[[str], "str | None"]
+
+
+def inline(text: str, style: str = "", link: Linker | None = None) -> Text:
+    """One line's emphasis, inline code and links, as styled Text; inline
+    code that cites a file is a link to it when ``link`` says where."""
     out = Text(style=style)
     at = 0
     for match in _INLINE.finditer(text):
         out.append(text[at:match.start()])
         code, bold, label, address, italic = match.groups()
         if code is not None:
-            out.append(code, style="cyan")
+            target = link(code) if link is not None else None
+            out.append(code, style=Style(color="cyan", link=target) if target else "cyan")
         elif bold is not None:
             out.append(bold, style="bold")
         elif label is not None:
@@ -60,8 +68,9 @@ class MarkdownLines:
     """Turns streamed text into renderables, a whole line at a time.
     ``sanitize`` strips control sequences (the renderer's own, passed in)."""
 
-    def __init__(self, sanitize: Callable[[str], str]) -> None:
+    def __init__(self, sanitize: Callable[[str], str], link: Linker | None = None) -> None:
         self.sanitize = sanitize
+        self.link = link
         self.pending = ""
         # An open code fence: its marker, its language, and its lines so far.
         self.fence: tuple[str, str, list[str]] | None = None
@@ -104,13 +113,13 @@ class MarkdownLines:
         heading = _HEADING.match(line)
         if heading:
             style = "bold underline" if len(heading.group(1)) <= 2 else "bold"
-            return [inline(heading.group(2), style)]
+            return [inline(heading.group(2), style, self.link)]
         if _RULE.match(line):
             return [Text(line.strip(), style="dim")]
         quote = _QUOTE.match(line)
         if quote:
-            return [Text("| ", style="dim") + inline(quote.group(1), "italic")]
-        return [inline(line)]
+            return [Text("| ", style="dim") + inline(quote.group(1), "italic", self.link)]
+        return [inline(line, link=self.link)]
 
     def _code(self) -> RenderableType:
         _, language, lines = self.fence

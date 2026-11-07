@@ -430,6 +430,9 @@ class Config:
     auto_compact_token_limit: int | None = None
     # Whether the model's reasoning is shown (D-044); the journal keeps it.
     show_reasoning: bool = True
+    # The editor a file the model cites opens in (D-106), as codex's
+    # file_opener: one of FILE_OPENERS, ``none`` for no links.
+    file_opener: str = "vscode"
     # The repository's instruction files (D-086), as codex's settings: how
     # many characters of them are read, shared from the top down (0 reads
     # none), and the names tried in each directory after AGENTS.override.md,
@@ -521,6 +524,9 @@ def _load_toml(path: Path) -> dict[str, Any]:
     except (tomllib.TOMLDecodeError, OSError) as exc:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
 
+
+# The editors a cited file may open in (D-106), as codex's file_opener.
+FILE_OPENERS = ("vscode", "vscode-insiders", "windsurf", "cursor", "none")
 
 # What a configuration file holds (D-091). Profiles are the user's file's own.
 _SECTIONS = frozenset({"backend", "runtime", "permissions", "mcp_servers", "notify",
@@ -699,6 +705,14 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         config.auto_compact_token_limit = value
         config.record("auto_compact_token_limit", value, layer)
 
+    if "file_opener" in runtime:
+        value = runtime["file_opener"]
+        if value not in FILE_OPENERS:
+            raise ConfigError(f"file_opener must be one of {', '.join(FILE_OPENERS)}, got "
+                              f"{value!r}")
+        config.file_opener = value
+        config.record("file_opener", value, layer)
+
     for key in ("auto_compact", "show_reasoning"):
         if key not in runtime:
             continue
@@ -781,7 +795,7 @@ def _apply_env(config: Config) -> None:
 _RUNTIME_KEYS = ("max_tool_rounds", "max_tool_calls", "max_output_bytes", "command_timeout_s",
                  "session_retention_days", "auto_compact", "show_reasoning", "mode",
                  "project_doc_max_bytes", "project_doc_fallback_filenames",
-                 "auto_compact_token_limit")
+                 "auto_compact_token_limit", "file_opener")
 # Secrets may come only from the environment or the credential store, never
 # from a command line other processes can read (requirements section 4.3).
 _SECRET_KEYS = frozenset({"api_key", "headers"})

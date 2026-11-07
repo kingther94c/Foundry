@@ -41,6 +41,10 @@ and paths outside the workspace are rejected.
   steps you did not mark completed, and its claims still need commands.
 - `finish` ends the task. See below.
 
+When you mention a file in your reply, put its workspace path in backticks,
+with the line if one matters -- `src/app.py:42` -- and the user can open it
+from the terminal.
+
 # Approvals
 
 Some actions require the user's approval before they run. A denial is not a

@@ -32,6 +32,7 @@ foundry/
 │                            #   interactive prompt and its slash commands (D-039); a paste or a
 │                            #   block between lines of three quotes is one message (D-052);
 │                            #   markdown.py, the model's answer as Markdown a line at a time (D-070);
+│                            #   file_links.py, a cited file as a link to it in the editor (D-106);
 │                            #   mcp_server.py, Foundry as an MCP server over stdio (D-103)
 ├── prompts/                 # versioned assets: the base system prompt, the patch format description, the permissions section template
 └── __main__.py              # entry point: bootstraps in UTF-8 mode
@@ -97,6 +98,9 @@ PROTOCOL_VERSION = 1
 - On a terminal the model's text is rendered as Markdown a line at a time
   ([D-070](decision-log.md)), each whole line stripped of control sequences
   and printed as `Text`; elsewhere it is printed as the model wrote it.
+  Inline code naming an existing file in the workspace is a hyperlink to it
+  in the editor `runtime.file_opener` names ([D-106](decision-log.md)), the
+  target built from the resolved file, never from the text.
 - A task's end is followed by `worked for 1m 12s` (under a second, nothing):
   from its first `TurnStarted` to its `TurnComplete` or `Termination`
   ([D-073](decision-log.md)).

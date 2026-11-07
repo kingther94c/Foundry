@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable
 
 from rich.console import Console
@@ -21,6 +22,7 @@ from rich.spinner import Spinner
 from rich.syntax import Syntax
 from rich.text import Text
 
+from foundry.cli.file_links import file_link
 from foundry.cli.markdown import MarkdownLines
 from foundry.core.events import (
     ApprovalChoice,
@@ -179,6 +181,10 @@ class Working:
 class Renderer:
     console: Console = field(default_factory=Console)
     verbose: bool = False
+    # The editor a cited file opens in (D-106), as codex's file_opener, and
+    # the workspace a citation is read in: without one, nothing is linked.
+    file_opener: str = "vscode"
+    workspace: Path | None = None
     _streaming: bool = False
     # The working line while it is up (D-069), and what it draws; None
     # otherwise.
@@ -266,12 +272,17 @@ class Renderer:
         read as markup (escaping it as well printed list[int] as list\\[int])."""
         if self.console.is_terminal and not self.console.is_dumb_terminal:
             if self._markdown is None:
-                self._markdown = MarkdownLines(sanitize)
+                self._markdown = MarkdownLines(sanitize, self._link)
             for renderable in self._markdown.feed(text):
                 self.console.print(renderable)
             return
         self.console.print(sanitize(text), end="", markup=False, highlight=False)
         self._streaming = True
+
+    def _link(self, code: str) -> str | None:
+        if self.workspace is None:
+            return None
+        return file_link(code, self.workspace, self.file_opener)
 
     def _end_text(self) -> None:
         """The text has ended: the rest of it, and the line it was on."""
