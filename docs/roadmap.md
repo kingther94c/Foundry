@@ -359,6 +359,8 @@ What a codex user still notices day to day, next:
     journal, on the clipboard or in a new file (landed, D-124).
 86. ~~`/rename [NAME]`~~ -- a session's name, shown in its listings and taken
     wherever its id is, `foundry resume NAME` (landed, D-125).
+87. ~~`/fork` and `foundry fork`~~ -- a copy of a session, continued apart
+    from it, the source kept as it was (landed, D-126).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

@@ -40,7 +40,7 @@ from foundry.core.events import Notice, TerminalStatus
 from foundry.core.hooks import HOOKS_FILE, UNMATCHED_EVENTS, events_named
 from foundry.core.policy.engine import Mode, Verdict
 from foundry.core.prompts import doc_names, mode_line, system_prompt
-from foundry.core.resume import session_name
+from foundry.core.resume import fork_journal, session_name
 from foundry.core.session import EventType, SessionStore
 from foundry.core.skills import LOAD_SKILL, REPOSITORY_SKILLS, YOURS
 from foundry.core.tools.base import ToolKind, truncate_middle
@@ -65,6 +65,8 @@ if TYPE_CHECKING:
 # What repl() returns when the user typed /new: the caller closes this session
 # and starts another.
 NEW_SESSION = "new_session"
+# /fork (D-126): the session goes on as the fork the wiring names.
+FORK_SESSION = "fork_session"
 _EXIT = "exit"
 
 DIFF_MAX_LINES = 400
@@ -356,8 +358,8 @@ def repl(wiring: "Wiring", console: Console,
             task = dispatch(wiring, console, *parsed)
             if task == _EXIT:
                 return TerminalStatus.CANCELLED
-            if task == NEW_SESSION:
-                return NEW_SESSION
+            if task in (NEW_SESSION, FORK_SESSION):
+                return task
             if not isinstance(task, RunTask):
                 continue
             task = replace(task, typed=line)
@@ -726,6 +728,17 @@ def _exit(wiring: "Wiring", console: Console, arguments: str) -> str:
 
 def _new(wiring: "Wiring", console: Console, arguments: str) -> str:
     return NEW_SESSION
+
+
+def _fork(wiring: "Wiring", console: Console, arguments: str) -> str | None:
+    """``/fork``: a copy of the session so far, to go on in apart from it,
+    as codex's /fork (D-126); this one is kept as it is."""
+    try:
+        wiring.forked = fork_journal(wiring.session.dir.parent, wiring.session.path)
+    except OSError as exc:
+        console.print(f"[red]cannot fork this session: {escape(str(exc))}[/red]")
+        return None
+    return FORK_SESSION
 
 
 def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
@@ -1381,6 +1394,7 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("rename", "name this session, to resume it by name; alone, its name", rename,
             arguments="[NAME]"),
     Command("new", "end this session and start a fresh one", _new),
+    Command("fork", "go on in a copy of this session, keeping this one as it is", _fork),
     Command("exit", "end the session", _exit),
     Command("quit", "end the session", _exit),
 )}

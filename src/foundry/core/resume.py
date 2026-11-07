@@ -22,8 +22,10 @@ What the journal cannot supply is decided conservatively:
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
+import shutil
 from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
@@ -52,6 +54,7 @@ from foundry.core.session import (
     JournalRecord,
     SessionStore,
     is_locked,
+    new_session_id,
 )
 from foundry.core.tools.git import GitBaseline
 from foundry.core.tools.plan import steps_from_payload
@@ -213,6 +216,9 @@ class JournalState:
     typed: tuple[tuple[str, str], ...] = ()
     # The name /rename last gave it (D-125), "" when none.
     name: str = ""
+    # The session it is a fork of, while it has not run since it was forked
+    # (D-126); "" otherwise.
+    fork_of: str = ""
 
 
 def _status(raw: Any) -> TerminalStatus:
@@ -345,7 +351,17 @@ def read_journal(path: Path) -> JournalState:
         typed=tuple(typed),
         last_sent=_last_sent(records, load),
         name=name,
+        fork_of=_fork_of(meta, records),
     )
+
+
+def _fork_of(meta: JournalRecord, records: list[JournalRecord]) -> str:
+    """The session this one was forked from, if nothing was recorded since."""
+    source = meta.payload.get("forked_from")
+    forked_at = _int(meta.payload.get("forked_at"))
+    if not isinstance(source, str) or any(_int(r.ordinal) > forked_at for r in records):
+        return ""
+    return source
 
 
 def _fold_requests(records: list[JournalRecord],
@@ -614,6 +630,42 @@ def named_session(sessions: Path, name: str, workspace: Path | None) -> str | No
     return None
 
 
+def fork_journal(sessions: Path, source: Path) -> str:
+    """A new session holding ``source``'s conversation, as codex's fork
+    makes one (D-126); its id. The journal is copied as it is -- each record
+    with its ordinal, so what the conversation cites still names it -- but
+    for its header, which names the new session, the one it came from and
+    where, and for the source's names, which stay the source's. The
+    artifacts it cites come too. The source is only read."""
+    records: list[dict[str, Any]] = []
+    with source.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue    # a line a killed process left half written
+            if isinstance(record, dict) and record.get("type") != EventType.RENAMED:
+                records.append(record)
+    forked = new_session_id()
+    forked_at = max((_int(r.get("ordinal")) for r in records), default=0)
+    for record in records:
+        if record.get("type") == EventType.SESSION_META and isinstance(
+                record.get("payload"), dict):
+            record["payload"] = {**record["payload"], "session_id": forked,
+                                 "forked_from": source.parent.name, "forked_at": forked_at}
+    target = sessions / forked
+    target.mkdir(parents=True)
+    try:
+        if (source.parent / "artifacts").is_dir():
+            shutil.copytree(source.parent / "artifacts", target / "artifacts")
+        with (target / "events.jsonl").open("x", encoding="utf-8", newline="\n") as out:
+            out.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in records)
+    except OSError:
+        shutil.rmtree(target, ignore_errors=True)
+        raise
+    return forked
+
+
 def find_journal(sessions: Path, session_id: str) -> Path | None:
     """A session id is a name, not a path: ``../notes`` names nothing."""
     target = sessions / session_id / "events.jsonl"
@@ -747,6 +799,10 @@ def resume_note(state: JournalState, outside: frozenset[str], mode: str = "") ->
     """What the model is told before its first task after a resume, in ``mode``."""
     ended = state.status.value + (f" ({state.reason})" if state.reason else "")
     lines = [f"This session was resumed. When it stopped, its status was {ended}."]
+    if state.fork_of:
+        # A fork's first run (D-126): the conversation is another session's.
+        lines = [f"This session is a fork of session {state.fork_of}: the conversation so "
+                 "far is that session's, and it goes on here apart from it."]
     if outside:
         shown = _names(sorted(outside))
         lines.append("These files have changes this session did not make with apply_patch "

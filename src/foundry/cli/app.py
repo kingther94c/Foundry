@@ -10,6 +10,7 @@ another frontend a matter of swapping this file.
 from __future__ import annotations
 
 import argparse
+import shutil
 import dataclasses
 import json
 import os
@@ -28,7 +29,7 @@ from foundry.cli.completion import SHELLS
 from foundry.cli.completion import script as completion_script
 from foundry.cli.render import Renderer, safe
 from foundry.cli.transcript import show_conversation
-from foundry.cli.repl import NEW_SESSION
+from foundry.cli.repl import FORK_SESSION, NEW_SESSION
 from foundry.cli.repl import attach as _attach
 from foundry.cli.repl import take_images as _take_images
 from foundry.cli.repl import confirm as _confirm
@@ -85,6 +86,7 @@ from foundry.core.resume import (
     CONTINUE_PROMPT,
     JournalState,
     find_journal,
+    fork_journal,
     latest_session,
     named_session,
     outside_changes,
@@ -130,6 +132,8 @@ class Wiring:
     note: str = ""
     # The name /rename gave the session (D-125), "" when none.
     name: str = ""
+    # The fork /fork made of it, for the loop to go on in (D-126).
+    forked: str = ""
     # For /new, and the custom prompts the REPL offers (D-039).
     home: Path | None = None
     trusted: bool = False
@@ -540,7 +544,9 @@ def _announce_resume(wiring: Wiring) -> None:
     ended = state.status.value + (f" ({state.reason})" if state.reason else "")
     task = state.first_task.splitlines()[0][:80] if state.first_task else "?"
     events.emit(Notice(
-        f"resumed session {state.session_id} ({task!r}); it had ended {ended}. "
+        (f"forked session {state.fork_of} into {state.session_id} ({task!r}); it goes on "
+         "apart from it. " if state.fork_of else
+         f"resumed session {state.session_id} ({task!r}); it had ended {ended}. ") +
         f"{len(state.repairs)} tool call(s) without a recorded result were given one; "
         f"{len(wiring.outside)} file(s) changed outside it since it started.", level="info"))
     if (state.profile, state.model) != (wiring.config.backend.name, wiring.config.backend.model):
@@ -768,11 +774,35 @@ def _choose_resume(args: argparse.Namespace, console) -> int | None:
     return None
 
 
+def _fork(args: argparse.Namespace, console) -> int | None:
+    """`foundry fork`: the session chosen as `resume` chooses one, copied
+    into a new one that is then continued (D-126). None to go on."""
+    sessions = user_dir() / "sessions"
+    try:
+        journal = resolve_session(sessions, args.resume, Path(args.workspace).resolve())
+        args.resume = fork_journal(sessions, journal)
+    except (ResumeError, OSError) as exc:
+        console.print(f"[red]cannot fork: {escape(str(exc))}[/red]")
+        return EXIT_CODES[TerminalStatus.FAILED]
+    console.print(f"[dim]forked {journal.parent.name} into {args.resume}; "
+                  f"{journal.parent.name} is kept as it was[/dim]", soft_wrap=True)
+    return None
+
+
+def _forget(sessions: Path, session_id: str) -> None:
+    """A fork that could not be continued: nothing was done in it."""
+    shutil.rmtree(sessions / session_id, ignore_errors=True)
+
+
 def cmd_session(args: argparse.Namespace) -> int:
-    """`run`, and `resume`, which is the same session continued from its journal."""
+    """`run`; `resume`, which is the same session continued from its
+    journal; and `fork`, a copy of one continued apart from it (D-126)."""
     console = Console()
-    if getattr(args, "command", None) == "resume":
+    command = getattr(args, "command", None)
+    if command in ("resume", "fork"):
         stop = _choose_resume(args, console)
+        if stop is None and command == "fork":
+            stop = _fork(args, console)
         if stop is not None:
             return stop
     try:
@@ -781,6 +811,8 @@ def cmd_session(args: argparse.Namespace) -> int:
                        resume=getattr(args, "resume", None), **flags)
     except FoundryError as exc:
         console.print(f"[red]{exc}[/red]")
+        if command == "fork":
+            _forget(user_dir() / "sessions", args.resume)
         return EXIT_CODES[TerminalStatus.FAILED]
 
     wiring.renderer.show_disclosure(str(wiring.workspace.root),
@@ -808,8 +840,11 @@ def cmd_session(args: argparse.Namespace) -> int:
             # At a terminal a task given here is the first message, and the
             # session goes on after it, as `codex "task"` does (D-078).
             first = args.task
-            while (ended := _repl(wiring, console, first)) == NEW_SESSION:
+            while (ended := _repl(wiring, console, first)) in (NEW_SESSION, FORK_SESSION):
                 first = None
+                if ended == FORK_SESSION:
+                    wiring = _switch_to_fork(wiring, console, flags)
+                    continue
                 # /new: this session ends, and a fresh one starts in the same
                 # workspace -- a new journal, an empty conversation, no grants.
                 _close(wiring, TerminalStatus.CANCELLED, "the user started a new session")
@@ -834,6 +869,29 @@ def cmd_session(args: argparse.Namespace) -> int:
         _say_farewell(console, wiring)
 
     return EXIT_CODES.get(status, 0)
+
+
+def _switch_to_fork(wiring: Wiring, console, flags: dict) -> Wiring:
+    """/fork (D-126): the fork the REPL made is continued, and this session
+    ends, kept as it was. If the fork cannot be continued -- its HEAD has
+    moved, say -- it is dropped and this session goes on."""
+    source, forked = wiring.session.session_id, wiring.forked
+    flags = {**flags, "overrides": {**(flags["overrides"] or {}), **wiring.chosen} or None}
+    try:
+        fork = build(wiring.workspace.root, home=wiring.home, console=console,
+                     resume=forked, **flags)
+    except FoundryError as exc:
+        _forget(wiring.session.dir.parent, forked)
+        console.print(f"[red]cannot continue the fork: {escape(str(exc))}[/red]; "
+                      "this session goes on", soft_wrap=True)
+        return wiring
+    _close(wiring, TerminalStatus.CANCELLED, f"the user forked this session into {forked}")
+    _say_farewell(console, wiring)
+    fork.chosen = dict(wiring.chosen)
+    _announce_resume(fork)
+    console.print(f"[dim]now in {forked}, a fork of {source}, which is kept as it "
+                  "was[/dim]", soft_wrap=True)
+    return fork
 
 
 def cmd_undo(args: argparse.Namespace) -> int:
@@ -1777,6 +1835,27 @@ def build_parser() -> argparse.ArgumentParser:
     _image_flag(resume)
     _config_flags(resume)
     resume.set_defaults(func=cmd_session)
+
+    fork = sub.add_parser("fork", help="continue a copy of a recorded session, apart "
+                                       "from it")
+    fork.add_argument("resume", nargs="?", default=None, metavar="session",
+                      help="the session id or name, or last for the newest in this "
+                           "workspace (default: at a terminal, pick from the recent ones; "
+                           "otherwise last)")
+    fork.add_argument("task", nargs="?",
+                      help="the first message; at a terminal the session goes on after "
+                           "it, otherwise it ends with it")
+    fork.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
+                      help="repository the session worked in")
+    fork.add_argument("--last", action="store_true",
+                      help="the newest session, as codex's fork --last; a word given is "
+                           "then the task")
+    fork.add_argument("--all", action="store_true",
+                      help="from every workspace's sessions, continued where each was "
+                           "recorded")
+    _image_flag(fork)
+    _config_flags(fork)
+    fork.set_defaults(func=cmd_session)
 
     undo = sub.add_parser("undo", help="revert the files a recorded session patched")
     undo.add_argument("session", nargs="?", default="last",
