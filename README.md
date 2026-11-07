@@ -229,6 +229,8 @@ points in a task with what is happening as JSON on their stdin -- in
 prompt, and a `UserPromptSubmit` hook, run at each, may stop the prompt
 before it is sent or add a note to it; a `PreToolUse` hook may refuse a call
 or rewrite it (a rewrite still goes through policy and the approval); a
+`PermissionRequest` hook may answer an approval prompt for you, allowing the
+call once or refusing it (only where you would have been asked); a
 `PostToolUse` hook may put its own feedback in place of a result, and either
 may add a note for the model; a `Stop` hook, run when the model is done (or
 calls `finish`), may send the task on with its reason as the next prompt; a

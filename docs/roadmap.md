@@ -342,6 +342,9 @@ What a codex user still notices day to day, next:
 79. ~~PreCompact and PostCompact hooks~~ -- a compaction kept from happening
     or the task ended after one; SessionStart's `compact` source before the
     next request (landed, D-118).
+80. ~~PermissionRequest hooks~~ -- an approval prompt answered by the user's
+    own program: a call allowed once or refused, only where someone would
+    be asked (landed, D-119).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

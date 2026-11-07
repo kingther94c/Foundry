@@ -1,10 +1,10 @@
-"""Lifecycle hooks, as codex's (D-115 to D-118).
+"""Lifecycle hooks, as codex's (D-115 to D-119).
 
 A hook is a command line the user's own configuration names -- in
 ``hooks.json`` beside ``config.toml``, in a ``[hooks]`` table of it, or in
 the machine's policy -- run at a point in a turn with what is happening as
 one JSON object on its stdin. The names and shapes are codex's, so a hook
-written for codex runs here unchanged. Nine of codex's events are run:
+written for codex runs here unchanged. Ten of codex's events are run:
 
 * ``SessionStart``, at a session's first prompt (``startup``, or ``resume``)
   and after a compaction (``compact``): a hook may add a note, or stop the
@@ -15,6 +15,10 @@ written for codex runs here unchanged. Nine of codex's events are run:
   call, rewrite its input, or add a note for the model. It never allows what
   policy would not: a rewritten call is checked from the start, breaker,
   rules and approval included.
+* ``PermissionRequest``, when policy would ask the user about a call and
+  someone could be asked: a hook may answer for them, allowing the call
+  once or denying it; a denial wins. It is asked only what the user would
+  be, so it never allows what policy refuses.
 * ``PostToolUse``, after a tool gave its result: a hook may put its own
   feedback in place of the result, or add a note.
 * ``Stop``, when the model is done -- it answered without a call, or called
@@ -53,8 +57,9 @@ SESSION_END = "SessionEnd"
 INTERRUPT = "Interrupt"
 PRE_COMPACT = "PreCompact"
 POST_COMPACT = "PostCompact"
-HOOK_EVENTS = (PRE_TOOL_USE, POST_TOOL_USE, USER_PROMPT_SUBMIT, STOP, SESSION_START,
-               SESSION_END, INTERRUPT, PRE_COMPACT, POST_COMPACT)
+PERMISSION_REQUEST = "PermissionRequest"
+HOOK_EVENTS = (PRE_TOOL_USE, PERMISSION_REQUEST, POST_TOOL_USE, USER_PROMPT_SUBMIT, STOP,
+               SESSION_START, SESSION_END, INTERRUPT, PRE_COMPACT, POST_COMPACT)
 # Events codex gives no matcher: every hook of one runs, whatever its
 # matcher says. SessionStart's matcher is tried on its source, SessionEnd's
 # on its reason, which is always "other", PreCompact's and PostCompact's on
@@ -63,12 +68,12 @@ UNMATCHED_EVENTS = frozenset({USER_PROMPT_SUBMIT, STOP, INTERRUPT})
 SESSION_END_REASON = "other"
 # Where exit code 2 is a decision, its reason on stderr; elsewhere it is a
 # code like any other but 0.
-_EXIT_2_EVENTS = frozenset({PRE_TOOL_USE, POST_TOOL_USE, USER_PROMPT_SUBMIT, STOP})
+_EXIT_2_EVENTS = frozenset({PRE_TOOL_USE, PERMISSION_REQUEST, POST_TOOL_USE,
+                            USER_PROMPT_SUBMIT, STOP})
 # codex's other events: named, so a hooks.json carried over says which of
 # its hooks would not run, rather than reading as a typo.
 CODEX_EVENTS = frozenset({
-    "PreModelRequest", "PostModelRequest", "PermissionRequest", "SubagentStart",
-    "SubagentStop",
+    "PreModelRequest", "PostModelRequest", "SubagentStart", "SubagentStop",
 })
 DEFAULT_TIMEOUT_S = 600
 # SessionEnd and Interrupt hooks hold up a session that is closing or a
@@ -396,10 +401,13 @@ class HookSet:
 @dataclass(slots=True)
 class HookVerdict:
     """What the hooks of one event said, together."""
-    # PreToolUse: why the call is refused. PostToolUse: what the model is
-    # given in place of the result. UserPromptSubmit: why the prompt is
-    # not sent. Stop: what the task goes on with.
+    # PreToolUse: why the call is refused. PermissionRequest: why it is
+    # denied. PostToolUse: what the model is given in place of the result.
+    # UserPromptSubmit: why the prompt is not sent. Stop: what the task goes
+    # on with.
     block: list[str] = field(default_factory=list)
+    # PermissionRequest: a hook allowed the call, which a denial outranks.
+    allow: bool = False
     # UserPromptSubmit, Stop, SessionStart, PreCompact and PostCompact: the
     # stopReason of each `continue: false`, "" for one without.
     stops: list[str] = field(default_factory=list)
@@ -609,6 +617,57 @@ def _pre_answer(reading: _Reading, answer: dict[str, Any]) -> None:
     elif updated is not None:
         reading.outcome = "rewrote"
         verdict.rewrites.append(updated)
+
+
+def read_permission_request(runs: list[HookRun]) -> HookVerdict:
+    """PermissionRequest answers, as codex reads them: ``allow`` or ``deny``
+    (with a message, or exit code 2 and a reason on stderr) for a call the
+    user would be asked about, or no decision. Plain text is not read."""
+    verdict = HookVerdict()
+    for run in runs:
+        reading = _Reading(run, PERMISSION_REQUEST, verdict)
+        answer = reading.start()
+        if answer is not None:
+            _permission_answer(reading, answer)
+        reading.done()
+    return verdict
+
+
+_DECISION = {"behavior": str, "message": str, "interrupt": bool}
+
+
+def _permission_answer(reading: _Reading, answer: dict[str, Any]) -> None:
+    verdict = reading.verdict
+    output = _hook_output(answer, {"hookEventName": str, "decision": dict})
+    decision = (output or {}).get("decision")
+    if (output is None or not _typed(answer, _UNIVERSAL)
+            or (decision is not None and (not _typed(decision, _DECISION)
+                                          or decision.get("behavior") not in ("allow", "deny")))):
+        reading.fail("returned invalid PermissionRequest JSON output")
+        return
+    if answer.get("systemMessage"):
+        verdict.messages.append(answer["systemMessage"])
+    if not reading.control:
+        return
+    decision = decision or {}
+    if answer.get("continue") is False:
+        reading.fail("returned unsupported continue:false")
+    elif answer.get("stopReason") is not None:
+        reading.fail("returned unsupported stopReason")
+    elif answer.get("suppressOutput"):
+        reading.fail("returned unsupported suppressOutput")
+    elif decision.get("updatedInput") is not None:
+        reading.fail("returned unsupported updatedInput")
+    elif decision.get("updatedPermissions") is not None:
+        reading.fail("returned unsupported updatedPermissions")
+    elif decision.get("interrupt"):
+        reading.fail("returned unsupported interrupt:true")
+    elif decision.get("behavior") == "deny":
+        reading.decided(_reason(decision.get("message"))
+                        or f"{PERMISSION_REQUEST} hook denied approval")
+    elif decision.get("behavior") == "allow":
+        reading.outcome = "allowed"
+        verdict.allow = True
 
 
 def read_post_tool_use(runs: list[HookRun]) -> HookVerdict:
@@ -829,7 +888,8 @@ def read_post_compact(runs: list[HookRun]) -> HookVerdict:
 
 
 READERS: dict[str, Callable[[list[HookRun]], HookVerdict]] = {
-    PRE_TOOL_USE: read_pre_tool_use, POST_TOOL_USE: read_post_tool_use,
+    PRE_TOOL_USE: read_pre_tool_use, PERMISSION_REQUEST: read_permission_request,
+    POST_TOOL_USE: read_post_tool_use,
     USER_PROMPT_SUBMIT: read_user_prompt_submit, STOP: read_stop,
     SESSION_START: read_session_start, SESSION_END: read_session_end,
     INTERRUPT: read_interrupt, PRE_COMPACT: read_pre_compact, POST_COMPACT: read_post_compact,

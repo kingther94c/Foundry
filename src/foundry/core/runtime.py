@@ -63,6 +63,7 @@ from foundry.core.events import (
 from foundry.core.hooks import (
     INTERRUPT,
     PERMISSION_MODES,
+    PERMISSION_REQUEST,
     POST_COMPACT,
     POST_TOOL_USE,
     PRE_COMPACT,
@@ -831,10 +832,26 @@ class AgentRuntime:
             return
 
         if decision.verdict is Verdict.ASK:
-            choice = self._ask(op, decision)
-            self._journal(EventType.APPROVAL, {
-                "call_id": call.call_id, "display": op.display, "choice": choice.value,
-            })
+            allowed, denied = self._permission_request(call, op, decision)
+            if denied:
+                # The hook answered for the user (D-119): a denial, as theirs.
+                self._journal(EventType.APPROVAL, {
+                    "call_id": call.call_id, "display": op.display,
+                    "choice": ApprovalChoice.DENY.value, "hook": PERMISSION_REQUEST,
+                })
+                self._audit(op, f"DENY:hook.{PERMISSION_REQUEST}", "declined")
+                self._reply(call, f"denied by a {PERMISSION_REQUEST} hook: {denied}",
+                            is_error=True)
+                self._emit(ToolRejected(call_id=call.call_id, tool=op.tool, display=op.display,
+                                        reason=denied, rule_id=f"hook.{PERMISSION_REQUEST}",
+                                        step=decision.step))
+                return
+            choice = ApprovalChoice.ONCE if allowed else self._ask(op, decision)
+            approval = {"call_id": call.call_id, "display": op.display, "choice": choice.value}
+            if allowed:
+                approval["hook"] = PERMISSION_REQUEST
+                self._emit(Notice(f"{PERMISSION_REQUEST} hook approved: {op.display}"))
+            self._journal(EventType.APPROVAL, approval)
             if choice is ApprovalChoice.ABORT:
                 self._cancelled = True
                 self._audit(op, "ABORT", "aborted")
@@ -1173,6 +1190,25 @@ class AgentRuntime:
         self._hook_notes.setdefault(call.call_id, []).append(
             (PRE_TOOL_USE, f"this call was changed before it ran; it ran as: {changed.display}"))
         return changed, ""
+
+    def _permission_request(self, call: ToolUseBlock, op: Operation,
+                            decision: Decision) -> tuple[bool, str]:
+        """What the PermissionRequest hooks (D-119) say of a call policy
+        would ask the user about: whether one allowed it, and why one denied
+        it, which wins, or "". Neither: the user is asked. They run only
+        where someone would be asked; an unattended run asks no one."""
+        if self.hooks is None or self.approval is None:
+            return False, ""
+        tool_input = hook_tool_input(op.tool, op.args)
+        tool_input.setdefault("description", decision.reason)
+        verdict = self._run_hooks(PERMISSION_REQUEST, matcher_names(op.tool), call.call_id,
+                                  tool_name=hook_tool_name(op.tool), tool_input=tool_input)
+        if verdict is None:
+            return False, ""
+        if verdict.block:
+            # Scrubbed where it goes: the reply, the journal, the event.
+            return False, "; ".join(verdict.block)
+        return verdict.allow, ""
 
     def _post_tool_use(self, call: ToolUseBlock, op: Operation, content: str,
                        images: tuple) -> tuple[str, tuple]:
