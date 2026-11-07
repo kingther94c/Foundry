@@ -15,6 +15,7 @@ could redirect a token to a host of its choosing.
 from __future__ import annotations
 
 import dataclasses
+import difflib
 import os
 import re
 import tomllib
@@ -32,10 +33,6 @@ USER_DIR_ENV = "FOUNDRY_HOME"
 ENV_PREFIX = "FOUNDRY_"
 PROFILE_ENV = "FOUNDRY_PROFILE"
 
-# Settings a repository is never allowed to influence.
-_CONNECTION_KEYS = frozenset({"base_url", "api_key", "model", "protocol", "headers",
-                              "proxy", "ca_bundle", "credential_source", "env_key",
-                              "env_http_headers", "query_params"})
 # A header's name: an HTTP token.
 _HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}\Z")
 
@@ -465,6 +462,12 @@ def _parse_rules(raw: Any, layer: Layer, *, allow_permitted: bool) -> list[Rule]
     for index, item in enumerate(raw):
         if not isinstance(item, dict):
             raise ConfigError("each permission entry must be a table")
+        unknown = sorted(set(item) - _RULE_KEYS)
+        if unknown:
+            # A misspelt pattern left the rule matching everything: an allow
+            # rule written `patern = "git *"` allowed every command (D-091).
+            raise ConfigError(f"permission {index}: no setting {unknown[0]!r} (a rule takes "
+                              f"{', '.join(sorted(_RULE_KEYS))})")
         try:
             verdict = Verdict(str(item.get("decision", "")).lower())
         except ValueError as exc:
@@ -499,13 +502,81 @@ def _load_toml(path: Path) -> dict[str, Any]:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
 
 
+# What a configuration file holds (D-091). Profiles are the user's file's own.
+_SECTIONS = frozenset({"backend", "runtime", "permissions", "mcp_servers", "notify",
+                       "shell_environment_policy"})
+_PROFILE_KEYS = frozenset({"profile", "profiles"})
+_RULE_KEYS = frozenset({"tool", "pattern", "decision", "reason"})
+# Another tool's names for settings Foundry has under its own, so a file
+# carried over from codex is told where each one lives here.
+_CALLED_HERE = {
+    "model_reasoning_effort": "backend.effort",
+    "model_reasoning_summary": "backend.reasoning_summary",
+    "model_verbosity": "backend.verbosity",
+    "model_context_window": "backend.max_context_tokens",
+    "approval_policy": "runtime.mode",
+    "hide_agent_reasoning": "runtime.show_reasoning (true there is false here)",
+}
+_NOT_A_SETTING = {
+    "api_key": "secrets come only from the environment or the credential store "
+               "(foundry login)",
+    "proxy": "the proxy comes from HTTPS_PROXY",
+    "ca_bundle": "the CA bundle comes from FOUNDRY_CA_BUNDLE or SSL_CERT_FILE",
+    "model_provider": "Foundry has no model providers: a provider's base_url, protocol and "
+                      "env_key go under [backend], or under [profiles.NAME.backend]",
+    "sandbox_mode": "Foundry has no sandbox; runtime.mode decides what runs without asking",
+}
+_NOT_A_SETTING["model_providers"] = _NOT_A_SETTING["model_provider"]
+
+
+def _no_setting(layer: str, name: str, known: Any, tables: str) -> ConfigError:
+    """A key no code reads (D-091), refused: skipped, a typo or another tool's
+    spelling looked like a setting that works. Said with where it belongs."""
+    key = name.rpartition(".")[2]
+    if key in _NOT_A_SETTING:
+        hint = _NOT_A_SETTING[key]
+    elif key in _CALLED_HERE:
+        hint = f"Foundry calls it {_CALLED_HERE[key]}"
+    elif key in _PROFILE_KEYS:
+        hint = "profiles are tables of your own config.toml, and do not nest"
+    # Valid in its own table, so it reached here from another.
+    elif key in BackendConfig.__dataclass_fields__:
+        hint = f"it is a backend setting: put it under [{tables}backend]"
+    elif key in _RUNTIME_KEYS:
+        hint = f"it is a runtime setting: put it under [{tables}runtime]"
+    else:
+        close = difflib.get_close_matches(key, sorted(known), n=1)
+        hint = f"did you mean {close[0]!r}?" if close else ""
+    return ConfigError(f"{layer} config: no setting {name!r}" + (f"; {hint}" if hint else ""))
+
+
+def _check_names(data: dict[str, Any], layer: str, *, profiles_allowed: bool,
+                 tables: str) -> None:
+    sections = _SECTIONS | _PROFILE_KEYS if profiles_allowed else _SECTIONS
+    for key in data:
+        if key not in sections:
+            raise _no_setting(layer, key, sections, tables)
+    for section, known in (("backend", BackendConfig.__dataclass_fields__),
+                           ("runtime", _RUNTIME_KEYS)):
+        table = data.get(section, {})
+        if not isinstance(table, dict):
+            raise ConfigError(f"{layer} config: {section} must be a table, as "
+                              f"[{tables}{section}]")
+        for key in table:
+            if key not in known:
+                raise _no_setting(layer, f"{section}.{key}", known, tables)
+
+
 def _apply(config: Config, data: dict[str, Any], layer: str, *,
-           connection_allowed: bool, allow_rules_permitted: bool) -> None:
+           connection_allowed: bool, allow_rules_permitted: bool,
+           profiles_allowed: bool = False, tables: str = "") -> None:
+    _check_names(data, layer, profiles_allowed=profiles_allowed, tables=tables)
     backend = data.get("backend", {})
     if backend and not connection_allowed:
+        # Every backend setting, not only the endpoint's: the whole table
+        # comes from machine-local layers.
         raise ConfigError(
-            f"{layer} config may not set connection settings "
-            f"({', '.join(sorted(set(backend) & _CONNECTION_KEYS))})"
+            f"{layer} config may not set connection settings ({', '.join(sorted(backend))})"
         )
     # runtime.* was type-checked while backend.* was applied blind, so
     # `request_max_retries = 0` -- the natural way to ask for no retries --
@@ -514,8 +585,6 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
     # traceback rather than making the request once.
     _BACKEND_INT_FLOORS = {"request_max_retries": 1, "stream_idle_timeout_ms": 1000}
     for key, value in backend.items():
-        if not hasattr(config.backend, key):
-            continue
         floor = _BACKEND_INT_FLOORS.get(key)
         if floor is not None:
             if isinstance(value, bool) or not isinstance(value, int):
@@ -720,7 +789,7 @@ def _apply_profile(config: Config, data: dict[str, Any], name: str, path: Path,
         known = ", ".join(sorted(profiles)) or "none defined"
         raise ConfigError(f"no profile {name!r} in {path} (profiles: {known})")
     _apply(config, profiles[name], f"profile {name}",
-           connection_allowed=True, allow_rules_permitted=True)
+           connection_allowed=True, allow_rules_permitted=True, tables=f"profiles.{name}.")
     config.backend.name = name
     config.record("profile", name, chosen_by)
 
@@ -739,7 +808,8 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
                connection_allowed=True, allow_rules_permitted=True)
 
     user = _load_toml(root / "config.toml")
-    _apply(config, user, "user", connection_allowed=True, allow_rules_permitted=True)
+    _apply(config, user, "user", connection_allowed=True, allow_rules_permitted=True,
+           profiles_allowed=True)
 
     chosen = profile or os.environ.get(PROFILE_ENV) or user.get("profile")
     if chosen:

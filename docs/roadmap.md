@@ -271,6 +271,8 @@ What a codex user still notices day to day, next:
     with its turn to the same model, as codex does (landed, D-089).
 51. ~~How long the answers are~~ -- `backend.verbosity`, codex's
     `model_verbosity`, on both OpenAI shapes (landed, D-090).
+52. ~~A setting nobody reads is an error in the files too~~ -- with where it
+    lives here, and codex's names told Foundry's (landed, D-091).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

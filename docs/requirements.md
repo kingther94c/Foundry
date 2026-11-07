@@ -347,7 +347,9 @@ The V1 rules:
   `--mode`, `-c key=value` (which refuses `api_key` and `headers`) and
   `--profile`; a profile is a `[profiles.<name>]` table in the user's own file,
   chosen by `--profile`, `FOUNDRY_PROFILE` or `profile = "..."`
-  ([D-042](decision-log.md)).
+  ([D-042](decision-log.md)). A key no code reads is refused in every layer,
+  as on the command line: in a file, a table of one, and a permission rule,
+  named with where the setting lives when it does ([D-091](decision-log.md)).
 - **Policy rules**: the rule lists from every layer are **concatenated** and
   then evaluated uniformly as deny > ask > allow (layer order does not affect
   the result; deny-from-anywhere wins); the exception is the **managed layer**
