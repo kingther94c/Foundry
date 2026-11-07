@@ -137,6 +137,8 @@ class ContextManager:
     system_prompt: str = ""
     project_doc: str = ""
     environment: str = ""
+    # The skills the model may load (D-113): each one's name and description.
+    skills: str = ""
     max_context_tokens: int = 128_000
     # The most recent rounds whose output is never masked, whatever the pressure.
     mask_after_turns: int = MASK_AFTER_TURNS
@@ -255,8 +257,9 @@ class ContextManager:
     def system_message(self) -> Message:
         """Assembled in a fixed order: base prompt, then the policy-derived
         permissions paragraph (so the model is told the truth about what will be
-        auto-allowed), then the project doc, then environment facts."""
-        parts = [p for p in (self.system_prompt, self.project_doc, self.environment) if p]
+        auto-allowed), then the project doc, the skills, then environment facts."""
+        parts = [p for p in (self.system_prompt, self.project_doc, self.skills,
+                             self.environment) if p]
         return Message.text(Role.SYSTEM, "\n\n".join(parts))
 
     def project(self) -> tuple[Message, ...]:

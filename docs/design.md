@@ -22,6 +22,7 @@ foundry/
 │   ├── mcp.py               # the MCP client over stdio and HTTP: servers' tools as policy-checked tools (D-043, D-081)
 │   ├── mcp_resources.py     # codex's list/read tools over the servers that offer resources (D-102)
 │   ├── config_edit.py       # `foundry mcp add/remove`: a server's table in the user's config.toml, checked (D-082)
+│   ├── skills.py            # agent skills: found, listed to the model, loaded by load_skill (D-113)
 │   ├── images.py            # images the model is shown: checked, sized, base64 (D-045)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
 │   ├── auth.py              # AuthProvider + DPAPI storage

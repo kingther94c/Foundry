@@ -324,6 +324,9 @@ What a codex user still notices day to day, next:
     D-111).
 73. ~~`/prompts:NAME`~~ -- a custom prompt called as codex calls it, and so a
     prompt a built-in's name hides (landed, D-112).
+74. ~~Agent skills~~ -- `SKILL.md` folders, the user's and a trusted
+    repository's `.agents/skills`, listed to the model and loaded with
+    `load_skill`; `$name` and `/skills`, as codex's (landed, D-113).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

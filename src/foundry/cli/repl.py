@@ -38,6 +38,7 @@ from foundry.core.events import Notice, TerminalStatus
 from foundry.core.policy.engine import Mode, Verdict
 from foundry.core.prompts import doc_names, mode_line, system_prompt
 from foundry.core.session import EventType, SessionStore
+from foundry.core.skills import LOAD_SKILL, REPOSITORY_SKILLS, YOURS
 from foundry.core.tools.base import ToolKind, truncate_middle
 from foundry.core.tools.command import combined_output, run_process
 from foundry.core.tools.files import ReadFile
@@ -344,7 +345,9 @@ def repl(wiring: "Wiring", console: Console,
             continue
         parsed = parse_command(line)
         if parsed is None:
-            task: object = RunTask(attach_mentions(wiring, console, line), typed=line)
+            task: object = RunTask(attach_skills(wiring, console, line,
+                                                 attach_mentions(wiring, console, line)),
+                                   typed=line)
         else:
             task = dispatch(wiring, console, *parsed)
             if task == _EXIT:
@@ -459,6 +462,54 @@ def attach_mentions(wiring: "Wiring", console: Console, text: str) -> str:
     scrub = wiring.runtime.context.redactor.scrub
     return "\n\n".join([text, *(MENTION_NOTE.format(content=scrub(content))
                                  for _, content in attached)])
+
+
+# $name, where name is a skill's (D-113): as codex's mention of one.
+_SKILL_MENTION = re.compile(r"(?<![\w$])\$([a-z0-9][a-z0-9-]{0,63})(?![\w-])")
+SKILL_NOTE = "The user asked for the skill {name} with ${name}; {tool} gives:\n{content}"
+MAX_SKILL_MENTIONS = 3
+
+
+def attach_skills(wiring: "Wiring", console: Console, typed: str, text: str) -> str:
+    """``$name`` in a message the user typed, where name is a skill's: its
+    instructions go with the message, as load_skill gives them (D-113) -- at
+    most three, each once. Any other ``$word`` is left as it was written."""
+    named: list[str] = []
+    for match in _SKILL_MENTION.finditer(typed):
+        name = match.group(1)
+        if name in wiring.skills.found and name not in named:
+            named.append(name)
+    if not named:
+        return text
+    if len(named) > MAX_SKILL_MENTIONS:
+        console.print(f"[yellow]at most {MAX_SKILL_MENTIONS} skills go with one message; "
+                      f"{escape(', '.join(named[MAX_SKILL_MENTIONS:]))} do not[/yellow]",
+                      soft_wrap=True)
+        named = named[:MAX_SKILL_MENTIONS]
+    tool = wiring.runtime.registry.get(LOAD_SKILL)
+    attached: list[tuple[str, str]] = []
+    for name in named:
+        operation = tool.validate({"name": name})
+        decision, _ = wiring.runtime.policy.evaluate(operation)
+        if decision.verdict is Verdict.DENY:
+            console.print(f"[yellow]${escape(name)}: not attached, the policy refuses "
+                          f"loading it ({escape(decision.reason)})[/yellow]", soft_wrap=True)
+            continue
+        try:
+            output = tool.execute(operation, wiring.runtime.tool_ctx)
+        except ToolError as exc:
+            console.print(f"[yellow]${escape(name)}: not attached, {escape(str(exc))}"
+                          "[/yellow]", soft_wrap=True)
+            continue
+        attached.append((name, output.content))
+    if not attached:
+        return text
+    console.print(f"[dim]using the skill {escape(', '.join(n for n, _ in attached))}[/dim]",
+                  soft_wrap=True)
+    scrub = wiring.runtime.context.redactor.scrub
+    return "\n\n".join([text, *(SKILL_NOTE.format(name=name, tool=LOAD_SKILL,
+                                                  content=scrub(content))
+                                for name, content in attached)])
 
 
 def _file_at(wiring: "Wiring", name: str):
@@ -1046,6 +1097,35 @@ NO_MCP = ("[dim]no MCP servers: `foundry mcp add NAME -- COMMAND` adds one, as d
           "\\[mcp_servers.NAME] table in your config.toml[/dim]")
 
 
+def show_skills(wiring: "Wiring", console: Console, arguments: str = "") -> None:
+    """``/skills``: the skills the model may load (D-113), whose each is, and
+    what is not used and why. A description is the skill's own text, so it is
+    cleaned of terminal controls before it is shown."""
+    skills = wiring.skills
+    home = wiring.home / "skills" if wiring.home else "skills in the Foundry folder"
+    if not skills.found and not skills.skipped:
+        where = f"{home}" + (f" or this repository's {REPOSITORY_SKILLS.as_posix()}"
+                             if wiring.trusted else "")
+        console.print("[dim]no skills: a skill is a folder holding a SKILL.md, in "
+                      f"{escape(str(where))}[/dim]", soft_wrap=True)
+        return None
+    for name, skill in sorted(skills.found.items()):
+        source = "yours" if skill.source == YOURS else "the repository's"
+        note = " [yellow](not in the model's list, for room)[/yellow]" if (
+            name in skills.left_out) else ""
+        about = sanitize(skill.description)
+        about = about if len(about) <= 100 else about[:97].rstrip() + "..."
+        console.print(f"[bold]${escape(name)}[/bold] [dim]({source})[/dim]{note} {escape(about)}",
+                      soft_wrap=True)
+    for skill in skills.hidden:
+        console.print(f"[dim]{escape(skill.name)} in {escape(str(skill.folder))}: hidden by "
+                      "another of that name[/dim]", soft_wrap=True)
+    for folder, why in skills.skipped:
+        console.print(f"[yellow]{escape(str(folder))}: not used, {safe(why)}[/yellow]",
+                      soft_wrap=True)
+    return None
+
+
 def show_mcp(wiring: "Wiring", console: Console, arguments: str = "") -> None:
     """``/mcp``: the MCP servers the user's configuration names, whether
     each is running, and the tools it offers, as codex's /mcp lists them
@@ -1216,6 +1296,8 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("status", "session, model, mode, tokens, context and plan", _status),
     Command("diff", "every uncommitted change, and which of them this session made", _diff),
     Command("mcp", "the MCP servers, and the tools each offers", show_mcp),
+    Command("skills", "the skills the model may load; $name in a message asks for one",
+            show_skills),
     Command("plan", "the model's current plan", _plan),
     Command("compact", "summarise the conversation so far to free context", _compact,
             arguments="[focus]"),

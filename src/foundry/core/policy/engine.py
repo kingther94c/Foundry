@@ -363,7 +363,10 @@ READ_ONLY_TOOLS = ("list_files", "search_text", "read_file", "read_artifact",
                    "finish",
                    # What MCP servers say they offer (D-102). Reading one of
                    # them is not here: it names any URI the model chooses.
-                   "list_mcp_resources", "list_mcp_resource_templates")
+                   "list_mcp_resources", "list_mcp_resource_templates",
+                   # A skill's own files, in the folders the user keeps or
+                   # trusts (D-113), and nothing the model names beyond them.
+                   "load_skill")
 
 
 def builtin_rules() -> tuple[Rule, ...]:

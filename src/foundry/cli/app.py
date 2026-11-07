@@ -96,6 +96,14 @@ from foundry.core.resume import (
 )
 from foundry.core.runtime import AgentRuntime, Budget
 from foundry.core.session import AuditLog, EventType, SessionStore
+from foundry.core.skills import (
+    REPOSITORY_SKILLS,
+    Skills,
+    list_budget,
+    load_skills,
+    register as register_skills,
+    skill_list,
+)
 from foundry.core.tools.base import ReadTracker, ToolContext
 from foundry.core.tools.git import capture_baseline, is_git_repository
 from foundry.core.tools.registry import default_registry
@@ -126,6 +134,8 @@ class Wiring:
     instructions: tuple[str, ...] = ()
     # The MCP servers this session started (D-043); closed with it.
     mcp: McpServers | None = None
+    # The skills found (D-113), for /skills and $name.
+    skills: Skills = field(default_factory=Skills)
     # Images for the next message: -i, then /image (D-045).
     images: list = field(default_factory=list)
     # What the user chose with /mode and /model (D-047): /new keeps it.
@@ -169,7 +179,8 @@ def _confirm_trust(console: Console, home: Path, workspace: Path, *,
         return True
     has_input = (workspace / ".foundry" / "config.toml").is_file() or (read_docs and bool(
         repository_docs(workspace, fallbacks)  # from the repository's top down (D-041)
-    )) or (workspace / ".foundry" / "prompts").is_dir()  # custom prompts (D-039)
+    )) or (workspace / ".foundry" / "prompts").is_dir() or (  # custom prompts (D-039)
+        workspace / REPOSITORY_SKILLS).is_dir()  # and skills (D-113)
     if not has_input:
         return False
     if not interactive or not sys.stdin or not sys.stdin.isatty():
@@ -299,13 +310,16 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
               session: SessionStore, state: JournalState | None, outside: frozenset[str], *,
               home: Path, console: Console) -> Wiring:
     registry = default_registry(recorder=session, images=config.backend.images)
+    skills = load_skills(home, workspace.root, trusted=trusted)
+    register_skills(skills, registry)
     # Started before the rules are checked, so a rule for a server's tool is
     # not reported as one that can never match (D-043).
     mcp = (start_servers(config.mcp_servers, workspace.root, registry)
            if config.mcp_servers else McpServers())
     try:
         return _assemble_with(workspace, config, trusted, baseline, session, state, outside,
-                              home=home, console=console, registry=registry, mcp=mcp)
+                              home=home, console=console, registry=registry, mcp=mcp,
+                              skills=skills)
     except BaseException:
         mcp.close()
         raise
@@ -313,7 +327,8 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
 
 def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline,
                    session: SessionStore, state: JournalState | None, outside: frozenset[str],
-                   *, home: Path, console: Console, registry, mcp: McpServers) -> Wiring:
+                   *, home: Path, console: Console, registry, mcp: McpServers,
+                   skills: Skills) -> Wiring:
     policy = PolicyEngine(
         rules=list(builtin_rules()) + list(config.rules),
         mode=config.mode,
@@ -388,6 +403,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         system_prompt=system_prompt(policy),
         project_doc=instructions.text,
         environment=environment_paragraph(workspace.root, baseline, config.backend.model),
+        skills=skill_list(skills, list_budget(window)),
         max_context_tokens=backend.capabilities().max_context_tokens,
         compact_above_tokens=config.auto_compact_token_limit,
     )
@@ -435,8 +451,9 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
     wiring = Wiring(workspace=workspace, config=config, runtime=runtime,
                     renderer=renderer, session=session, home=home, trusted=trusted,
                     prompts=load_custom_prompts(home, workspace.root, trusted=trusted),
-                    instructions=instructions.sources, mcp=mcp)
+                    instructions=instructions.sources, mcp=mcp, skills=skills)
     _announce_mcp(mcp, session, sink)
+    _announce_skills(skills, sink)
     if state is not None:
         # Evidence starts over (D-035): the command history, the files read and
         # the session grants are this run's own, so nothing from before the
@@ -460,6 +477,21 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         wiring.note = resume_note(state, outside, config.mode.value)
         runtime.plan, runtime.plan_explanation = state.plan, state.plan_explanation
     return wiring
+
+
+def _announce_skills(skills: Skills, sink: EventSink) -> None:
+    """What about the skills is not as their folders would have it (D-113):
+    one that is not read, one another of its name hides, those the model's
+    list had no room for."""
+    for folder, why in skills.skipped:
+        sink.emit(Notice(f"skill folder {folder} is not used: {why}", level="warning"))
+    for skill in skills.hidden:
+        sink.emit(Notice(f"skill {skill.name} in {skill.folder} is hidden by another of "
+                         "that name", level="warning"))
+    if skills.left_out:
+        sink.emit(Notice(f"{len(skills.left_out)} skill(s) left out of the model's list for "
+                         "room; it can still load them by name, and /skills lists them",
+                         level="warning"))
 
 
 def _announce_mcp(mcp: McpServers, session: SessionStore, sink: EventSink) -> None:
