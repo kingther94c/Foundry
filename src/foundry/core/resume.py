@@ -26,7 +26,7 @@ import json
 import os
 import re
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import islice
 from pathlib import Path
 from typing import Any, Iterator
@@ -47,6 +47,7 @@ from foundry.core.conversation import (
 from foundry.core.context import unbind
 from foundry.core.errors import ResumeError
 from foundry.core.events import PlanStep, TerminalStatus
+from foundry.core.goal import ACTIVE, Goal, spent
 from foundry.core.policy.engine import normalize_path
 from foundry.core.session import (
     SCHEMA_VERSION,
@@ -219,6 +220,9 @@ class JournalState:
     # The session it is a fork of, while it has not run since it was forked
     # (D-126); "" otherwise.
     fork_of: str = ""
+    # The goal as its last record left it (D-127), with what the responses
+    # after that record spent while it was active; None for none.
+    goal: Goal | None = None
 
 
 def _status(raw: Any) -> TerminalStatus:
@@ -307,9 +311,18 @@ def read_journal(path: Path) -> JournalState:
     mode = ""
     switched_model = ""
     name = ""
+    goal: Goal | None = None
     for record in records:
         if (named := _named(record)) is not None:
             name = named
+        elif record.type == EventType.GOAL:
+            goal = None if record.payload.get("cleared") else Goal.from_payload(record.payload)
+        elif record.type == EventType.TOKEN_USAGE and goal is not None and goal.status == ACTIVE:
+            # Spent after the record, by a session that did not get to say so.
+            goal = replace(goal, tokens_used=goal.tokens_used + spent(Usage(
+                _int(record.payload.get("input_tokens")),
+                _int(record.payload.get("output_tokens")),
+                _int(record.payload.get("cached_input_tokens")))))
         elif record.type == EventType.TOOL_RESULT and "plan" in record.payload:
             plan, plan_explanation = steps_from_payload(record.payload["plan"])
         elif record.type == EventType.MODE_CHANGE and isinstance(record.payload.get("to"), str):
@@ -352,6 +365,7 @@ def read_journal(path: Path) -> JournalState:
         last_sent=_last_sent(records, load),
         name=name,
         fork_of=_fork_of(meta, records),
+        goal=goal,
     )
 
 

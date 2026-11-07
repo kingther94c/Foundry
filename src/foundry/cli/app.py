@@ -61,6 +61,10 @@ from foundry.core.errors import (
     SessionLocked,
     UndoError,
 )
+from foundry.core.goal import ACTIVE as GOAL_ACTIVE
+from foundry.core.goal import HINTS as GOAL_HINTS
+from foundry.core.goal import PAUSED as GOAL_PAUSED
+from foundry.core.goal import usage_line as goal_usage
 from foundry.core.events import (
     EXIT_CODES,
     EventSink,
@@ -492,6 +496,10 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         wiring.resumed, wiring.outside, wiring.name = state, outside, state.name
         wiring.note = resume_note(state, outside, config.mode.value)
         runtime.plan, runtime.plan_explanation = state.plan, state.plan_explanation
+        if state.goal is not None:
+            # Not pursued on its own once resumed: /goal resume goes on (D-127).
+            runtime.restore_goal(state.goal if state.goal.status != GOAL_ACTIVE
+                                 else dataclasses.replace(state.goal, status=GOAL_PAUSED))
     return wiring
 
 
@@ -565,6 +573,11 @@ def _announce_resume(wiring: Wiring) -> None:
     if state.plan:
         # No call set it this time: an empty call_id says it was restored.
         events.emit(PlanUpdated("", state.plan, state.plan_explanation))
+    goal = wiring.runtime.goal
+    if goal is not None:
+        hint = f"; {GOAL_HINTS[goal.status]}" if goal.status in GOAL_HINTS else ""
+        events.emit(Notice(f"its goal is {goal.status} ({goal_usage(goal)}){hint}",
+                           level="info"))
     mode = wiring.config.mode
     if state.mode and state.mode != mode.value:
         again = "; type /approve to approve its plan again" if mode is Mode.PLAN else ""

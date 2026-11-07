@@ -28,6 +28,7 @@ from rich.syntax import Syntax
 
 from foundry.cli.copying import copy_answer
 from foundry.cli.exporting import export_conversation
+from foundry.cli.goals import GoalTurns, goal_command
 from foundry.cli.render import print_plan, safe, sanitize
 from foundry.core.commands import PROMPTS, builtin_prompt, expand, parse_command, usage_hint
 from foundry.core.config import effort_levels
@@ -37,6 +38,7 @@ from foundry.core.errors import Cancelled, FoundryError, ImageRejected, PromptEr
 from foundry.core.images import MAX_IMAGES_PER_MESSAGE, from_bytes as image_from_bytes
 from foundry.core.images import load as load_image
 from foundry.core.events import Notice, TerminalStatus
+from foundry.core.goal import GOAL_TURN, usage_line
 from foundry.core.hooks import HOOKS_FILE, UNMATCHED_EVENTS, events_named
 from foundry.core.policy.engine import Mode, Verdict
 from foundry.core.prompts import doc_names, mode_line, system_prompt
@@ -327,46 +329,57 @@ def repl(wiring: "Wiring", console: Console,
     just ended, or a second one pressed to be sure, used to end the session.
     End of input ends it at once."""
     armed = False
+    goals = GoalTurns()
+    pending: RunTask | None = None
     while True:
-        try:
-            if first is not None:
-                line, first = first, None
-            else:
-                line = read_message(console, prompt_for(wiring))
-        except EOFError:
-            console.print()
-            return TerminalStatus.CANCELLED
-        except KeyboardInterrupt:
-            console.print()
-            if armed:
-                return TerminalStatus.CANCELLED
-            armed = True
-            console.print(CTRL_C_AGAIN)
-            continue
-        armed = False
-        if not line.strip():
-            continue
-        if line.startswith(SHELL):
-            run_shell(wiring, console, line[len(SHELL):].strip())
-            continue
-        parsed = parse_command(line)
-        if parsed is None:
-            task: object = RunTask(attach_skills(wiring, console, line,
-                                                 attach_mentions(wiring, console, line)),
-                                   typed=line)
+        if pending is not None:
+            # The goal goes on (D-127): its next turn starts without a prompt.
+            task, pending = pending, None
+            console.print(f"[dim]the goal goes on ({usage_line(wiring.runtime.goal_now())}); "
+                          "Ctrl+C pauses it[/dim]")
         else:
-            task = dispatch(wiring, console, *parsed)
-            if task == _EXIT:
+            try:
+                if first is not None:
+                    line, first = first, None
+                else:
+                    line = read_message(console, prompt_for(wiring))
+            except EOFError:
+                console.print()
                 return TerminalStatus.CANCELLED
-            if task in (NEW_SESSION, FORK_SESSION):
-                return task
-            if not isinstance(task, RunTask):
+            except KeyboardInterrupt:
+                console.print()
+                if armed:
+                    return TerminalStatus.CANCELLED
+                armed = True
+                console.print(CTRL_C_AGAIN)
                 continue
-            task = replace(task, typed=line)
+            armed = False
+            if not line.strip():
+                continue
+            if line.startswith(SHELL):
+                run_shell(wiring, console, line[len(SHELL):].strip())
+                continue
+            parsed = parse_command(line)
+            if parsed is None:
+                task = RunTask(attach_skills(wiring, console, line,
+                                             attach_mentions(wiring, console, line)),
+                               typed=line)
+            else:
+                command = dispatch(wiring, console, *parsed)
+                if command == _EXIT:
+                    return TerminalStatus.CANCELLED
+                if command in (NEW_SESSION, FORK_SESSION):
+                    return command
+                if not isinstance(command, RunTask):
+                    continue
+                task = replace(command, typed=line)
         outcome = run_task(wiring, task)
         # The conversation goes on, so what the task left is answered (D-063).
         wiring.runtime.answer_left_calls()
-        if outcome.status is None:
+        prompt = goals.after(wiring, outcome)
+        if prompt is not None:
+            pending = RunTask(prompt, typed=GOAL_TURN)
+        if outcome.status is None or pending is not None:
             continue
         # A dropped stream or an unreachable provider ends the *turn*, not the
         # session. Breaking here threw away the whole conversation over a
@@ -741,6 +754,12 @@ def _fork(wiring: "Wiring", console: Console, arguments: str) -> str | None:
     return FORK_SESSION
 
 
+def _goal(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
+    """``/goal`` (D-127): the turn it starts, if any."""
+    prompt = goal_command(wiring, console, arguments, confirm)
+    return RunTask(prompt) if prompt is not None else None
+
+
 def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
     runtime, config = wiring.runtime, wiring.config
     context = runtime.context
@@ -767,6 +786,10 @@ def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
     if runtime.plan:
         done = sum(step.status.value == "completed" for step in runtime.plan)
         rows.append(("plan", f"{done} of {len(runtime.plan)} steps completed"))
+    goal = runtime.goal_now()
+    if goal is not None:
+        rows.append(("goal", f"{goal.status} ({usage_line(goal)}): "
+                             f"{goal.objective.splitlines()[0][:60]}"))
     if runtime.git_baseline is not None:
         try:
             evidence = collect_evidence(wiring.workspace.root, runtime.git_baseline)
@@ -1374,6 +1397,8 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("skills", "the skills the model may load; $name in a message asks for one",
             show_skills),
     Command("plan", "the model's current plan", _plan),
+    Command("goal", "set a goal the session works toward, turn after turn, until it is "
+            "done; alone, the goal", _goal, arguments="[OBJECTIVE]"),
     Command("compact", "summarise the conversation so far to free context", _compact,
             arguments="[focus]"),
     Command("image", "attach an image to your next message -- a file, or the clipboard's",

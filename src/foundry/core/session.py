@@ -81,6 +81,9 @@ class EventType:
     HOOK = "hook"
     # The user named the session with /rename (D-125); the latest name holds.
     RENAMED = "renamed"
+    # The session's goal changed (D-127): the whole goal as it is after, and
+    # who changed it.
+    GOAL = "goal"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced
@@ -89,7 +92,7 @@ class EventType:
 _FSYNC_TYPES = frozenset(
     {EventType.TERMINATION, EventType.APPROVAL, EventType.COMMAND_EXEC, EventType.POLICY_DECISION,
      EventType.RESUMED, EventType.UNDO, EventType.MODE_CHANGE, EventType.MODEL_CHANGE,
-     EventType.EFFORT_CHANGE,
+     EventType.EFFORT_CHANGE, EventType.GOAL,
      # Without them a resume cannot follow the history past the compaction
      # or the rewind.
      EventType.COMPACTED, EventType.REWOUND}

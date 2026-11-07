@@ -407,6 +407,10 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   `PlanUpdated`, and records it in the call's `tool_result` (`plan`), from
   which a resume restores it. `finish` lists the steps not marked completed and
   decides nothing over them.
+- `get_goal()` and `update_goal(status)` ([D-127](decision-log.md)):
+  offered once the session has a goal. The first answers with the goal as
+  JSON; the second marks it `complete` (unless it already is), or, while it
+  is active, `blocked` or `paused`. Read-only; the runtime journals the change.
 - MCP tools ([D-043](decision-log.md)): each `[mcp_servers.<name>]` in the
   user's own config is started at session start under a job object, with the
   command environment plus its `env` and `env_vars`; its tools are registered
@@ -571,7 +575,11 @@ class ModelBackend(Protocol):
   around each try of a model request, [D-122](decision-log.md); `renamed` for
   `/rename`, the latest one the session's name, [D-125](decision-log.md); a
   fork's journal is its source's copied, record for record, under a header
-  naming the source, [D-126](decision-log.md)).
+  naming the source, [D-126](decision-log.md); `goal` for each change of the
+  session's goal, the whole goal after it and who changed it, and the
+  messages its turns and its budget add as `user_input` shown as "(the goal
+  went on)" and "(the goal reached its token budget)",
+  [D-127](decision-log.md)).
   An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).
@@ -640,6 +648,9 @@ class ModelBackend(Protocol):
 - **Plan** ([D-037](decision-log.md)). `update_plan`'s `tool_result` carries
   `plan: {explanation, steps: [{step, status}]}`; a resume takes the newest one
   in the journal, reading back only steps that still validate.
+- **Goal** ([D-127](decision-log.md)). A resume takes the last `goal` record,
+  adds the `token_usage` after it while it was active, and restores an active
+  goal as paused.
 - `~/.foundry/audit.jsonl` is appended to separately (and is not writable by
   the tools).
 

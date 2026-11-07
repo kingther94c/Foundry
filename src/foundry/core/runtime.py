@@ -17,7 +17,7 @@ from __future__ import annotations
 import base64
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 from foundry.core.backends.base import (ModelBackend, ReasoningComplete, TextDelta,
@@ -60,6 +60,18 @@ from foundry.core.events import (
     TurnStarted,
     new_id,
 )
+from foundry.core.goal import (
+    ACTIVE,
+    BUDGET_LIMITED,
+    BUDGET_TURN,
+    COMPLETE,
+    Goal,
+    budget_prompt,
+    spent,
+)
+from foundry.core.goal import BLOCKED as BLOCKED_GOAL
+from foundry.core.goal import notice as goal_notice
+from foundry.core.goal import view as goal_view
 from foundry.core.hooks import (
     INTERRUPT,
     PERMISSION_MODES,
@@ -91,6 +103,7 @@ from foundry.core.policy.engine import POLICY_VERSION, Decision, PolicyEngine, V
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput
 from foundry.core.tools.finish import ValidationClaim, verify_claims
+from foundry.core.tools.goal import offer_goal_tools
 from foundry.core.tools.plan import plan_payload
 from foundry.core.tools.registry import ToolRegistry
 
@@ -282,6 +295,15 @@ class AgentRuntime:
     # Why a PreCompact or PostCompact hook stopped the compaction or the task
     # after it, for the loop to end the task with; "" when none did.
     _compact_stop: str = ""
+    # The goal the session pursues across turns (D-127), None for none: the
+    # REPL starts its turns, the runtime counts what they spend.
+    goal: Goal | None = None
+    clock: Callable[[], float] = time.monotonic
+    # When the goal last became active, by the clock; None while it is not.
+    _goal_since: float | None = None
+    # The goal's budget ran out in this task: the model is told so before its
+    # next request.
+    _goal_wrap_up: bool = False
 
     def __post_init__(self) -> None:
         # A backend that retries says so (D-085). Without this a 429 or a
@@ -336,6 +358,64 @@ class AgentRuntime:
         self._last_mutation = max(self._last_mutation, ordinal)
         for path in paths:
             self.tool_ctx.read_tracker.forget(path)
+
+    # -- the goal (D-127) ---------------------------------------------------
+
+    def goal_now(self) -> Goal | None:
+        """The goal, with the time spent on it up to now."""
+        if self.goal is None or self._goal_since is None:
+            return self.goal
+        return replace(self.goal, seconds_used=self.goal.seconds_used
+                       + int(self.clock() - self._goal_since))
+
+    def change_goal(self, goal: Goal | None, *, by: str, reason: str = "") -> None:
+        """The goal set, changed or cleared (None) -- by the user, the model,
+        the runtime or its budget: journaled whole, told to the user, and its
+        tools offered to the model. Build ``goal`` from goal_now(), so the time
+        spent so far is kept."""
+        self.goal = goal
+        self._goal_since = self.clock() if goal is not None and goal.status == ACTIVE else None
+        payload = goal.payload() if goal is not None else {"cleared": True}
+        payload["by"] = by
+        if reason:
+            payload["reason"] = reason
+        self._journal(EventType.GOAL, payload)
+        if goal is not None:
+            offer_goal_tools(self.registry, self)
+        warn = goal is not None and goal.status in (BLOCKED_GOAL, BUDGET_LIMITED)
+        self._emit(Notice(goal_notice(goal, reason), level="warning" if warn else "info"))
+
+    def restore_goal(self, goal: Goal) -> None:
+        """A resumed session's goal, as its journal has it: not journaled again."""
+        self.goal = goal
+        self._goal_since = self.clock() if goal.status == ACTIVE else None
+        offer_goal_tools(self.registry, self)
+
+    def goal_update(self, status: str) -> str:
+        """update_goal: the model marks the goal complete, blocked or paused.
+        Only an active goal goes to blocked or paused -- a spent budget comes
+        before a pause, as codex's -- and any unfinished one to complete."""
+        goal = self.goal_now()
+        if goal is None:
+            raise ToolError("there is no goal; the user sets one with /goal")
+        if goal.status == COMPLETE:
+            raise ToolError("the goal is already complete")
+        if status != COMPLETE and goal.status != ACTIVE:
+            raise ToolError(f"the goal is {goal.status}, not active; resuming it is the "
+                            "user's")
+        self.change_goal(replace(goal, status=status), by="model")
+        return goal_view(self.goal_now(), completed=status == COMPLETE)
+
+    def _goal_spent(self, usage: Usage) -> None:
+        """A response's tokens, counted toward an active goal; past its budget
+        the goal stops, and the model is told to wrap up."""
+        goal = self.goal
+        if goal is None or goal.status != ACTIVE:
+            return
+        self.goal = replace(goal, tokens_used=goal.tokens_used + spent(usage))
+        if self.goal.over_budget:
+            self.change_goal(replace(self.goal_now(), status=BUDGET_LIMITED), by="budget")
+            self._goal_wrap_up = True
 
     def _journal(self, event_type: str, payload: dict) -> int:
         return self.session.append(event_type, payload) if self.session else 0
@@ -403,6 +483,7 @@ class AgentRuntime:
         # limit, a later question produced no work at all and the REPL exited.
         self.budget.reset()
         self._compact_failed = False
+        self._goal_wrap_up = False
         self._turn_id = str(self.context.turn + 1)
 
         message = user_input
@@ -474,6 +555,14 @@ class AgentRuntime:
                 for event, note in self._background_notes():
                     self._hook_message(event, note)
 
+            if self._goal_wrap_up and self.goal is not None:
+                # The goal's budget ran out on the last response (D-127): the
+                # model hears it before the next, as codex steers the turn.
+                self._goal_wrap_up = False
+                steer = budget_prompt(self.goal_now())
+                self._journal(EventType.USER_INPUT, {"text": steer, "typed": BUDGET_TURN})
+                self.context.append_user(steer, ())
+
             if self.context.context_exhausted():
                 return self._terminate(TerminalStatus.PARTIAL, "context window exhausted")
 
@@ -521,6 +610,7 @@ class AgentRuntime:
                 # report can tell cache reads from full-price input.
                 "cached_input_tokens": turn.usage.cached_input_tokens,
             })
+            self._goal_spent(turn.usage)
 
             if not turn.tool_calls:
                 self._emit(TurnComplete(turn_index, turn.text))
@@ -596,6 +686,7 @@ class AgentRuntime:
             "cached_input_tokens": turn.usage.cached_input_tokens,
             "purpose": "compact",
         })
+        self._goal_spent(turn.usage)
         summary = turn.text.strip()
         if not summary:
             return "compaction failed: the model wrote no summary"
