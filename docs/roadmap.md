@@ -333,6 +333,9 @@ What a codex user still notices day to day, next:
 76. ~~Lifecycle hooks, as codex's~~ -- `hooks.json` and `[hooks]` from your
     own files: `PreToolUse` refuses, rewrites or adds a note, `PostToolUse`
     replaces a result or adds one; `/hooks` (landed, D-115).
+77. ~~UserPromptSubmit and Stop hooks~~ -- a prompt stopped or sent with a
+    note; a task sent on when the model is done, at an answer or at
+    `finish` (landed, D-116).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

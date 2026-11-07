@@ -281,9 +281,9 @@ def test_dash_c_says_where_hooks_go():
 
 
 @pytest.mark.parametrize("event, message", [
-    ("SessionStart", "Foundry does not run SessionStart hooks yet; it runs PreToolUse and "
-                     "PostToolUse"),
-    ("Stop", "Foundry does not run Stop hooks yet"),
+    ("SessionStart", "Foundry does not run SessionStart hooks yet; it runs PreToolUse, "
+                     "PostToolUse, UserPromptSubmit and Stop"),
+    ("Interrupt", "Foundry does not run Interrupt hooks yet"),
     ("PreTooluse", "no hook event 'PreTooluse'; did you mean 'PreToolUse'?"),
     ("state", "hooks.state is codex's record of the hooks you reviewed in its /hooks"),
     ("managed_dir", "hooks.managed_dir belongs to codex's requirements.toml"),
@@ -1008,5 +1008,5 @@ def test_slash_hooks_lists_each_hook_and_its_file(repo, home):
 def test_slash_hooks_says_where_hooks_go(repo, home):
     shown = _shown(_wire(repo, home, []))
     assert shown.split() == (f"no hooks: codex's hooks.json format, in {home / 'hooks.json'} or "
-                             "a [hooks] table of your config.toml; Foundry runs PreToolUse and "
-                             "PostToolUse").split()
+                             "a [hooks] table of your config.toml; Foundry runs PreToolUse, "
+                             "PostToolUse, UserPromptSubmit and Stop").split()

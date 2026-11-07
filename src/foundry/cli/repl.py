@@ -35,7 +35,7 @@ from foundry.core.errors import Cancelled, FoundryError, ImageRejected, PromptEr
 from foundry.core.images import MAX_IMAGES_PER_MESSAGE, from_bytes as image_from_bytes
 from foundry.core.images import load as load_image
 from foundry.core.events import Notice, TerminalStatus
-from foundry.core.hooks import HOOK_EVENTS, HOOKS_FILE
+from foundry.core.hooks import HOOKS_FILE, UNMATCHED_EVENTS, events_named
 from foundry.core.policy.engine import Mode, Verdict
 from foundry.core.prompts import doc_names, mode_line, system_prompt
 from foundry.core.session import EventType, SessionStore
@@ -1140,11 +1140,13 @@ def show_hooks(wiring: "Wiring", console: Console, arguments: str = "") -> None:
         where = wiring.home / HOOKS_FILE if wiring.home else HOOKS_FILE
         console.print(f"[dim]no hooks: codex's hooks.json format, in {escape(str(where))} or "
                       "a \\[hooks] table of your config.toml; Foundry runs "
-                      f"{' and '.join(HOOK_EVENTS)}[/dim]", soft_wrap=True)
+                      f"{events_named()}[/dim]", soft_wrap=True)
         return None
     for hook in hooks:
         background = " [dim](async)[/dim]" if hook.background else ""
-        console.print(f"[bold]{hook.event}[/bold] {escape(hook.matcher or '*')}{background}  "
+        # An event codex gives no matcher runs each of its hooks (D-116).
+        matcher = "" if hook.event in UNMATCHED_EVENTS else f" {escape(hook.matcher or '*')}"
+        console.print(f"[bold]{hook.event}[/bold]{matcher}{background}  "
                       f"{safe(hook.command)} [dim]({escape(hook.source)}, "
                       f"{hook.timeout_s}s)[/dim]", soft_wrap=True)
     return None

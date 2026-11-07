@@ -24,7 +24,8 @@ foundry/
 │   ├── config_edit.py       # `foundry mcp add/remove`: a server's table in the user's config.toml, checked (D-082)
 │   ├── skills.py            # agent skills: found, listed to the model, loaded by load_skill (D-113);
 │                            #   .agents/skills up to the repository's top, [[skills.config]] (D-114)
-│   ├── hooks.py             # codex's lifecycle hooks: read, matched, run at each tool call (D-115)
+│   ├── hooks.py             # codex's lifecycle hooks: read, matched, run at a tool call (D-115),
+│                            #   at a prompt and when the model is done (D-116)
 │   ├── images.py            # images the model is shown: checked, sized, base64 (D-045)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
 │   ├── auth.py              # AuthProvider + DPAPI storage
@@ -545,7 +546,9 @@ class ModelBackend(Protocol):
   it left as `compacted` does, [D-056](decision-log.md); `effort_change` for
   `/effort`, [D-061](decision-log.md); `model_retry` for a model request
   tried again, [D-085](decision-log.md); `hook` for the runs of the user's hooks
-  at a tool call, [D-115](decision-log.md)). An image
+  at a tool call, [D-115](decision-log.md), at a prompt or when the model is
+  done, without a `call_id`, [D-116](decision-log.md), when a Stop hook's
+  reason is the next prompt, `user_input` with `hook: "Stop"`). An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).
   Artifact contents are stored content-addressed at

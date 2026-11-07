@@ -222,19 +222,23 @@ do as `display`, and the `reason` it asks):
 notify = ["python", "C:/tools/notify.py"]   # not a .bat or .cmd: cmd.exe would read the payload
 ```
 
-Hooks are codex's, in its format: programs your own files name, run at each
-tool call with what is happening as JSON on their stdin -- in `hooks.json`
-beside your `config.toml` (or the machine's `policy.toml`), or in `[hooks]`
-tables of it. A `PreToolUse` hook may refuse a call or rewrite it (a rewrite
-still goes through policy and the approval); a `PostToolUse` hook may put its
-own feedback in place of a result; either may add a note for the model. They
-run through `cmd /C`, in the workspace, with the command environment; one
-that fails is a warning and the call goes on. `/hooks` lists them; a
-repository's config may not name one.
+Hooks are codex's, in its format: programs your own files name, run at
+points in a task with what is happening as JSON on their stdin -- in
+`hooks.json` beside your `config.toml` (or the machine's `policy.toml`), or in
+`[hooks]` tables of it. A `UserPromptSubmit` hook may stop a prompt before it
+is sent or add a note to it; a `PreToolUse` hook may refuse a call or rewrite
+it (a rewrite still goes through policy and the approval); a `PostToolUse`
+hook may put its own feedback in place of a result, and either may add a note
+for the model; a `Stop` hook, run when the model is done (or calls
+`finish`), may send the task on with its reason as the next prompt. They run
+through `cmd /C`, in the workspace, with the command environment; one that
+fails is a warning and the task goes on. `/hooks` lists them; a repository's
+config may not name one.
 
 ```json
 {"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [
-  {"type": "command", "command": "python C:/tools/check_command.py", "timeout": 30}]}]}}
+  {"type": "command", "command": "python C:/tools/check_command.py", "timeout": 30}]}],
+  "Stop": [{"hooks": [{"type": "command", "command": "python C:/tools/tests_pass.py"}]}]}}
 ```
 
 Commands get only what a build needs from your environment (PATH, the proxy

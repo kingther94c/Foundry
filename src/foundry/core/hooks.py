@@ -1,17 +1,21 @@
-"""Lifecycle hooks, as codex's (D-115).
+"""Lifecycle hooks, as codex's (D-115, D-116).
 
 A hook is a command line the user's own configuration names -- in
 ``hooks.json`` beside ``config.toml``, in a ``[hooks]`` table of it, or in
 the machine's policy -- run at a point in a turn with what is happening as
 one JSON object on its stdin. The names and shapes are codex's, so a hook
-written for codex runs here unchanged. Two of codex's events are run:
+written for codex runs here unchanged. Four of codex's events are run:
 
+* ``UserPromptSubmit``, before a prompt is sent: a hook may stop it, so
+  the model never sees it, or add a note to it.
 * ``PreToolUse``, before a tool call reaches policy: a hook may refuse the
   call, rewrite its input, or add a note for the model. It never allows what
   policy would not: a rewritten call is checked from the start, breaker,
   rules and approval included.
 * ``PostToolUse``, after a tool gave its result: a hook may put its own
   feedback in place of the result, or add a note.
+* ``Stop``, when the model is done -- it answered without a call, or called
+  ``finish``: a hook may send the task on, its reason the next prompt.
 
 Like a notify program or an MCP server, a hook is a program Foundry starts,
 so a repository's configuration may not name one. A hook that fails, times
@@ -35,13 +39,18 @@ from foundry.core.winapi import IS_WINDOWS, child_environment, decode_output, fi
 
 PRE_TOOL_USE = "PreToolUse"
 POST_TOOL_USE = "PostToolUse"
-HOOK_EVENTS = (PRE_TOOL_USE, POST_TOOL_USE)
+USER_PROMPT_SUBMIT = "UserPromptSubmit"
+STOP = "Stop"
+HOOK_EVENTS = (PRE_TOOL_USE, POST_TOOL_USE, USER_PROMPT_SUBMIT, STOP)
+# Events codex gives no matcher: every hook of one runs, whatever its
+# matcher says.
+UNMATCHED_EVENTS = frozenset({USER_PROMPT_SUBMIT, STOP})
 # codex's other events: named, so a hooks.json carried over says which of
 # its hooks would not run, rather than reading as a typo.
 CODEX_EVENTS = frozenset({
     "PreModelRequest", "PostModelRequest", "PermissionRequest", "PreCompact",
-    "PostCompact", "SessionStart", "SessionEnd", "UserPromptSubmit", "SubagentStart",
-    "SubagentStop", "Stop", "Interrupt",
+    "PostCompact", "SessionStart", "SessionEnd", "SubagentStart", "SubagentStop",
+    "Interrupt",
 })
 DEFAULT_TIMEOUT_S = 600
 # What a hook's additionalContext may take before it is cut, in codex's
@@ -65,6 +74,11 @@ _MATCHER_ALIASES = {"run_command": ("run_command",), "apply_patch": ("Edit", "Wr
 # Foundry's modes as codex's hooks name a permission mode.
 PERMISSION_MODES = {"default": "default", "accept_edits": "acceptEdits", "plan": "plan",
                     "dont_ask": "dontAsk"}
+
+
+def events_named() -> str:
+    """The events Foundry runs, as a sentence names them."""
+    return f"{', '.join(HOOK_EVENTS[:-1])} and {HOOK_EVENTS[-1]}"
 
 
 @functools.lru_cache(maxsize=256)
@@ -137,8 +151,7 @@ def _event_refused(event: str) -> str:
         return (f"hooks.{event} belongs to codex's requirements.toml; the machine's hooks "
                 "go in Foundry's own policy.toml or the hooks.json beside it")
     if event in CODEX_EVENTS:
-        return (f"Foundry does not run {event} hooks yet; it runs "
-                f"{' and '.join(HOOK_EVENTS)}")
+        return f"Foundry does not run {event} hooks yet; it runs {events_named()}"
     close = difflib.get_close_matches(event, [*HOOK_EVENTS, *sorted(CODEX_EVENTS)], n=1)
     return f"no hook event {event!r}" + (f"; did you mean {close[0]!r}?" if close else "")
 
@@ -270,7 +283,8 @@ class HookSet:
     environ: dict[str, str] | None = None   # the environment to start from
 
     def matching(self, event: str, names: tuple[str, ...]) -> list[Hook]:
-        return [hook for hook in self.hooks if hook.event == event and hook.matches(names)]
+        return [hook for hook in self.hooks if hook.event == event
+                and (event in UNMATCHED_EVENTS or hook.matches(names))]
 
     def run(self, hooks: list[Hook], payload: dict[str, Any], *,
             cancelled: Callable[[], bool] | None = None) -> list[HookRun]:
@@ -356,8 +370,12 @@ class HookSet:
 class HookVerdict:
     """What the hooks of one event said, together."""
     # PreToolUse: why the call is refused. PostToolUse: what the model is
-    # given in place of the result.
+    # given in place of the result. UserPromptSubmit: why the prompt is
+    # not sent. Stop: what the task goes on with.
     block: list[str] = field(default_factory=list)
+    # UserPromptSubmit and Stop: the stopReason of each `continue: false`,
+    # "" for one without.
+    stops: list[str] = field(default_factory=list)
     rewrites: list[dict[str, Any]] = field(default_factory=list)   # PreToolUse
     context: list[str] = field(default_factory=list)               # for the model
     messages: list[str] = field(default_factory=list)              # systemMessage
@@ -406,6 +424,17 @@ def _context(hook: Hook, text: str) -> str:
             f"its additionalContextLimit of about {hook.context_tokens} tokens]")
 
 
+def _feedback(text: str) -> str:
+    """What a hook gives the model in place of a result, or as the next
+    prompt: cut at codex's default, whatever the hook's
+    additionalContextLimit, which is for notes only."""
+    limit = DEFAULT_CONTEXT_TOKENS * CHARS_PER_TOKEN
+    if len(text) <= limit:
+        return text
+    return (text[:limit] + f"\n[... cut: the hook gave {len(text)} characters, more than "
+            f"about {DEFAULT_CONTEXT_TOKENS} tokens]")
+
+
 class _Reading:
     """One run read: what it decided and what is said of it."""
 
@@ -413,6 +442,7 @@ class _Reading:
         self.run, self.event, self.verdict = run, event, verdict
         self.outcome = "completed"
         self.control = not run.hook.background
+        self.plain = ""     # text it printed that is not JSON
 
     def fail(self, why: str) -> None:
         self.outcome = "failed"
@@ -449,11 +479,13 @@ class _Reading:
         answer, broken = _json_object(run.stdout)
         if broken:
             self.fail(f"returned invalid {self.event} JSON output")
+        elif answer is None:
+            self.plain = run.stdout.strip()
         return answer
 
     def decided(self, reason: str) -> None:
         self.outcome = "blocked"
-        self.verdict.block.append(reason)
+        self.verdict.block.append(_feedback(reason))
 
 
 def _hook_output(answer: dict[str, Any], kinds: dict[str, type]) -> dict[str, Any] | None:
@@ -579,11 +611,95 @@ def _post_answer(reading: _Reading, answer: dict[str, Any]) -> None:
     if stopped:
         reading.outcome = "stopped"
         stop = _reason(answer.get("stopReason")) or "PostToolUse hook stopped execution"
-        verdict.block.append(_reason(answer.get("reason")) or stop)
+        verdict.block.append(_feedback(_reason(answer.get("reason")) or stop))
     elif invalid:
         reading.fail(invalid)
     elif block:
         reading.decided(_reason(answer.get("reason")))
+
+
+def read_user_prompt_submit(runs: list[HookRun]) -> HookVerdict:
+    """UserPromptSubmit answers, as codex reads them: ``block`` with a
+    reason, exit code 2 and a reason on stderr, or ``continue: false`` stops
+    the prompt; ``additionalContext``, or plain text, is a note for the
+    model."""
+    verdict = HookVerdict()
+    for run in runs:
+        reading = _Reading(run, USER_PROMPT_SUBMIT, verdict)
+        answer = reading.start()
+        if answer is not None:
+            _prompt_answer(reading, answer)
+        elif reading.plain:
+            verdict.context.append(_context(run.hook, reading.plain))
+        reading.done()
+    return verdict
+
+
+def _prompt_answer(reading: _Reading, answer: dict[str, Any]) -> None:
+    verdict = reading.verdict
+    output = _hook_output(answer, {"hookEventName": str, "additionalContext": str})
+    if (output is None or not _typed(answer, {**_UNIVERSAL, "decision": str, "reason": str})
+            or answer.get("decision") not in (None, "block")):
+        reading.fail("returned invalid UserPromptSubmit JSON output")
+        return
+    if answer.get("systemMessage"):
+        verdict.messages.append(answer["systemMessage"])
+    block = answer.get("decision") == "block"
+    invalid = block and not _reason(answer.get("reason"))
+    if output.get("additionalContext") and (not reading.control or not invalid):
+        verdict.context.append(_context(reading.run.hook, output["additionalContext"]))
+    if not reading.control:
+        return
+    if answer.get("continue") is False:
+        reading.outcome = "stopped"
+        verdict.stops.append(_reason(answer.get("stopReason")))
+    elif invalid:
+        reading.fail("returned decision:block without a non-empty reason")
+    elif block:
+        reading.decided(_reason(answer.get("reason")))
+
+
+def read_stop(runs: list[HookRun]) -> HookVerdict:
+    """Stop answers, as codex reads them: ``block`` with a reason, or exit
+    code 2 and a reason on stderr, sends the task on with the reason as its
+    next prompt; ``continue: false`` ends it, whatever another hook asked.
+    A hook that decides answers in JSON: plain text from one is a failure."""
+    verdict = HookVerdict()
+    for run in runs:
+        reading = _Reading(run, STOP, verdict)
+        answer = reading.start()
+        if answer is not None:
+            _stop_answer(reading, answer)
+        elif reading.plain and reading.control:
+            reading.fail("returned invalid Stop JSON output")
+        reading.done()
+    return verdict
+
+
+def _stop_answer(reading: _Reading, answer: dict[str, Any]) -> None:
+    verdict = reading.verdict
+    if (not _typed(answer, {**_UNIVERSAL, "decision": str, "reason": str})
+            or answer.get("decision") not in (None, "block")):
+        reading.fail("returned invalid Stop JSON output")
+        return
+    if answer.get("systemMessage"):
+        verdict.messages.append(answer["systemMessage"])
+    if not reading.control:
+        return
+    block = answer.get("decision") == "block"
+    if answer.get("continue") is False:
+        reading.outcome = "stopped"
+        verdict.stops.append(_reason(answer.get("stopReason")))
+    elif block and not _reason(answer.get("reason")):
+        reading.fail("returned decision:block without a non-empty reason")
+    elif block:
+        reading.decided(_reason(answer.get("reason")))
+
+
+READERS: dict[str, Callable[[list[HookRun]], HookVerdict]] = {
+    PRE_TOOL_USE: read_pre_tool_use, POST_TOOL_USE: read_post_tool_use,
+    USER_PROMPT_SUBMIT: read_user_prompt_submit, STOP: read_stop,
+}
 
 
 def scrubbed(value: Any, scrub: Callable[[str], str] | None) -> Any:

@@ -64,12 +64,13 @@ from foundry.core.hooks import (
     PERMISSION_MODES,
     POST_TOOL_USE,
     PRE_TOOL_USE,
+    READERS,
+    STOP,
+    USER_PROMPT_SUBMIT,
     HookVerdict,
     hook_tool_input,
     hook_tool_name,
     matcher_names,
-    read_post_tool_use,
-    read_pre_tool_use,
     rewritten_args,
     scrubbed,
 )
@@ -261,6 +262,9 @@ class AgentRuntime:
     # What hooks said for the model about a call, by its id, added to its
     # result whichever way the call ends.
     _hook_notes: dict = field(default_factory=dict)
+    # The task a hook is told of, as codex's turn_id (D-116): the round it
+    # began in, the same for each of its hooks.
+    _turn_id: str = ""
 
     def __post_init__(self) -> None:
         # A backend that retries says so (D-085). Without this a 429 or a
@@ -366,16 +370,6 @@ class AgentRuntime:
         self._journal(EventType.NOTIFIED, {"type": kind, "program": program, "pid": pid})
 
     def _run_turn(self, user_input: str, images: tuple, typed: str | None) -> TurnOutcome:
-        # The request records carry every message the model was sent; this is
-        # for input that never reached one, which a resumed session still owes
-        # an answer to.
-        record: dict[str, Any] = {"text": user_input}
-        if images:
-            record["images"] = [self._block_payload(i, self._store_image) for i in images]
-        if typed is not None and typed != user_input:
-            record["typed"] = typed
-        self._journal(EventType.USER_INPUT, record)
-        self.context.append_user(user_input, tuple(images))
         self._finish = None
         # Each task gets its own termination record. Left set by an earlier
         # task that ended blocked, it stopped the REPL from recording how the
@@ -387,6 +381,28 @@ class AgentRuntime:
         # limit, a later question produced no work at all and the REPL exited.
         self.budget.reset()
         self._compact_failed = False
+        self._turn_id = str(self.context.turn + 1)
+
+        message = user_input
+        if self.hooks is not None:
+            message, refused = self._prompt_hooks(user_input)
+            if refused:
+                # Not sent, so not recorded as input: a resume owes it nothing.
+                return self._terminate(TerminalStatus.BLOCKED, refused)
+        # The request records carry every message the model was sent; this is
+        # for input that never reached one, which a resumed session still owes
+        # an answer to.
+        record: dict[str, Any] = {"text": message}
+        if images:
+            record["images"] = [self._block_payload(i, self._store_image) for i in images]
+        if typed is None and message != user_input:
+            typed = user_input
+        if typed is not None and typed != message:
+            record["typed"] = typed
+        self._journal(EventType.USER_INPUT, record)
+        self.context.append_user(message, tuple(images))
+        # Whether a Stop hook has sent this task on (codex's stop_hook_active).
+        continued = False
 
         while True:
             if self._cancelled:
@@ -462,7 +478,14 @@ class AgentRuntime:
 
             if not turn.tool_calls:
                 self._emit(TurnComplete(turn_index, turn.text))
-                return TurnOutcome(status=None, text=turn.text)
+                again = self._stop_hooks(turn.text, continued) if self.hooks is not None else ""
+                if not again:
+                    return TurnOutcome(status=None, text=turn.text)
+                continued = True
+                message = f"From a {STOP} hook: {again}"
+                self._journal(EventType.USER_INPUT, {"text": message, "hook": STOP})
+                self.context.append_user(message, ())
+                continue
 
             for call in turn.tool_calls:
                 # Before each call, not only after one: a cancel that came
@@ -479,7 +502,15 @@ class AgentRuntime:
                     return self._terminate(TerminalStatus.PARTIAL, over)
                 self._dispatch(call)
                 if self._finish is not None:
-                    return self._finalize(self._finish)
+                    again = (self._stop_hooks(self._finish.summary or turn.text, continued)
+                             if self.hooks is not None else "")
+                    if not again:
+                        return self._finalize(self._finish)
+                    # The task goes on: the call is answered, as one refused.
+                    continued = True
+                    self._finish = None
+                    self._reply(call, f"finish was not accepted: a {STOP} hook sent the task "
+                                f"on:\n{again}", is_error=True)
 
     def compact(self, *, auto: bool, focus: str = "") -> str:
         """Replace the history with the user's messages and the model's summary
@@ -919,47 +950,93 @@ class AgentRuntime:
             "cwd": str(self.tool_ctx.workspace.root),
             "hook_event_name": event,
             "model": self.model,
-            "turn_id": str(self.context.turn),
+            "turn_id": self._turn_id or str(self.context.turn),
             "permission_mode": PERMISSION_MODES.get(self.policy.mode.value,
                                                     self.policy.mode.value),
             **fields,
         }
 
-    def _run_hooks(self, event: str, call: ToolUseBlock, op: Operation,
+    def _run_hooks(self, event: str, names: tuple[str, ...] = (), call_id: str | None = None,
                    **fields: Any) -> HookVerdict | None:
-        """Run the hooks of ``event`` whose matcher takes this call's tool,
+        """Run the hooks of ``event`` whose matcher takes one of ``names``,
         and say what they said: to the user, the warnings and messages; to
-        the journal, each run; for the model, the notes kept for the reply.
-        None when no hook matches."""
-        hooks = self.hooks.matching(event, matcher_names(op.tool))
+        the journal, each run. What a hook said for the model comes back
+        scrubbed, in the verdict's notes; at a call, ``call_id``, they are
+        kept for its reply too. None when no hook matches."""
+        hooks = self.hooks.matching(event, names)
         if not hooks:
             return None
         for hook in hooks:
             if hook.status_message:
                 self._emit(Notice(f"{event} hook: {hook.status_message}"))
-        payload = self._hook_payload(event, tool_name=hook_tool_name(op.tool),
-                                     tool_use_id=call.call_id,
-                                     tool_input=hook_tool_input(op.tool, op.args), **fields)
+        payload = self._hook_payload(event, **fields)
         runs = self.hooks.run(hooks, scrubbed(payload, self.scrub),
                               cancelled=lambda: self._cancelled)
-        verdict = (read_pre_tool_use if event == PRE_TOOL_USE else read_post_tool_use)(runs)
+        verdict = READERS[event](runs)
         clean = self.scrub or (lambda text: text)
         for message in verdict.messages:
             self._emit(Notice(f"{event} hook: {clean(message)}", level="warning"))
         for failure in verdict.failures:
             self._emit(Notice(f"{event} hook {clean(failure)}", level="warning"))
-        self._hook_notes.setdefault(call.call_id, []).extend(
-            (event, clean(note)) for note in verdict.context)
-        self._journal(EventType.HOOK, {"event": event, "call_id": call.call_id,
-                                       "runs": scrubbed(verdict.records, self.scrub)})
+        verdict.context = [clean(note) for note in verdict.context]
+        record: dict[str, Any] = {"event": event}
+        if call_id is not None:
+            self._hook_notes.setdefault(call_id, []).extend(
+                (event, note) for note in verdict.context)
+            record["call_id"] = call_id
+        record["runs"] = scrubbed(verdict.records, self.scrub)
+        self._journal(EventType.HOOK, record)
         return verdict
+
+    def _tool_hooks(self, event: str, call: ToolUseBlock, op: Operation,
+                    **fields: Any) -> HookVerdict | None:
+        """The hooks of a tool call's event, told of the call as codex
+        tells them."""
+        return self._run_hooks(event, matcher_names(op.tool), call.call_id,
+                               tool_name=hook_tool_name(op.tool), tool_use_id=call.call_id,
+                               tool_input=hook_tool_input(op.tool, op.args), **fields)
+
+    def _prompt_hooks(self, prompt: str) -> tuple[str, str]:
+        """The UserPromptSubmit hooks (D-116): the prompt the model is sent,
+        their notes added to it, and why they stopped it, or ""."""
+        verdict = self._run_hooks(USER_PROMPT_SUBMIT, prompt=prompt)
+        if verdict is None:
+            return prompt, ""
+        clean = self.scrub or (lambda text: text)
+        refused = [clean(reason) for reason in verdict.block + verdict.stops if reason]
+        if verdict.block or verdict.stops:
+            return prompt, ("a UserPromptSubmit hook stopped this prompt, so it was not sent"
+                            + (": " + "; ".join(refused) if refused else ""))
+        for note in verdict.context:
+            prompt += f"\n\nFrom a {USER_PROMPT_SUBMIT} hook: {note}"
+        return prompt, ""
+
+    def _stop_hooks(self, last_message: str, active: bool) -> str:
+        """The Stop hooks (D-116), as the model is done: what the task goes
+        on with, when one sends it on, or "". A ``continue: false`` ends it
+        whatever another asked, as codex has it."""
+        verdict = self._run_hooks(STOP, stop_hook_active=active,
+                                  last_assistant_message=last_message or None)
+        if verdict is None:
+            return ""
+        clean = self.scrub or (lambda text: text)
+        if verdict.stops:
+            for reason in verdict.stops:
+                if reason:
+                    self._emit(Notice(f"{STOP} hook: {clean(reason)}"))
+            return ""
+        if not verdict.block:
+            return ""
+        again = clean("\n\n".join(verdict.block))
+        self._emit(Notice(f"a {STOP} hook sent the task on: {again}"))
+        return again
 
     def _pre_tool_use(self, call: ToolUseBlock, op: Operation) -> tuple[Operation, str]:
         """The call the PreToolUse hooks leave, and why they refuse it, or
         "". A rewrite is validated as the model's call was and then goes
         through policy like any call: a hook can refuse or change a call,
         never let one skip a rule or a question."""
-        verdict = self._run_hooks(PRE_TOOL_USE, call, op)
+        verdict = self._tool_hooks(PRE_TOOL_USE, call, op)
         if verdict is None:
             return op, ""
         clean = self.scrub or (lambda text: text)
@@ -997,7 +1074,7 @@ class AgentRuntime:
                        images: tuple) -> tuple[str, tuple]:
         """The result the model is given once the PostToolUse hooks have
         seen it: their feedback in its place when one blocks it."""
-        verdict = self._run_hooks(POST_TOOL_USE, call, op, tool_response=content)
+        verdict = self._tool_hooks(POST_TOOL_USE, call, op, tool_response=content)
         if verdict is None or not verdict.block:
             return content, images
         clean = self.scrub or (lambda text: text)
