@@ -190,6 +190,8 @@ env_vars = ["DOCS_TOKEN"]   # passed through by name; secrets never go in the fi
 [mcp_servers.tickets]
 url = "https://mcp.example.com/mcp"     # a server already running, over streamable HTTP
 bearer_token_env_var = "TICKETS_TOKEN"  # the variable holding its token, never the token
+# http_headers = { "X-Region" = "eu" }               # sent as they are; never a credential
+# env_http_headers = { "X-Api-Key" = "TICKETS_KEY" } # each from the variable named
 ```
 
 ```toml

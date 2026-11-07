@@ -35,6 +35,9 @@ PROFILE_ENV = "FOUNDRY_PROFILE"
 
 # A header's name: an HTTP token.
 _HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}\Z")
+# A value Foundry puts in a header of the user's (D-111): printable ASCII,
+# which http.client sends as it is.
+HEADER_VALUE = re.compile(r"[\x20-\x7e]{1,4096}\Z")
 
 # Per-protocol defaults for settings no layer set. The base URL is the one that
 # matters: an Anthropic key sent to the OpenAI default host is a credential
@@ -190,9 +193,18 @@ _SERVER_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}\Z")
 _MCP_KEYS = frozenset({"command", "args", "env", "env_vars", "startup_timeout_s",
                        "tool_timeout_s", "read_only", "enabled", "enabled_tools",
                        "disabled_tools", "url", "bearer_token_env_var", "cwd",
-                       "startup_timeout_sec", "tool_timeout_sec"})
-# What only a server Foundry starts can have (D-081).
+                       "startup_timeout_sec", "tool_timeout_sec", "http_headers",
+                       "env_http_headers"})
+# What only a server Foundry starts can have (D-081), and what only one it
+# reaches at an address can (D-111).
 _PROGRAM_KEYS = ("command", "args", "env", "env_vars", "cwd")
+_URL_KEYS = ("bearer_token_env_var", "http_headers", "env_http_headers")
+# The headers the transport sends itself (D-111): one of the user's under
+# such a name would speak for Foundry -- another session, another proxy.
+_PROTOCOL_HEADERS = frozenset({"accept", "content-type", "content-length", "host",
+                               "connection", "transfer-encoding", "te", "upgrade",
+                               "mcp-session-id", "mcp-protocol-version", "last-event-id",
+                               "proxy-authorization"})
 # A server's timeouts, under Foundry's name and codex's (D-110), with how long
 # each may be and is unless said.
 _MCP_TIMEOUTS = (("startup_timeout_s", "startup_timeout_sec", 300, 20),
@@ -228,6 +240,11 @@ class McpServerConfig:
     # The token itself is never in the config.
     url: str = ""
     bearer_token_env_var: str = ""
+    # As codex's (D-111): headers sent with every request to such a server,
+    # with their values; and those whose values are read from a variable,
+    # by the variable's name. A credential is only ever the latter.
+    http_headers: tuple[tuple[str, str], ...] = ()
+    env_http_headers: tuple[tuple[str, str], ...] = ()
     # The folder a server Foundry starts runs in (D-110), as codex's cwd:
     # absolute; the workspace when not said.
     cwd: str = ""
@@ -332,7 +349,7 @@ def _seconds(value: Any, what: str, ceiling: float) -> float:
     return float(value)
 
 
-def _mcp_url(value: Any, where: str, *, token: bool) -> str:
+def _mcp_url(value: Any, where: str, *, token: bool, secrets: bool = False) -> str:
     """The address of a server reached over HTTP (D-081)."""
     url = value.strip() if isinstance(value, str) else ""
     parts = urllib.parse.urlsplit(url)
@@ -346,11 +363,49 @@ def _mcp_url(value: Any, where: str, *, token: bool) -> str:
         raise ConfigError(f"{where}.url may not carry a user name or password; put a token "
                           f"in an environment variable and name it in "
                           f"{where}.bearer_token_env_var")
-    if token and parts.scheme == "http" and not _is_loopback(parts.hostname):
+    if (token or secrets) and parts.scheme == "http" and not _is_loopback(parts.hostname):
         # Readable by every hop between here and there.
-        raise ConfigError(f"{where}: a bearer token is sent only over https, or to this "
+        what = "a bearer token is" if token else "a header read from a variable is"
+        raise ConfigError(f"{where}: {what} sent only over https, or to this "
                           f"machine, and {where}.url is http://{parts.hostname}")
     return url
+
+
+def _secret_header(name: str) -> bool:
+    """Whether a header's name says it carries a credential."""
+    upper = name.upper()
+    return looks_like_credential(name) or "AUTH" in upper or "COOKIE" in upper
+
+
+def _mcp_headers(entry: dict, where: str, *, token: bool):
+    """A url server's ``http_headers`` and ``env_http_headers`` (D-111), as
+    sorted pairs. No value is echoed: one may be a secret pasted by mistake."""
+    plain = entry.get("http_headers", {})
+    if not isinstance(plain, dict) or not all(
+            isinstance(k, str) and _HEADER_NAME.match(k) and isinstance(v, str)
+            and HEADER_VALUE.match(v) for k, v in plain.items()):
+        raise ConfigError(f"{where}.http_headers must map header names to values of "
+                          'printable characters, as { "X-Region" = "eu" }')
+    named = entry.get("env_http_headers", {})
+    if not isinstance(named, dict) or not all(
+            isinstance(k, str) and _HEADER_NAME.match(k) and isinstance(v, str)
+            and _ENV_NAME.match(v) for k, v in named.items()):
+        raise ConfigError(f"{where}.env_http_headers must map header names to the names of "
+                          'environment variables, as { "X-Api-Key" = "DOCS_KEY" }')
+    seen = {"authorization"} if token else set()
+    for table, headers in (("http_headers", plain), ("env_http_headers", named)):
+        for header in headers:
+            lower = header.lower()
+            if lower in _PROTOCOL_HEADERS:
+                raise ConfigError(f"{where}.{table}: Foundry sends {header} itself")
+            if lower in seen:
+                raise ConfigError(f"{where}.{table}: {header} is given twice; give it once")
+            seen.add(lower)
+            if table == "http_headers" and _secret_header(header):
+                raise ConfigError(f"{where}.http_headers: {header} carries a credential, "
+                                  "which never goes in the file; name the variable that "
+                                  f"holds it in {where}.env_http_headers")
+    return tuple(sorted(plain.items())), tuple(sorted(named.items()))
 
 
 def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
@@ -373,6 +428,7 @@ def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
             # Not echoed: a token pasted here by mistake would be printed.
             raise ConfigError(f"{where}.bearer_token_env_var must be the name of an "
                               "environment variable, not the token itself")
+        http_headers, env_http_headers = _mcp_headers(entry, where, token=bool(token))
         url = ""
         command = entry.get("command")
         if "url" in entry:
@@ -381,10 +437,12 @@ def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
                 raise ConfigError(f"{where}: url and {both[0]} do not go together -- a "
                                   "server is a program Foundry starts, or an address it "
                                   "reaches")
-            url = _mcp_url(entry["url"], where, token=bool(token))
+            url = _mcp_url(entry["url"], where, token=bool(token),
+                           secrets=bool(env_http_headers))
             command = ""
-        elif token:
-            raise ConfigError(f"{where}.bearer_token_env_var is for a server reached by url")
+        elif any(entry.get(key) for key in _URL_KEYS):
+            given = next(key for key in _URL_KEYS if entry.get(key))
+            raise ConfigError(f"{where}.{given} is for a server reached by url")
         elif not isinstance(command, str) or not command.strip():
             raise ConfigError(f"{where}.command must name the program to run, or "
                               f"{where}.url the address of a server")
@@ -411,6 +469,7 @@ def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
                               "server runs in")
         servers[name] = McpServerConfig(
             name=name, command=command.strip(), url=url, bearer_token_env_var=token,
+            http_headers=http_headers, env_http_headers=env_http_headers,
             args=_strings(entry.get("args", []), f"{where}.args"),
             env=tuple(sorted(env.items())),
             env_vars=_strings(entry.get("env_vars", []), f"{where}.env_vars"),

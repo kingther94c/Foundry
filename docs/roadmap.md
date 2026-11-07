@@ -319,6 +319,9 @@ What a codex user still notices day to day, next:
 71. ~~codex's names in an MCP server's table~~ -- `startup_timeout_sec`,
     `tool_timeout_sec` and a started server's `cwd`, so a table copied from
     codex loads (landed, D-110).
+72. ~~A url server's own headers~~ -- codex's `http_headers` and
+    `env_http_headers`, a credential only by its variable's name (landed,
+    D-111).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from foundry import __version__
-from foundry.core.config import McpServerConfig
+from foundry.core.config import HEADER_VALUE, McpServerConfig
 from foundry.core.conversation import ToolSchema
 from foundry.core.errors import (Cancelled, FoundryError, ImageRejected, InvalidToolCall,
                                  ToolError)
@@ -483,6 +483,7 @@ class StreamableHttpClient(_Protocol):
         self._http = http or HttpClient()
         self._redactor = redactor or default_redactor()
         self._token = ""
+        self._sent: dict[str, str] = {}
         self._session = ""
         self._protocol = ""
         self._lock = threading.Lock()
@@ -504,6 +505,7 @@ class StreamableHttpClient(_Protocol):
                                "carry")
             self._redactor.register(token)
             self._token = token
+        self._sent = self._user_headers()
         version = self._handshake()
         if not _HEADER_VALUE.match(version):
             raise McpError("its protocol version cannot be sent back in a header")
@@ -537,10 +539,27 @@ class StreamableHttpClient(_Protocol):
         except (FoundryError, http.client.HTTPException, OSError):
             pass
 
+    def _user_headers(self) -> dict[str, str]:
+        """The entry's own headers (D-111), as codex's: those it gives, and
+        those whose variable is set -- read now, held in memory, registered
+        with the redactor as a token is."""
+        headers = dict(self.server.http_headers)
+        for header, variable in self.server.env_http_headers:
+            value = self._environ.get(variable, "")
+            if not value:
+                continue   # an unset variable leaves the header out
+            if not HEADER_VALUE.match(value):
+                # http.client would refuse it with a message quoting it.
+                raise McpError(f"the value in {variable} has characters the {header} "
+                               "header cannot carry")
+            self._redactor.register(value)
+            headers[header] = value
+        return headers
+
     # -- messages --------------------------------------------------------------
 
     def _headers(self) -> dict[str, str]:
-        headers = {"Accept": f"{_JSON}, {_EVENTS}"}
+        headers = {**self._sent, "Accept": f"{_JSON}, {_EVENTS}"}
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
         if self._session:

@@ -421,7 +421,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   codex's own names ([D-110](decision-log.md)): `startup_timeout_sec` and
   `tool_timeout_sec` for the `_s` keys (one of the two given), and `cwd`, an
   absolute folder a started server runs in instead of the workspace, checked
-  when it starts.
+  when it starts. A url server's `http_headers` and `env_http_headers`
+  ([D-111](decision-log.md)) go with every request to it: no credential-named
+  header in the first, the second's values read from their variables at
+  start, registered with the redactor and sent only over https or to this
+  machine; none may be a header the transport sends itself.
 - `foundry mcp-server` ([D-103](decision-log.md), cli/mcp_server.py): Foundry
   as an MCP server over stdio. Each `tools/call` runs on a thread of its own,
   in a session `build()` makes and `unattended()` leaves with nobody to ask

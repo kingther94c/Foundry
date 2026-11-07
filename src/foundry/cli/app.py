@@ -1389,6 +1389,10 @@ def _mcp_get(args: argparse.Namespace, console: Console) -> int:
         lines.append(("passes", ", ".join(server.env_vars)))
     if server.bearer_token_env_var:
         lines.append(("token", f"from {server.bearer_token_env_var}"))
+    headers = [f"{key}: {value}" for key, value in shown["http_headers"].items()]
+    headers += [f"{key} from {variable}" for key, variable in server.env_http_headers]
+    if headers:
+        lines.append(("headers", ", ".join(headers)))
     tools = []
     if server.enabled_tools is not None:
         tools.append("only " + (", ".join(server.enabled_tools) or "no tools"))
@@ -1408,6 +1412,8 @@ def _shown_settings(server, scrub) -> dict[str, Any]:
     return {"command": scrub(server.command) if server.command else None,
             "args": _shown_args(server.args, scrub),
             "cwd": scrub(server.cwd) if server.cwd else None,
+            "http_headers": {key: scrub(value) for key, value in server.http_headers},
+            "env_http_headers": dict(server.env_http_headers),
             "env": {key: HIDDEN if looks_like_credential(key) else scrub(value)
                     for key, value in server.env},
             "url": _shown_url(server.url, scrub) if server.url else None}

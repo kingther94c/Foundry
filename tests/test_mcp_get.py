@@ -112,7 +112,8 @@ def test_as_json(home, capsys):
         "env_vars": ["DOCS_HOME"], "bearer_token_env_var": None, "startup_timeout_s": 20.0,
         "tool_timeout_s": 120.0, "command": "C:/tools/uvx.exe",
         "args": ["our-docs", "--from", "git+https://example.com/docs"],
-        "cwd": None, "env": {"LOG": "debug"}, "url": None}
+        "cwd": None, "http_headers": {}, "env_http_headers": {}, "env": {"LOG": "debug"},
+        "url": None}
 
 
 def test_as_json_at_an_address(home, capsys):
