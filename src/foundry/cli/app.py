@@ -82,7 +82,7 @@ from foundry.core.httpc import HttpClient
 from foundry.core.json_schema import check_schema
 from foundry.core.hooks import HookSet
 from foundry.core.notify import Notifier
-from foundry.core.policy.engine import Mode, PolicyEngine, builtin_rules
+from foundry.core.policy.engine import Mode, PolicyEngine, Verdict, builtin_rules
 from foundry.core.prompts import (
     environment_paragraph,
     load_instructions,
@@ -121,6 +121,7 @@ from foundry.core.skills import (
     skill_list,
 )
 from foundry.core.tools.base import ReadTracker, ToolContext
+from foundry.core.tools.command import RunCommand
 from foundry.core.tools.git import capture_baseline, is_git_repository
 from foundry.core.tools.registry import default_registry
 from foundry.core.undo import apply_undo, other_changes, plan_undo, read_source, undo_payload
@@ -1930,6 +1931,56 @@ def cmd_completion(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_policy(args: argparse.Namespace) -> int:
+    """``foundry policy check COMMAND`` (D-135), as ``codex execpolicy
+    check``: what the policy would decide for a command in this workspace,
+    with this configuration -- at a terminal, and unattended -- without
+    running it or starting a session. Hooks are not run."""
+    console = Console()
+    command = " ".join(args.command).strip()
+    if not command:
+        Console(stderr=True).print("[red]policy check needs the command to check[/red]")
+        return 2
+    try:
+        root = Workspace(Path(args.workspace).resolve()).root
+    except PathRejected as exc:
+        Console(stderr=True).print(f"[red]{escape(str(exc))}[/red]")
+        return 2
+    home = user_dir()
+    # The repository's own rules count only once it is trusted; nothing is
+    # asked here.
+    trusted = str(root) in _trusted_paths(home)
+    if not trusted and (root / ".foundry" / "config.toml").is_file():
+        Console(stderr=True).print(
+            "[dim]this workspace's .foundry/config.toml is not trusted yet: its rules are "
+            "not applied[/dim]", soft_wrap=True)
+    config = load_config(root if trusted else None, home=home, **_config_args(args))
+    policy = PolicyEngine(rules=list(builtin_rules()) + list(config.rules), mode=config.mode)
+    op = RunCommand().validate({"command": command})
+    here, _ = policy.evaluate(op)
+    policy.interactive = False
+    alone, _ = policy.evaluate(op)
+    # What would be asked about is refused where nobody is there to ask.
+    alone_verdict = "deny" if alone.verdict is Verdict.ASK else alone.verdict.value
+    if args.json:
+        def side(decision, verdict):
+            return {"verdict": verdict, "reason": decision.reason, "rule": decision.rule_id,
+                    "step": decision.step}
+
+        print(json.dumps({"command": command, "mode": config.mode.value,
+                          "at_a_terminal": side(here, here.verdict.value),
+                          "unattended": side(alone, alone_verdict)}, ensure_ascii=False))
+        return 0
+    console.print(escape(command), soft_wrap=True)
+    for label, decision, verdict in (
+            (f"at a terminal ({config.mode.value})", here, here.verdict.value),
+            ("unattended", alone, alone_verdict)):
+        console.print(f"  {label:<26}[bold]{verdict}[/bold] -- {escape(decision.reason)} "
+                      f"[dim]({escape(decision.rule_id)}, step {decision.step})[/dim]",
+                      soft_wrap=True)
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     console = Console()
     ok = True
@@ -2222,6 +2273,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="check the environment")
     doctor.set_defaults(func=cmd_doctor)
+
+    policy = sub.add_parser("policy", help="what the policy decides, as codex execpolicy")
+    policy_sub = policy.add_subparsers(dest="policy_command", required=True)
+    check = policy_sub.add_parser("check", help="what the policy would decide for a command "
+                                                "here, without running it")
+    check.add_argument("command", nargs="+", metavar="COMMAND",
+                       help="the command, as the model would run it; after --, or quoted")
+    check.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
+                       help="the repository it would run in (default: here)")
+    check.add_argument("--json", action="store_true", help="the decisions as JSON")
+    _config_flags(check)
+    check.set_defaults(func=cmd_policy)
 
     completion = sub.add_parser("completion",
                                 help="print a Tab-completion script for your shell")

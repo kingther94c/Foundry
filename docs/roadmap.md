@@ -378,6 +378,8 @@ What a codex user still notices day to day, next:
     headlessly (landed, D-133).
 95. ~~`/resume [SESSION]`~~ -- another of this workspace's sessions, from
     inside one (landed, D-134).
+96. ~~`foundry policy check`~~ -- what the rules decide for a command,
+    without running it (landed, D-135).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
