@@ -828,23 +828,35 @@ def parse_settings(items: list[str]) -> dict[str, dict[str, Any]]:
     layer: dict[str, dict[str, Any]] = {}
     for item in items:
         name, sep, raw = item.partition("=")
-        name = name.strip()
-        if not sep or not name:
+        if not sep or not name.strip():
             raise ConfigError(f"-c expects key=value, got {item!r}")
-        section, dot, key = name.rpartition(".")
-        if not dot:
-            section = "backend" if key in BackendConfig.__dataclass_fields__ else "runtime"
-        if key in _SECRET_KEYS:
-            raise ConfigError(f"-c may not set {name}: secrets come only from the environment "
-                              "or the credential store (foundry login)")
-        if key not in _FLAG_KEYS.get(section, ()):
-            raise _no_flag_setting(name, section, key)
         try:
             value = tomllib.loads(f"v = {raw}")["v"]
         except tomllib.TOMLDecodeError:
             value = raw.strip()
-        layer.setdefault(section, {})[key] = value
+        _set_flag(layer, name.strip(), value)
     return layer
+
+
+def settings_layer(values: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """The settings -c takes, given as values already typed: the ``config``
+    argument of ``foundry mcp-server``'s tools (D-103)."""
+    layer: dict[str, dict[str, Any]] = {}
+    for name, value in values.items():
+        _set_flag(layer, name.strip(), value)
+    return layer
+
+
+def _set_flag(layer: dict[str, dict[str, Any]], name: str, value: Any) -> None:
+    section, dot, key = name.rpartition(".")
+    if not dot:
+        section = "backend" if key in BackendConfig.__dataclass_fields__ else "runtime"
+    if key in _SECRET_KEYS:
+        raise ConfigError(f"-c may not set {name}: secrets come only from the environment "
+                          "or the credential store (foundry login)")
+    if key not in _FLAG_KEYS.get(section, ()):
+        raise _no_flag_setting(name, section, key)
+    layer.setdefault(section, {})[key] = value
 
 
 def _apply_profile(config: Config, data: dict[str, Any], name: str, path: Path,

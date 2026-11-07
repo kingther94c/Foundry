@@ -440,6 +440,11 @@ class AgentRuntime:
                 return TurnOutcome(status=None, text=turn.text)
 
             for call in turn.tool_calls:
+                # Before each call, not only after one: a cancel that came
+                # while the model was answering (from foundry mcp-server's
+                # client, D-103) stops the task before its first call runs.
+                if self._cancelled:
+                    return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
                 self.budget.calls += 1
                 # Checked per call, not once per round: a backend returning
                 # thousands of tool calls in a single turn executed all of them
@@ -450,8 +455,6 @@ class AgentRuntime:
                 self._dispatch(call)
                 if self._finish is not None:
                     return self._finalize(self._finish)
-                if self._cancelled:
-                    return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
 
     def compact(self, *, auto: bool, focus: str = "") -> str:
         """Replace the history with the user's messages and the model's summary
@@ -601,6 +604,10 @@ class AgentRuntime:
         finished = None
         try:
             for event in self.backend.stream_turn(request):
+                # A cancel from another thread (D-103) ends the answer at its
+                # next piece, rather than when the model is done writing it.
+                if self._cancelled:
+                    raise Cancelled("interrupted by user")
                 if isinstance(event, TextDelta):
                     text_parts.append(event.text)
                     # A summary is the model talking to itself, not to the user.

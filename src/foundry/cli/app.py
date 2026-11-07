@@ -423,6 +423,10 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         notifier=Notifier(tuple(config.notify), workspace.root) if config.notify else None,
         scrub=default_redactor().scrub,
     )
+    # A cancel from another thread (foundry mcp-server, D-103) reaches a
+    # running command, search or MCP call, which poll this, not only the next
+    # step.
+    runtime.tool_ctx.cancelled = lambda: runtime._cancelled
     if missing_credential:
         # Say it before spending a round trip on a request that cannot succeed.
         sink.emit(Notice(missing_credential, level="warning"))
@@ -1049,6 +1053,33 @@ FINISH_REMINDER = (
 RESULT_REMINDER = " Pass the result it asks for as `result`, matching the schema given for it."
 
 
+# Why a run that ended without finish is partial.
+NO_FINISH = ("the model ended its turn without calling finish, even when reminded; only "
+             "finish reports completion, with the evidence for it")
+
+
+def unattended(wiring: Wiring) -> None:
+    """A session nobody watches -- exec's, or foundry mcp-server's (D-103):
+    there is no one to ask, so what policy would ask about is refused."""
+    wiring.runtime.approval = None  # nobody to ask
+    wiring.runtime.policy.interactive = False
+    # The permissions paragraph says so, in a mode whose own line speaks of
+    # approval.
+    wiring.runtime.context.system_prompt = system_prompt(wiring.runtime.policy)
+
+
+def announce_start(wiring: Wiring) -> None:
+    """The session's id and settings, then what a resume found."""
+    backend = wiring.config.backend
+    wiring.runtime.events.emit(SessionStarted(
+        session_id=wiring.session.session_id, workspace=str(wiring.workspace.root),
+        model=backend.model, resumed=wiring.resumed is not None,
+        protocol=backend.protocol, profile=backend.name,
+        mode=wiring.runtime.policy.mode.value, effort=backend.effort,
+        reasoning_summary=backend.reasoning_summary, verbosity=backend.verbosity))
+    _announce_resume(wiring)
+
+
 def _run_unattended(runtime: AgentRuntime, task: str, images: tuple = ()):
     """One task; a reply in prose gets a single reminder to call finish.
 
@@ -1163,13 +1194,9 @@ def cmd_exec(args: argparse.Namespace) -> int:
         console.print(f"[red]{exc}[/red]")
         return EXIT_CODES[TerminalStatus.FAILED]
 
-    wiring.runtime.approval = None  # nobody to ask
-    wiring.runtime.policy.interactive = False
+    unattended(wiring)
     if schema is not None:
         wiring.runtime.registry.get("finish").result_schema = schema
-    # The permissions paragraph says so, in a mode whose own line speaks of
-    # approval.
-    wiring.runtime.context.system_prompt = system_prompt(wiring.runtime.policy)
 
     if args.json:
         # Serialize whatever the event actually carries. A hand-maintained
@@ -1181,14 +1208,7 @@ def cmd_exec(args: argparse.Namespace) -> int:
 
         wiring.runtime.events.subscribe(as_json)
     # First, so a script knows what to resume before anything can go wrong.
-    backend = wiring.config.backend
-    wiring.runtime.events.emit(SessionStarted(
-        session_id=wiring.session.session_id, workspace=str(wiring.workspace.root),
-        model=backend.model, resumed=wiring.resumed is not None,
-        protocol=backend.protocol, profile=backend.name,
-        mode=wiring.runtime.policy.mode.value, effort=backend.effort,
-        reasoning_summary=backend.reasoning_summary, verbosity=backend.verbosity))
-    _announce_resume(wiring)
+    announce_start(wiring)
     for raw in args.image or []:
         if not _attach(wiring, console, raw):
             _close(wiring, TerminalStatus.CANCELLED, "an image could not be attached")
@@ -1208,8 +1228,7 @@ def cmd_exec(args: argparse.Namespace) -> int:
             # Saying "headless run ended" told the operator nothing about why a
             # correct-looking answer exited 10. Against a model that cannot call
             # tools at all, this is the *only* reachable outcome.
-            reason = ("the model ended its turn without calling finish, even when "
-                      "reminded; only finish reports completion, with the evidence for it")
+            reason = NO_FINISH
         if schema is not None:
             # stdout is the result and nothing else, for a script to parse;
             # without one the summary goes to stderr and the exit code says why.
@@ -1325,6 +1344,13 @@ def cmd_mcp(args: argparse.Namespace) -> int:
         if said:
             console.print(f"  [dim]{escape(safe('; '.join(said)))}[/dim]", soft_wrap=True)
     return 0
+
+
+def cmd_mcp_server(args: argparse.Namespace) -> int:
+    """Foundry as an MCP server over stdio (D-103)."""
+    from foundry.cli.mcp_server import serve_stdio
+
+    return serve_stdio(args)
 
 
 def _server_entry(args: argparse.Namespace) -> dict[str, Any]:
@@ -1646,6 +1672,12 @@ def build_parser() -> argparse.ArgumentParser:
     completion.add_argument("shell", nargs="?", choices=SHELLS, default="powershell",
                             help="powershell (the default) or bash")
     completion.set_defaults(func=cmd_completion)
+
+    serve = sub.add_parser("mcp-server",
+                           help="be an MCP server over stdio, offering foundry and "
+                                "foundry-reply (approvals are denied)")
+    _config_flags(serve, modes=(Mode.DONT_ASK, Mode.PLAN, Mode.ACCEPT_EDITS))
+    serve.set_defaults(func=cmd_mcp_server)
 
     mcp = sub.add_parser("mcp", help="list, add or remove MCP servers in your config.toml")
     mcp.set_defaults(func=cmd_mcp)

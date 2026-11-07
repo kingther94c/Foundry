@@ -31,7 +31,8 @@ foundry/
 ├── cli/                     # the terminal UI: event subscriber + approval UI (rich); repl.py, the
 │                            #   interactive prompt and its slash commands (D-039); a paste or a
 │                            #   block between lines of three quotes is one message (D-052);
-│                            #   markdown.py, the model's answer as Markdown a line at a time (D-070)
+│                            #   markdown.py, the model's answer as Markdown a line at a time (D-070);
+│                            #   mcp_server.py, Foundry as an MCP server over stdio (D-103)
 ├── prompts/                 # versioned assets: the base system prompt, the patch format description, the permissions section template
 └── __main__.py              # entry point: bootstraps in UTF-8 mode
 ```
@@ -404,6 +405,17 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   | remove` ([D-082](decision-log.md)) manage the tables from the command
   line: an edit is text, appended or taken out, and written only if the
   result parses to the old settings with exactly that server added or gone.
+- `foundry mcp-server` ([D-103](decision-log.md), cli/mcp_server.py): Foundry
+  as an MCP server over stdio. Each `tools/call` runs on a thread of its own,
+  in a session `build()` makes and `unattended()` leaves with nobody to ask
+  (ASK becomes DENY), as exec's; `foundry-reply` takes the session held open,
+  or resumes it from its journal. The reading thread answers pings and passes
+  `notifications/cancelled` to `runtime.cancel()`, which the runtime checks
+  between the pieces of a streamed answer and before each tool call, and
+  which long-running tools poll through `ToolContext.cancelled`. One task at
+  a time per Git top level; at most 8 sessions held open, the least recently
+  used closed past that. stdin and stdout are duplicated for the protocol,
+  descriptor 0 then pointed at the null device and 1 at stderr.
 - `notify` ([D-050](decision-log.md)): a program from the user's own config,
   started when a turn ends with the turn's JSON as its last argument (codex's
   `agent-turn-complete`), found on PATH, without a shell, with the command
