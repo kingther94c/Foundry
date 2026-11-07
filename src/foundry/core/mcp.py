@@ -152,6 +152,19 @@ class _Protocol:
         return self.request("tools/call", {"name": name, "arguments": arguments},
                             timeout=self.server.tool_timeout_s, cancelled=cancelled)
 
+    # -- resources (D-102) -----------------------------------------------------
+
+    def list_resources(self, cursor: str | None = None, *, templates: bool = False) -> dict:
+        """One page of the server's resources, or of its URI templates."""
+        method = "resources/templates/list" if templates else "resources/list"
+        return self.request(method, {"cursor": cursor} if cursor else {},
+                            timeout=self.server.tool_timeout_s)
+
+    def read_resource(self, uri: str, *,
+                      cancelled: Callable[[], bool] | None = None) -> dict:
+        return self.request("resources/read", {"uri": uri},
+                            timeout=self.server.tool_timeout_s, cancelled=cancelled)
+
 
 class StdioClient(_Protocol):
     """One server process and the JSON-RPC conversation with it."""
@@ -878,6 +891,8 @@ class McpServers:
     # server -> its tools the user's enabled_tools / disabled_tools leave out
     # (D-080): the user's choice, not a warning
     left_out: dict[str, list[str]] = field(default_factory=dict)
+    # the servers whose resources the model can list and read (D-102)
+    resources: list[str] = field(default_factory=list)
 
     def close(self) -> None:
         for client in self.clients:
@@ -945,4 +960,7 @@ def start_servers(servers: dict[str, McpServerConfig], cwd: Path, registry, *,
             registry.register(tool)
             taken.add(tool.name)
             names.append(tool.name)
+    # Imported here: the resource tools are built on this module's clients.
+    from foundry.core.mcp_resources import register as register_resources
+    found.resources = register_resources(found.clients, registry, taken)
     return found

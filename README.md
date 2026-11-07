@@ -170,7 +170,10 @@ holding `backend`, `runtime` and `permissions` like the file itself:
 MCP servers go in the same file -- `foundry mcp add docs --env-var DOCS_TOKEN --
 uvx our-docs-mcp` writes the first table below -- and their tools reach the
 model as `mcp__<server>__<tool>`; each call asks first unless a rule allows it
-(`tool = "mcp__docs__*"`):
+(`tool = "mcp__docs__*"`). A server that publishes resources also gives the
+model codex's `list_mcp_resources`, `list_mcp_resource_templates` and
+`read_mcp_resource`; listing is not asked about, a read is, unless a rule
+allows it (`tool = "read_mcp_resource"`, `pattern = "docs *"`):
 
 ```toml
 [mcp_servers.docs]

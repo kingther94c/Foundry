@@ -20,6 +20,7 @@ foundry/
 │   ├── policy/              # PolicyEngine: rules, modes, the six-step pipeline, the command segmenter
 │   ├── tools/               # ToolExecutor + the tool implementations + the workspace boundary
 │   ├── mcp.py               # the MCP client over stdio and HTTP: servers' tools as policy-checked tools (D-043, D-081)
+│   ├── mcp_resources.py     # codex's list/read tools over the servers that offer resources (D-102)
 │   ├── config_edit.py       # `foundry mcp add/remove`: a server's table in the user's config.toml, checked (D-082)
 │   ├── images.py            # images the model is shown: checked, sized, base64 (D-045)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
@@ -388,7 +389,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   `enabled_tools` and `disabled_tools` ([D-080](decision-log.md)) leave the
   other tools unregistered, said at start, in `/mcp` and in the
   `capability_probe` record (`left_out`); a name the server does not list is
-  a warning. An entry with `url` instead of `command`
+  a warning. A server that says it offers resources adds codex's three
+  resource tools ([D-102](decision-log.md), core/mcp_resources.py): listing is
+  read-only and allowed, a page's cursor accepted only if that server gave it;
+  `read_mcp_resource` is read-only but asked about, its target `server uri`.
+  An entry with `url` instead of `command`
   ([D-081](decision-log.md)) is a server reached over streamable HTTP: a POST
   per message, JSON or an event stream back, the session id and protocol
   version on every message after initialize and DELETE at close; a bearer

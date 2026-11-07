@@ -296,6 +296,8 @@ What a codex user still notices day to day, next:
     summary asked of Chat Completions refused, not dropped (landed, D-100).
 62. ~~codex's slash commands~~ -- `/approvals`, `/mention`, `/logout`,
     `/feedback` told what Foundry has instead (landed, D-101).
+63. ~~MCP resources~~ -- codex's `list_mcp_resources`,
+    `list_mcp_resource_templates` and `read_mcp_resource` (landed, D-102).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

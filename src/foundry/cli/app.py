@@ -462,6 +462,10 @@ def _announce_mcp(mcp: McpServers, session: SessionStore, sink: EventSink) -> No
     for name, tools in mcp.tools.items():
         record = {"mcp_server": name, "tools": tools}
         said = f"MCP server {name}: {len(tools)} tool(s)"
+        if name in mcp.resources:
+            # Its resources, listed and read by URI (D-102).
+            record["resources"] = True
+            said += " and resources"
         left_out = mcp.left_out.get(name, [])
         if left_out:
             # The user's own choice (D-080), recorded with what was offered.

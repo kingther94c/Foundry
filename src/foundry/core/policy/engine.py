@@ -360,7 +360,10 @@ def check_breaker(op: Operation, segmented: SegmentedCommand | None = None) -> B
 
 READ_ONLY_TOOLS = ("list_files", "search_text", "read_file", "read_artifact",
                    "view_image", "repo_map", "git_status", "git_diff", "update_plan",
-                   "finish")
+                   "finish",
+                   # What MCP servers say they offer (D-102). Reading one of
+                   # them is not here: it names any URI the model chooses.
+                   "list_mcp_resources", "list_mcp_resource_templates")
 
 
 def builtin_rules() -> tuple[Rule, ...]:

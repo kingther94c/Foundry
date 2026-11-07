@@ -4,7 +4,8 @@ The first argument picks how it misbehaves: normal, noinit (never answers
 initialize), notools (no tools capability), paged (tools/list in two pages),
 noisy (log lines on stdout and stderr), crash (exits on a call), slow (a call
 that never returns in time), ping (asks the client for a ping first), big (a
-huge result), spawn (starts a child that would outlive it), many (150 tools).
+huge result), spawn (starts a child that would outlive it), many (150 tools),
+resources (resources and URI templates as well as tools, D-102).
 """
 
 import json
@@ -26,6 +27,16 @@ TOOLS = [
     {"name": "mixed", "description": "Several kinds of content."},
     {"name": "fails", "description": "Always reports an error."},
 ]
+
+
+RESOURCES = [
+    {"uri": "doc://readme", "name": "readme", "title": "Read me", "mimeType": "text/markdown",
+     "description": "Where to start.\nTwo lines."},
+    {"uri": "doc://logo", "name": "logo", "mimeType": "image/png"},
+]
+# A 1x1 PNG.
+PNG = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJ"
+       "RU5ErkJggg==")
 
 
 def send(message):
@@ -52,9 +63,35 @@ for line in sys.stdin:
     if method == "initialize":
         if MODE == "noinit":
             continue
-        result(mid, {"protocolVersion": "2025-06-18",
-                     "capabilities": {} if MODE == "notools" else {"tools": {}},
+        capabilities = {} if MODE == "notools" else {"tools": {}}
+        if MODE == "resources":
+            capabilities["resources"] = {}
+        result(mid, {"protocolVersion": "2025-06-18", "capabilities": capabilities,
                      "serverInfo": {"name": "fake", "version": "1"}})
+    elif method == "resources/list":
+        if params.get("cursor") == "page-2":
+            result(mid, {"resources": [{"uri": "doc://changelog", "name": "changelog"}]})
+        else:
+            result(mid, {"resources": RESOURCES, "nextCursor": "page-2"})
+    elif method == "resources/templates/list":
+        result(mid, {"resourceTemplates": [{"uriTemplate": "doc://pages/{name}",
+                                            "name": "page", "description": "A page by name"}]})
+    elif method == "resources/read":
+        uri = params.get("uri")
+        if uri == "doc://readme":
+            result(mid, {"contents": [{"uri": uri, "mimeType": "text/markdown",
+                                       "text": "Read me first."}]})
+        elif uri == "doc://logo":
+            result(mid, {"contents": [{"uri": uri, "mimeType": "image/png", "blob": PNG}]})
+        elif uri == "doc://both":
+            result(mid, {"contents": [{"uri": "doc://both/a", "text": "part a"},
+                                      {"uri": "doc://both/b", "mimeType": "application/pdf",
+                                       "blob": "JVBERi0="}]})
+        elif uri.startswith("doc://pages/"):
+            result(mid, {"contents": [{"uri": uri, "text": f"page {uri[12:]}"}]})
+        else:
+            send({"jsonrpc": "2.0", "id": mid,
+                  "error": {"code": -32002, "message": f"Resource not found: {uri}"}})
     elif method == "notifications/initialized" or method == "notifications/cancelled":
         continue
     elif method == "tools/list":
