@@ -23,7 +23,11 @@ from pathlib import Path
 from foundry.core.errors import PromptError
 
 PROMPT_MAX_BYTES = 24_000
-_COMMAND = re.compile(r"/([A-Za-z][A-Za-z0-9_-]*)(?:\s+(.*))?\Z", re.DOTALL)
+# A word, or two joined by a colon: codex calls a custom prompt
+# /prompts:NAME (D-112), and a line so shaped is a command, not a task.
+_COMMAND = re.compile(r"/([A-Za-z][A-Za-z0-9_-]*(?::[A-Za-z][A-Za-z0-9_-]*)?)(?:\s+(.*))?\Z",
+                      re.DOTALL)
+PROMPTS = "prompts:"
 _NAME = re.compile(r"[a-z][a-z0-9_-]*\Z")
 # $$, $ARGUMENTS, $1..$9, and a named one (D-071): a whole word in capitals,
 # so $FILE and $TICKET_ID are, and $PSVersionTable and $env:PATH are not.
@@ -34,7 +38,8 @@ def parse_command(line: str) -> tuple[str, str] | None:
     """``(name, arguments)`` for a command line, None for a task."""
     match = _COMMAND.match(line.strip())
     if match is None:
-        return None
+        # The namespace alone: a command still, which asks for the name.
+        return (PROMPTS, "") if line.strip().lower() == "/" + PROMPTS else None
     return match.group(1).lower(), (match.group(2) or "").strip()
 
 

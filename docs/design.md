@@ -29,7 +29,8 @@ foundry/
 │   ├── httpc.py             # a stdlib HTTP/SSE client (~300 lines)
 │   └── winapi.py            # ctypes: DPAPI, Job Objects, reparse tags
 ├── cli/                     # the terminal UI: event subscriber + approval UI (rich); repl.py, the
-│                            #   interactive prompt and its slash commands (D-039); a paste or a
+│                            #   interactive prompt and its slash commands (D-039), a custom
+│                            #   prompt also /prompts:NAME, as codex's (D-112); a paste or a
 │                            #   block between lines of three quotes is one message (D-052);
 │                            #   markdown.py, the model's answer as Markdown a line at a time (D-070);
 │                            #   file_links.py, a cited file as a link to it in the editor (D-106);

@@ -27,7 +27,7 @@ from rich.markup import escape
 from rich.syntax import Syntax
 
 from foundry.cli.render import print_plan, safe, sanitize
-from foundry.core.commands import builtin_prompt, expand, parse_command, usage_hint
+from foundry.core.commands import PROMPTS, builtin_prompt, expand, parse_command, usage_hint
 from foundry.core.config import effort_levels
 from foundry.core.context import SUMMARY_PREFIX
 from foundry.core.conversation import Message, Role, TextBlock
@@ -548,6 +548,8 @@ def _user_ran(wiring: "Wiring", record: dict) -> None:
 
 
 def dispatch(wiring: "Wiring", console: Console, name: str, arguments: str) -> object:
+    if name.startswith(PROMPTS):
+        return _named_prompt(wiring, console, name, arguments)
     command = COMMANDS.get(name)
     if command is not None:
         if arguments and not command.arguments:
@@ -556,21 +558,45 @@ def dispatch(wiring: "Wiring", console: Console, name: str, arguments: str) -> o
         return command.run(wiring, console, arguments)
     prompt = wiring.prompts.get(name)
     if prompt is not None:
-        try:
-            text = expand(prompt, arguments)
-        except PromptError as exc:
-            console.print(f"[yellow]{escape(str(exc))}[/yellow]", soft_wrap=True)
-            return None
-        source = "this repository's" if prompt.from_repository else "your"
-        console.print(f"[dim]/{name}: sending {source} prompt {escape(str(prompt.path))}[/dim]",
-                      soft_wrap=True)
-        return RunTask(text)
+        return _send_prompt(console, name, prompt, arguments)
     hint = CODEX_COMMANDS.get(name)
     if hint is not None:
         console.print(f"[yellow]/{name} is codex's; {hint}[/yellow]", soft_wrap=True)
         return None
     console.print(f"[yellow]unknown command /{escape(name)}; /help lists the commands[/yellow]")
     return None
+
+
+def _named_prompt(wiring: "Wiring", console: Console, name: str, arguments: str) -> object:
+    """``/prompts:NAME``, as codex calls a custom prompt (D-112): only the
+    user's own prompts, and the one way to call one a built-in command's name
+    hides."""
+    wanted = name[len(PROMPTS):]
+    prompt = wiring.prompts.get(wanted)
+    if prompt is not None:
+        return _send_prompt(console, name, prompt, arguments)
+    if not wiring.prompts:
+        folder = f" -- Markdown files in {wiring.home / 'prompts'}" if wiring.home else ""
+        console.print(f"[yellow]you have no custom prompts{escape(folder)}[/yellow]",
+                      soft_wrap=True)
+    elif not wanted:
+        console.print("[yellow]say which: /prompts:NAME; /help lists yours[/yellow]")
+    else:
+        console.print(f"[yellow]no custom prompt is named {escape(wanted)}; /help lists "
+                      "yours[/yellow]", soft_wrap=True)
+    return None
+
+
+def _send_prompt(console: Console, name: str, prompt, arguments: str) -> object:
+    try:
+        text = expand(prompt, arguments)
+    except PromptError as exc:
+        console.print(f"[yellow]{escape(str(exc))}[/yellow]", soft_wrap=True)
+        return None
+    source = "this repository's" if prompt.from_repository else "your"
+    console.print(f"[dim]/{name}: sending {source} prompt {escape(str(prompt.path))}[/dim]",
+                  soft_wrap=True)
+    return RunTask(text)
 
 
 # codex's commands that are spelled otherwise here, or have no counterpart
@@ -582,6 +608,8 @@ CODEX_COMMANDS = {
                "@src/app.py",
     "logout": "here it is foundry logout, run in your shell",
     "feedback": "Foundry has no feedback channel to send it to",
+    "prompts": "a custom prompt is /NAME here, or /prompts:NAME as codex's; /help lists "
+               "yours",
 }
 
 
@@ -593,12 +621,13 @@ def _help(wiring: "Wiring", console: Console, arguments: str) -> None:
     for command in COMMANDS.values():
         usage = f"/{command.name} {command.arguments}".rstrip()
         console.print(f"  [cyan]{escape(usage):<{width}}[/cyan]  {command.summary}")
-    custom = [p for name, p in sorted(wiring.prompts.items()) if name not in COMMANDS]
-    if custom:
-        console.print("custom prompts:")
-        for prompt in custom:
+    if wiring.prompts:
+        console.print("custom prompts (each also /prompts:NAME, as codex's):")
+        for _, prompt in sorted(wiring.prompts.items()):
             source = "repository" if prompt.from_repository else "yours"
-            usage = f"/{prompt.name} {usage_hint(prompt)}".rstrip()
+            # One a built-in's name hides is called by its namespace (D-112).
+            called = prompt.name if prompt.name not in COMMANDS else PROMPTS + prompt.name
+            usage = f"/{called} {usage_hint(prompt)}".rstrip()
             console.print(f"  [cyan]{escape(usage):<{width}}[/cyan]  "
                           f"{escape(prompt.description or '(no description)')} [dim]({source})[/dim]",
                           soft_wrap=True)
