@@ -254,6 +254,9 @@ What a codex user still notices day to day, next:
     from the command line, as `codex mcp` (landed, D-082).
 44. ~~Which variables a command gets~~ -- `[shell_environment_policy]`, as
     codex's, without letting a secret through by a pattern (landed, D-083).
+45. ~~A backend's own key, headers and query~~ -- `env_key`,
+    `env_http_headers` and `query_params`, as codex's model providers
+    (landed, D-084).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

@@ -34,7 +34,10 @@ PROFILE_ENV = "FOUNDRY_PROFILE"
 
 # Settings a repository is never allowed to influence.
 _CONNECTION_KEYS = frozenset({"base_url", "api_key", "model", "protocol", "headers",
-                              "proxy", "ca_bundle", "credential_source"})
+                              "proxy", "ca_bundle", "credential_source", "env_key",
+                              "env_http_headers", "query_params"})
+# A header's name: an HTTP token.
+_HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}\Z")
 
 # Per-protocol defaults for settings no layer set. The base URL is the one that
 # matters: an Anthropic key sent to the OpenAI default host is a credential
@@ -74,6 +77,22 @@ def _validate_backend_setting(key: str, value: Any) -> None:
                 "backend.reasoning_summary must be one of "
                 f"{', '.join(REASONING_SUMMARIES)}, got {value!r}"
             )
+    elif key == "env_key":
+        if value is not None and (not isinstance(value, str) or not _ENV_NAME.match(value)):
+            # Not echoed: a key pasted here by mistake would be printed.
+            raise ConfigError("backend.env_key must be the name of an environment variable, "
+                              "not the key itself")
+    elif key == "env_http_headers":
+        if not isinstance(value, dict) or not all(
+                isinstance(k, str) and _HEADER_NAME.match(k)
+                and isinstance(v, str) and _ENV_NAME.match(v) for k, v in value.items()):
+            raise ConfigError("backend.env_http_headers must map header names to the names "
+                              "of environment variables, as { \"X-Org\" = \"CORP_ORG_ID\" }")
+    elif key == "query_params":
+        if not isinstance(value, dict) or not all(
+                isinstance(k, str) and k and isinstance(v, str) for k, v in value.items()):
+            raise ConfigError("backend.query_params must be a table of strings, as "
+                              "{ api-version = \"2025-04-01-preview\" }")
     elif key == "fallbacks":
         if value not in FALLBACK_VALUES:
             raise ConfigError(
@@ -117,6 +136,13 @@ class BackendConfig:
     headers: dict[str, str] = field(default_factory=dict)
     request_max_retries: int = 4
     stream_idle_timeout_ms: int = 300_000
+    # As codex's model_providers (D-084): the variable this backend's key is
+    # read from, and only from (None: the protocol's own, or the store);
+    # headers whose values are read from variables; and parameters added to
+    # every request's URL.
+    env_key: str | None = None
+    env_http_headers: dict[str, str] = field(default_factory=dict)
+    query_params: dict[str, str] = field(default_factory=dict)
     stream: bool = True
     # anthropic_messages only: output_config.effort (None leaves it to the API),
     # server-side fallbacks ("off" disables them), and the context window the

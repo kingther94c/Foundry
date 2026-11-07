@@ -154,6 +154,38 @@ class ApiKeySource:
 
 
 @dataclass(slots=True)
+class EnvKeySource:
+    """A backend whose key is in the variable its ``env_key`` names (D-084),
+    as codex's model_providers read one.
+
+    Only there: the stored key belongs to the protocol's default provider, and
+    sending it to another endpoint is the mistake a variable per backend is
+    for. ``foundry login`` stores nothing for it.
+    """
+
+    env_var: str
+    redactor: Redactor = field(default_factory=default_redactor)
+    vault_field: str | None = None
+
+    def acquire(self) -> SecretHandle:
+        value = os.environ.get(self.env_var)
+        if value:
+            self.redactor.register(value)
+            return SecretHandle(value, label="api key")
+        raise AuthError(f"no credentials. Set {self.env_var}, which backend.env_key names.")
+
+    def store(self, secret: str) -> None:
+        raise AuthError(f"this backend reads its key from {self.env_var} (backend.env_key); "
+                        "set it there -- foundry login stores nothing for it")
+
+    def invalidate(self) -> None:
+        pass   # a variable has nothing to refresh
+
+    def logout(self) -> None:
+        pass
+
+
+@dataclass(slots=True)
 class StaticTokenSource:
     """Corporate path placeholder: a token obtained elsewhere, stored as-is.
 

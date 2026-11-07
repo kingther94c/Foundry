@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator
 
 from foundry.core.backends.base import (
+    with_query,
     MODELS_MAX_BYTES,
     MODELS_TIMEOUT_S,
     model_ids,
@@ -202,6 +203,8 @@ class ResponsesBackend:
     api_key: str = ""
     name: str = "responses"
     extra_headers: dict[str, str] = field(default_factory=dict)
+    # Added to every request's URL (D-084).
+    query_params: dict[str, str] = field(default_factory=dict)
     client: HttpClient = field(default_factory=HttpClient)
     caps: Capabilities = field(default_factory=lambda: Capabilities(parallel_tool_calls=True))
     stream: bool = True
@@ -214,7 +217,7 @@ class ResponsesBackend:
 
     @property
     def endpoint(self) -> str:
-        return f"{self.base_url.rstrip('/')}/responses"
+        return with_query(f"{self.base_url.rstrip('/')}/responses", self.query_params)
 
     def _headers(self) -> dict[str, str]:
         headers = dict(self.extra_headers)
@@ -227,7 +230,8 @@ class ResponsesBackend:
 
     def list_models(self) -> list[str]:
         """The models the endpoint lists (``GET /models``), for /model (D-067)."""
-        response = self.client.get_json(f"{self.base_url.rstrip('/')}/models", self._headers(),
+        response = self.client.get_json(with_query(f"{self.base_url.rstrip('/')}/models",
+                                                   self.query_params), self._headers(),
                                         timeout=MODELS_TIMEOUT_S, max_bytes=MODELS_MAX_BYTES)
         return model_ids(response.json())
 

@@ -32,7 +32,7 @@ from foundry.cli.repl import repl as _repl
 from foundry.cli.repl import show_outcome as _show_outcome
 from foundry.cli.repl import show_undo_plan as _show_plan
 from foundry.cli.repl import with_note as _with_note
-from foundry.core.auth import ApiKeySource, CredentialVault, StaticTokenSource
+from foundry.core.auth import ApiKeySource, CredentialVault, EnvKeySource, StaticTokenSource
 from foundry.core.backends.anthropic import AnthropicBackend
 from foundry.core.backends.openai_compat import OpenAICompatBackend
 from foundry.core.backends.recording import RecordingBackend
@@ -345,7 +345,8 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         backend_kwargs["reasoning_summary"] = config.backend.reasoning_summary
     backend = backend_class(
         base_url=config.backend.base_url, model=config.backend.model, api_key=api_key,
-        extra_headers=config.backend.headers, stream=config.backend.stream,
+        extra_headers=request_headers(config.backend), stream=config.backend.stream,
+        query_params=dict(config.backend.query_params),
         client=HttpClient(read_timeout=config.backend.stream_idle_timeout_ms / 1000),
         max_retries=config.backend.request_max_retries,
         **backend_kwargs,
@@ -520,10 +521,30 @@ def _say_farewell(console: Console, wiring: Wiring) -> None:
         console.print(f"[dim]{escape(text)}[/dim]", soft_wrap=True)
 
 
+def request_headers(backend) -> dict[str, str]:
+    """The backend's ``headers``, and those of its ``env_http_headers`` whose
+    variable is set (D-084), as codex sends them: values read when the session
+    starts, and scrubbed from anything written or shown, as a key is."""
+    headers = dict(backend.headers)
+    for header, variable in backend.env_http_headers.items():
+        value = os.environ.get(variable)
+        if not value:
+            continue   # an unset variable leaves the header out
+        if "\r" in value or "\n" in value:
+            # http.client would refuse it with a message quoting it.
+            raise ConfigError(f"{variable} holds a line break, which the {header} header "
+                              "cannot carry")
+        default_redactor().register(value)
+        headers[header] = value
+    return headers
+
+
 def _credential_source(config: Config, vault: CredentialVault):
     """The credential this configuration uses. anthropic_messages has its own
     variable and vault field: an OpenAI key must never reach Anthropic, nor the
-    reverse."""
+    reverse; a backend that names its variable (env_key, D-084) reads only that."""
+    if config.backend.env_key:
+        return EnvKeySource(config.backend.env_key)
     if config.backend.credential_source == "gateway_token":
         return StaticTokenSource(vault)
     if config.backend.protocol == ANTHROPIC_PROTOCOL:
@@ -734,6 +755,11 @@ def cmd_login(args: argparse.Namespace) -> int:
     # command again.
     config = load_config(home=home)
     source = _credential_source(config, vault)
+    if isinstance(source, EnvKeySource):
+        console.print(f"[yellow]this backend reads its key from {source.env_var}[/yellow] "
+                      "(backend.env_key): set it in your environment; foundry login stores "
+                      "nothing for it")
+        return 1
     gateway = isinstance(source, StaticTokenSource)
     if gateway:
         label = "gateway token"

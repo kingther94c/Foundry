@@ -425,7 +425,11 @@ class ModelBackend(Protocol):
 - The backend configuration table's fields follow codex's `ModelProviderInfo`
   (requirements §3.2); each model profile additionally carries `edit_format:
   anchored_patch | whole_file`, `tool_schema_dialect`, and
-  `system_prompt_variant`.
+  `system_prompt_variant`. `env_key`, `env_http_headers` and `query_params`
+  ([D-084](decision-log.md)) are codex's: an `EnvKeySource` reads the key from
+  the named variable only; header values are read from variables when the
+  session starts and registered with the redactor; `with_query` puts the
+  parameters on every endpoint and on the model list.
 - Streaming: line-by-line SSE parsing (httpc.py); an idle timeout; a dropped
   stream is retried as a TransientError (up to the ceiling). The one GET,
   `get_json`, is for the model list (D-067): a timeout of its own for the

@@ -105,6 +105,19 @@ this protocol, so the key is never sent to the OpenAI default host. Rounds read
 the previous round's prompt from the cache, and safety-classifier declines are
 retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 
+A backend can name the variable its key is in, as codex's `model_providers`
+do -- then the key comes from there only, so two backends of one kind each
+send their own -- and take headers from variables and a query on every URL:
+
+```toml
+[profiles.router.backend]
+base_url = "https://openrouter.ai/api/v1"
+model = "anthropic/claude-sonnet-5.5"
+env_key = "OPENROUTER_API_KEY"                    # this backend's key, and only this
+# env_http_headers = { "X-Org-Id" = "CORP_ORG_ID" }   # values from variables; scrubbed
+# query_params = { api-version = "2025-04-01-preview" }   # on every request (Azure)
+```
+
 ## Commands
 
 | Command | What it does |

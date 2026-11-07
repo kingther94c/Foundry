@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator
 
 from foundry.core.backends.base import (
+    with_query,
     MODELS_MAX_BYTES,
     MODELS_TIMEOUT_S,
     model_ids,
@@ -336,6 +337,8 @@ class AnthropicBackend:
     api_key: str = ""
     name: str = "anthropic_messages"
     extra_headers: dict[str, str] = field(default_factory=dict)
+    # Added to every request's URL (D-084).
+    query_params: dict[str, str] = field(default_factory=dict)
     client: HttpClient = field(default_factory=HttpClient)
     caps: Capabilities = field(default_factory=lambda: Capabilities(
         parallel_tool_calls=True, prompt_caching=True, max_context_tokens=200_000))
@@ -348,7 +351,7 @@ class AnthropicBackend:
 
     @property
     def endpoint(self) -> str:
-        return f"{self.base_url.rstrip('/')}/messages"
+        return with_query(f"{self.base_url.rstrip('/')}/messages", self.query_params)
 
     def _betas(self) -> list[str]:
         betas = [BETA_THINKING_BINDING]
@@ -374,7 +377,8 @@ class AnthropicBackend:
         one page of up to a thousand, without the betas a turn asks for."""
         headers = self._headers()
         headers.pop("anthropic-beta")
-        response = self.client.get_json(f"{self.base_url.rstrip('/')}/models?limit=1000",
+        response = self.client.get_json(with_query(f"{self.base_url.rstrip('/')}/models?limit=1000",
+                                                   self.query_params),
                                         headers, timeout=MODELS_TIMEOUT_S,
                                         max_bytes=MODELS_MAX_BYTES)
         return model_ids(response.json())

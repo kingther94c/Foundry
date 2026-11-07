@@ -9,8 +9,9 @@ Frozen at M0 (design.md section 8).
 
 from __future__ import annotations
 
+import urllib.parse
 from dataclasses import dataclass
-from typing import Iterator, Literal, Protocol, runtime_checkable
+from typing import Iterator, Literal, Mapping, Protocol, runtime_checkable
 
 from foundry.core.conversation import Capabilities, ModelTurn, ToolUseBlock, TurnRequest, Usage
 from foundry.core.errors import ProtocolError
@@ -19,6 +20,14 @@ from foundry.core.errors import ProtocolError
 # waits less than a turn would, and is never retried.
 MODELS_TIMEOUT_S = 15.0
 MODELS_MAX_BYTES = 1 << 20
+
+
+def with_query(url: str, query: Mapping[str, str]) -> str:
+    """``url`` with the backend's ``query_params`` (D-084) -- Azure's
+    ``api-version``, say -- after whatever query it already has."""
+    if not query:
+        return url
+    return url + ("&" if "?" in url else "?") + urllib.parse.urlencode(dict(query))
 
 
 def model_ids(payload: object) -> list[str]:
