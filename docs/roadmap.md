@@ -330,6 +330,9 @@ What a codex user still notices day to day, next:
 75. ~~Skills found and switched as codex's~~ -- `.agents/skills` up to the
     repository's top, `[[skills.config]]` and `skills.max_context_tokens`
     (landed, D-114).
+76. ~~Lifecycle hooks, as codex's~~ -- `hooks.json` and `[hooks]` from your
+    own files: `PreToolUse` refuses, rewrites or adds a note, `PostToolUse`
+    replaces a result or adds one; `/hooks` (landed, D-115).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

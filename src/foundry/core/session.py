@@ -76,6 +76,9 @@ class EventType:
     REWOUND = "rewound"
     # A model request failed and is being tried again (D-085).
     MODEL_RETRY = "model_retry"
+    # The user's hooks ran at a tool call (D-115): each one's command, how it
+    # ended and what it decided.
+    HOOK = "hook"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced

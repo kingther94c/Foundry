@@ -175,6 +175,35 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
         if shell is None:
             raise ToolError(f"{argv[0]} was not found on PATH")
         argv = [shell, *argv[1:]]
+    return run_program(argv, cwd=cwd, timeout_s=timeout_s, env=env, cancelled=cancelled,
+                       on_output=on_output)
+
+
+def _feed(stream, data: bytes) -> None:
+    """Write ``data`` to a child's stdin and close it; a child that exits
+    without reading it is not an error (D-115)."""
+    try:
+        stream.write(data)
+    except (OSError, ValueError):
+        pass
+    finally:
+        try:
+            stream.close()
+        except (OSError, ValueError):
+            pass
+
+
+def run_program(argv: list[str] | str, *, cwd: str, timeout_s: int,
+                env: dict[str, str] | None = None,
+                cancelled: Callable[[], bool] | None = None,
+                on_output: Callable[[str, str], None] | None = None,
+                stdin_data: bytes | None = None,
+                executable: str | None = None) -> CommandResult:
+    """run_process's body, for a program already chosen: ``argv`` is its
+    arguments, or on Windows the whole command line when it has quoting of
+    its own (a hook's ``cmd /C "..."``, D-115), with ``executable`` the
+    program, so nothing is looked for in the current directory. ``stdin_data``
+    is written to its stdin, which is otherwise closed."""
     creationflags = 0
     if IS_WINDOWS:
         creationflags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
@@ -185,13 +214,19 @@ def run_process(command: str, *, cwd: str, timeout_s: int,
     job = ProcessJob()
     try:
         process = subprocess.Popen(
-            argv, cwd=cwd, env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+            argv, cwd=cwd, env=env, executable=executable,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL if stdin_data is None else subprocess.PIPE,
             creationflags=creationflags,
         )
         if IS_WINDOWS and job.active:
             # Millisecond race here is documented in winapi.ProcessJob.
             job.assign(int(process._handle))  # type: ignore[attr-defined]
+        if stdin_data is not None:
+            # On a thread: a child that reads nothing while it fills its own
+            # output pipe would otherwise block this write, and the timeout.
+            threading.Thread(target=_feed, args=(process.stdin, stdin_data),
+                             daemon=True).start()
 
         # Drain both pipes on threads with a hard byte budget, so a runaway
         # writer cannot allocate more than the cap regardless of how fast it

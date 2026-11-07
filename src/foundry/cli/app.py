@@ -71,6 +71,7 @@ from foundry.core.events import (
 )
 from foundry.core.httpc import HttpClient
 from foundry.core.json_schema import check_schema
+from foundry.core.hooks import HookSet
 from foundry.core.notify import Notifier
 from foundry.core.policy.engine import Mode, PolicyEngine, builtin_rules
 from foundry.core.prompts import (
@@ -444,6 +445,8 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         show_reasoning=config.show_reasoning,
         notifier=Notifier(tuple(config.notify), workspace.root) if config.notify else None,
         scrub=default_redactor().scrub,
+        hooks=(HookSet(config.hooks, cwd=workspace.root, env_policy=config.shell_environment)
+               if config.hooks else None),
     )
     # A cancel from another thread (foundry mcp-server, D-103) reaches a
     # running command, search or MCP call, which poll this, not only the next

@@ -24,6 +24,7 @@ foundry/
 │   ├── config_edit.py       # `foundry mcp add/remove`: a server's table in the user's config.toml, checked (D-082)
 │   ├── skills.py            # agent skills: found, listed to the model, loaded by load_skill (D-113);
 │                            #   .agents/skills up to the repository's top, [[skills.config]] (D-114)
+│   ├── hooks.py             # codex's lifecycle hooks: read, matched, run at each tool call (D-115)
 │   ├── images.py            # images the model is shown: checked, sized, base64 (D-045)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
 │   ├── auth.py              # AuthProvider + DPAPI storage
@@ -257,7 +258,9 @@ async def run_turn(user_input):
 ```python
 # the six-step pipeline (the claude-code Agent SDK's published specification, testable step by step)
 def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DENY(reason)
-    1. the pre_tool callback (a configured Python callable, or a stdin-JSON subprocess; may rewrite the input)
+    1. the pre_tool callback (a configured Python callable, or a stdin-JSON subprocess; may rewrite the input);
+       the user's PreToolUse hooks act here, before the rules: a refusal ends it, a rewrite is
+       validated and re-enters from step 0 (D-115)
     2. DENY rules (merged across every layer; a hit ends it -- no ALLOW can flip it);
        then plan mode and read-only tasks (/review) refuse every mutator, before any ASK (D-039)
        (a rule's tool may be a pattern, such as mcp__docs__*, matched case-sensitively; D-043)
@@ -530,7 +533,7 @@ class ModelBackend(Protocol):
   policy_decision / approval / command_exec / token_usage / capability_probe /
   validation_claim / git_baseline / termination / user_input / tool_reply /
   resumed / undo / mode_change / compacted / model_change / notified /
-  user_command / rewound / effort_change / model_retry` (`user_input`, `tool_reply` and
+  user_command / rewound / effort_change / model_retry / hook` (`user_input`, `tool_reply` and
   `resumed` added for resume, [D-035](decision-log.md), and `user_input.typed`,
   what the user typed when the message says more, [D-108](decision-log.md); `undo` for undo,
   [D-036](decision-log.md); `mode_change` for plan approval,
@@ -541,7 +544,8 @@ class ModelBackend(Protocol):
   [D-055](decision-log.md); `rewound` for `/rewind`, which keeps the history
   it left as `compacted` does, [D-056](decision-log.md); `effort_change` for
   `/effort`, [D-061](decision-log.md); `model_retry` for a model request
-  tried again, [D-085](decision-log.md)). An image
+  tried again, [D-085](decision-log.md); `hook` for the runs of the user's hooks
+  at a tool call, [D-115](decision-log.md)). An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).
   Artifact contents are stored content-addressed at

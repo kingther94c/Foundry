@@ -1,0 +1,600 @@
+"""Lifecycle hooks, as codex's (D-115).
+
+A hook is a command line the user's own configuration names -- in
+``hooks.json`` beside ``config.toml``, in a ``[hooks]`` table of it, or in
+the machine's policy -- run at a point in a turn with what is happening as
+one JSON object on its stdin. The names and shapes are codex's, so a hook
+written for codex runs here unchanged. Two of codex's events are run:
+
+* ``PreToolUse``, before a tool call reaches policy: a hook may refuse the
+  call, rewrite its input, or add a note for the model. It never allows what
+  policy would not: a rewritten call is checked from the start, breaker,
+  rules and approval included.
+* ``PostToolUse``, after a tool gave its result: a hook may put its own
+  feedback in place of the result, or add a note.
+
+Like a notify program or an MCP server, a hook is a program Foundry starts,
+so a repository's configuration may not name one. A hook that fails, times
+out or answers in a shape it does not know is a warning, and the call goes
+on as codex lets it: a hook is a guardrail, and policy is the boundary.
+"""
+
+from __future__ import annotations
+
+import difflib
+import functools
+import json
+import re
+import threading
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable
+
+from foundry.core.errors import ConfigError, ToolError
+from foundry.core.winapi import IS_WINDOWS, child_environment, decode_output, find_program
+
+PRE_TOOL_USE = "PreToolUse"
+POST_TOOL_USE = "PostToolUse"
+HOOK_EVENTS = (PRE_TOOL_USE, POST_TOOL_USE)
+# codex's other events: named, so a hooks.json carried over says which of
+# its hooks would not run, rather than reading as a typo.
+CODEX_EVENTS = frozenset({
+    "PreModelRequest", "PostModelRequest", "PermissionRequest", "PreCompact",
+    "PostCompact", "SessionStart", "SessionEnd", "UserPromptSubmit", "SubagentStart",
+    "SubagentStop", "Stop", "Interrupt",
+})
+DEFAULT_TIMEOUT_S = 600
+# What a hook's additionalContext may take before it is cut, in codex's
+# tokens, counted here at four characters a token. 0 means no cut.
+DEFAULT_CONTEXT_TOKENS = 2_500
+CHARS_PER_TOKEN = 4
+HOOKS_FILE = "hooks.json"
+
+_FILE_KEYS = frozenset({"description", "hooks"})
+_GROUP_KEYS = frozenset({"matcher", "hooks"})
+_HANDLER_KEYS = frozenset({"type", "command", "commandWindows", "command_windows", "timeout",
+                           "async", "statusMessage", "additionalContextLimit"})
+# A matcher of names and `|` alone is a list of names, as codex reads it;
+# anything else is a regular expression, searched for.
+_NAMES_ONLY = re.compile(r"[A-Za-z0-9_|]*\Z")
+
+# A hook sees codex's name for a tool, so a script written for codex's
+# `Bash` sees a command as it expects; a matcher may use Foundry's name too.
+_HOOK_NAMES = {"run_command": "Bash"}
+_MATCHER_ALIASES = {"run_command": ("run_command",), "apply_patch": ("Edit", "Write")}
+# Foundry's modes as codex's hooks name a permission mode.
+PERMISSION_MODES = {"default": "default", "accept_edits": "acceptEdits", "plan": "plan",
+                    "dont_ask": "dontAsk"}
+
+
+@functools.lru_cache(maxsize=256)
+def _regex(pattern: str) -> re.Pattern[str]:
+    return re.compile(pattern)
+
+
+@dataclass(frozen=True, slots=True)
+class Hook:
+    event: str
+    matcher: str          # as written; "" or "*" match every call
+    command: str          # the command line, commandWindows taken on Windows
+    timeout_s: int = DEFAULT_TIMEOUT_S
+    status_message: str = ""
+    context_tokens: int = DEFAULT_CONTEXT_TOKENS
+    # codex's `async`: what such a hook says informs and never decides.
+    background: bool = False
+    source: str = ""      # the file it was read from
+
+    def matches(self, names: tuple[str, ...]) -> bool:
+        if self.matcher in ("", "*"):
+            return True
+        if _NAMES_ONLY.match(self.matcher):
+            choices = self.matcher.split("|")
+            return any(name in choices for name in names)
+        return any(_regex(self.matcher).search(name) for name in names)
+
+
+def hook_tool_name(tool: str) -> str:
+    return _HOOK_NAMES.get(tool, tool)
+
+
+def matcher_names(tool: str) -> tuple[str, ...]:
+    """The names a matcher is tried against: the one a hook sees first."""
+    return (hook_tool_name(tool), *_MATCHER_ALIASES.get(tool, ()))
+
+
+def hook_tool_input(tool: str, args: dict[str, Any]) -> dict[str, Any]:
+    """A call's input as a hook sees it: codex's ``command`` for a patch, as
+    for a shell command; the arguments themselves otherwise."""
+    if tool == "apply_patch":
+        return {"command": args.get("patch", "")}
+    return dict(args)
+
+
+def rewritten_args(tool: str, args: dict[str, Any], updated: Any) -> dict[str, Any] | None:
+    """The arguments a PreToolUse hook's ``updatedInput`` asks for, or None
+    when it is not the shape codex gives one: an object, with a string
+    ``command`` for a shell command or a patch."""
+    if not isinstance(updated, dict):
+        return None
+    if tool in ("run_command", "apply_patch") and not isinstance(updated.get("command"), str):
+        return None
+    if tool == "apply_patch":
+        return {"patch": updated["command"]}
+    if tool == "run_command":
+        return {**args, **updated}
+    return dict(updated)
+
+
+# --- configuration ------------------------------------------------------------
+
+
+def _event_refused(event: str) -> str:
+    if event == "state":
+        return ("hooks.state is codex's record of the hooks you reviewed in its /hooks; "
+                "Foundry runs the hooks your own files name and keeps no such record, so "
+                "remove a hook you do not want run")
+    if event in ("managed_dir", "windows_managed_dir"):
+        return (f"hooks.{event} belongs to codex's requirements.toml; the machine's hooks "
+                "go in Foundry's own policy.toml or the hooks.json beside it")
+    if event in CODEX_EVENTS:
+        return (f"Foundry does not run {event} hooks yet; it runs "
+                f"{' and '.join(HOOK_EVENTS)}")
+    close = difflib.get_close_matches(event, [*HOOK_EVENTS, *sorted(CODEX_EVENTS)], n=1)
+    return f"no hook event {event!r}" + (f"; did you mean {close[0]!r}?" if close else "")
+
+
+def _text(value: Any, where: str, *, empty: bool = False) -> str:
+    if not isinstance(value, str) or "\0" in value or (not empty and not value.strip()):
+        raise ConfigError(f"{where} must be {'a string' if empty else 'a non-empty string'}")
+    return value
+
+
+def _handler(entry: Any, event: str, matcher: str, where: str, source: str) -> Hook:
+    if not isinstance(entry, dict):
+        raise ConfigError(f"{where} must be a table, with type = \"command\" and its command")
+    kind = entry.get("type")
+    if kind == "mcp_tool":
+        raise ConfigError(f"{where}: Foundry runs command hooks; an mcp_tool hook is not "
+                          "supported yet")
+    if kind in ("prompt", "agent"):
+        raise ConfigError(f"{where}: a {kind} hook is skipped by codex too; remove it")
+    if kind != "command":
+        raise ConfigError(f"{where}.type must be \"command\"")
+    unknown = sorted(set(entry) - _HANDLER_KEYS)
+    if unknown:
+        close = difflib.get_close_matches(unknown[0], sorted(_HANDLER_KEYS), n=1)
+        raise ConfigError(f"{where}: no setting {unknown[0]!r}"
+                          + (f"; did you mean {close[0]!r}?" if close else
+                             f" (a hook takes {', '.join(sorted(_HANDLER_KEYS))})"))
+    command = _text(entry.get("command"), f"{where}.command")
+    if "commandWindows" in entry and "command_windows" in entry:
+        raise ConfigError(f"{where}: commandWindows and command_windows are one setting; "
+                          "give one")
+    windows = entry.get("commandWindows", entry.get("command_windows"))
+    if windows is not None:
+        windows = _text(windows, f"{where}.commandWindows")
+        if IS_WINDOWS:
+            command = windows
+    timeout = entry.get("timeout", DEFAULT_TIMEOUT_S)
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
+        raise ConfigError(f"{where}.timeout is in seconds, a whole number of at least 1")
+    background = entry.get("async", False)
+    if not isinstance(background, bool):
+        raise ConfigError(f"{where}.async must be true or false")
+    status = _text(entry.get("statusMessage", ""), f"{where}.statusMessage", empty=True)
+    tokens = entry.get("additionalContextLimit", DEFAULT_CONTEXT_TOKENS)
+    if isinstance(tokens, bool) or not isinstance(tokens, int) or tokens < 0:
+        raise ConfigError(f"{where}.additionalContextLimit is a number of tokens, 0 or more "
+                          "(0: no limit)")
+    return Hook(event=event, matcher=matcher, command=command, timeout_s=timeout,
+                status_message=status.strip(), context_tokens=tokens, background=background,
+                source=source)
+
+
+def parse_hooks(events: Any, source: str) -> tuple[Hook, ...]:
+    """The hooks of one table: ``[hooks]`` of a config file, or the
+    ``hooks`` object of a hooks.json. Every mistake is an error naming where
+    it is (D-091): a hook skipped without a word looks like one that runs."""
+    if not isinstance(events, dict):
+        raise ConfigError(f"{source}: hooks must be a table of events, as [[hooks.PreToolUse]]")
+    hooks: list[Hook] = []
+    for event, groups in events.items():
+        if event not in HOOK_EVENTS:
+            raise ConfigError(f"{source}: {_event_refused(event)}")
+        if not isinstance(groups, list):
+            raise ConfigError(f"{source}: hooks.{event} must be a list of matcher groups, as "
+                              f"[[hooks.{event}]]")
+        for index, group in enumerate(groups):
+            where = f"{source}: hooks.{event}[{index}]"
+            if not isinstance(group, dict):
+                raise ConfigError(f"{where} must be a table, with a matcher and its hooks")
+            unknown = sorted(set(group) - _GROUP_KEYS)
+            if unknown:
+                raise ConfigError(f"{where}: no setting {unknown[0]!r} (a matcher group takes "
+                                  "matcher and hooks)")
+            matcher = group.get("matcher")
+            matcher = "" if matcher is None else _text(matcher, f"{where}.matcher", empty=True)
+            if matcher not in ("", "*") and not _NAMES_ONLY.match(matcher):
+                try:
+                    _regex(matcher)
+                except re.error as exc:
+                    raise ConfigError(f"{where}.matcher {matcher!r} is not a regular "
+                                      f"expression: {exc}") from exc
+            handlers = group.get("hooks", [])
+            if not isinstance(handlers, list):
+                raise ConfigError(f"{where}.hooks must be a list, as [[hooks.{event}.hooks]]")
+            hooks.extend(_handler(entry, event, matcher, f"{where}.hooks[{number}]", source)
+                         for number, entry in enumerate(handlers))
+    return tuple(hooks)
+
+
+def read_hooks_file(path: Path) -> tuple[Hook, ...]:
+    """A hooks.json, as codex's: ``{"description": ..., "hooks": {...}}``.
+    None there is none."""
+    if not path.is_file():
+        return ()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise ConfigError(f"cannot read {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ConfigError(f'{path}: a hooks file is one JSON object, as {{"hooks": {{...}}}}')
+    unknown = sorted(set(data) - _FILE_KEYS)
+    if unknown:
+        raise ConfigError(f"{path}: no setting {unknown[0]!r} (a hooks file takes description "
+                          "and hooks)")
+    if "description" in data and not isinstance(data["description"], str):
+        raise ConfigError(f"{path}: description must be a string")
+    return parse_hooks(data.get("hooks", {}), str(path))
+
+
+# --- running ----------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class HookRun:
+    hook: Hook
+    exit_code: int | None = None
+    stdout: str = ""
+    stderr: str = ""
+    error: str = ""       # it could not be started, timed out or was stopped
+    duration_ms: int = 0
+
+
+@dataclass(slots=True)
+class HookSet:
+    """The hooks a session runs, and where and how they run."""
+    hooks: tuple[Hook, ...] = ()
+    cwd: Path | None = None
+    env_policy: Any = None              # the user's [shell_environment_policy]
+    environ: dict[str, str] | None = None   # the environment to start from
+
+    def matching(self, event: str, names: tuple[str, ...]) -> list[Hook]:
+        return [hook for hook in self.hooks if hook.event == event and hook.matches(names)]
+
+    def run(self, hooks: list[Hook], payload: dict[str, Any], *,
+            cancelled: Callable[[], bool] | None = None) -> list[HookRun]:
+        """Run ``hooks`` with ``payload`` on their stdin, all at once as
+        codex starts them, so one that hangs does not keep another from
+        starting; their runs in the order the hooks are. KeyboardInterrupt
+        when the session is stopped meanwhile, once each is ended."""
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        if len(hooks) == 1:
+            return [self._run_one(hooks[0], data, cancelled)]
+        stop = threading.Event()
+
+        def halted() -> bool:
+            return stop.is_set() or (cancelled is not None and cancelled())
+
+        runs: list[HookRun | None] = [None] * len(hooks)
+
+        def work(index: int, hook: Hook) -> None:
+            try:
+                runs[index] = self._run_one(hook, data, halted)
+            except KeyboardInterrupt:
+                runs[index] = HookRun(hook, error="stopped")
+
+        threads = [threading.Thread(target=work, args=(index, hook), daemon=True)
+                   for index, hook in enumerate(hooks)]
+        for thread in threads:
+            thread.start()
+        try:
+            # Joined in slices: a plain join would hold Ctrl+C until the
+            # slowest hook ended, up to its timeout.
+            for thread in threads:
+                while thread.is_alive():
+                    thread.join(0.2)
+        except KeyboardInterrupt:
+            stop.set()
+            for thread in threads:
+                thread.join(5)
+            raise
+        if cancelled is not None and cancelled():
+            raise KeyboardInterrupt
+        return [run if run is not None else HookRun(hook, error="stopped")
+                for run, hook in zip(runs, hooks)]
+
+    def _run_one(self, hook: Hook, data: bytes,
+                 cancelled: Callable[[], bool] | None) -> HookRun:
+        from foundry.core.tools.command import run_program
+
+        env = child_environment(self.environ, policy=self.env_policy)
+        # A program the command line names is looked for on PATH and not
+        # first in the workspace, where a clone could have put one (D-049).
+        env["NoDefaultCurrentDirectoryInExePath"] = "1"
+        if IS_WINDOWS:
+            shell = find_program("cmd.exe", env)
+            if shell is None:
+                return HookRun(hook, error="cmd.exe was not found on PATH")
+            # codex's `cmd /C "<command>"`, with /S so the outer quotes are
+            # the ones removed whatever the command holds, and /D so no
+            # AutoRun command of the registry's runs first.
+            argv: list[str] | str = f'"{shell}" /D /S /C "{hook.command}"'
+            executable: str | None = shell
+        else:  # pragma: no cover - Windows is the supported platform
+            argv, executable = ["/bin/sh", "-c", hook.command], None
+        try:
+            result = run_program(argv, cwd=str(self.cwd or Path.cwd()),
+                                 timeout_s=hook.timeout_s, env=env, cancelled=cancelled,
+                                 stdin_data=data, executable=executable)
+        except (OSError, ToolError) as exc:
+            return HookRun(hook, error=f"could not be started: {exc}")
+        stdout = decode_output(result.stdout).text
+        stderr = decode_output(result.stderr).text
+        if result.timed_out:
+            return HookRun(hook, stdout=stdout, stderr=stderr,
+                           error=f"timed out after {hook.timeout_s}s",
+                           duration_ms=result.duration_ms)
+        return HookRun(hook, exit_code=result.exit_code, stdout=stdout, stderr=stderr,
+                       duration_ms=result.duration_ms)
+
+
+# --- what the hooks said ------------------------------------------------------
+
+
+@dataclass(slots=True)
+class HookVerdict:
+    """What the hooks of one event said, together."""
+    # PreToolUse: why the call is refused. PostToolUse: what the model is
+    # given in place of the result.
+    block: list[str] = field(default_factory=list)
+    rewrites: list[dict[str, Any]] = field(default_factory=list)   # PreToolUse
+    context: list[str] = field(default_factory=list)               # for the model
+    messages: list[str] = field(default_factory=list)              # systemMessage
+    failures: list[str] = field(default_factory=list)              # warnings
+    records: list[dict[str, Any]] = field(default_factory=list)    # for the journal
+
+
+_UNIVERSAL = {"continue": bool, "stopReason": str, "systemMessage": str, "suppressOutput": bool}
+
+
+def _json_object(stdout: str) -> tuple[dict[str, Any] | None, bool]:
+    """The object a hook printed, and whether what it printed looked like
+    JSON without being an object: that is a broken answer; plain text is
+    not an answer at all."""
+    text = stdout.strip()
+    if not text:
+        return None, False
+    try:
+        value = json.loads(text)
+    except ValueError:
+        value = None
+    if isinstance(value, dict):
+        return value, False
+    return None, text.startswith(("{", "["))
+
+
+def _typed(obj: dict[str, Any], kinds: dict[str, type]) -> bool:
+    """Whether each field present has its type; a null is a field left out."""
+    return all(obj.get(name) is None or isinstance(obj[name], kind)
+               for name, kind in kinds.items())
+
+
+def _reason(value: Any) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _short(command: str) -> str:
+    return command if len(command) <= 60 else command[:57] + "..."
+
+
+def _context(hook: Hook, text: str) -> str:
+    limit = hook.context_tokens * CHARS_PER_TOKEN
+    if not limit or len(text) <= limit:
+        return text
+    return (text[:limit] + f"\n[... cut: the hook gave {len(text)} characters, more than "
+            f"its additionalContextLimit of about {hook.context_tokens} tokens]")
+
+
+class _Reading:
+    """One run read: what it decided and what is said of it."""
+
+    def __init__(self, run: HookRun, event: str, verdict: HookVerdict) -> None:
+        self.run, self.event, self.verdict = run, event, verdict
+        self.outcome = "completed"
+        self.control = not run.hook.background
+
+    def fail(self, why: str) -> None:
+        self.outcome = "failed"
+        self.verdict.failures.append(f"`{_short(self.run.hook.command)}` {why}")
+
+    def done(self) -> None:
+        record: dict[str, Any] = {"command": self.run.hook.command,
+                                  "source": self.run.hook.source,
+                                  "exit_code": self.run.exit_code,
+                                  "duration_ms": self.run.duration_ms,
+                                  "outcome": self.outcome}
+        if self.run.error:
+            record["error"] = self.run.error
+        self.verdict.records.append(record)
+
+    def start(self) -> dict[str, Any] | None:
+        """The answer to read, or None when there is none to act on: a run
+        that failed, a code other than 0 and 2, or nothing printed."""
+        run = self.run
+        if run.error:
+            self.fail(run.error)
+            return None
+        if run.exit_code == 2 and self.control:
+            reason = run.stderr.strip()
+            if not reason:
+                self.fail("exited with code 2 but did not write a reason to stderr")
+                return None
+            self.decided(reason)
+            return None
+        if run.exit_code != 0:
+            self.fail("exited without a status code" if run.exit_code is None
+                      else f"exited with code {run.exit_code}")
+            return None
+        answer, broken = _json_object(run.stdout)
+        if broken:
+            self.fail(f"returned invalid {self.event} JSON output")
+        return answer
+
+    def decided(self, reason: str) -> None:
+        self.outcome = "blocked"
+        self.verdict.block.append(reason)
+
+
+def _hook_output(answer: dict[str, Any], kinds: dict[str, type]) -> dict[str, Any] | None:
+    output = answer.get("hookSpecificOutput")
+    if output is None:
+        return {}
+    if not isinstance(output, dict) or not _typed(output, kinds):
+        return None
+    return output
+
+
+def read_pre_tool_use(runs: list[HookRun]) -> HookVerdict:
+    """PreToolUse answers, as codex reads them: a refusal (``deny`` with a
+    reason, codex's older ``block``, or exit code 2 and a reason on stderr),
+    a rewrite (``allow`` with ``updatedInput``), a note for the model."""
+    verdict = HookVerdict()
+    for run in runs:
+        reading = _Reading(run, PRE_TOOL_USE, verdict)
+        answer = reading.start()
+        if answer is not None:
+            _pre_answer(reading, answer)
+        reading.done()
+    return verdict
+
+
+def _pre_answer(reading: _Reading, answer: dict[str, Any]) -> None:
+    verdict = reading.verdict
+    output = _hook_output(answer, {"hookEventName": str, "additionalContext": str,
+                                   "permissionDecision": str,
+                                   "permissionDecisionReason": str})
+    if (output is None or not _typed(answer, {**_UNIVERSAL, "decision": str, "reason": str})
+            or output.get("permissionDecision") not in (None, "allow", "deny", "ask")
+            or answer.get("decision") not in (None, "approve", "block")):
+        reading.fail("returned invalid PreToolUse JSON output")
+        return
+    if answer.get("systemMessage"):
+        verdict.messages.append(answer["systemMessage"])
+    decision = output.get("permissionDecision")
+    reason = output.get("permissionDecisionReason")
+    updated = output.get("updatedInput")
+    specific = decision is not None or reason is not None or updated is not None
+    if answer.get("continue") is False:
+        invalid = "returned unsupported continue:false"
+    elif answer.get("stopReason") is not None:
+        invalid = "returned unsupported stopReason"
+    elif answer.get("suppressOutput"):
+        invalid = "returned unsupported suppressOutput"
+    elif specific:
+        if updated is not None and decision != "allow":
+            invalid = "returned updatedInput without permissionDecision:allow"
+        elif decision == "allow" and updated is None:
+            invalid = "returned unsupported permissionDecision:allow"
+        elif decision == "ask":
+            invalid = "returned unsupported permissionDecision:ask"
+        elif decision == "deny" and not _reason(reason):
+            invalid = "returned permissionDecision:deny without a non-empty reason"
+        elif decision is None and reason is not None:
+            invalid = "returned permissionDecisionReason without permissionDecision"
+        else:
+            invalid = ""
+    elif answer.get("decision") == "approve":
+        invalid = "returned unsupported decision:approve"
+    elif answer.get("decision") == "block" and not _reason(answer.get("reason")):
+        invalid = "returned decision:block without a non-empty reason"
+    elif answer.get("decision") is None and answer.get("reason") is not None:
+        invalid = "returned reason without decision"
+    else:
+        invalid = ""
+    if output.get("additionalContext") and (not reading.control or not invalid):
+        verdict.context.append(_context(reading.run.hook, output["additionalContext"]))
+    if not reading.control:
+        return
+    if invalid:
+        reading.fail(invalid)
+    elif specific and decision == "deny":
+        reading.decided(_reason(reason))
+    elif not specific and answer.get("decision") == "block":
+        reading.decided(_reason(answer.get("reason")))
+    elif updated is not None:
+        reading.outcome = "rewrote"
+        verdict.rewrites.append(updated)
+
+
+def read_post_tool_use(runs: list[HookRun]) -> HookVerdict:
+    """PostToolUse answers, as codex reads them: ``block`` with a reason, or
+    exit code 2 and a reason on stderr, puts the reason in place of the
+    result; ``continue: false`` its stop text; a note for the model."""
+    verdict = HookVerdict()
+    for run in runs:
+        reading = _Reading(run, POST_TOOL_USE, verdict)
+        answer = reading.start()
+        if answer is not None:
+            _post_answer(reading, answer)
+        reading.done()
+    return verdict
+
+
+def _post_answer(reading: _Reading, answer: dict[str, Any]) -> None:
+    verdict = reading.verdict
+    output = _hook_output(answer, {"hookEventName": str, "additionalContext": str})
+    if (output is None or not _typed(answer, {**_UNIVERSAL, "decision": str, "reason": str})
+            or answer.get("decision") not in (None, "block")):
+        reading.fail("returned invalid PostToolUse JSON output")
+        return
+    if answer.get("systemMessage"):
+        verdict.messages.append(answer["systemMessage"])
+    block = answer.get("decision") == "block"
+    stopped = answer.get("continue") is False
+    if answer.get("suppressOutput"):
+        invalid = "returned unsupported suppressOutput"
+    elif output.get("updatedMCPToolOutput") is not None:
+        invalid = "returned unsupported updatedMCPToolOutput"
+    elif block and not _reason(answer.get("reason")):
+        invalid = "returned decision:block without a non-empty reason"
+    elif not block and not stopped and answer.get("reason") is not None:
+        invalid = "returned reason without decision"
+    else:
+        invalid = ""
+    if output.get("additionalContext") and (not reading.control or not invalid):
+        verdict.context.append(_context(reading.run.hook, output["additionalContext"]))
+    if not reading.control:
+        return
+    if stopped:
+        reading.outcome = "stopped"
+        stop = _reason(answer.get("stopReason")) or "PostToolUse hook stopped execution"
+        verdict.block.append(_reason(answer.get("reason")) or stop)
+    elif invalid:
+        reading.fail(invalid)
+    elif block:
+        reading.decided(_reason(answer.get("reason")))
+
+
+def scrubbed(value: Any, scrub: Callable[[str], str] | None) -> Any:
+    """``value`` with each string in it scrubbed: before JSON is made of
+    it, since a secret with a quote in it is no longer itself once escaped."""
+    if scrub is None:
+        return value
+    if isinstance(value, str):
+        return scrub(value)
+    if isinstance(value, dict):
+        return {key: scrubbed(item, scrub) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [scrubbed(item, scrub) for item in value]
+    return value

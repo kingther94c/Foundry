@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from foundry.core.errors import ConfigError
+from foundry.core.hooks import HOOKS_FILE, Hook, parse_hooks, read_hooks_file
 from foundry.core.httpc import _is_loopback
 from foundry.core.winapi import looks_like_credential
 from foundry.core.policy.engine import Layer, Mode, Rule, Verdict
@@ -529,6 +530,9 @@ class Config:
     skill_switches: tuple[tuple[str, str, bool], ...] = ()
     managed_skill_switches: tuple[tuple[str, str, bool], ...] = ()
     skills_max_context_tokens: int | None = None
+    # codex's lifecycle hooks (D-115), from the user's own files and the
+    # machine's policy only: each one is a program Foundry starts.
+    hooks: tuple[Hook, ...] = ()
 
     def all_skill_switches(self) -> tuple[tuple[str, str, bool], ...]:
         """The user's, then the policy's: what the machine's policy says of
@@ -672,7 +676,7 @@ FILE_OPENERS = ("vscode", "vscode-insiders", "windsurf", "cursor", "none")
 
 # What a configuration file holds (D-091). Profiles are the user's file's own.
 _SECTIONS = frozenset({"backend", "runtime", "permissions", "mcp_servers", "notify",
-                       "shell_environment_policy", "skills"})
+                       "shell_environment_policy", "skills", "hooks"})
 _PROFILE_KEYS = frozenset({"profile", "profiles"})
 _RULE_KEYS = frozenset({"tool", "pattern", "decision", "reason"})
 # Another tool's names for settings Foundry has under its own, so a file
@@ -908,6 +912,16 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         _parse_skills(data["skills"], config, managed=layer == "managed")
         config.record("skills", len(config.all_skill_switches()), layer)
 
+    if "hooks" in data:
+        # Each hook is a program to run, at every tool call: a repository
+        # naming one would run code of its choosing, as with notify.
+        if not connection_allowed:
+            raise ConfigError(f"{layer} config may not set hooks: each is a program Foundry "
+                              "runs; set them in your own config.toml or the hooks.json "
+                              "beside it")
+        config.hooks = (*config.hooks, *parse_hooks(data["hooks"], f"{layer} config"))
+        config.record("hooks", len(config.hooks), layer)
+
     if "shell_environment_policy" in data:
         # What reaches every command the model runs: a repository widening it
         # would hand its own test code the user's environment.
@@ -1040,6 +1054,13 @@ def _apply_profile(config: Config, data: dict[str, Any], name: str, path: Path,
     config.record("profile", name, chosen_by)
 
 
+def _add_hooks_file(config: Config, path: Path, layer: str) -> None:
+    hooks = read_hooks_file(path)
+    if hooks:
+        config.hooks = (*config.hooks, *hooks)
+        config.record("hooks", len(config.hooks), layer)
+
+
 def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | None = None,
                 home: Path | None = None, profile: str | None = None,
                 settings: dict[str, dict[str, Any]] | None = None) -> Config:
@@ -1052,10 +1073,13 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
     if managed.is_file():
         _apply(config, _load_toml(managed), "managed",
                connection_allowed=True, allow_rules_permitted=True)
+    # codex reads a hooks.json beside each config layer's file (D-115).
+    _add_hooks_file(config, managed.parent / HOOKS_FILE, "managed")
 
     user = _load_toml(root / "config.toml")
     _apply(config, user, "user", connection_allowed=True, allow_rules_permitted=True,
            profiles_allowed=True)
+    _add_hooks_file(config, root / HOOKS_FILE, "user")
 
     chosen = profile or os.environ.get(PROFILE_ENV) or user.get("profile")
     if chosen:

@@ -60,6 +60,19 @@ from foundry.core.events import (
     TurnStarted,
     new_id,
 )
+from foundry.core.hooks import (
+    PERMISSION_MODES,
+    POST_TOOL_USE,
+    PRE_TOOL_USE,
+    HookVerdict,
+    hook_tool_input,
+    hook_tool_name,
+    matcher_names,
+    read_post_tool_use,
+    read_pre_tool_use,
+    rewritten_args,
+    scrubbed,
+)
 from foundry.core.notify import APPROVAL_TYPE as NOTIFY_APPROVAL
 from foundry.core.notify import EVENT_TYPE as NOTIFY_TURN
 from foundry.core.notify import approval_payload
@@ -127,6 +140,8 @@ STOPPED_WHILE_RUNNING = ("Interrupted: the user stopped the task while this call
                          "before relying on it.")
 STOPPED_BEFORE_RUNNING = ("Not run: the user stopped the task before this call was executed. "
                           "Nothing was changed by it; call it again if it is still needed.")
+# The rule id a PreToolUse hook's refusal is journaled and audited under (D-115).
+HOOK_RULE = "hook.PreToolUse"
 
 
 @dataclass(slots=True)
@@ -241,6 +256,11 @@ class AgentRuntime:
     notifier: object | None = None
     scrub: Callable[[str], str] | None = None   # what leaves for the notifier
     _notify_failed: bool = False
+    # The user's lifecycle hooks (D-115): hooks.HookSet, None for none.
+    hooks: object | None = None
+    # What hooks said for the model about a call, by its id, added to its
+    # result whichever way the call ends.
+    _hook_notes: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # A backend that retries says so (D-085). Without this a 429 or a
@@ -672,14 +692,35 @@ class AgentRuntime:
             return
 
         op = self._canonicalize_paths(op)
+        original = op
+        refused = ""
+        if self.hooks is not None:
+            op, refused = self._pre_tool_use(call, op)
 
         record = {"call_id": call.call_id, "name": op.tool, "target": op.target,
                   "display": op.display}
+        if op is not original:
+            # What the model asked for, which a hook changed (D-115).
+            record["rewritten_from"] = original.target
         # The paths a change was asked for, so a resumed session can tell the
         # files it changed itself from changes made outside it.
         if op.kind is ToolKind.MUTATOR and op.args.get("paths"):
             record["paths"] = list(op.args["paths"])
         self._journal(EventType.TOOL_CALL, record)
+
+        if refused:
+            # A hook's refusal is the pipeline's step 1, before any rule.
+            self._journal(EventType.POLICY_DECISION, {
+                "call_id": call.call_id, "verdict": Verdict.DENY.value, "reason": refused,
+                "rule_id": HOOK_RULE, "step": 1,
+                "policy_digest": self.policy.policy_digest(), "operation_digest": "",
+                "mode": self.policy.mode.value, "policy_version": POLICY_VERSION,
+            })
+            self._audit(op, f"DENY:{HOOK_RULE}", "blocked")
+            self._reply(call, f"blocked by a PreToolUse hook: {refused}", is_error=True)
+            self._emit(ToolRejected(call_id=call.call_id, tool=op.tool, display=op.display,
+                                    reason=refused, rule_id=HOOK_RULE, step=1))
+            return
 
         decision, op = self.policy.evaluate(op)
         self._journal(EventType.POLICY_DECISION, {
@@ -845,6 +886,10 @@ class AgentRuntime:
             self.plan, self.plan_explanation = op.args["steps"], op.args["explanation"]
             result["plan"] = plan_payload(self.plan, self.plan_explanation)
         ordinal = self._journal(EventType.TOOL_RESULT, result)
+        images = tuple(output.images)
+        reply = content
+        if self.hooks is not None:
+            reply, images = self._post_tool_use(call, op, content, images)
         # When the workspace last changed. A claim citing a command older than
         # this cannot vouch for the change -- see verify_claims. A patch that
         # landed some files and rejected others is an error *and* a change:
@@ -855,7 +900,7 @@ class AgentRuntime:
             self._last_mutation = max(self._last_mutation, ordinal)
             at = len(self.context.history)
             self._patched_at.extend((at, path) for path in op.args.get("paths") or ())
-        self._reply(call, content, is_error=output.is_error, images=tuple(output.images))
+        self._reply(call, reply, is_error=output.is_error, images=images)
         if planned:
             self._emit(PlanUpdated(call.call_id, self.plan, self.plan_explanation))
         self._emit(ToolEnd(call.call_id, op.tool, not output.is_error,
@@ -863,6 +908,101 @@ class AgentRuntime:
                            duration_ms=duration_ms,
                            output=(output.metadata.get("output_tail", "")
                                    or output.metadata.get("diff", ""))))
+
+    # -- hooks (D-115) -----------------------------------------------------
+
+    def _hook_payload(self, event: str, **fields: Any) -> dict[str, Any]:
+        """What every hook is told, codex's names, then the event's own."""
+        return {
+            "session_id": self.session.session_id if self.session is not None else "",
+            "transcript_path": str(self.session.path) if self.session is not None else None,
+            "cwd": str(self.tool_ctx.workspace.root),
+            "hook_event_name": event,
+            "model": self.model,
+            "turn_id": str(self.context.turn),
+            "permission_mode": PERMISSION_MODES.get(self.policy.mode.value,
+                                                    self.policy.mode.value),
+            **fields,
+        }
+
+    def _run_hooks(self, event: str, call: ToolUseBlock, op: Operation,
+                   **fields: Any) -> HookVerdict | None:
+        """Run the hooks of ``event`` whose matcher takes this call's tool,
+        and say what they said: to the user, the warnings and messages; to
+        the journal, each run; for the model, the notes kept for the reply.
+        None when no hook matches."""
+        hooks = self.hooks.matching(event, matcher_names(op.tool))
+        if not hooks:
+            return None
+        for hook in hooks:
+            if hook.status_message:
+                self._emit(Notice(f"{event} hook: {hook.status_message}"))
+        payload = self._hook_payload(event, tool_name=hook_tool_name(op.tool),
+                                     tool_use_id=call.call_id,
+                                     tool_input=hook_tool_input(op.tool, op.args), **fields)
+        runs = self.hooks.run(hooks, scrubbed(payload, self.scrub),
+                              cancelled=lambda: self._cancelled)
+        verdict = (read_pre_tool_use if event == PRE_TOOL_USE else read_post_tool_use)(runs)
+        clean = self.scrub or (lambda text: text)
+        for message in verdict.messages:
+            self._emit(Notice(f"{event} hook: {clean(message)}", level="warning"))
+        for failure in verdict.failures:
+            self._emit(Notice(f"{event} hook {clean(failure)}", level="warning"))
+        self._hook_notes.setdefault(call.call_id, []).extend(
+            (event, clean(note)) for note in verdict.context)
+        self._journal(EventType.HOOK, {"event": event, "call_id": call.call_id,
+                                       "runs": scrubbed(verdict.records, self.scrub)})
+        return verdict
+
+    def _pre_tool_use(self, call: ToolUseBlock, op: Operation) -> tuple[Operation, str]:
+        """The call the PreToolUse hooks leave, and why they refuse it, or
+        "". A rewrite is validated as the model's call was and then goes
+        through policy like any call: a hook can refuse or change a call,
+        never let one skip a rule or a question."""
+        verdict = self._run_hooks(PRE_TOOL_USE, call, op)
+        if verdict is None:
+            return op, ""
+        clean = self.scrub or (lambda text: text)
+        if verdict.block:
+            return op, clean("; ".join(verdict.block))
+        rewrites = []
+        for rewrite in verdict.rewrites:
+            if rewrite not in rewrites:
+                rewrites.append(rewrite)
+        if len(rewrites) > 1:
+            return op, "two PreToolUse hooks rewrote this call differently, so it was not run"
+        if not rewrites:
+            return op, ""
+        args = rewritten_args(op.tool, op.args, rewrites[0])
+        if args is None:
+            self._emit(Notice(f"{PRE_TOOL_USE} hook returned an updatedInput that is not "
+                              "this tool's input (an object; a string command for a command "
+                              "or a patch); the call runs as the model made it",
+                              level="warning"))
+            return op, ""
+        try:
+            changed = self._canonicalize_paths(self.registry.get(op.tool).validate(args))
+        except (InvalidToolCall, ValueError) as exc:
+            self._emit(Notice(f"{PRE_TOOL_USE} hook's rewrite is not a valid call "
+                              f"({clean(str(exc))}); the call runs as the model made it",
+                              level="warning"))
+            return op, ""
+        if changed == op:
+            return op, ""
+        self._hook_notes.setdefault(call.call_id, []).append(
+            (PRE_TOOL_USE, f"this call was changed before it ran; it ran as: {changed.display}"))
+        return changed, ""
+
+    def _post_tool_use(self, call: ToolUseBlock, op: Operation, content: str,
+                       images: tuple) -> tuple[str, tuple]:
+        """The result the model is given once the PostToolUse hooks have
+        seen it: their feedback in its place when one blocks it."""
+        verdict = self._run_hooks(POST_TOOL_USE, call, op, tool_response=content)
+        if verdict is None or not verdict.block:
+            return content, images
+        clean = self.scrub or (lambda text: text)
+        return (f"The call ran; a {POST_TOOL_USE} hook gave this in place of its result:\n"
+                + clean("\n\n".join(verdict.block))), ()
 
     def _canonicalize_paths(self, op: Operation) -> Operation:
         """Give policy the spelling the filesystem agrees with.
@@ -933,6 +1073,9 @@ class AgentRuntime:
 
     def _reply(self, call: ToolUseBlock, content: str, *, is_error: bool = False,
                images: tuple = ()) -> int:
+        # What a hook said for the model about this call, however it ended.
+        for event, note in self._hook_notes.pop(call.call_id, ()):
+            content += f"\n\nFrom a {event} hook: {note}"
         self.context.append_tool_result(call.call_id, content, is_error=is_error,
                                         images=images)
         # What the model will read, word for word. The next request carries it
