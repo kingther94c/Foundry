@@ -556,7 +556,8 @@ candidate, is the tenth ([D-037](decision-log.md)).
 - **The resume feature itself is deferred to V2**; V1 promises only that the
   schema is replayable (which doubles as the basis of ReplayBackend testing --
   two birds, one stone). It has since landed: `foundry resume` and
-  `foundry exec --resume`, [D-035](decision-log.md).
+  `foundry exec --resume`, [D-035](decision-log.md), also spelled as codex
+  spells them ([D-088](decision-log.md)).
 - **Crash recovery semantics** (absorbed from the Codex version): a truncated
   final record is tolerated on read; **a session with no termination event is
   always judged `interrupted` and can never be mistaken for completed**;

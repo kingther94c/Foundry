@@ -80,9 +80,11 @@ from foundry.core.resume import (
     CONTINUE_PROMPT,
     JournalState,
     find_journal,
+    latest_session,
     outside_changes,
     read_journal,
     recent_sessions,
+    recorded_workspace,
     resolve_session,
     resume_note,
     same_path,
@@ -606,16 +608,19 @@ def _session_line(summary) -> str:
             f"[dim]{safe(_preview(summary.first_task))}[/dim]")
 
 
-def pick_session(console, workspace: Path) -> str | None:
+def pick_session(console, workspace: Path | None) -> str | None:
     """Which of this workspace's recent sessions to resume, as codex's
     `resume` asks (D-057): Enter is the newest. None: the user chose none.
-    With one session or none there is nothing to choose, and ``last`` says so."""
+    With one session or none there is nothing to choose, and ``last`` says so.
+    With no workspace, every workspace's, each with where it was (D-088)."""
     recent = recent_sessions(user_dir() / "sessions", workspace, PICK_LIMIT)
     if len(recent) < 2:
         return "last"
-    console.print(f"[bold]recent sessions in {safe(str(workspace))}[/bold]")
+    where = f" in {safe(str(workspace))}" if workspace is not None else ""
+    console.print(f"[bold]recent sessions{where}[/bold]")
     for number, summary in enumerate(recent, 1):
-        console.print(f" {number:>2}  {_session_line(summary)}", soft_wrap=True)
+        place = f"  [dim]{safe(summary.workspace)}[/dim]" if workspace is None else ""
+        console.print(f" {number:>2}  {_session_line(summary)}{place}", soft_wrap=True)
     while True:
         try:
             answer = console.input("resume which? [1] ").strip()
@@ -630,15 +635,59 @@ def pick_session(console, workspace: Path) -> str | None:
                       "newest; Ctrl+C resumes none[/yellow]")
 
 
+def _choose_resume(args: argparse.Namespace, console) -> int | None:
+    """Which session `foundry resume` continues, and in which workspace
+    (D-057; ``--last`` and ``--all`` as codex spells them, D-088). None to go
+    on; an exit code to stop."""
+    sessions = user_dir() / "sessions"
+    everywhere = bool(getattr(args, "all", False))
+    if getattr(args, "last", False):
+        if args.resume is not None and args.task is not None:
+            console.print("[red]--last resumes the newest session: give it a task, not a "
+                          "session id[/red]")
+            return 2
+        if args.resume is not None:
+            # `resume --last TASK`: the one word given is the task.
+            args.task = args.resume
+        args.resume = "last"
+    elif args.resume is None:
+        # A person at a terminal picks; a script gets the newest (D-057).
+        if not _interactive():
+            args.resume = "last"
+        else:
+            args.resume = pick_session(console, None if everywhere
+                                       else Path(args.workspace).resolve())
+            if args.resume is None:
+                return EXIT_CODES[TerminalStatus.CANCELLED]
+    if not everywhere:
+        return None
+    # From any workspace: the session is continued where it was recorded.
+    if args.resume == "last":
+        args.resume = latest_session(sessions, None)
+        if args.resume is None:
+            console.print("[red]no recorded session[/red]")
+            return EXIT_CODES[TerminalStatus.FAILED]
+    journal = find_journal(sessions, args.resume)
+    if journal is None:
+        console.print(f"[red]no such session: {safe(args.resume)}[/red]")
+        return EXIT_CODES[TerminalStatus.FAILED]
+    recorded = recorded_workspace(journal.parent)
+    if not recorded:
+        console.print(f"[red]session {safe(args.resume)} does not say where it was "
+                      "recorded[/red]")
+        return EXIT_CODES[TerminalStatus.FAILED]
+    args.workspace = recorded
+    console.print(f"[dim]resuming {safe(args.resume)} in {safe(recorded)}[/dim]")
+    return None
+
+
 def cmd_session(args: argparse.Namespace) -> int:
     """`run`, and `resume`, which is the same session continued from its journal."""
     console = Console()
-    if getattr(args, "command", None) == "resume" and args.resume is None:
-        # A person at a terminal picks; a script gets the newest (D-057).
-        args.resume = (pick_session(console, Path(args.workspace).resolve())
-                       if _interactive() else "last")
-        if args.resume is None:
-            return EXIT_CODES[TerminalStatus.CANCELLED]
+    if getattr(args, "command", None) == "resume":
+        stop = _choose_resume(args, console)
+        if stop is not None:
+            return stop
     try:
         flags = _config_args(args)
         wiring = build(Path(args.workspace).resolve(), console=console,
@@ -1459,6 +1508,12 @@ def build_parser() -> argparse.ArgumentParser:
                              "after it, otherwise it ends with it")
     resume.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
                         help="repository the session worked in")
+    resume.add_argument("--last", action="store_true",
+                        help="the newest session, as codex's resume --last; a word given "
+                             "is then the task")
+    resume.add_argument("--all", action="store_true",
+                        help="from every workspace's sessions, continued where each was "
+                             "recorded")
     _image_flag(resume)
     _config_flags(resume)
     resume.set_defaults(func=cmd_session)
@@ -1563,9 +1618,69 @@ def _split_command(argv: list[str]) -> tuple[list[str], list[str] | None]:
     return argv, None
 
 
+def _value_options(parser: argparse.ArgumentParser, command: str) -> set[str]:
+    """The options of ``command`` that take a value, from the parser itself."""
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction) and command in action.choices:
+            return {flag for option in action.choices[command]._actions
+                    if option.option_strings and option.nargs != 0
+                    for flag in option.option_strings}
+    return set()
+
+
+def exec_resume(argv: list[str], parser: argparse.ArgumentParser) -> list[str] | None:
+    """`foundry exec resume [--last | SESSION] [TASK]`, as codex spells it
+    (D-088), is `foundry exec --resume SESSION|last [TASK]`.
+
+    Only a first word `resume` before any `--` is read this way, so
+    `foundry exec -- resume` is still the task. None: the form is used without
+    saying which session.
+    """
+    if not argv or argv[0] != "exec":
+        return argv
+    takes_value = _value_options(parser, "exec")
+    options: list[tuple[str, bool]] = []    # (token, is an option's value)
+    words: list[str] = []
+    i = 1
+    while i < len(argv):
+        token = argv[i]
+        if token == "--":
+            if not words:
+                return argv
+            words.extend(argv[i + 1:])
+            break
+        if token.startswith("-") and token != "-":
+            options.append((token, False))
+            if token in takes_value and i + 1 < len(argv):
+                options.append((argv[i + 1], True))
+                i += 2
+                continue
+        else:
+            words.append(token)
+        i += 1
+    if not words or words[0] != "resume":
+        return argv
+    last = ("--last", False) in options
+    kept = [token for token, value in options if value or token != "--last"]
+    rest = words[1:]
+    if last:
+        session, task = "last", rest
+    elif rest:
+        session, task = rest[0], rest[1:]
+    else:
+        return None
+    return ["exec", *kept, "--resume", session, *(["--", *task] if task else [])]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     argv = sys.argv[1:] if argv is None else list(argv)
+    rewritten = exec_resume(argv, parser)
+    if rewritten is None:
+        Console(stderr=True).print("[red]exec resume needs a session id, or --last for the "
+                                   "newest[/red]")
+        return 2
+    argv = rewritten
     # `foundry -m gpt-5` is `foundry run -m gpt-5`, as with no arguments at all
     # (D-042). A bare first word stays a subcommand, so a mistyped one is an
     # error rather than a task sent to the model.

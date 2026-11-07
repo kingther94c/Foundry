@@ -569,13 +569,25 @@ def resolve_session(sessions: Path, session_id: str, workspace: Path) -> Path:
     return journal
 
 
-def latest_session(sessions: Path, workspace: Path) -> str | None:
-    """The newest session recorded in this workspace. Ids sort by start time."""
+def latest_session(sessions: Path, workspace: Path | None) -> str | None:
+    """The newest session recorded in this workspace -- in any, for None
+    (D-088). Ids sort by start time."""
     return next((entry.name for entry in _workspace_sessions(sessions, workspace)), None)
 
 
-def _workspace_sessions(sessions: Path, workspace: Path) -> Iterator[Path]:
-    """The folders of the sessions recorded in this workspace, newest first."""
+def recorded_workspace(session_dir: Path) -> str:
+    """The workspace a session's header names; empty if it names none."""
+    try:
+        first = next(SessionStore.read_records(session_dir / "events.jsonl"), None)
+    except (OSError, UnicodeDecodeError):
+        return ""
+    recorded = first.payload.get("workspace") if first is not None else None
+    return recorded if isinstance(recorded, str) else ""
+
+
+def _workspace_sessions(sessions: Path, workspace: Path | None) -> Iterator[Path]:
+    """The folders of the sessions recorded in this workspace, newest first;
+    with None, every session that names its workspace (D-088)."""
     if not sessions.is_dir():
         return
     for entry in sorted((p for p in sessions.iterdir() if p.is_dir()), reverse=True):
@@ -587,7 +599,8 @@ def _workspace_sessions(sessions: Path, workspace: Path) -> Iterator[Path]:
         except (OSError, UnicodeDecodeError):
             continue
         recorded = first.payload.get("workspace") if first is not None else None
-        if isinstance(recorded, str) and recorded and same_path(recorded, workspace):
+        if isinstance(recorded, str) and recorded and (
+                workspace is None or same_path(recorded, workspace)):
             yield entry
 
 
@@ -598,6 +611,8 @@ class SessionSummary:
     status: TerminalStatus
     first_task: str
     in_use: bool
+    # The workspace it was recorded in, for a list of every workspace's (D-088).
+    workspace: str = ""
 
 
 def summarize(session_dir: Path) -> SessionSummary:
@@ -613,11 +628,13 @@ def summarize(session_dir: Path) -> SessionSummary:
         status = SessionStore.terminal_status(journal)
     except (OSError, UnicodeDecodeError):
         status = TerminalStatus.INTERRUPTED
-    return SessionSummary(session_dir.name, status, first_task, is_locked(session_dir))
+    return SessionSummary(session_dir.name, status, first_task, is_locked(session_dir),
+                          recorded_workspace(session_dir))
 
 
-def recent_sessions(sessions: Path, workspace: Path, limit: int) -> list[SessionSummary]:
-    """This workspace's newest ``limit`` sessions, newest first (D-057)."""
+def recent_sessions(sessions: Path, workspace: Path | None, limit: int) -> list[SessionSummary]:
+    """This workspace's newest ``limit`` sessions, newest first (D-057); every
+    workspace's, for None (D-088)."""
     return [summarize(entry) for entry in islice(_workspace_sessions(sessions, workspace), limit)]
 
 

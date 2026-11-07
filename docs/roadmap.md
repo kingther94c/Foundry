@@ -265,6 +265,8 @@ What a codex user still notices day to day, next:
     (landed, D-086).
 48. ~~A key piped to login~~ -- `foundry login --with-api-key` and `login
     status`, as codex's, without ever showing the key (landed, D-087).
+49. ~~Resuming as codex spells it~~ -- `resume --last`, `resume --all` and
+    `exec resume` (landed, D-088).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
