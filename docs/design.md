@@ -26,7 +26,8 @@ foundry/
 │                            #   .agents/skills up to the repository's top, [[skills.config]] (D-114)
 │   ├── hooks.py             # codex's lifecycle hooks: read, matched, run at a tool call (D-115),
 │                            #   at a prompt and when the model is done (D-116), as a session
-│                            #   starts and ends and when a task is stopped (D-117)
+│                            #   starts and ends and when a task is stopped (D-117), around a
+│                            #   compaction (D-118)
 │   ├── images.py            # images the model is shown: checked, sized, base64 (D-045)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
 │   ├── auth.py              # AuthProvider + DPAPI storage
@@ -250,7 +251,10 @@ async def run_turn(user_input):
   ([D-096](decision-log.md)), which every request then carries. It enters the log
   as a `compacted` record (openhands condensation-as-event); a failure changes
   nothing and is not retried until the next task, and files read before it
-  are read again before a patch.
+  are read again before a patch. The user's `PreCompact` hooks may keep it
+  from happening and their `PostCompact` hooks may end the task after it;
+  `SessionStart` hooks with source `compact` run before the next request
+  ([D-118](decision-log.md)).
 - Token accounting: accumulate the real usage, and as the backend's context
   ceiling approaches, terminate cleanly as `partial(context_exhausted)` --
   never let the request 400.
@@ -551,7 +555,9 @@ class ModelBackend(Protocol):
   done, without a `call_id`, [D-116](decision-log.md), when a Stop hook's
   reason is the next prompt, `user_input` with `hook: "Stop"`; at a session's
   first prompt, at a stop, and after the `termination` as it closes,
-  [D-117](decision-log.md)). An image
+  [D-117](decision-log.md); around a `compacted` record, and a SessionStart
+  hook's note after one as `user_input` with `hook: "SessionStart"`,
+  [D-118](decision-log.md)). An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).
   Artifact contents are stored content-addressed at

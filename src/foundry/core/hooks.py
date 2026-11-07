@@ -1,13 +1,14 @@
-"""Lifecycle hooks, as codex's (D-115, D-116, D-117).
+"""Lifecycle hooks, as codex's (D-115 to D-118).
 
 A hook is a command line the user's own configuration names -- in
 ``hooks.json`` beside ``config.toml``, in a ``[hooks]`` table of it, or in
 the machine's policy -- run at a point in a turn with what is happening as
 one JSON object on its stdin. The names and shapes are codex's, so a hook
-written for codex runs here unchanged. Seven of codex's events are run:
+written for codex runs here unchanged. Nine of codex's events are run:
 
-* ``SessionStart``, at a session's first prompt (``startup``, or ``resume``):
-  a hook may add a note to it, or stop it.
+* ``SessionStart``, at a session's first prompt (``startup``, or ``resume``)
+  and after a compaction (``compact``): a hook may add a note, or stop the
+  prompt or the task.
 * ``UserPromptSubmit``, before a prompt is sent: a hook may stop it, so
   the model never sees it, or add a note to it.
 * ``PreToolUse``, before a tool call reaches policy: a hook may refuse the
@@ -20,6 +21,8 @@ written for codex runs here unchanged. Seven of codex's events are run:
   ``finish``: a hook may send the task on, its reason the next prompt.
 * ``Interrupt``, when a task is stopped, and ``SessionEnd``, when a session
   closes: told, and given a second (three at most) to act; neither decides.
+* ``PreCompact`` and ``PostCompact``, around a compaction (``manual`` or
+  ``auto``): a hook may stop it before, or the task after.
 
 Like a notify program or an MCP server, a hook is a program Foundry starts,
 so a repository's configuration may not name one. A hook that fails, times
@@ -48,11 +51,14 @@ STOP = "Stop"
 SESSION_START = "SessionStart"
 SESSION_END = "SessionEnd"
 INTERRUPT = "Interrupt"
+PRE_COMPACT = "PreCompact"
+POST_COMPACT = "PostCompact"
 HOOK_EVENTS = (PRE_TOOL_USE, POST_TOOL_USE, USER_PROMPT_SUBMIT, STOP, SESSION_START,
-               SESSION_END, INTERRUPT)
+               SESSION_END, INTERRUPT, PRE_COMPACT, POST_COMPACT)
 # Events codex gives no matcher: every hook of one runs, whatever its
 # matcher says. SessionStart's matcher is tried on its source, SessionEnd's
-# on its reason, which is always "other".
+# on its reason, which is always "other", PreCompact's and PostCompact's on
+# what started the compaction, "manual" or "auto".
 UNMATCHED_EVENTS = frozenset({USER_PROMPT_SUBMIT, STOP, INTERRUPT})
 SESSION_END_REASON = "other"
 # Where exit code 2 is a decision, its reason on stderr; elsewhere it is a
@@ -61,8 +67,8 @@ _EXIT_2_EVENTS = frozenset({PRE_TOOL_USE, POST_TOOL_USE, USER_PROMPT_SUBMIT, STO
 # codex's other events: named, so a hooks.json carried over says which of
 # its hooks would not run, rather than reading as a typo.
 CODEX_EVENTS = frozenset({
-    "PreModelRequest", "PostModelRequest", "PermissionRequest", "PreCompact",
-    "PostCompact", "SubagentStart", "SubagentStop",
+    "PreModelRequest", "PostModelRequest", "PermissionRequest", "SubagentStart",
+    "SubagentStop",
 })
 DEFAULT_TIMEOUT_S = 600
 # SessionEnd and Interrupt hooks hold up a session that is closing or a
@@ -394,8 +400,8 @@ class HookVerdict:
     # given in place of the result. UserPromptSubmit: why the prompt is
     # not sent. Stop: what the task goes on with.
     block: list[str] = field(default_factory=list)
-    # UserPromptSubmit, Stop and SessionStart: the stopReason of each
-    # `continue: false`, "" for one without.
+    # UserPromptSubmit, Stop, SessionStart, PreCompact and PostCompact: the
+    # stopReason of each `continue: false`, "" for one without.
     stops: list[str] = field(default_factory=list)
     rewrites: list[dict[str, Any]] = field(default_factory=list)   # PreToolUse
     context: list[str] = field(default_factory=list)               # for the model
@@ -507,6 +513,21 @@ class _Reading:
     def decided(self, reason: str) -> None:
         self.outcome = "blocked"
         self.verdict.block.append(_feedback(reason))
+
+    def failed(self) -> bool:
+        """Whether the run failed, said as codex says it for an event that
+        reads no exit code 2: why, from its stderr, or the code."""
+        run = self.run
+        if run.error:
+            self.fail(run.error)
+        elif run.exit_code is None:
+            self.fail("exited without a status code")
+        elif run.exit_code != 0:
+            self.fail(f"failed: {run.stderr.strip()}" if run.stderr.strip()
+                      else f"exited with code {run.exit_code}")
+        else:
+            return False
+        return True
 
 
 def _hook_output(answer: dict[str, Any], kinds: dict[str, type]) -> dict[str, Any] | None:
@@ -754,13 +775,7 @@ def read_session_end(runs: list[HookRun]) -> HookVerdict:
     verdict = HookVerdict()
     for run in runs:
         reading = _Reading(run, SESSION_END, verdict)
-        if run.error:
-            reading.fail(run.error)
-        elif run.exit_code is None:
-            reading.fail("exited without a status code")
-        elif run.exit_code != 0:
-            reading.fail(f"failed: {run.stderr.strip()}" if run.stderr.strip()
-                         else f"exited with code {run.exit_code}")
+        reading.failed()
         reading.done()
     return verdict
 
@@ -783,11 +798,41 @@ def read_interrupt(runs: list[HookRun]) -> HookVerdict:
     return verdict
 
 
+def _read_compact(event: str, runs: list[HookRun]) -> HookVerdict:
+    """PreCompact and PostCompact answers, as codex reads them: nothing, or
+    JSON with a ``systemMessage`` and ``continue: false``, which stops the
+    compaction (PreCompact) or the task after it (PostCompact). Plain text
+    is not read."""
+    verdict = HookVerdict()
+    for run in runs:
+        reading = _Reading(run, event, verdict)
+        if not reading.failed():
+            answer, broken = _json_object(run.stdout)
+            if broken or (answer is not None and not _typed(answer, _UNIVERSAL)):
+                reading.fail(f"returned invalid {event} JSON output")
+            elif answer is not None:
+                if answer.get("systemMessage"):
+                    verdict.messages.append(answer["systemMessage"])
+                if reading.control and answer.get("continue") is False:
+                    reading.outcome = "stopped"
+                    verdict.stops.append(_reason(answer.get("stopReason")))
+        reading.done()
+    return verdict
+
+
+def read_pre_compact(runs: list[HookRun]) -> HookVerdict:
+    return _read_compact(PRE_COMPACT, runs)
+
+
+def read_post_compact(runs: list[HookRun]) -> HookVerdict:
+    return _read_compact(POST_COMPACT, runs)
+
+
 READERS: dict[str, Callable[[list[HookRun]], HookVerdict]] = {
     PRE_TOOL_USE: read_pre_tool_use, POST_TOOL_USE: read_post_tool_use,
     USER_PROMPT_SUBMIT: read_user_prompt_submit, STOP: read_stop,
     SESSION_START: read_session_start, SESSION_END: read_session_end,
-    INTERRUPT: read_interrupt,
+    INTERRUPT: read_interrupt, PRE_COMPACT: read_pre_compact, POST_COMPACT: read_post_compact,
 }
 
 

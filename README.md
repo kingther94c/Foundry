@@ -231,7 +231,10 @@ before it is sent or add a note to it; a `PreToolUse` hook may refuse a call
 or rewrite it (a rewrite still goes through policy and the approval); a
 `PostToolUse` hook may put its own feedback in place of a result, and either
 may add a note for the model; a `Stop` hook, run when the model is done (or
-calls `finish`), may send the task on with its reason as the next prompt; an
+calls `finish`), may send the task on with its reason as the next prompt; a
+`PreCompact` hook may keep a compaction from happening and a `PostCompact`
+hook may end the task after one, and a `SessionStart` hook matched on
+`compact` runs after it to put back what the summary left out; an
 `Interrupt` hook is told when you stop a task, and a `SessionEnd` hook when
 the session closes. They run through `cmd /C`, in the workspace, with the
 command environment; one that fails is a warning and the task goes on.

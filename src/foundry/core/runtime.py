@@ -63,7 +63,9 @@ from foundry.core.events import (
 from foundry.core.hooks import (
     INTERRUPT,
     PERMISSION_MODES,
+    POST_COMPACT,
     POST_TOOL_USE,
+    PRE_COMPACT,
     PRE_TOOL_USE,
     READERS,
     SESSION_END,
@@ -269,9 +271,14 @@ class AgentRuntime:
     # The task a hook is told of, as codex's turn_id (D-116): the round it
     # began in, the same for each of its hooks.
     _turn_id: str = ""
-    # How the session began, for the SessionStart hooks at its first prompt
-    # (D-117): "startup" or "resume"; "" once they have run.
-    start_source: str = ""
+    # The SessionStart hooks owed, by source, as codex's pending starts:
+    # how the session began ("startup" or "resume", D-117), run at its first
+    # prompt, and "compact" after each compaction, run before the next
+    # request (D-118).
+    start_sources: list = field(default_factory=list)
+    # Why a PreCompact or PostCompact hook stopped the compaction or the task
+    # after it, for the loop to end the task with; "" when none did.
+    _compact_stop: str = ""
 
     def __post_init__(self) -> None:
         # A backend that retries says so (D-085). Without this a 429 or a
@@ -431,11 +438,26 @@ class AgentRuntime:
                     failed = self.compact(auto=True)
                 except Cancelled:
                     return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
+                if self._compact_stop:
+                    # A hook's word, as codex ends the turn on it (D-118).
+                    return self._terminate(TerminalStatus.BLOCKED, self._compact_stop)
                 if failed:
                     self._compact_failed = True
                     self._emit(Notice(f"{failed}; carrying on without it", level="warning"))
                 if self._cancelled:
                     return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
+                if self.hooks is not None and self.start_sources:
+                    # codex's SessionStart for a compaction, before the next
+                    # request: its notes go to the work in hand (D-118).
+                    notes, stops = self._start_hooks()
+                    if stops is not None:
+                        return self._terminate(TerminalStatus.BLOCKED, self._said(
+                            "a SessionStart hook stopped the task after compaction", stops))
+                    for note in notes:
+                        message = f"From a {SESSION_START} hook: {note}"
+                        self._journal(EventType.USER_INPUT, {"text": message,
+                                                             "hook": SESSION_START})
+                        self.context.append_user(message, ())
 
             if self.context.context_exhausted():
                 return self._terminate(TerminalStatus.PARTIAL, "context window exhausted")
@@ -530,8 +552,15 @@ class AgentRuntime:
         use them; a call it makes anyway is ignored. Files read before are
         read again before a patch: their contents are no longer in context.
         """
+        self._compact_stop = ""
         if not self.context.compactable():
             return "nothing to compact yet"
+        trigger = "auto" if auto else "manual"
+        verdict = self._compact_hooks(PRE_COMPACT, trigger)
+        if verdict is not None and verdict.stops:
+            self._compact_stop = self._said("a PreCompact hook stopped compaction",
+                                            verdict.stops)
+            return self._compact_stop
         before = self.context.estimated_context_tokens()
         self._emit(Notice("compacting the conversation to free context", level="info"))
         prompt = builtin_prompt("compact").strip()
@@ -573,7 +602,23 @@ class AgentRuntime:
             "messages": self._history_payload(),
         })
         self._emit(Compacted(tokens_before=before, tokens_after=after, auto=auto))
+        if self.hooks is not None:
+            # Owed before the next request, whatever PostCompact says.
+            self.start_sources.append("compact")
+        verdict = self._compact_hooks(POST_COMPACT, trigger)
+        if verdict is not None and verdict.stops:
+            self._compact_stop = self._said(
+                "a PostCompact hook stopped the task after compaction", verdict.stops)
+            if not auto:
+                self._emit(Notice(self._compact_stop, level="warning"))
         return ""
+
+    def _compact_hooks(self, event: str, trigger: str) -> HookVerdict | None:
+        """PreCompact or PostCompact hooks (D-118), told what started the
+        compaction and not the permission mode, as codex's."""
+        if self.hooks is None:
+            return None
+        return self._run_hooks(event, (trigger,), omit=("permission_mode",), trigger=trigger)
 
     def rewind(self, length: int) -> list[str]:
         """Go back to the conversation's first ``length`` messages (/rewind,
@@ -1012,30 +1057,43 @@ class AgentRuntime:
                                tool_name=hook_tool_name(op.tool), tool_use_id=call.call_id,
                                tool_input=hook_tool_input(op.tool, op.args), **fields)
 
-    def _prompt_hooks(self, prompt: str) -> tuple[list[tuple[str, str]], str]:
-        """The hooks a prompt meets before it is sent: SessionStart's at a
-        session's first (D-117), then UserPromptSubmit's (D-116). Their
-        notes, by event, and why one stopped it, or ""."""
-        notes: list[tuple[str, str]] = []
+    def _said(self, what: str, reasons: list[str]) -> str:
+        """``what`` a hook did, with the reasons it gave, scrubbed."""
         clean = self.scrub or (lambda text: text)
-        if self.start_source:
-            # Once, as codex's pending start: a prompt it stopped spends it.
-            source, self.start_source = self.start_source, ""
+        given = [clean(reason) for reason in reasons if reason]
+        return what + (": " + "; ".join(given) if given else "")
+
+    def _start_hooks(self) -> tuple[list[str], list[str] | None]:
+        """The SessionStart hooks owed (D-117, D-118), each source once, as
+        codex's pending starts: their notes, and the reasons one stopped
+        with, or None. A source is spent whatever its hooks said."""
+        notes: list[str] = []
+        while self.start_sources:
+            source = self.start_sources.pop(0)
             verdict = self._run_hooks(SESSION_START, (source,), omit=("turn_id",),
                                       source=source)
-            if verdict is not None:
-                if verdict.stops:
-                    refused = [clean(reason) for reason in verdict.stops if reason]
-                    return [], ("a SessionStart hook stopped this prompt, so it was not sent"
-                                + (": " + "; ".join(refused) if refused else ""))
-                notes += [(SESSION_START, note) for note in verdict.context]
+            if verdict is None:
+                continue
+            if verdict.stops:
+                return notes, verdict.stops
+            notes += verdict.context
+        return notes, None
+
+    def _prompt_hooks(self, prompt: str) -> tuple[list[tuple[str, str]], str]:
+        """The hooks a prompt meets before it is sent: the SessionStart
+        hooks owed (D-117), then UserPromptSubmit's (D-116). Their notes, by
+        event, and why one stopped it, or ""."""
+        started, stops = self._start_hooks()
+        if stops is not None:
+            return [], self._said("a SessionStart hook stopped this prompt, so it was not sent",
+                                  stops)
+        notes = [(SESSION_START, note) for note in started]
         verdict = self._run_hooks(USER_PROMPT_SUBMIT, prompt=prompt)
         if verdict is None:
             return notes, ""
-        refused = [clean(reason) for reason in verdict.block + verdict.stops if reason]
         if verdict.block or verdict.stops:
-            return [], ("a UserPromptSubmit hook stopped this prompt, so it was not sent"
-                        + (": " + "; ".join(refused) if refused else ""))
+            return [], self._said("a UserPromptSubmit hook stopped this prompt, so it was not "
+                                  "sent", verdict.block + verdict.stops)
         return notes + [(USER_PROMPT_SUBMIT, note) for note in verdict.context], ""
 
     def interrupt_hooks(self) -> None:

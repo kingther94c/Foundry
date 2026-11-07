@@ -447,7 +447,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         scrub=default_redactor().scrub,
         hooks=(HookSet(config.hooks, cwd=workspace.root, env_policy=config.shell_environment)
                if config.hooks else None),
-        start_source="resume" if state is not None else "startup",
+        start_sources=["resume" if state is not None else "startup"],
     )
     # A cancel from another thread (foundry mcp-server, D-103) reaches a
     # running command, search or MCP call, which poll this, not only the next
