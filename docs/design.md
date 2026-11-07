@@ -43,7 +43,8 @@ foundry/
 │                            #   block between lines of three quotes is one message (D-052);
 │                            #   markdown.py, the model's answer as Markdown a line at a time (D-070);
 │                            #   copying.py, /copy: the latest answer or a code block of it on the
-│                            #   clipboard, as it was shown (D-123);
+│                            #   clipboard, as it was shown (D-123); exporting.py, /export: the
+│                            #   journal's whole conversation as Markdown (D-124);
 │                            #   file_links.py, a cited file as a link to it in the editor (D-106);
 │                            #   transcript.py, a resumed session's conversation shown again (D-108);
 │                            #   mcp_server.py, Foundry as an MCP server over stdio (D-103)

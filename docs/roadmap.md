@@ -355,6 +355,8 @@ What a codex user still notices day to day, next:
     each try of a model request, retries included (landed, D-122).
 84. ~~`/copy [N]`~~ -- the latest answer, or one of its code blocks, on the
     clipboard, as it was shown (landed, D-123).
+85. ~~`/export [PATH]`~~ -- the whole conversation as Markdown, from the
+    journal, on the clipboard or in a new file (landed, D-124).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
