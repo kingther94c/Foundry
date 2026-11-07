@@ -267,6 +267,8 @@ What a codex user still notices day to day, next:
     status`, as codex's, without ever showing the key (landed, D-087).
 49. ~~Resuming as codex spells it~~ -- `resume --last`, `resume --all` and
     `exec resume` (landed, D-088).
+50. ~~Reasoning carried across rounds on Responses~~ -- encrypted, sent back
+    with its turn to the same model, as codex does (landed, D-089).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

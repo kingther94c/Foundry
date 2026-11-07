@@ -9,6 +9,9 @@ Responses (D-022). Two differences from Chat Completions shape this file:
 * streaming is a typed event protocol (``response.output_text.delta`` and
   friends) rather than choice deltas.
 
+Nothing is stored (``store: false``), so a reasoning model's reasoning is asked
+for encrypted and sent back with the turn it belongs to, as codex does (D-089).
+
 The gateway's exact behaviour is unverified until fixtures are captured from it,
 so this adapter reads the shapes defensively and reports anything it cannot
 parse as a protocol error rather than guessing.
@@ -16,6 +19,7 @@ parse as a protocol error rather than guessing.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
@@ -37,6 +41,7 @@ from foundry.core.conversation import (
     ImageBlock,
     Message,
     ModelTurn,
+    OpaqueBlock,
     Role,
     StopReason,
     TextBlock,
@@ -51,8 +56,56 @@ from foundry.core.images import data_url
 from foundry.core.httpc import (HttpClient, NotStreaming, open_retrying_stream,
                                 retry_with_backoff)
 
+# The opaque block a turn's encrypted reasoning rides in (D-089).
+PROVIDER = "openai_responses"
+INCLUDE_REASONING = "reasoning.encrypted_content"
 
-def _message_to_items(message: Message) -> list[dict[str, Any]]:
+
+def _replayed(message: Message, model: str) -> list[dict[str, Any]]:
+    """The reasoning items a turn's opaque block kept, to send back before
+    its message and calls -- only to the model that produced them: another
+    cannot read them, and may refuse the request."""
+    for block in message.blocks:
+        if isinstance(block, OpaqueBlock) and block.provider == PROVIDER:
+            try:
+                data = json.loads(block.data)
+            except ValueError:
+                return []
+            if not isinstance(data, dict) or data.get("model") != model:
+                return []
+            items = data.get("items")
+            return [i for i in items if isinstance(i, dict) and i.get("type") == "reasoning"
+                    ] if isinstance(items, list) else []
+    return []
+
+
+def _kept_reasoning(output: Any) -> list[dict[str, Any]]:
+    """What can be sent back of a response's reasoning: each item's
+    encrypted content and summary. Not its id: nothing is stored
+    (``store: false``), so an id would name an item the server does not have."""
+    kept = []
+    for item in output or []:
+        if not isinstance(item, dict) or item.get("type") != "reasoning":
+            continue
+        encrypted = item.get("encrypted_content")
+        if isinstance(encrypted, str) and encrypted:
+            summary = item.get("summary")
+            kept.append({"type": "reasoning",
+                         "summary": summary if isinstance(summary, list) else [],
+                         "encrypted_content": encrypted})
+    return kept
+
+
+def _has_reasoning(output: Any) -> bool:
+    return any(isinstance(i, dict) and i.get("type") == "reasoning" for i in output or [])
+
+
+def _opaque(kept: list[dict[str, Any]], model: str) -> OpaqueBlock | None:
+    return OpaqueBlock(provider=PROVIDER, data=json.dumps({"model": model, "items": kept})
+                       ) if kept else None
+
+
+def _message_to_items(message: Message, model: str = "") -> list[dict[str, Any]]:
     if message.role is Role.TOOL:
         return [
             {"type": "function_call_output", "call_id": block.call_id,
@@ -60,7 +113,9 @@ def _message_to_items(message: Message) -> list[dict[str, Any]]:
             for block in message.blocks if isinstance(block, ToolResultBlock)
         ]
 
-    items: list[dict[str, Any]] = []
+    # The turn's own reasoning first, as the model produced it (D-089).
+    items: list[dict[str, Any]] = (_replayed(message, model)
+                                   if message.role is Role.ASSISTANT else [])
     text = "".join(b.text for b in message.blocks if isinstance(b, TextBlock))
     images = [b for b in message.blocks if isinstance(b, ImageBlock)]
     if text or images:
@@ -107,7 +162,8 @@ def _tool_to_wire(schema: ToolSchema) -> dict[str, Any]:
 
 def build_body(request: TurnRequest, *, stream: bool,
                reasoning_summary: str | None = None,
-               effort: str | None = None) -> dict[str, Any]:
+               effort: str | None = None,
+               include_reasoning: bool = False) -> dict[str, Any]:
     instructions = ""
     items: list[dict[str, Any]] = []
     results: list[ToolResultBlock] = []
@@ -121,7 +177,7 @@ def build_body(request: TurnRequest, *, stream: bool,
         elif results:
             items.extend(_tool_images_item(results))
             results.clear()
-        items.extend(_message_to_items(message))
+        items.extend(_message_to_items(message, request.model))
     items.extend(_tool_images_item(results))
 
     body: dict[str, Any] = {
@@ -145,6 +201,11 @@ def build_body(request: TurnRequest, *, stream: bool,
                                                 ("summary", reasoning_summary)) if value}
     if reasoning:
         body["reasoning"] = reasoning
+    if include_reasoning:
+        # Stateless, the reasoning comes back encrypted to be sent again, as
+        # codex asks for it (D-089): dropped, a reasoning model started each
+        # round of a tool loop from nothing.
+        body["include"] = [INCLUDE_REASONING]
     return body
 
 
@@ -192,7 +253,8 @@ def _parse_output(output: list[dict[str, Any]]) -> tuple[str, tuple[ToolUseBlock
                 name=item.get("name", ""),
                 arguments=item.get("arguments", "{}"),
             ))
-        # Reasoning items are shown (_reasoning_of) but never replayed.
+        # Reasoning items are shown (_reasoning_of) and, encrypted, sent back
+        # (_kept_reasoning, D-089).
     return "".join(text_parts), tuple(calls)
 
 
@@ -216,6 +278,10 @@ class ResponsesBackend:
     reasoning_summary: str | None = None
     # reasoning.effort (D-061); None sends nothing.
     effort: str | None = None
+    # The model has answered with reasoning (D-089): from then on its
+    # encrypted reasoning is asked for, as it is whenever reasoning is
+    # configured. Never before: a model that does not reason may refuse it.
+    reasons: bool = False
 
     @property
     def endpoint(self) -> str:
@@ -239,7 +305,9 @@ class ResponsesBackend:
 
     def stream_turn(self, request: TurnRequest) -> Iterator[StreamEvent]:
         body = build_body(request, stream=self.stream,
-                          reasoning_summary=self.reasoning_summary, effort=self.effort)
+                          reasoning_summary=self.reasoning_summary, effort=self.effort,
+                          include_reasoning=bool(self.reasons or self.effort
+                                                 or self.reasoning_summary))
         if self.recorder is not None:
             self.recorder.record(RequestRecord(model=request.model, body=body,
                                                endpoint=self.endpoint))
@@ -255,10 +323,12 @@ class ResponsesBackend:
         payload = response.json()
         text, calls = _parse_output(payload.get("output", []))
         usage = _usage_from(payload.get("usage"))
+        self.reasons = self.reasons or _has_reasoning(payload.get("output"))
         turn = ModelTurn(
             text=text, tool_calls=calls, usage=usage,
             stop_reason=StopReason.TOOL_USE if calls else StopReason.END_TURN,
             model=payload.get("model", body["model"]),
+            opaque=_opaque(_kept_reasoning(payload.get("output")), body["model"]),
         )
         events: list[StreamEvent] = list(_reasonings(payload.get("output")))
         if text:
@@ -276,6 +346,7 @@ class ResponsesBackend:
         model = body["model"]
         completed = False
         shown_reasoning = False
+        kept: list[dict[str, Any]] = []
 
         try:
             stream = open_retrying_stream(
@@ -320,6 +391,9 @@ class ResponsesBackend:
                 if reasoning:
                     shown_reasoning = True
                     yield ReasoningComplete(reasoning)
+                if _has_reasoning([item]):
+                    self.reasons = True
+                    kept.extend(_kept_reasoning([item]))
                 if item.get("type") == "function_call":
                     calls.append(ToolUseBlock(
                         call_id=item.get("call_id") or item.get("id", ""),
@@ -333,6 +407,10 @@ class ResponsesBackend:
                 usage = _usage_from(response.get("usage"))
                 model = response.get("model", model)
                 completed = True
+                if not kept:
+                    # A gateway that sends only the terminal event.
+                    self.reasons = self.reasons or _has_reasoning(response.get("output"))
+                    kept = _kept_reasoning(response.get("output"))
                 if not calls and not text_parts:
                     # Some gateways only send the terminal event.
                     if not shown_reasoning:
@@ -371,5 +449,5 @@ class ResponsesBackend:
         yield TurnFinished(ModelTurn(
             text="".join(text_parts), tool_calls=tuple(calls), usage=usage,
             stop_reason=StopReason.TOOL_USE if calls else StopReason.END_TURN,
-            model=model,
+            model=model, opaque=_opaque(kept, body["model"]),
         ))

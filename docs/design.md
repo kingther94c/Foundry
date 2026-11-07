@@ -445,7 +445,9 @@ class ModelBackend(Protocol):
   Anthropic thinking block (asked for with `display: "summarized"`), a
   Responses reasoning item's summary (asked for only when
   `backend.reasoning_summary` is set), or the `reasoning_content` a Chat
-  Completions server streams. It is never sent back.
+  Completions server streams. The text shown is never sent back; a Responses
+  model's encrypted reasoning is, in an `OpaqueBlock(provider=
+  "openai_responses")`, to the same model only ([D-089](decision-log.md)).
 - Images ([D-045](decision-log.md)): Anthropic takes an `ImageBlock` in the
   user message and inside a `tool_result`; Chat Completions and Responses take
   a tool's output as text only, so the images a run of results carried follow

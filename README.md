@@ -216,7 +216,10 @@ conversation continues from the summary (`/compact` does it on request;
 What the model shows of its reasoning appears dim under "thinking" before it
 acts: Claude's thinking summaries, the reasoning DeepSeek-style servers stream,
 and -- with `reasoning_summary = "auto"` under `[backend]` -- a Responses
-model's summaries. `show_reasoning = false` under `[runtime]` hides it.
+model's summaries. `show_reasoning = false` under `[runtime]` hides it. A
+Responses model's reasoning is also carried from one round to the next, as
+codex carries it: asked for encrypted and sent back with its turn, since
+nothing is stored on the server.
 How hard the model reasons is `effort` under `[backend]`, on every protocol:
 `none | minimal | low | medium | high | xhigh` for the OpenAI shapes (sent as
 `reasoning.effort` or `reasoning_effort`), the levels above for Claude. Unset
