@@ -517,8 +517,24 @@ def dispatch(wiring: "Wiring", console: Console, name: str, arguments: str) -> o
         console.print(f"[dim]/{name}: sending {source} prompt {escape(str(prompt.path))}[/dim]",
                       soft_wrap=True)
         return RunTask(text)
+    hint = CODEX_COMMANDS.get(name)
+    if hint is not None:
+        console.print(f"[yellow]/{name} is codex's; {hint}[/yellow]", soft_wrap=True)
+        return None
     console.print(f"[yellow]unknown command /{escape(name)}; /help lists the commands[/yellow]")
     return None
+
+
+# codex's commands that are spelled otherwise here, or have no counterpart
+# (D-101), told after the user's own prompts, which may take any name.
+CODEX_COMMANDS = {
+    "approvals": "here it is /mode NAME -- default, accept_edits, plan or dont_ask -- or "
+                 "/mode alone to see the session's",
+    "mention": "here a file is mentioned by writing @path in the message, as "
+               "@src/app.py",
+    "logout": "here it is foundry logout, run in your shell",
+    "feedback": "Foundry has no feedback channel to send it to",
+}
 
 
 # --- the built-in commands -------------------------------------------------------------

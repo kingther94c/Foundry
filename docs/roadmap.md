@@ -294,6 +294,8 @@ What a codex user still notices day to day, next:
     codex's, instead of ending the task blocked (landed, D-099).
 61. ~~Settings the protocol cannot send~~ -- `fallbacks` off Claude and a
     summary asked of Chat Completions refused, not dropped (landed, D-100).
+62. ~~codex's slash commands~~ -- `/approvals`, `/mention`, `/logout`,
+    `/feedback` told what Foundry has instead (landed, D-101).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
