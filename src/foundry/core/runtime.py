@@ -58,6 +58,9 @@ from foundry.core.events import (
     TurnStarted,
     new_id,
 )
+from foundry.core.notify import APPROVAL_TYPE as NOTIFY_APPROVAL
+from foundry.core.notify import EVENT_TYPE as NOTIFY_TURN
+from foundry.core.notify import approval_payload
 from foundry.core.notify import payload as notify_payload
 from foundry.core.policy.engine import POLICY_VERSION, Decision, PolicyEngine, Verdict
 from foundry.core.session import EventType, SessionStore
@@ -270,22 +273,37 @@ class AgentRuntime:
         user stopped it: they are at the keyboard."""
         if self.notifier is None or outcome.status is TerminalStatus.CANCELLED:
             return
-        data = notify_payload(
+        self._send_notification(NOTIFY_TURN, notify_payload(
             session_id=self.session.session_id if self.session is not None else "",
             cwd=str(self.tool_ctx.workspace.root),
             status=outcome.status.value if outcome.status is not None else None,
-            user_input=user_input, last_message=outcome.text, scrub=self.scrub)
+            user_input=user_input, last_message=outcome.text, scrub=self.scrub))
+
+    def _notify_approval(self, op: Operation, decision: Decision) -> None:
+        """Tell the user's program a question waits for them (D-079), before
+        it blocks: a session left running stops at a question nobody sees."""
+        if self.notifier is None:
+            return
+        self._send_notification(NOTIFY_APPROVAL, approval_payload(
+            session_id=self.session.session_id if self.session is not None else "",
+            cwd=str(self.tool_ctx.workspace.root), tool=op.tool, display=op.display,
+            reason=decision.reason, scrub=self.scrub))
+
+    def _send_notification(self, kind: str, data: str) -> None:
+        """Start the program and journal it; a program that cannot start is
+        a warning the first time and a record each time, never a failure."""
         program = self.notifier.argv[0]
         try:
             pid = self.notifier.send(data)
         except (OSError, ValueError) as exc:
-            self._journal(EventType.NOTIFIED, {"program": program, "error": str(exc)})
+            self._journal(EventType.NOTIFIED, {"type": kind, "program": program,
+                                               "error": str(exc)})
             if not self._notify_failed:
                 self._notify_failed = True
                 self._emit(Notice(f"notify: could not start {program}: {exc}",
                                   level="warning"))
             return
-        self._journal(EventType.NOTIFIED, {"program": program, "pid": pid})
+        self._journal(EventType.NOTIFIED, {"type": kind, "program": program, "pid": pid})
 
     def _run_turn(self, user_input: str, images: tuple) -> TurnOutcome:
         # The request records carry every message the model was sent; this is
@@ -890,6 +908,7 @@ class AgentRuntime:
             detail=op.args.get("patch", "") if op.tool == "apply_patch" else "",
         )
         self._emit(request)
+        self._notify_approval(op, decision)
         return self.approval(request)
 
     def _audit(self, op: Operation, decision: str, outcome: str) -> None:

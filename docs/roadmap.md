@@ -244,6 +244,8 @@ What a codex user still notices day to day, next:
     codex asks for a second (landed, D-077).
 39. ~~`foundry run TASK` goes on~~ -- the task is the first message and the
     prompt comes back, as `codex "task"` (landed, D-078).
+40. ~~Told when an approval waits~~ -- the `notify` program hears
+    `approval-requested` before the question blocks (landed, D-079).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

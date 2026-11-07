@@ -153,7 +153,9 @@ model = "claude-opus-5-5"
 To hear when long work stops, name a program at the top of `config.toml`; it
 is started when a turn ends, with a JSON description of the turn as its last
 argument (`type`, `session-id`, `cwd`, `status`, `input-messages`,
-`last-assistant-message`, as codex's `notify` sends):
+`last-assistant-message`, as codex's `notify` sends), and when an approval
+waits for you (`"type": "approval-requested"`, with the `tool`, what it would
+do as `display`, and the `reason` it asks):
 
 ```toml
 notify = ["python", "C:/tools/notify.py"]   # not a .bat or .cmd: cmd.exe would read the payload

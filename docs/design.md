@@ -363,7 +363,10 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   `agent-turn-complete`), found on PATH, without a shell, with the command
   environment and its output discarded; nothing waits for it. Not when the
   user stopped the turn; a batch file is refused, since cmd.exe would read the
-  model's words in the payload as commands.
+  model's words in the payload as commands. It is also started, before the
+  question, when an approval waits for the user (`approval-requested`: the
+  tool, the call's display and the reason; [D-079](decision-log.md)); each
+  `notified` record names its `type`.
 - `view_image` ([D-045](decision-log.md)): a read-only, workspace-bound tool
   that returns the image on its result (`ToolOutput.images`). An image is
   checked by `core/images.py` from its own bytes -- PNG, JPEG, GIF or WebP, at

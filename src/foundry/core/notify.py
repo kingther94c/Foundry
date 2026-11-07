@@ -27,6 +27,8 @@ from foundry.core.winapi import (
 )
 
 EVENT_TYPE = "agent-turn-complete"
+# An approval waiting on the user (D-079), as codex's notifications name it.
+APPROVAL_TYPE = "approval-requested"
 # The payload is a single command-line argument. Windows caps a command line
 # at 32,767 characters and its quoting can double a JSON string, so each text
 # is cut well below that.
@@ -53,6 +55,23 @@ def payload(*, session_id: str, cwd: str, status: str | None, user_input: str,
         "status": status,
         "input-messages": [clip(clean(user_input))],
         "last-assistant-message": clip(clean(last_message)),
+    }, ensure_ascii=False)
+
+
+def approval_payload(*, session_id: str, cwd: str, tool: str, display: str, reason: str,
+                     scrub=None) -> str:
+    """What the program is told when a question waits for the user (D-079):
+    the tool, what it would do as the approval shows it, and why it asks --
+    scrubbed and cut like a turn's texts. A script written for codex's
+    ``agent-turn-complete`` tells the two apart by ``type``."""
+    clean = scrub or (lambda text: text)
+    return json.dumps({
+        "type": APPROVAL_TYPE,
+        "session-id": session_id,
+        "cwd": cwd,
+        "tool": tool,
+        "display": clip(clean(display)),
+        "reason": clip(clean(reason)),
     }, ensure_ascii=False)
 
 

@@ -210,7 +210,9 @@ def test_each_turn_that_ends_tells_the_program(tmp_path):
     assert first["session-id"] == session.session_id
     assert os.path.samefile(first["cwd"], repo_)
     assert first["last-assistant-message"] == "A is 1"
-    assert _notified(session) == [{"program": "notify-send", "pid": 4242}] * 2
+    # Each record names its event since D-079.
+    assert _notified(session) == [{"type": "agent-turn-complete", "program": "notify-send",
+                                   "pid": 4242}] * 2
 
 
 def test_a_finished_task_reports_its_status(tmp_path):
@@ -239,7 +241,7 @@ def test_a_program_that_cannot_start_warns_once_and_is_journaled(tmp_path):
     warnings = [n for n in notices if "notify" in n.text]
     assert len(warnings) == 1 and warnings[0].level == "warning"
     assert "could not start notify-send" in warnings[0].text
-    assert _notified(session) == [{"program": "notify-send",
+    assert _notified(session) == [{"type": "agent-turn-complete", "program": "notify-send",
                                    "error": "'notify-send' was not found on PATH"}] * 2
 
 
