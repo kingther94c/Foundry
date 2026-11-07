@@ -55,7 +55,6 @@ def _refused(capsys, *argv):
     (["run", "--oss"], 'protocol = "openai_compat", base_url = "http://localhost:11434/v1"'),
     (["exec", "--add-dir", "../other", "t"],
      "--add-dir ../other is codex's; a session works in one repository, -C DIR"),
-    (["exec", "--color", "never", "t"], "NO_COLOR=1"),
 ])
 def test_codex_s_flag_is_told_what_to_use(capsys, argv, told):
     err = _refused(capsys, *argv)

@@ -1469,7 +1469,7 @@ def cmd_exec(args: argparse.Namespace, read_only: str = "") -> int:
     ``read_only``, when given, refuses every edit and command for the whole
     run, saying why -- as `foundry review`'s is (D-131).
     """
-    console = Console(stderr=True)
+    console = _stderr_console(args)
     if args.fork is not None and args.resume is not None:
         console.print("[red]--fork and --resume each name the session to go on from; "
                       "give one[/red]")
@@ -1613,7 +1613,7 @@ def cmd_review(args: argparse.Namespace) -> int:
     user's instructions ask, reviewed headlessly as exec runs a task, with
     every edit and command refused. The review is the run's finish summary,
     printed, and written by -o."""
-    console = Console(stderr=True)
+    console = _stderr_console(args)
     # argparse lets one at most be given.
     if not (args.uncommitted or args.base is not None or args.commit is not None
             or args.prompt is not None):
@@ -2091,6 +2091,26 @@ def _config_flags(parser: argparse.ArgumentParser, *, modes: tuple[Mode, ...] = 
                         help="a [profiles.<name>] table from your config.toml")
 
 
+def _stderr_console(args: argparse.Namespace) -> Console:
+    """An unattended run's console, on stderr, coloured as ``--color`` says,
+    as codex exec's (D-136): ``auto`` only on a terminal (and not with
+    NO_COLOR set), ``always`` even into a pipe or a CI log, ``never`` plain
+    text."""
+    color = getattr(args, "color", "auto")
+    if color == "never":
+        return Console(stderr=True, color_system=None)
+    if color == "always":
+        return Console(stderr=True, color_system="standard", no_color=False,
+                       legacy_windows=False)
+    return Console(stderr=True)
+
+
+def _color_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--color", choices=("always", "never", "auto"), default="auto",
+                        help="colour what is said on stderr: always, never, or auto (on a "
+                             "terminal; the default)")
+
+
 def _ephemeral_flag(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ephemeral", action="store_true",
                         help="keep no record of the run once it ends: nothing to resume, "
@@ -2201,6 +2221,7 @@ def build_parser() -> argparse.ArgumentParser:
     execute.add_argument("-o", "--output-last-message", metavar="FILE",
                          help="write the run's final summary or reply to FILE")
     _ephemeral_flag(execute)
+    _color_flag(execute)
     execute.add_argument("--output-schema", metavar="FILE",
                          help="a JSON Schema the run's result must match; the result is "
                               "printed as JSON, and written by -o")
@@ -2225,6 +2246,7 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("-o", "--output-last-message", metavar="FILE",
                         help="write the review to FILE")
     _ephemeral_flag(review)
+    _color_flag(review)
     # Read-only whatever the mode; dont_ask, as nobody is there to approve.
     _config_flags(review, modes=(Mode.DONT_ASK,))
     review.set_defaults(func=cmd_review)

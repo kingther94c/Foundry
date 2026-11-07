@@ -23,10 +23,9 @@ _NAMES = {
     "--search": "--search",
     "--oss": "--oss",
     "--add-dir": "--add-dir",
-    "--color": "--color",
 }
 # Those that take a value, which may come as the next word.
-_TAKES_VALUE = frozenset({"--ask-for-approval", "--sandbox", "--add-dir", "--color"})
+_TAKES_VALUE = frozenset({"--ask-for-approval", "--sandbox", "--add-dir"})
 _SHORT = ("-a", "-s")
 
 
@@ -80,11 +79,8 @@ def _advice(name: str, value: str | None, command: str) -> str:
         return ('point [backend] in your config.toml at the local server: protocol = '
                 '"openai_compat", base_url = "http://localhost:11434/v1" (Ollama\'s) and its '
                 'model')
-    if name == "--add-dir":
-        return "a session works in one repository, -C DIR"
-    # --color
-    return ("Foundry colors its output only at a terminal, and NO_COLOR=1 in the environment "
-            "turns that off")
+    # --add-dir
+    return "a session works in one repository, -C DIR"
 
 
 def hints(argv: list[str], unrecognized: list[str]) -> list[str]:
