@@ -695,6 +695,14 @@ CODEX_COMMANDS = {
     "feedback": "Foundry has no feedback channel to send it to",
     "prompts": "a custom prompt is /NAME here, or /prompts:NAME as codex's; /help lists "
                "yours",
+    # codex's that Foundry has another way, or no need, for (D-130).
+    "permissions": "here it is /mode NAME -- default, accept_edits, plan or dont_ask -- or "
+                   "/mode alone to see the session's",
+    "cd": "a session works in one workspace: foundry -C DIR starts one in another",
+    "usage": "/status shows this session's tokens; Foundry keeps no account's usage",
+    "debug-config": "foundry doctor checks the configuration and the environment",
+    "ps": "Foundry runs no background terminals: each command runs to its end",
+    "stop": "Foundry runs no background terminals: Ctrl+C stops the running task",
 }
 
 
@@ -929,6 +937,40 @@ def _plan(wiring: "Wiring", console: Console, arguments: str) -> None:
         print_plan(console, wiring.runtime.plan, wiring.runtime.plan_explanation)
     else:
         console.print("[dim]no plan: the model has not set one in this session[/dim]")
+    return None
+
+
+RECAP = ("Recap this conversation for the user, now: what they asked for, what was done "
+         "-- the files changed, the commands run and what they showed -- what was decided, "
+         "and what is left. Plainly and briefly, from the conversation alone: read nothing, "
+         "change nothing.")
+RECAP_READ_ONLY = "a recap changes nothing"
+
+
+def _recap(wiring: "Wiring", console: Console, arguments: str) -> RunTask:
+    """``/recap``: the conversation summarized for the user now, as codex's
+    (D-130) -- an answer in the conversation, unlike /compact, which replaces
+    it."""
+    return RunTask(RECAP, read_only=RECAP_READ_ONLY)
+
+
+def _clear(wiring: "Wiring", console: Console, arguments: str) -> str:
+    """``/clear``: the terminal cleared and a fresh session started, as
+    codex's (D-130); this one ends, and can be resumed, as with /new."""
+    console.clear()
+    return NEW_SESSION
+
+
+def _rollout(wiring: "Wiring", console: Console, arguments: str) -> None:
+    """``/rollout``: where this session's journal is, as codex prints its
+    rollout file (D-130)."""
+    console.print(escape(str(wiring.session.path)), soft_wrap=True)
+    return None
+
+
+def _pwd(wiring: "Wiring", console: Console, arguments: str) -> None:
+    """``/pwd``: the folder the session works in (D-130)."""
+    console.print(escape(str(wiring.workspace.root)), soft_wrap=True)
     return None
 
 
@@ -1457,6 +1499,8 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("help", "this list", _help),
     Command("status", "session, model, mode, tokens, context and plan", _status),
     Command("diff", "every uncommitted change, and which of them this session made", _diff),
+    Command("pwd", "the folder this session works in", _pwd),
+    Command("rollout", "where this session's journal is", _rollout),
     Command("copy", "copy the latest answer to the clipboard, or its Nth code block",
             copy_answer, arguments="[N]"),
     Command("export", "the whole conversation as Markdown: on the clipboard, or in a new "
@@ -1473,6 +1517,7 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("btw", "the same as /side", _side, arguments="QUESTION"),
     Command("compact", "summarise the conversation so far to free context", _compact,
             arguments="[focus]"),
+    Command("recap", "the conversation so far, summed up for you now", _recap),
     Command("image", "attach an image to your next message -- a file, or the clipboard's",
             _image, arguments="[PATH]"),
     Command("approve", "in plan mode: approve the plan and let the work start", approve_plan),
@@ -1491,6 +1536,7 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("rename", "name this session, to resume it by name; alone, its name", rename,
             arguments="[NAME]"),
     Command("new", "end this session and start a fresh one", _new),
+    Command("clear", "clear the terminal, end this session and start a fresh one", _clear),
     Command("fork", "go on in a copy of this session, keeping this one as it is", _fork),
     Command("archive", "end this session and archive it: out of every list, kept whole",
             _archive),
