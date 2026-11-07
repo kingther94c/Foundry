@@ -189,6 +189,10 @@ def reasoning_title(text: str) -> str:
     return " ".join(match.group(1).split()) if match else ""
 
 
+# How many warnings and errors a session keeps for /warnings (D-138).
+KEPT_WARNINGS = 200
+
+
 @dataclass(slots=True)
 class Renderer:
     console: Console = field(default_factory=Console)
@@ -207,6 +211,19 @@ class Renderer:
     # When the task now running started (D-073); None between tasks.
     _task_started: float | None = None
     clock: Callable[[], float] = time.monotonic
+    # The warnings and errors shown (D-138), for /warnings: (time, level,
+    # text), the latest KEPT_WARNINGS of them; ``warnings_dropped`` counts
+    # the older ones let go.
+    warnings: list = field(default_factory=list)
+    warnings_dropped: int = 0
+
+    def _keep(self, level: str, text: str) -> None:
+        """A warning or an error, kept for /warnings (D-138): it may have
+        scrolled away before anyone read it."""
+        self.warnings.append((time.strftime("%H:%M:%S"), level, text))
+        if len(self.warnings) > KEPT_WARNINGS:
+            del self.warnings[0]
+            self.warnings_dropped += 1
 
     def work(self, what: str) -> None:
         """Put up the working line (D-069): only on a terminal, where it can
@@ -353,8 +370,11 @@ class Renderer:
         elif isinstance(event, Notice):
             style = "yellow" if event.level == "warning" else "dim"
             self.console.print(f"[{style}]{safe(event.text)}[/{style}]")
+            if event.level == "warning":
+                self._keep("warning", event.text)
         elif isinstance(event, ErrorEvent):
             self.console.print(f"[red]error[/red] {safe(event.message)}")
+            self._keep("error", event.message)
         elif isinstance(event, Termination):
             style = _STATUS_STYLE.get(event.status, "white")
             self.console.print(

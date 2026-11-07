@@ -985,6 +985,22 @@ def _pwd(wiring: "Wiring", console: Console, arguments: str) -> None:
     return None
 
 
+def _warnings(wiring: "Wiring", console: Console, arguments: str) -> None:
+    """``/warnings``: the warnings and errors this session has shown, again
+    (D-138), as codex's -- one may have scrolled away unread."""
+    renderer = wiring.renderer
+    if not renderer.warnings:
+        console.print("[dim]no warnings or errors in this session[/dim]")
+        return None
+    if renderer.warnings_dropped:
+        console.print(f"[dim]{renderer.warnings_dropped} earlier ones are not kept[/dim]")
+    for when, level, text in renderer.warnings:
+        said = (f"[red]error[/red] {escape(text)}" if level == "error"
+                else f"[yellow]{escape(text)}[/yellow]")
+        console.print(f"[dim]{when}[/dim] {said}", soft_wrap=True)
+    return None
+
+
 def _compact(wiring: "Wiring", console: Console, arguments: str) -> None:
     """Summarise the conversation now rather than when it fills (D-040)."""
     try:
@@ -1536,6 +1552,7 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("diff", "every uncommitted change, and which of them this session made", _diff),
     Command("pwd", "the folder this session works in", _pwd),
     Command("rollout", "where this session's journal is", _rollout),
+    Command("warnings", "the warnings and errors this session has shown, again", _warnings),
     Command("copy", "copy the latest answer to the clipboard, or its Nth code block",
             copy_answer, arguments="[N]"),
     Command("export", "the whole conversation as Markdown: on the clipboard, or in a new "
