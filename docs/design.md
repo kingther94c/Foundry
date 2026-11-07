@@ -405,6 +405,9 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   | remove` ([D-082](decision-log.md)) manage the tables from the command
   line: an edit is text, appended or taken out, and written only if the
   result parses to the old settings with exactly that server added or gone.
+  `foundry mcp get NAME` ([D-105](decision-log.md)) shows one in full, a
+  value whose name looks like a credential's -- in `env`, an option, a
+  query -- as `[hidden]` and the rest through the redactor.
 - `foundry mcp-server` ([D-103](decision-log.md), cli/mcp_server.py): Foundry
   as an MCP server over stdio. Each `tools/call` runs on a thread of its own,
   in a session `build()` makes and `unattended()` leaves with nobody to ask

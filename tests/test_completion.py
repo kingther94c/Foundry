@@ -35,7 +35,7 @@ def test_every_subcommand_is_offered_and_nested_ones_under_theirs():
     [sub] = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
     assert TREE["foundry"]["subcommands"] == sorted(sub.choices)
     assert {"completion", "exec", "resume", "mcp"} <= set(TREE["foundry"]["subcommands"])
-    assert TREE["foundry mcp"]["subcommands"] == ["add", "list", "remove"]
+    assert TREE["foundry mcp"]["subcommands"] == ["add", "get", "list", "remove"]
     assert "foundry mcp add" in TREE
 
 
@@ -130,7 +130,7 @@ CASES = [
     ("foundry exec --mo", ["--mode", "--model"]),
     ("foundry exec --mode ", ["accept_edits", "dont_ask", "plan"]),
     ("foundry --mode a", ["accept_edits"]),
-    ("foundry mcp ", ["add", "list", "remove"]),
+    ("foundry mcp ", ["add", "get", "list", "remove"]),
     ("foundry mcp add --re", ["--read-only"]),
     ("foundry login ", ["status"]),
     ("foundry completion ", ["bash", "powershell"]),

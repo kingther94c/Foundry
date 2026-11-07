@@ -1302,12 +1302,14 @@ NO_SERVERS = ("[dim]no MCP servers: `foundry mcp add NAME -- COMMAND` adds one, 
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
-    """``foundry mcp list | add | remove``, as ``codex mcp``: the servers in
-    the user's own config.toml, from the command line. Listing starts none
+    """``foundry mcp list | get | add | remove``, as ``codex mcp``: the servers
+    in the user's own config.toml, from the command line. Listing starts none
     of them -- /mcp in a session says how each is."""
     console = Console()
     path = user_dir() / "config.toml"
     action = getattr(args, "mcp_command", None) or "list"
+    if action == "get":
+        return _mcp_get(args, console)
     if action == "add":
         add_server(path, args.name, _server_entry(args))
         console.print(f"[green]added[/green] MCP server {escape(args.name)} to "
@@ -1342,8 +1344,102 @@ def cmd_mcp(args: argparse.Namespace) -> int:
         if server.bearer_token_env_var:
             said.append(f"token from {server.bearer_token_env_var}")
         if said:
-            console.print(f"  [dim]{escape(safe('; '.join(said)))}[/dim]", soft_wrap=True)
+            console.print(f"  [dim]{safe('; '.join(said))}[/dim]", soft_wrap=True)
     return 0
+
+
+# What `foundry mcp get` shows in place of a value a credential's name marks.
+HIDDEN = "[hidden]"
+
+
+def _mcp_get(args: argparse.Namespace, console: Console) -> int:
+    """``foundry mcp get NAME``, as ``codex mcp get``: one server's settings
+    in full -- what the listing leaves out, its arguments, environment and
+    address -- except a value a credential's name marks, and what the
+    redactor knows to be one."""
+    servers = load_config(home=user_dir(), profile=getattr(args, "profile", None)).mcp_servers
+    server = servers.get(args.name)
+    if server is None:
+        known = f"; it names {', '.join(sorted(servers))}" if servers else ""
+        raise ConfigError(f"your configuration has no MCP server named {args.name}{known}")
+    scrub = default_redactor().scrub
+    shown = _shown_settings(server, scrub)
+    if getattr(args, "json", False):
+        sys.stdout.write(json.dumps({**_server_record(server), **shown}, indent=2) + "\n")
+        return 0
+    state = "enabled" if server.enabled else "disabled"
+    kind = "read-only" if server.read_only else "may change things"
+    console.print(f"[bold]{escape(server.name)}[/bold] [dim]({'http' if server.url else 'stdio'})"
+                  f"[/dim] {state}, {kind}", soft_wrap=True)
+    lines = [("url", shown["url"]) if server.url else ("command", shown["command"])]
+    if shown["args"]:
+        import subprocess
+
+        lines.append(("args", subprocess.list2cmdline(shown["args"])))
+    if shown["env"]:
+        lines.append(("env", ", ".join(f"{key}={value}" for key, value in shown["env"].items())))
+    if server.env_vars:
+        lines.append(("passes", ", ".join(server.env_vars)))
+    if server.bearer_token_env_var:
+        lines.append(("token", f"from {server.bearer_token_env_var}"))
+    tools = []
+    if server.enabled_tools is not None:
+        tools.append("only " + (", ".join(server.enabled_tools) or "no tools"))
+    if server.disabled_tools:
+        tools.append("never " + ", ".join(server.disabled_tools))
+    lines.append(("tools", "; ".join(tools) or "all it lists"))
+    lines.append(("timeouts", f"start {server.startup_timeout_s:g}s, each call "
+                              f"{server.tool_timeout_s:g}s"))
+    lines.append(("remove", f"foundry mcp remove {server.name}"))
+    for label, value in lines:
+        console.print(f"  [dim]{label:<9}[/dim]{safe(value)}", soft_wrap=True)
+    return 0
+
+
+def _shown_settings(server, scrub) -> dict[str, Any]:
+    """The settings the listing leaves out, as `mcp get` shows them."""
+    return {"command": scrub(server.command) if server.command else None,
+            "args": _shown_args(server.args, scrub),
+            "env": {key: HIDDEN if looks_like_credential(key) else scrub(value)
+                    for key, value in server.env},
+            "url": _shown_url(server.url, scrub) if server.url else None}
+
+
+def _shown_args(args: tuple[str, ...], scrub) -> list[str]:
+    """A value a credential's name marks -- ``--api-key X``, ``--token=X``,
+    ``API_KEY=X`` -- is shown as hidden. An option so named that takes no
+    value hides the argument after it all the same: the cautious mistake."""
+    shown: list[str] = []
+    hide = False
+    for arg in args:
+        if hide:
+            shown.append(HIDDEN)
+            hide = False
+            continue
+        name, sep, _ = arg.partition("=")
+        if (sep or arg.startswith("-")) and looks_like_credential(name):
+            shown.append(f"{name}={HIDDEN}" if sep else arg)
+            hide = not sep
+            continue
+        shown.append(scrub(arg))
+    return shown
+
+
+def _shown_url(url: str, scrub) -> str:
+    """An address without a query value a credential's name marks --
+    ``?api_key=X``. The rest is shown as written; the configuration refuses a
+    user name or password in it."""
+    import urllib.parse
+
+    parts = urllib.parse.urlsplit(url)
+    query = "&".join(_shown_pair(pair, urllib.parse.unquote_plus)
+                     for pair in parts.query.split("&"))
+    return scrub(urllib.parse.urlunsplit(parts._replace(query=query)))
+
+
+def _shown_pair(pair: str, unquote) -> str:
+    key, sep, _ = pair.partition("=")
+    return f"{key}={HIDDEN}" if sep and looks_like_credential(unquote(key)) else pair
 
 
 def cmd_mcp_server(args: argparse.Namespace) -> int:
@@ -1685,6 +1781,10 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_list = mcp_sub.add_parser("list", help="the MCP servers your configuration names")
     mcp_list.add_argument("--json", action="store_true")
     mcp_list.add_argument("--profile", help="as a session with this profile would see them")
+    mcp_get = mcp_sub.add_parser("get", help="one MCP server's settings, in full")
+    mcp_get.add_argument("name")
+    mcp_get.add_argument("--json", action="store_true")
+    mcp_get.add_argument("--profile", help="as a session with this profile would see it")
     mcp_add = mcp_sub.add_parser(
         "add", help="add an MCP server to your config.toml",
         usage="foundry mcp add NAME [--env KEY=VALUE] [--env-var NAME] [--read-only] "
