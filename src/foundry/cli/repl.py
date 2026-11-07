@@ -36,7 +36,7 @@ from foundry.core.images import MAX_IMAGES_PER_MESSAGE, from_bytes as image_from
 from foundry.core.images import load as load_image
 from foundry.core.events import Notice, TerminalStatus
 from foundry.core.policy.engine import Mode, Verdict
-from foundry.core.prompts import PROJECT_DOC_NAMES, mode_line, system_prompt
+from foundry.core.prompts import doc_names, mode_line, system_prompt
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.base import ToolKind, truncate_middle
 from foundry.core.tools.command import combined_output, run_process
@@ -672,7 +672,8 @@ def _image(wiring: "Wiring", console: Console, arguments: str) -> None:
 
 def _init(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
     root = wiring.workspace.root
-    existing = [name for name in PROJECT_DOC_NAMES if (root / name).exists()]
+    existing = [name for name in doc_names(wiring.config.project_doc_fallback_filenames)
+                if (root / name).exists()]
     if existing:
         console.print(f"[yellow]{existing[0]} already exists; edit it, or ask the model to "
                       "improve it[/yellow]")

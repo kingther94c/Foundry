@@ -22,7 +22,11 @@ from foundry.core.policy.engine import (
 from foundry.core.tools.git import GitBaseline
 from foundry.core.winapi import IS_WINDOWS
 
-PROJECT_DOC_NAMES = ("FOUNDRY.md", "AGENTS.md")
+# In each directory the first of these that exists (D-086): a local
+# AGENTS.override.md over the shared files, as codex reads it, then the
+# names in project_doc_fallback_filenames.
+PROJECT_DOC_NAMES = ("AGENTS.override.md", "FOUNDRY.md", "AGENTS.md")
+# How much of the repository's files is read, by default: project_doc_max_bytes.
 PROJECT_DOC_MAX_BYTES = 24_000
 
 
@@ -155,9 +159,14 @@ class Instructions:
     sources: tuple[str, ...] = ()
 
 
-def _doc_in(directory: Path) -> Path | None:
-    """The directory's instructions: FOUNDRY.md over AGENTS.md."""
-    for name in PROJECT_DOC_NAMES:
+def doc_names(fallbacks: tuple[str, ...] = ()) -> tuple[str, ...]:
+    """The names tried in each directory, in order (D-086)."""
+    return PROJECT_DOC_NAMES + tuple(n for n in fallbacks if n not in PROJECT_DOC_NAMES)
+
+
+def _doc_in(directory: Path, names: tuple[str, ...] = PROJECT_DOC_NAMES) -> Path | None:
+    """The directory's instructions: the first of ``names`` it holds."""
+    for name in names:
         candidate = directory / name
         if candidate.is_file():
             return candidate
@@ -174,31 +183,37 @@ def _repository_top(workspace: Path) -> Path:
     return workspace
 
 
-def repository_docs(workspace: Path) -> list[tuple[str, Path]]:
+def repository_docs(workspace: Path, fallbacks: tuple[str, ...] = ()) -> list[tuple[str, Path]]:
     """The repository's instruction files from its top down to the workspace,
     each with its path relative to the top. Directories below the workspace
-    are not read."""
+    are not read. ``fallbacks`` are tried after the usual names (D-086)."""
+    names = doc_names(fallbacks)
     top = _repository_top(workspace)
     directories = [top]
     for part in workspace.relative_to(top).parts:
         directories.append(directories[-1] / part)
     found = []
     for directory in directories:
-        doc = _doc_in(directory)
+        doc = _doc_in(directory, names)
         if doc is not None:
             found.append((doc.relative_to(top).as_posix(), doc))
     return found
 
 
 def _read(path: Path, limit: int) -> str:
+    # One character past the limit says whether there is more; reading the
+    # whole file first held all of it in memory to keep a few kilobytes.
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            text = handle.read(limit + 1)
     except OSError:
         return ""
     return text if len(text) <= limit else text[:limit] + _TRUNCATED
 
 
-def load_instructions(workspace: Path, home: Path | None, *, trusted: bool) -> Instructions:
+def load_instructions(workspace: Path, home: Path | None, *, trusted: bool,
+                      max_chars: int = PROJECT_DOC_MAX_BYTES,
+                      fallbacks: tuple[str, ...] = ()) -> Instructions:
     """The user's own FOUNDRY.md / AGENTS.md from the Foundry home, then the
     repository's, from its top down to the workspace -- only where the user
     trusts it (D-041).
@@ -206,7 +221,9 @@ def load_instructions(workspace: Path, home: Path | None, *, trusted: bool) -> I
     The repository's files are prompt input it supplies, so they are untrusted
     content in the security sense; the trust prompt is what keeps a cloned
     repository from steering the agent on first run. They share one budget,
-    the top's first: a file past it is named and left out.
+    the top's first: a file past it is named and left out. ``max_chars`` is
+    that budget (project_doc_max_bytes; 0 reads none of them) and
+    ``fallbacks`` the names tried after the usual ones (D-086).
     """
     parts: list[str] = []
     sources: list[str] = []
@@ -218,19 +235,19 @@ def load_instructions(workspace: Path, home: Path | None, *, trusted: bool) -> I
                          "The user keeps these notes for every session.\n\n" + text)
             sources.append(str(own))
 
-    docs = repository_docs(workspace) if trusted else []
+    docs = repository_docs(workspace, fallbacks) if trusted and max_chars > 0 else []
     if len(docs) == 1:
         label, path = docs[0]
         parts.append(f"# Project instructions ({label})\n{_PROJECT_PREAMBLE}\n\n"
-                     + _read(path, PROJECT_DOC_MAX_BYTES))
+                     + _read(path, max_chars))
         sources.append(label)
     elif docs:
-        budget = PROJECT_DOC_MAX_BYTES
+        budget = max_chars
         sections = []
         for label, path in docs:
             if budget <= 0:
                 sections.append(f"## {label}\n[left out: the project instructions above "
-                                f"already fill their {PROJECT_DOC_MAX_BYTES} characters]")
+                                f"already fill their {max_chars} characters]")
                 continue
             text = _read(path, budget)
             budget -= len(text)

@@ -401,6 +401,12 @@ class Config:
     auto_compact: bool = True
     # Whether the model's reasoning is shown (D-044); the journal keeps it.
     show_reasoning: bool = True
+    # The repository's instruction files (D-086), as codex's settings: how
+    # many characters of them are read, shared from the top down (0 reads
+    # none), and the names tried in each directory after AGENTS.override.md,
+    # FOUNDRY.md and AGENTS.md.
+    project_doc_max_bytes: int = 24_000
+    project_doc_fallback_filenames: tuple[str, ...] = ()
     # From the user's own files only: each one is a program Foundry starts.
     mcp_servers: dict[str, McpServerConfig] = field(default_factory=dict)
     # A program run when a turn ends (D-050), from the user's own files only:
@@ -417,6 +423,19 @@ class Config:
     def explain(self, key: str) -> str:
         entry = self.provenance.get(key)
         return f"{key} = {entry.value!r} (from {entry.layer})" if entry else f"{key} is unset"
+
+
+# A file's own name: no folder, no drive, no stream (``name:stream`` is an
+# NTFS alternate data stream), nothing a directory could resolve elsewhere.
+_DOC_NAME = re.compile(r"[^\\/:*?\"<>|\x00-\x1f]{1,255}\Z")
+
+
+def _parse_doc_names(raw: Any) -> tuple[str, ...]:
+    if not isinstance(raw, list) or len(raw) > 16 or not all(
+            isinstance(n, str) and _DOC_NAME.match(n) and n.strip(" .") for n in raw):
+        raise ConfigError('project_doc_fallback_filenames must be a list of file names, '
+                          'as ["CLAUDE.md"] (at most 16, no folders)')
+    return tuple(dict.fromkeys(raw))
 
 
 def _parse_notify(raw: Any) -> tuple[str, ...]:
@@ -536,6 +555,32 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         setattr(config, key, value)
         config.record(key, value, layer)
 
+    if "project_doc_max_bytes" in runtime:
+        value = runtime["project_doc_max_bytes"]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ConfigError("project_doc_max_bytes must be a whole number of characters, "
+                              f"0 for none, got {value!r}")
+        # A repository may read less of its own notes, not fill the context
+        # with more of them.
+        if tighten_only and value > config.project_doc_max_bytes:
+            raise ConfigError(
+                f"{layer} config may only lower project_doc_max_bytes (tried {value}, "
+                f"current {config.project_doc_max_bytes})")
+        config.project_doc_max_bytes = value
+        config.record("project_doc_max_bytes", value, layer)
+
+    if "project_doc_fallback_filenames" in runtime:
+        # Which of its files become instructions is the user's call: a
+        # repository naming its README would steer the agent with a file
+        # nobody wrote for it.
+        if tighten_only:
+            raise ConfigError(f"{layer} config may not set project_doc_fallback_filenames; "
+                              "set it in your own config.toml")
+        config.project_doc_fallback_filenames = _parse_doc_names(
+            runtime["project_doc_fallback_filenames"])
+        config.record("project_doc_fallback_filenames",
+                      list(config.project_doc_fallback_filenames), layer)
+
     for key in ("auto_compact", "show_reasoning"):
         if key not in runtime:
             continue
@@ -616,7 +661,8 @@ def _apply_env(config: Config) -> None:
 # The runtime table's settings, for ``-c`` to check a name against: an
 # unknown one is a typo, not a setting nobody reads.
 _RUNTIME_KEYS = ("max_tool_rounds", "max_tool_calls", "max_output_bytes", "command_timeout_s",
-                 "session_retention_days", "auto_compact", "show_reasoning", "mode")
+                 "session_retention_days", "auto_compact", "show_reasoning", "mode",
+                 "project_doc_max_bytes", "project_doc_fallback_filenames")
 # Secrets may come only from the environment or the credential store, never
 # from a command line other processes can read (requirements section 4.3).
 _SECRET_KEYS = frozenset({"api_key", "headers"})

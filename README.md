@@ -118,6 +118,18 @@ env_key = "OPENROUTER_API_KEY"                    # this backend's key, and only
 # query_params = { api-version = "2025-04-01-preview" }   # on every request (Azure)
 ```
 
+Each directory's instructions are `AGENTS.override.md` (your own, beside the
+shared file), else `FOUNDRY.md`, else `AGENTS.md`. As in codex, other names can
+be read where those are missing, and the budget the repository's files share
+changed (both from your own config only; a repository may only lower the
+budget):
+
+```toml
+[runtime]
+project_doc_fallback_filenames = ["CLAUDE.md", ".cursorrules"]
+project_doc_max_bytes = 32768      # characters; 0 reads none of the repository's
+```
+
 ## Commands
 
 | Command | What it does |

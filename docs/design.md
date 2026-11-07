@@ -189,7 +189,10 @@ async def run_turn(user_input):
   auto-allow/approval boundary] + [FOUNDRY.md/AGENTS.md: the user's own from
   the Foundry folder, then the repository's from its top down to the working
   directory (trust-gated, sharing a byte ceiling; D-019, delivered in M2,
-  layered in [D-041](decision-log.md))] + [environment context: OS/shell/cwd/
+  layered in [D-041](decision-log.md); in each directory `AGENTS.override.md`
+  over `FOUNDRY.md` over `AGENTS.md`, then the user's
+  `project_doc_fallback_filenames`, the ceiling `project_doc_max_bytes`,
+  [D-086](decision-log.md))] + [environment context: OS/shell/cwd/
   git status] + [conversation history]`.
 - The output budget: every tool output has a byte ceiling, and over it is
   truncated head+tail with a `[truncated: N bytes, artifact_id=...]` marker,

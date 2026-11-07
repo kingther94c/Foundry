@@ -149,17 +149,21 @@ def _remember_trust(home: Path, workspace: Path) -> None:
 
 
 def _confirm_trust(console: Console, home: Path, workspace: Path, *,
-                   interactive: bool = True) -> bool:
+                   interactive: bool = True, fallbacks: tuple[str, ...] = (),
+                   read_docs: bool = True) -> bool:
     """Trust-on-first-use before repository-supplied config or docs are read.
 
     Without a person to ask -- a headless run -- the answer is no. Prompting
     into a closed stdin would either hang or read EOF as consent.
+    ``fallbacks`` and ``read_docs`` are the user's project_doc settings
+    (D-086): a file read only by a fallback name is asked about too, and none
+    is when the user reads none.
     """
     if str(workspace) in _trusted_paths(home):
         return True
-    has_input = (workspace / ".foundry" / "config.toml").is_file() or bool(
-        repository_docs(workspace)  # from the repository's top down (D-041)
-    ) or (workspace / ".foundry" / "prompts").is_dir()  # custom prompts (D-039)
+    has_input = (workspace / ".foundry" / "config.toml").is_file() or (read_docs and bool(
+        repository_docs(workspace, fallbacks)  # from the repository's top down (D-041)
+    )) or (workspace / ".foundry" / "prompts").is_dir()  # custom prompts (D-039)
     if not has_input:
         return False
     if not interactive or not sys.stdin or not sys.stdin.isatty():
@@ -235,9 +239,16 @@ def build(workspace_path: Path, *, home: Path | None = None,
             "point it at a repository."
         )
 
-    trusted = _confirm_trust(console, home, workspace.root, interactive=interactive)
-    config = load_config(workspace.root if trusted else None, overrides=overrides, home=home,
-                         profile=profile, settings=settings)
+    # The user's own settings first: which files are instructions, and so
+    # whether there is anything to ask about, is theirs to say (D-086).
+    config = load_config(None, overrides=overrides, home=home, profile=profile,
+                         settings=settings)
+    trusted = _confirm_trust(console, home, workspace.root, interactive=interactive,
+                             fallbacks=config.project_doc_fallback_filenames,
+                             read_docs=config.project_doc_max_bytes > 0)
+    if trusted:
+        config = load_config(workspace.root, overrides=overrides, home=home,
+                             profile=profile, settings=settings)
 
     current = capture_baseline(workspace.root)
     state: JournalState | None = None
@@ -352,7 +363,9 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         **backend_kwargs,
     )
 
-    instructions = load_instructions(workspace.root, home, trusted=trusted)
+    instructions = load_instructions(workspace.root, home, trusted=trusted,
+                                     max_chars=config.project_doc_max_bytes,
+                                     fallbacks=config.project_doc_fallback_filenames)
     context = ContextManager(
         system_prompt=system_prompt(policy),
         project_doc=instructions.text,

@@ -366,7 +366,9 @@ The V1 rules:
   command precedence: specified in the task > declared in the repository file >
   chosen by the model. Since V2 the user's own file from the Foundry folder
   comes first, and the repository's are read from its top down to the working
-  directory ([D-041](decision-log.md)).
+  directory ([D-041](decision-log.md)). Which names are read (a local
+  `AGENTS.override.md` first, and the user's fallback names last) and how much
+  is the user's setting ([D-086](decision-log.md)).
 - **The honest position on "a corporate fixed DENY cannot be overridden"**
   (security critique #4): within an untampered installation, no runtime route
   (a task, an approval, a CLI flag) can relax a managed DENY -- that is

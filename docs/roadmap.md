@@ -260,6 +260,9 @@ What a codex user still notices day to day, next:
 46. ~~Retries you can see~~ -- each retry of a model request said before its
     wait, as codex's "Reconnecting...", journaled and counted; a spent quota
     not retried at all (landed, D-085).
+47. ~~Which files are instructions~~ -- `AGENTS.override.md`,
+    `project_doc_fallback_filenames` and `project_doc_max_bytes`, as codex's
+    (landed, D-086).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
