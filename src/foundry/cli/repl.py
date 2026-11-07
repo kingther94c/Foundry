@@ -40,6 +40,7 @@ from foundry.core.events import Notice, TerminalStatus
 from foundry.core.hooks import HOOKS_FILE, UNMATCHED_EVENTS, events_named
 from foundry.core.policy.engine import Mode, Verdict
 from foundry.core.prompts import doc_names, mode_line, system_prompt
+from foundry.core.resume import session_name
 from foundry.core.session import EventType, SessionStore
 from foundry.core.skills import LOAD_SKILL, REPOSITORY_SKILLS, YOURS
 from foundry.core.tools.base import ToolKind, truncate_middle
@@ -692,6 +693,33 @@ def _help(wiring: "Wiring", console: Console, arguments: str) -> None:
     return None
 
 
+def _resume_hint(name: str) -> str:
+    """How to resume a session by its name, quoted where a shell needs it."""
+    return (f"foundry resume {name}" if re.fullmatch(r"[\w.-]+", name)
+            else f'foundry resume "{name}"')
+
+
+def rename(wiring: "Wiring", console: Console, arguments: str) -> None:
+    """``/rename NAME``: the session's name, to list it by and resume it by
+    (D-125); alone, the name it has."""
+    if not arguments.strip():
+        if wiring.name:
+            console.print(f"this session is named {safe(wiring.name)}; "
+                          f"{safe(_resume_hint(wiring.name))} continues it", soft_wrap=True)
+        else:
+            console.print("[dim]this session has no name; /rename NAME gives it one[/dim]")
+        return
+    try:
+        name = session_name(arguments)
+    except ValueError as exc:
+        console.print(f"[yellow]{escape(str(exc))}[/yellow]")
+        return
+    wiring.session.append(EventType.RENAMED, {"name": name})
+    wiring.name = name
+    console.print(f"[dim]this session is now named {safe(name)}; "
+                  f"{safe(_resume_hint(name))} continues it[/dim]", soft_wrap=True)
+
+
 def _exit(wiring: "Wiring", console: Console, arguments: str) -> str:
     return _EXIT
 
@@ -707,6 +735,7 @@ def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
     used, limit = context.estimated_context_tokens(), context.max_context_tokens
     rows = [
         ("session", wiring.session.session_id + (" (resumed)" if wiring.resumed else "")),
+        *([("name", wiring.name)] if wiring.name else []),
         ("workspace", str(wiring.workspace.root)),
         ("model", f"{config.backend.model} ({config.backend.protocol}, profile "
                   f"{config.backend.name})"),
@@ -1349,6 +1378,8 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("review", "a read-only review of the uncommitted changes, a branch's or a "
             "commit's", _review, arguments="[--base REV | --commit REV] [focus]"),
     Command("init", "ask the model to write FOUNDRY.md for this repository", _init),
+    Command("rename", "name this session, to resume it by name; alone, its name", rename,
+            arguments="[NAME]"),
     Command("new", "end this session and start a fresh one", _new),
     Command("exit", "end the session", _exit),
     Command("quit", "end the session", _exit),

@@ -211,6 +211,8 @@ class JournalState:
     # What the user typed for a message that says more (D-108): (the message's
     # text, the words typed), for a resume to show the conversation as typed.
     typed: tuple[tuple[str, str], ...] = ()
+    # The name /rename last gave it (D-125), "" when none.
+    name: str = ""
 
 
 def _status(raw: Any) -> TerminalStatus:
@@ -298,8 +300,11 @@ def read_journal(path: Path) -> JournalState:
     plan_explanation = ""
     mode = ""
     switched_model = ""
+    name = ""
     for record in records:
-        if record.type == EventType.TOOL_RESULT and "plan" in record.payload:
+        if (named := _named(record)) is not None:
+            name = named
+        elif record.type == EventType.TOOL_RESULT and "plan" in record.payload:
             plan, plan_explanation = steps_from_payload(record.payload["plan"])
         elif record.type == EventType.MODE_CHANGE and isinstance(record.payload.get("to"), str):
             mode = record.payload["to"]
@@ -339,6 +344,7 @@ def read_journal(path: Path) -> JournalState:
         switched_model=switched_model,
         typed=tuple(typed),
         last_sent=_last_sent(records, load),
+        name=name,
     )
 
 
@@ -556,6 +562,58 @@ def same_path(a: str | Path, b: str | Path) -> bool:
     return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
 
 
+# A session's name (D-125): one line, short enough for a listing.
+MAX_NAME = 80
+
+
+def session_name(raw: str) -> str:
+    """``raw`` as a session's name, or ValueError saying why it cannot be
+    one. It must be typeable after `foundry resume`: one line, no control
+    character or double quote, not ``last`` and not an option."""
+    name = raw.strip()
+    if not name:
+        raise ValueError("a name cannot be empty")
+    if "\n" in name or "\r" in name:
+        raise ValueError("a name is one line")
+    if any(ord(c) < 32 or ord(c) == 127 or 0x80 <= ord(c) < 0xA0 for c in name):
+        raise ValueError("a name cannot hold a control character")
+    if '"' in name:
+        raise ValueError("a name cannot hold a double quote")
+    if len(name) > MAX_NAME:
+        raise ValueError(f"a name is at most {MAX_NAME} characters")
+    if name == "last":
+        raise ValueError("`last` already means the newest session")
+    if name.startswith("-"):
+        raise ValueError("a name cannot start with -, which starts an option")
+    return name
+
+
+def _named(record: JournalRecord) -> str | None:
+    name = record.payload.get("name")
+    return name if record.type == EventType.RENAMED and isinstance(name, str) else None
+
+
+def journal_name(journal: Path) -> str:
+    """The name /rename last gave the session, "" when it has none."""
+    name = ""
+    for record in SessionStore.read_records(journal):
+        if (named := _named(record)) is not None:
+            name = named
+    return name
+
+
+def named_session(sessions: Path, name: str, workspace: Path | None) -> str | None:
+    """The newest session of this workspace -- of any, for None -- that is
+    named ``name`` (D-125)."""
+    for entry in _workspace_sessions(sessions, workspace):
+        try:
+            if journal_name(entry / "events.jsonl") == name:
+                return entry.name
+        except (OSError, UnicodeDecodeError):
+            continue
+    return None
+
+
 def find_journal(sessions: Path, session_id: str) -> Path | None:
     """A session id is a name, not a path: ``../notes`` names nothing."""
     target = sessions / session_id / "events.jsonl"
@@ -567,13 +625,18 @@ def find_journal(sessions: Path, session_id: str) -> Path | None:
 
 
 def resolve_session(sessions: Path, session_id: str, workspace: Path) -> Path:
-    """The journal a resume names: an id, or ``last`` for this workspace's newest."""
+    """The journal a resume names: an id, ``last`` for this workspace's
+    newest, or the name /rename gave one of its sessions (D-125) -- an id
+    first, as codex looks."""
     if session_id == "last":
         latest = latest_session(sessions, workspace)
         if latest is None:
             raise ResumeError(f"no recorded session in {workspace}")
         session_id = latest
     journal = find_journal(sessions, session_id)
+    if journal is None:
+        named = named_session(sessions, session_id, workspace)
+        journal = find_journal(sessions, named) if named is not None else None
     if journal is None:
         raise ResumeError(f"no such session: {session_id}")
     return journal
@@ -623,25 +686,28 @@ class SessionSummary:
     in_use: bool
     # The workspace it was recorded in, for a list of every workspace's (D-088).
     workspace: str = ""
+    # The name /rename gave it (D-125).
+    name: str = ""
 
 
 def summarize(session_dir: Path) -> SessionSummary:
     """How the session ended (``interrupted`` without a record of it), the
     first message the user sent, and whether a store holds it now."""
     journal = session_dir / "events.jsonl"
-    first_task = ""
+    first_task = name = ""
     try:
         for record in SessionStore.read_records(journal):
-            if record.type == EventType.USER_INPUT:
+            if record.type == EventType.USER_INPUT and not first_task:
                 said = record.payload.get("typed")
                 first_task = (said if isinstance(said, str)
                               else str(record.payload.get("text", "")))
-                break
+            elif (named := _named(record)) is not None:
+                name = named
         status = SessionStore.terminal_status(journal)
     except (OSError, UnicodeDecodeError):
         status = TerminalStatus.INTERRUPTED
     return SessionSummary(session_dir.name, status, first_task, is_locked(session_dir),
-                          recorded_workspace(session_dir))
+                          recorded_workspace(session_dir), name)
 
 
 def recent_sessions(sessions: Path, workspace: Path | None, limit: int) -> list[SessionSummary]:

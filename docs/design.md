@@ -568,7 +568,8 @@ class ModelBackend(Protocol):
   with `hook: "PermissionRequest"`, [D-119](decision-log.md); a background
   hook's runs as they are heard, with `async: true`, and a note it gave in a
   task as `user_input` with `hook` naming its event, [D-120](decision-log.md);
-  around each try of a model request, [D-122](decision-log.md)).
+  around each try of a model request, [D-122](decision-log.md); `renamed` for
+  `/rename`, the latest one the session's name, [D-125](decision-log.md)).
   An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).

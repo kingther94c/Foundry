@@ -86,6 +86,7 @@ from foundry.core.resume import (
     JournalState,
     find_journal,
     latest_session,
+    named_session,
     outside_changes,
     read_journal,
     recent_sessions,
@@ -127,6 +128,8 @@ class Wiring:
     outside: frozenset[str] = frozenset()
     # Prepended to the first task after a resume, then cleared.
     note: str = ""
+    # The name /rename gave the session (D-125), "" when none.
+    name: str = ""
     # For /new, and the custom prompts the REPL offers (D-039).
     home: Path | None = None
     trusted: bool = False
@@ -482,7 +485,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
             "foundry_version": __version__,
             "legacy": state.legacy,
         })
-        wiring.resumed, wiring.outside = state, outside
+        wiring.resumed, wiring.outside, wiring.name = state, outside, state.name
         wiring.note = resume_note(state, outside, config.mode.value)
         runtime.plan, runtime.plan_explanation = state.plan, state.plan_explanation
     return wiring
@@ -682,8 +685,9 @@ def _preview(task: str) -> str:
 def _session_line(summary) -> str:
     style = "green" if summary.status is TerminalStatus.COMPLETED else "yellow"
     busy = "  [cyan]in use[/cyan]" if summary.in_use else ""
+    named = f"[bold]{safe(summary.name)}[/bold]  " if summary.name else ""
     return (f"{summary.session_id}  [{style}]{summary.status.value}[/{style}]{busy}  "
-            f"[dim]{safe(_preview(summary.first_task))}[/dim]")
+            f"{named}[dim]{safe(_preview(summary.first_task))}[/dim]")
 
 
 def pick_session(console, workspace: Path | None) -> str | None:
@@ -747,8 +751,13 @@ def _choose_resume(args: argparse.Namespace, console) -> int | None:
             return EXIT_CODES[TerminalStatus.FAILED]
     journal = find_journal(sessions, args.resume)
     if journal is None:
-        console.print(f"[red]no such session: {safe(args.resume)}[/red]")
-        return EXIT_CODES[TerminalStatus.FAILED]
+        # A name /rename gave it, in any workspace (D-125).
+        named = named_session(sessions, args.resume, None)
+        journal = find_journal(sessions, named) if named is not None else None
+        if journal is None:
+            console.print(f"[red]no such session: {safe(args.resume)}[/red]")
+            return EXIT_CODES[TerminalStatus.FAILED]
+        args.resume = named
     recorded = recorded_workspace(journal.parent)
     if not recorded:
         console.print(f"[red]session {safe(args.resume)} does not say where it was "
@@ -1049,6 +1058,9 @@ def cmd_sessions(args: argparse.Namespace) -> int:
         # read whatever it landed on and print a traceback when the lines were
         # not journal records.
         target = find_journal(root, args.session_id)
+        if target is None:
+            named = named_session(root, args.session_id, None)
+            target = find_journal(root, named) if named is not None else None
         if target is None:
             console.print(f"[red]no such session: {args.session_id}[/red]")
             return 1
@@ -1748,7 +1760,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     resume = sub.add_parser("resume", help="continue a recorded session")
     resume.add_argument("resume", nargs="?", default=None, metavar="session",
-                        help="the session id, or last for the newest in this workspace "
+                        help="the session id or name, or last for the newest in this workspace "
                              "(default: at a terminal, pick from the recent ones; "
                              "otherwise last)")
     resume.add_argument("task", nargs="?",
@@ -1768,7 +1780,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     undo = sub.add_parser("undo", help="revert the files a recorded session patched")
     undo.add_argument("session", nargs="?", default="last",
-                      help="the session id (default: last, the newest in this workspace)")
+                      help="the session id or name (default: last, the newest in this "
+                           "workspace)")
     undo.add_argument("--last", action="store_true",
                       help="only the session's newest patch")
     undo.add_argument("--yes", action="store_true", help="do not ask first")
@@ -1814,7 +1827,7 @@ def build_parser() -> argparse.ArgumentParser:
     logout.set_defaults(func=cmd_logout)
 
     sessions = sub.add_parser("sessions", help="list or show recorded sessions")
-    sessions.add_argument("session_id", nargs="?")
+    sessions.add_argument("session_id", nargs="?", help="a session id or name: its records")
     sessions.add_argument("--limit", type=int, default=20)
     sessions.set_defaults(func=cmd_sessions)
 

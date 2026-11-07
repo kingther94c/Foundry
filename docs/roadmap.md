@@ -357,6 +357,8 @@ What a codex user still notices day to day, next:
     clipboard, as it was shown (landed, D-123).
 85. ~~`/export [PATH]`~~ -- the whole conversation as Markdown, from the
     journal, on the clipboard or in a new file (landed, D-124).
+86. ~~`/rename [NAME]`~~ -- a session's name, shown in its listings and taken
+    wherever its id is, `foundry resume NAME` (landed, D-125).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

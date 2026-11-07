@@ -79,6 +79,8 @@ class EventType:
     # The user's hooks ran at a tool call (D-115): each one's command, how it
     # ended and what it decided.
     HOOK = "hook"
+    # The user named the session with /rename (D-125); the latest name holds.
+    RENAMED = "renamed"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced
