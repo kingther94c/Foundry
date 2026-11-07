@@ -1157,9 +1157,13 @@ def cmd_exec(args: argparse.Namespace) -> int:
 
         wiring.runtime.events.subscribe(as_json)
     # First, so a script knows what to resume before anything can go wrong.
+    backend = wiring.config.backend
     wiring.runtime.events.emit(SessionStarted(
         session_id=wiring.session.session_id, workspace=str(wiring.workspace.root),
-        model=wiring.config.backend.model, resumed=wiring.resumed is not None))
+        model=backend.model, resumed=wiring.resumed is not None,
+        protocol=backend.protocol, profile=backend.name,
+        mode=wiring.runtime.policy.mode.value, effort=backend.effort,
+        reasoning_summary=backend.reasoning_summary, verbosity=backend.verbosity))
     _announce_resume(wiring)
     for raw in args.image or []:
         if not _attach(wiring, console, raw):

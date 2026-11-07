@@ -95,6 +95,20 @@ def safe(text: str) -> str:
     return escape(sanitize(text))
 
 
+def run_settings(event: SessionStarted) -> list[tuple[str, str]]:
+    """What an unattended run runs with (D-092), as codex's exec lists its
+    settings before it starts: nothing for an event that does not say."""
+    if not event.protocol:
+        return []
+    rows = [("workspace", event.workspace),
+            ("model", f"{event.model} ({event.protocol}, profile {event.profile})"),
+            ("mode", event.mode),
+            ("effort", event.effort or "the API's default")]
+    rows += [(label, value) for label, value in (("summary", event.reasoning_summary),
+                                                 ("verbosity", event.verbosity)) if value]
+    return rows
+
+
 # Backslashes, so rich prints the brackets instead of reading them as tags.
 _STEP_MARK = {
     StepStatus.COMPLETED: "[green]\\[x][/green]",
@@ -328,6 +342,9 @@ class Renderer:
         elif isinstance(event, SessionStarted):
             again = "resumed " if event.resumed else ""
             self.console.print(f"[dim]{again}session {safe(event.session_id)}[/dim]")
+            for label, value in run_settings(event):
+                # Not wrapped: a path cut in two cannot be copied out of a log.
+                self.console.print(f"[dim]  {label:<10}{safe(value)}[/dim]", soft_wrap=True)
         elif isinstance(event, TurnComplete):
             self._worked()      # the text already streamed
 

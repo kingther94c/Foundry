@@ -273,6 +273,9 @@ What a codex user still notices day to day, next:
     `model_verbosity`, on both OpenAI shapes (landed, D-090).
 52. ~~A setting nobody reads is an error in the files too~~ -- with where it
     lives here, and codex's names told Foundry's (landed, D-091).
+53. ~~An unattended run says what it runs with~~ -- model, protocol, profile,
+    mode and effort under the session's line, as codex's exec opens (landed,
+    D-092).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

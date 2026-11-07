@@ -251,6 +251,14 @@ class SessionStarted:
     workspace: str
     model: str
     resumed: bool = False
+    # What the run runs with (D-092), as codex's exec opens with its
+    # settings: in a CI log, which endpoint, mode and effort produced it.
+    protocol: str = ""
+    profile: str = ""
+    mode: str = ""
+    effort: str | None = None
+    reasoning_summary: str | None = None
+    verbosity: str | None = None
     kind: Literal["session_started"] = "session_started"
 
 
