@@ -155,7 +155,7 @@ def test_taking_it_down_stops_its_thread(renderer):
 def test_a_task_that_raises_leaves_no_line_up():
     renderer = Renderer(console=_terminal())
 
-    def run_turn(text, images):
+    def run_turn(text, images, typed=None):
         renderer.work("working")
         raise RuntimeError("the backend fell over")
 

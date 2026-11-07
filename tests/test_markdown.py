@@ -197,7 +197,7 @@ def test_the_last_line_is_printed_when_the_task_settles():
 def test_a_task_that_fails_mid_answer_still_shows_what_came():
     renderer = Renderer(console=_terminal(color=False))
 
-    def run_turn(text, images):
+    def run_turn(text, images, typed=None):
         renderer.handle(MessageDelta(text="I found the **cause**"))
         raise RuntimeError("the connection dropped")
 

@@ -33,6 +33,7 @@ foundry/
 │                            #   block between lines of three quotes is one message (D-052);
 │                            #   markdown.py, the model's answer as Markdown a line at a time (D-070);
 │                            #   file_links.py, a cited file as a link to it in the editor (D-106);
+│                            #   transcript.py, a resumed session's conversation shown again (D-108);
 │                            #   mcp_server.py, Foundry as an MCP server over stdio (D-103)
 ├── prompts/                 # versioned assets: the base system prompt, the patch format description, the permissions section template
 └── __main__.py              # entry point: bootstraps in UTF-8 mode
@@ -518,7 +519,8 @@ class ModelBackend(Protocol):
   validation_claim / git_baseline / termination / user_input / tool_reply /
   resumed / undo / mode_change / compacted / model_change / notified /
   user_command / rewound / effort_change / model_retry` (`user_input`, `tool_reply` and
-  `resumed` added for resume, [D-035](decision-log.md); `undo` for undo,
+  `resumed` added for resume, [D-035](decision-log.md), and `user_input.typed`,
+  what the user typed when the message says more, [D-108](decision-log.md); `undo` for undo,
   [D-036](decision-log.md); `mode_change` for plan approval,
   [D-038](decision-log.md); `compacted` for compaction, whose own request and
   response carry `purpose: "compact"`, [D-040](decision-log.md);

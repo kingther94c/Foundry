@@ -311,6 +311,9 @@ What a codex user still notices day to day, next:
 68. ~~`@name` finds the file~~ -- `@app.py` attaches `src/app.py` when it is
     the only file git knows by that name, as codex's @ search (landed,
     D-107).
+69. ~~A resumed session shows its conversation~~ -- what was typed, the
+    answers and each tool call's line, before the prompt, as codex's resume
+    (landed, D-108).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

@@ -208,6 +208,9 @@ class JournalState:
     # The last request of the conversation as sent (D-048): a resume compares
     # its first request with it.
     last_sent: tuple[Message, ...] = ()
+    # What the user typed for a message that says more (D-108): (the message's
+    # text, the words typed), for a resume to show the conversation as typed.
+    typed: tuple[tuple[str, str], ...] = ()
 
 
 def _status(raw: Any) -> TerminalStatus:
@@ -260,6 +263,7 @@ def read_journal(path: Path) -> JournalState:
     usage = Usage()
     executed: set[str] = set()
     first_task = ""
+    typed: list[tuple[str, str]] = []
     for record in records:
         if record.type == EventType.RESUMED:
             status, reason = TerminalStatus.INTERRUPTED, ""
@@ -272,8 +276,13 @@ def read_journal(path: Path) -> JournalState:
                                   _int(record.payload.get("cached_input_tokens")))
         elif record.type == EventType.TOOL_RESULT:
             executed.add(str(record.payload.get("call_id")))
-        elif record.type == EventType.USER_INPUT and not first_task:
-            first_task = str(record.payload.get("text", ""))
+        elif record.type == EventType.USER_INPUT:
+            text = str(record.payload.get("text", ""))
+            said = record.payload.get("typed")
+            if isinstance(said, str):
+                typed.append((text, said))
+            if not first_task:
+                first_task = said if isinstance(said, str) else text
     if not first_task:
         first_task = next((b.text for m in history if m.role is Role.USER
                            for b in m.blocks if isinstance(b, TextBlock)), "")
@@ -328,6 +337,7 @@ def read_journal(path: Path) -> JournalState:
         plan_explanation=plan_explanation,
         mode=mode,
         switched_model=switched_model,
+        typed=tuple(typed),
         last_sent=_last_sent(records, load),
     )
 
@@ -623,7 +633,9 @@ def summarize(session_dir: Path) -> SessionSummary:
     try:
         for record in SessionStore.read_records(journal):
             if record.type == EventType.USER_INPUT:
-                first_task = str(record.payload.get("text", ""))
+                said = record.payload.get("typed")
+                first_task = (said if isinstance(said, str)
+                              else str(record.payload.get("text", "")))
                 break
         status = SessionStore.terminal_status(journal)
     except (OSError, UnicodeDecodeError):

@@ -299,9 +299,12 @@ class AgentRuntime:
 
     # -- the loop ---------------------------------------------------------
 
-    def run_turn(self, user_input: str, images: tuple = ()) -> TurnOutcome:
-        """``images`` are ImageBlocks the user attached to this message (D-045)."""
-        outcome = self._run_turn(user_input, images)
+    def run_turn(self, user_input: str, images: tuple = (), *,
+                 typed: str | None = None) -> TurnOutcome:
+        """``images`` are ImageBlocks the user attached to this message (D-045);
+        ``typed`` is what the user typed for it, when the message says more --
+        a command's prompt, a note -- journaled for a resume to show (D-108)."""
+        outcome = self._run_turn(user_input, images, typed)
         self._notify(user_input, outcome)
         return outcome
 
@@ -342,13 +345,15 @@ class AgentRuntime:
             return
         self._journal(EventType.NOTIFIED, {"type": kind, "program": program, "pid": pid})
 
-    def _run_turn(self, user_input: str, images: tuple) -> TurnOutcome:
+    def _run_turn(self, user_input: str, images: tuple, typed: str | None) -> TurnOutcome:
         # The request records carry every message the model was sent; this is
         # for input that never reached one, which a resumed session still owes
         # an answer to.
         record: dict[str, Any] = {"text": user_input}
         if images:
             record["images"] = [self._block_payload(i, self._store_image) for i in images]
+        if typed is not None and typed != user_input:
+            record["typed"] = typed
         self._journal(EventType.USER_INPUT, record)
         self.context.append_user(user_input, tuple(images))
         self._finish = None

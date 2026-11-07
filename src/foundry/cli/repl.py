@@ -18,7 +18,7 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -73,6 +73,9 @@ class RunTask:
     text: str
     # Set: the policy refuses every change while this task runs (/review).
     read_only: str = ""
+    # What the user typed for it -- the line, or the command (D-108); set
+    # by the prompt, which has it.
+    typed: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,7 +202,8 @@ def run_task(wiring: "Wiring", task: RunTask):
     policy = wiring.runtime.policy
     policy.read_only = task.read_only
     try:
-        return wiring.runtime.run_turn(with_note(wiring, task.text), take_images(wiring))
+        return wiring.runtime.run_turn(with_note(wiring, task.text), take_images(wiring),
+                                       typed=task.typed or None)
     except KeyboardInterrupt:
         # Ctrl+C stops the turn, not the session, as codex's does (D-062); a
         # second one, while this is said, still ends the session.
@@ -340,7 +344,7 @@ def repl(wiring: "Wiring", console: Console,
             continue
         parsed = parse_command(line)
         if parsed is None:
-            task: object = RunTask(attach_mentions(wiring, console, line))
+            task: object = RunTask(attach_mentions(wiring, console, line), typed=line)
         else:
             task = dispatch(wiring, console, *parsed)
             if task == _EXIT:
@@ -349,6 +353,7 @@ def repl(wiring: "Wiring", console: Console,
                 return NEW_SESSION
             if not isinstance(task, RunTask):
                 continue
+            task = replace(task, typed=line)
         outcome = run_task(wiring, task)
         # The conversation goes on, so what the task left is answered (D-063).
         wiring.runtime.answer_left_calls()

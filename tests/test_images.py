@@ -475,7 +475,7 @@ def test_slash_image_queues_an_image_for_the_next_message(repo, tmp_path, monkey
         assert "goes with your next message" in out.getvalue()
         sent = []
         monkeypatch.setattr(type(wiring.runtime), "run_turn",
-                            lambda self, text, images=(): sent.append(images) or None)
+                            lambda self, text, images=(), typed=None: sent.append(images) or None)
         run_task(wiring, RunTask("what is it?"))
         run_task(wiring, RunTask("and this?"))
         assert len(sent[0]) == 1 and sent[1] == ()

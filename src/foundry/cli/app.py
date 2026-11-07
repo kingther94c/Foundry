@@ -27,6 +27,7 @@ from foundry.cli.codex_flags import hints as codex_hints
 from foundry.cli.completion import SHELLS
 from foundry.cli.completion import script as completion_script
 from foundry.cli.render import Renderer, safe
+from foundry.cli.transcript import show_conversation
 from foundry.cli.repl import NEW_SESSION
 from foundry.cli.repl import attach as _attach
 from foundry.cli.repl import take_images as _take_images
@@ -731,6 +732,9 @@ def cmd_session(args: argparse.Namespace) -> int:
     wiring.renderer.show_disclosure(str(wiring.workspace.root),
                                     wiring.config.backend.model,
                                     wiring.config.mode.value)
+    if _interactive():
+        # Where the conversation was, as codex's resume shows it (D-108).
+        show_conversation(wiring)
     _announce_resume(wiring)
     for raw in getattr(args, "image", None) or []:
         if not _attach(wiring, console, raw):
@@ -742,7 +746,7 @@ def cmd_session(args: argparse.Namespace) -> int:
             # Nobody at a terminal to go on with (D-078): the task, then the
             # end, its exit code the task's.
             outcome = wiring.runtime.run_turn(_with_note(wiring, args.task),
-                                              _take_images(wiring))
+                                              _take_images(wiring), typed=args.task)
             # Only the finish gate can produce 'completed'. A turn that simply
             # ended is unfinished work, not success.
             status = outcome.status or TerminalStatus.PARTIAL

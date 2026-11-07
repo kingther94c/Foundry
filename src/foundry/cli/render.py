@@ -284,6 +284,12 @@ class Renderer:
             return None
         return file_link(code, self.workspace, self.file_opener)
 
+    def show_answer(self, text: str) -> None:
+        """An answer given whole -- a resumed session's, shown again (D-108)
+        -- as it would have streamed."""
+        self._text(text)
+        self._end_text()
+
     def _end_text(self) -> None:
         """The text has ended: the rest of it, and the line it was on."""
         if self._markdown is not None:
