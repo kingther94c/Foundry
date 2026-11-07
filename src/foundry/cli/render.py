@@ -373,7 +373,8 @@ class Renderer:
                 f"down to {event.tokens_after:,}[/dim]")
         elif isinstance(event, SessionStarted):
             again = "resumed " if event.resumed else ""
-            self.console.print(f"[dim]{again}session {safe(event.session_id)}[/dim]")
+            kept = " (ephemeral: not kept)" if event.ephemeral else ""
+            self.console.print(f"[dim]{again}session {safe(event.session_id)}{kept}[/dim]")
             for label, value in run_settings(event):
                 # Not wrapped: a path cut in two cannot be copied out of a log.
                 self.console.print(f"[dim]  {label:<10}{safe(value)}[/dim]", soft_wrap=True)

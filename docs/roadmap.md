@@ -372,6 +372,8 @@ What a codex user still notices day to day, next:
 92. ~~`foundry review`~~ -- `--uncommitted`, `--base`, `--commit [--title]`
     or instructions, headless and read-only, as `codex review` (landed,
     D-131).
+93. ~~`exec --ephemeral`~~ -- a run that keeps no record once it ends
+    (landed, D-132).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

@@ -654,6 +654,9 @@ class ModelBackend(Protocol):
 - **Side question** ([D-129](decision-log.md)). `/side`'s question and
   answer are followed by a `rewound` record keeping the history from before
   them, so a resume rebuilds the conversation without them.
+- **Ephemeral** ([D-132](decision-log.md)). `exec --ephemeral` writes its
+  journal in a `foundry-ephemeral-*` folder in the system's temporary folder
+  instead of `~/.foundry/sessions`, and removes it as the session closes.
 - **Archive** ([D-128](decision-log.md)). An archived session's folder is
   moved whole to `~/.foundry/archived_sessions/<id>`, where no list or lookup
   reads; unarchiving moves it back. A session a store holds is neither moved

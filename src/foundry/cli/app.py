@@ -15,6 +15,7 @@ import dataclasses
 import json
 import os
 import sys
+import tempfile
 from enum import Enum
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -144,6 +145,9 @@ class Wiring:
     name: str = ""
     # The fork /fork made of it, for the loop to go on in (D-126).
     forked: str = ""
+    # exec --ephemeral (D-132): the folder its journal is in, removed as it
+    # closes; None for a session that is kept.
+    ephemeral: Path | None = None
     # For /new, and the custom prompts the REPL offers (D-039).
     home: Path | None = None
     trusted: bool = False
@@ -256,9 +260,12 @@ def _rule_writer(home: Path, policy: PolicyEngine):
 def build(workspace_path: Path, *, home: Path | None = None,
           overrides: dict | None = None, console: Console | None = None,
           interactive: bool = True, resume: str | None = None,
-          profile: str | None = None, settings: dict | None = None) -> Wiring:
+          profile: str | None = None, settings: dict | None = None,
+          ephemeral: bool = False) -> Wiring:
     """``resume`` names a recorded session to continue: an id, or ``last``.
-    ``profile`` and ``settings`` come from ``--profile`` and ``-c`` (D-042)."""
+    ``profile`` and ``settings`` come from ``--profile`` and ``-c`` (D-042).
+    ``ephemeral``: the journal goes in a folder of its own, outside the
+    sessions, and is removed as the session closes (D-132)."""
     console = console or Console()
     home = home or user_dir()
 
@@ -288,9 +295,12 @@ def build(workspace_path: Path, *, home: Path | None = None,
     current = capture_baseline(workspace.root)
     state: JournalState | None = None
     outside: frozenset[str] = frozenset()
+    discard: Path | None = None
     if resume is None:
         baseline = current
-        session = SessionStore(home / "sessions", redactor=default_redactor())
+        if ephemeral:
+            discard = Path(tempfile.mkdtemp(prefix="foundry-ephemeral-"))
+        session = SessionStore(discard or home / "sessions", redactor=default_redactor())
         session.write_header(workspace=str(workspace.root), profile=config.backend.name,
                              model=config.backend.model, foundry_version=__version__)
         session.append("git_baseline", baseline.as_payload())
@@ -300,11 +310,22 @@ def build(workspace_path: Path, *, home: Path | None = None,
         # what it changed, and its system prompt, are relative to that.
         baseline = state.baseline
     try:
-        return _assemble(workspace, config, trusted, baseline, session, state, outside,
-                         home=home, console=console)
+        wiring = _assemble(workspace, config, trusted, baseline, session, state, outside,
+                           home=home, console=console)
     except BaseException:
         session.close()
+        _discard(discard)
         raise
+    wiring.ephemeral = discard
+    return wiring
+
+
+def _discard(folder: Path | None) -> None:
+    """An ephemeral session's journal folder, removed (D-132). A file still
+    held open -- a hook's process outliving the run -- is left for the
+    system's temporary-file cleanup rather than failing the run's exit."""
+    if folder is not None:
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def _reopen(sessions: Path, session_id: str, root: Path,
@@ -614,6 +635,7 @@ def _close(wiring: Wiring, status: TerminalStatus, reason: str) -> None:
         try:
             wiring.session.close()
         finally:
+            _discard(wiring.ephemeral)
             if wiring.mcp is not None:
                 wiring.mcp.close()
 
@@ -1308,7 +1330,8 @@ def announce_start(wiring: Wiring) -> None:
         model=backend.model, resumed=wiring.resumed is not None,
         protocol=backend.protocol, profile=backend.name,
         mode=wiring.runtime.policy.mode.value, effort=backend.effort,
-        reasoning_summary=backend.reasoning_summary, verbosity=backend.verbosity))
+        reasoning_summary=backend.reasoning_summary, verbosity=backend.verbosity,
+        ephemeral=wiring.ephemeral is not None))
     _announce_resume(wiring)
 
 
@@ -1396,6 +1419,10 @@ def cmd_exec(args: argparse.Namespace, read_only: str = "") -> int:
     if args.task is None and args.resume is None:
         console.print("[red]exec needs a task, or --resume SESSION to continue one[/red]")
         return 2
+    if args.ephemeral and args.resume is not None:
+        console.print("[red]--ephemeral starts a session that is not kept; it cannot "
+                      "continue one[/red]")
+        return 2
     if args.task == "-":
         try:
             args.task = _task_from_stdin()
@@ -1423,7 +1450,7 @@ def cmd_exec(args: argparse.Namespace, read_only: str = "") -> int:
         # dont_ask unless --mode chose plan or accept_edits; a configured mode
         # never decides how much an unattended run may do.
         wiring = build(Path(args.workspace).resolve(), console=console, interactive=False,
-                       resume=args.resume,
+                       resume=args.resume, ephemeral=args.ephemeral,
                        **_config_args(args, mode=Mode(args.mode or Mode.DONT_ASK.value)))
     except FoundryError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -1944,6 +1971,12 @@ def _config_flags(parser: argparse.ArgumentParser, *, modes: tuple[Mode, ...] = 
                         help="a [profiles.<name>] table from your config.toml")
 
 
+def _ephemeral_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--ephemeral", action="store_true",
+                        help="keep no record of the run once it ends: nothing to resume, "
+                             "nothing in foundry sessions")
+
+
 def _image_flag(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-i", "--image", action="append", metavar="PATH",
                         help="attach an image to the first task (repeatable)")
@@ -2044,6 +2077,7 @@ def build_parser() -> argparse.ArgumentParser:
                               "defaults to carrying on where it stopped")
     execute.add_argument("-o", "--output-last-message", metavar="FILE",
                          help="write the run's final summary or reply to FILE")
+    _ephemeral_flag(execute)
     execute.add_argument("--output-schema", metavar="FILE",
                          help="a JSON Schema the run's result must match; the result is "
                               "printed as JSON, and written by -o")
@@ -2067,6 +2101,7 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--json", action="store_true", help="emit the event stream as JSONL")
     review.add_argument("-o", "--output-last-message", metavar="FILE",
                         help="write the review to FILE")
+    _ephemeral_flag(review)
     # Read-only whatever the mode; dont_ask, as nobody is there to approve.
     _config_flags(review, modes=(Mode.DONT_ASK,))
     review.set_defaults(func=cmd_review)

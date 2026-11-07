@@ -259,6 +259,8 @@ class SessionStarted:
     effort: str | None = None
     reasoning_summary: str | None = None
     verbosity: str | None = None
+    # Not kept once the run ends (D-132): there is nothing to resume.
+    ephemeral: bool = False
     kind: Literal["session_started"] = "session_started"
 
 
