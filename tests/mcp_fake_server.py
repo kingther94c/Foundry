@@ -130,6 +130,8 @@ for line in sys.stdin:
                             for r in replies) + " | "
         if MODE == "big":
             text(mid, "x" * 200_000)
+        elif MODE == "cwd":
+            text(mid, os.getcwd())
         elif name == "echo":
             text(mid, pong + args["text"])
         elif name == "add.numbers":

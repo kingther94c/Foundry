@@ -316,6 +316,9 @@ What a codex user still notices day to day, next:
     (landed, D-108).
 70. ~~The working line after a reasoning summary~~ -- back up, saying the
     summary's title, as codex's status line (landed, D-109).
+71. ~~codex's names in an MCP server's table~~ -- `startup_timeout_sec`,
+    `tool_timeout_sec` and a started server's `cwd`, so a table copied from
+    codex loads (landed, D-110).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

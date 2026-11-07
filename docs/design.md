@@ -417,7 +417,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   result parses to the old settings with exactly that server added or gone.
   `foundry mcp get NAME` ([D-105](decision-log.md)) shows one in full, a
   value whose name looks like a credential's -- in `env`, an option, a
-  query -- as `[hidden]` and the rest through the redactor.
+  query -- as `[hidden]` and the rest through the redactor. An entry takes
+  codex's own names ([D-110](decision-log.md)): `startup_timeout_sec` and
+  `tool_timeout_sec` for the `_s` keys (one of the two given), and `cwd`, an
+  absolute folder a started server runs in instead of the workspace, checked
+  when it starts.
 - `foundry mcp-server` ([D-103](decision-log.md), cli/mcp_server.py): Foundry
   as an MCP server over stdio. Each `tools/call` runs on a thread of its own,
   in a session `build()` makes and `unattended()` leaves with nobody to ask

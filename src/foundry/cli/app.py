@@ -1381,6 +1381,8 @@ def _mcp_get(args: argparse.Namespace, console: Console) -> int:
         import subprocess
 
         lines.append(("args", subprocess.list2cmdline(shown["args"])))
+    if shown["cwd"]:
+        lines.append(("cwd", shown["cwd"]))
     if shown["env"]:
         lines.append(("env", ", ".join(f"{key}={value}" for key, value in shown["env"].items())))
     if server.env_vars:
@@ -1405,6 +1407,7 @@ def _shown_settings(server, scrub) -> dict[str, Any]:
     """The settings the listing leaves out, as `mcp get` shows them."""
     return {"command": scrub(server.command) if server.command else None,
             "args": _shown_args(server.args, scrub),
+            "cwd": scrub(server.cwd) if server.cwd else None,
             "env": {key: HIDDEN if looks_like_credential(key) else scrub(value)
                     for key, value in server.env},
             "url": _shown_url(server.url, scrub) if server.url else None}

@@ -205,10 +205,14 @@ class StdioClient(_Protocol):
         program = find_program(self.server.command, env)
         if program is None:
             raise McpError(f"{self.server.command!r} was not found on PATH")
+        # The entry's own folder, as codex's cwd (D-110), or the workspace.
+        cwd = Path(self.server.cwd) if self.server.cwd else self.cwd
+        if not cwd.is_dir():
+            raise McpError(f"its cwd {cwd} is not a folder")
         self._job = ProcessJob()
         try:
             self._process = subprocess.Popen(
-                [program, *self.server.args], cwd=self.cwd, env=env,
+                [program, *self.server.args], cwd=cwd, env=env,
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 creationflags=(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW) if IS_WINDOWS else 0,
                 start_new_session=not IS_WINDOWS,

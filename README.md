@@ -184,6 +184,8 @@ env_vars = ["DOCS_TOKEN"]   # passed through by name; secrets never go in the fi
 # read_only = true          # you vouch it changes nothing: offered in plan mode too
 # enabled_tools = ["search", "fetch"]   # only these of its tools (by the server's names)
 # disabled_tools = ["delete_page"]      # never these
+# cwd = "C:/servers/docs"   # the folder it runs in (absolute); the workspace if not said
+# tool_timeout_sec = 120   # codex's name for tool_timeout_s; startup_timeout_sec too
 
 [mcp_servers.tickets]
 url = "https://mcp.example.com/mcp"     # a server already running, over streamable HTTP

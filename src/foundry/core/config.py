@@ -189,9 +189,14 @@ class BackendConfig:
 _SERVER_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}\Z")
 _MCP_KEYS = frozenset({"command", "args", "env", "env_vars", "startup_timeout_s",
                        "tool_timeout_s", "read_only", "enabled", "enabled_tools",
-                       "disabled_tools", "url", "bearer_token_env_var"})
+                       "disabled_tools", "url", "bearer_token_env_var", "cwd",
+                       "startup_timeout_sec", "tool_timeout_sec"})
 # What only a server Foundry starts can have (D-081).
-_PROGRAM_KEYS = ("command", "args", "env", "env_vars")
+_PROGRAM_KEYS = ("command", "args", "env", "env_vars", "cwd")
+# A server's timeouts, under Foundry's name and codex's (D-110), with how long
+# each may be and is unless said.
+_MCP_TIMEOUTS = (("startup_timeout_s", "startup_timeout_sec", 300, 20),
+                 ("tool_timeout_s", "tool_timeout_sec", 3600, 120))
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 
 
@@ -223,6 +228,9 @@ class McpServerConfig:
     # The token itself is never in the config.
     url: str = ""
     bearer_token_env_var: str = ""
+    # The folder a server Foundry starts runs in (D-110), as codex's cwd:
+    # absolute; the workspace when not said.
+    cwd: str = ""
 
     def offers(self, remote: str) -> bool:
         """Whether the user's configuration lets this tool be offered."""
@@ -390,15 +398,24 @@ def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
                 if not isinstance(entry[flag], bool):
                     raise ConfigError(f"{where}.{flag} must be true or false")
                 flags[flag] = entry[flag]
+        timeouts = {}
+        for ours, theirs, ceiling, default in _MCP_TIMEOUTS:
+            if ours in entry and theirs in entry:
+                raise ConfigError(f"{where}: {ours} and {theirs} are one setting, Foundry's "
+                                  "name and codex's; give one")
+            key = theirs if theirs in entry else ours
+            timeouts[ours] = _seconds(entry.get(key, default), f"{where}.{key}", ceiling)
+        cwd = entry.get("cwd", "")
+        if not isinstance(cwd, str) or ("cwd" in entry and not Path(cwd).is_absolute()):
+            raise ConfigError(f"{where}.cwd must be the absolute path of the folder the "
+                              "server runs in")
         servers[name] = McpServerConfig(
             name=name, command=command.strip(), url=url, bearer_token_env_var=token,
             args=_strings(entry.get("args", []), f"{where}.args"),
             env=tuple(sorted(env.items())),
             env_vars=_strings(entry.get("env_vars", []), f"{where}.env_vars"),
-            startup_timeout_s=_seconds(entry.get("startup_timeout_s", 20),
-                                       f"{where}.startup_timeout_s", 300),
-            tool_timeout_s=_seconds(entry.get("tool_timeout_s", 120),
-                                    f"{where}.tool_timeout_s", 3600),
+            cwd=cwd,
+            **timeouts,
             enabled_tools=(_strings(entry["enabled_tools"], f"{where}.enabled_tools")
                            if "enabled_tools" in entry else None),
             disabled_tools=_strings(entry.get("disabled_tools", []),
