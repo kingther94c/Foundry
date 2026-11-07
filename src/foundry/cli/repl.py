@@ -981,6 +981,11 @@ def show_mcp(wiring: "Wiring", console: Console, arguments: str = "") -> None:
                 about = about[:MCP_DESCRIPTION_SHOWN - 3].rstrip() + "..."
             console.print(f"  {escape(tool_name)} [dim]{kind}[/dim] {escape(about)}",
                           soft_wrap=True)
+        left_out = mcp.left_out.get(name, [])
+        if left_out:
+            # The server's own names, chosen in the user's config (D-080).
+            console.print(f"  [dim]left out by your config: "
+                          f"{escape(sanitize(', '.join(left_out)))}[/dim]", soft_wrap=True)
     for skipped in mcp.skipped:
         console.print(f"[yellow]not offered:[/yellow] {safe(skipped)}", soft_wrap=True)
     return None

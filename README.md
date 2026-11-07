@@ -140,6 +140,8 @@ command = "uvx"
 args = ["our-docs-mcp"]
 env_vars = ["DOCS_TOKEN"]   # passed through by name; secrets never go in the file
 # read_only = true          # you vouch it changes nothing: offered in plan mode too
+# enabled_tools = ["search", "fetch"]   # only these of its tools (by the server's names)
+# disabled_tools = ["delete_page"]      # never these
 ```
 
 ```toml

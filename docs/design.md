@@ -357,7 +357,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   flag; the result's text is truncated like a command's. A failing server is a
   warning and a `capability_probe` record, never a failed session. `/mcp`
   ([D-064](decision-log.md)) lists the servers, how each is, and their tools,
-  showing a server's program but not its arguments.
+  showing a server's program but not its arguments. An entry's
+  `enabled_tools` and `disabled_tools` ([D-080](decision-log.md)) leave the
+  other tools unregistered, said at start, in `/mcp` and in the
+  `capability_probe` record (`left_out`); a name the server does not list is
+  a warning.
 - `notify` ([D-050](decision-log.md)): a program from the user's own config,
   started when a turn ends with the turn's JSON as its last argument (codex's
   `agent-turn-complete`), found on PATH, without a shell, with the command

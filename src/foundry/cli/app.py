@@ -417,8 +417,15 @@ def _announce_mcp(mcp: McpServers, session: SessionStore, sink: EventSink) -> No
     """Which servers came up with which tools, in the journal and on screen:
     the tools a session was offered are part of its record."""
     for name, tools in mcp.tools.items():
-        session.append(EventType.CAPABILITY_PROBE, {"mcp_server": name, "tools": tools})
-        sink.emit(Notice(f"MCP server {name}: {len(tools)} tool(s)", level="info"))
+        record = {"mcp_server": name, "tools": tools}
+        said = f"MCP server {name}: {len(tools)} tool(s)"
+        left_out = mcp.left_out.get(name, [])
+        if left_out:
+            # The user's own choice (D-080), recorded with what was offered.
+            record["left_out"] = left_out
+            said += f", {len(left_out)} left out by your config"
+        session.append(EventType.CAPABILITY_PROBE, record)
+        sink.emit(Notice(said, level="info"))
     for name, why in mcp.failures.items():
         session.append(EventType.CAPABILITY_PROBE, {"mcp_server": name, "tools": [],
                                                     "error": why})

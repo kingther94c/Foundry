@@ -132,7 +132,8 @@ class BackendConfig:
 
 _SERVER_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}\Z")
 _MCP_KEYS = frozenset({"command", "args", "env", "env_vars", "startup_timeout_s",
-                       "tool_timeout_s", "read_only", "enabled"})
+                       "tool_timeout_s", "read_only", "enabled", "enabled_tools",
+                       "disabled_tools"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +153,17 @@ class McpServerConfig:
     # in plan mode and /review too -- still asking first unless a rule allows.
     read_only: bool = False
     enabled: bool = True
+    # Which of the server's tools are offered (D-080), by the server's own
+    # names, as codex's enabled_tools and disabled_tools: only these (None:
+    # all of them), and never those.
+    enabled_tools: tuple[str, ...] | None = None
+    disabled_tools: tuple[str, ...] = ()
+
+    def offers(self, remote: str) -> bool:
+        """Whether the user's configuration lets this tool be offered."""
+        if self.enabled_tools is not None and remote not in self.enabled_tools:
+            return False
+        return remote not in self.disabled_tools
 
 
 def _strings(value: Any, what: str) -> tuple[str, ...]:
@@ -203,6 +215,10 @@ def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
                                        f"{where}.startup_timeout_s", 300),
             tool_timeout_s=_seconds(entry.get("tool_timeout_s", 120),
                                     f"{where}.tool_timeout_s", 3600),
+            enabled_tools=(_strings(entry["enabled_tools"], f"{where}.enabled_tools")
+                           if "enabled_tools" in entry else None),
+            disabled_tools=_strings(entry.get("disabled_tools", []),
+                                    f"{where}.disabled_tools"),
             **flags,
         )
     return servers

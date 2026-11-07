@@ -490,6 +490,9 @@ class McpServers:
     failures: dict[str, str] = field(default_factory=dict)
     # tools a server listed that are not offered, and why
     skipped: list[str] = field(default_factory=list)
+    # server -> its tools the user's enabled_tools / disabled_tools leave out
+    # (D-080): the user's choice, not a warning
+    left_out: dict[str, list[str]] = field(default_factory=dict)
 
     def close(self) -> None:
         for client in self.clients:
@@ -536,7 +539,20 @@ def start_servers(servers: dict[str, McpServerConfig], cwd: Path, registry, *,
             continue
         found.clients.append(client)
         names = found.tools.setdefault(server.name, [])
+        # A name the server does not list is a typo that would quietly hide a
+        # tool the user wanted, or offer one they did not (D-080).
+        listed = {spec.get("name") for spec in outcome}
+        for setting, wanted in (("enabled_tools", server.enabled_tools or ()),
+                                ("disabled_tools", server.disabled_tools)):
+            for remote in wanted:
+                if remote not in listed:
+                    found.skipped.append(f"{server.name}: {setting} names {remote!r}, "
+                                         "which the server does not offer")
         for spec in outcome:
+            remote = spec.get("name")
+            if isinstance(remote, str) and not server.offers(remote):
+                found.left_out.setdefault(server.name, []).append(remote)
+                continue
             tool = _tool(client, spec, taken)
             if isinstance(tool, str):
                 found.skipped.append(f"{server.name}: {tool}")

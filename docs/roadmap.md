@@ -246,6 +246,8 @@ What a codex user still notices day to day, next:
     prompt comes back, as `codex "task"` (landed, D-078).
 40. ~~Told when an approval waits~~ -- the `notify` program hears
     `approval-requested` before the question blocks (landed, D-079).
+41. ~~Which MCP tools are offered~~ -- `enabled_tools` and `disabled_tools`
+    per server, as codex's (landed, D-080).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
