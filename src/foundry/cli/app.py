@@ -278,12 +278,14 @@ def build(workspace_path: Path, *, home: Path | None = None,
           overrides: dict | None = None, console: Console | None = None,
           interactive: bool = True, resume: str | None = None,
           profile: str | None = None, settings: dict | None = None,
-          ephemeral: bool = False, trust: bool = False) -> Wiring:
+          ephemeral: bool = False, trust: bool = False, review: bool = False) -> Wiring:
     """``resume`` names a recorded session to continue: an id, or ``last``.
     ``profile`` and ``settings`` come from ``--profile`` and ``-c`` (D-042).
     ``ephemeral``: the journal goes in a folder of its own, outside the
     sessions, and is removed as the session closes (D-132). ``trust``: the
-    user trusts the workspace by name, as codex's ``--trust`` (D-137)."""
+    user trusts the workspace by name, as codex's ``--trust`` (D-137).
+    ``review``: the run is foundry review's, on backend.review_model unless
+    -m names a model (D-143)."""
     console = console or Console()
     home = home or user_dir()
 
@@ -316,6 +318,9 @@ def build(workspace_path: Path, *, home: Path | None = None,
     if trusted:
         config = load_config(workspace.root, overrides=overrides, home=home,
                              profile=profile, settings=settings)
+    if review and config.backend.review_model and "model" not in (overrides or {}):
+        # codex's review_model (D-143): the review's whole run is on it.
+        config.backend.model = config.backend.review_model
 
     current = capture_baseline(workspace.root)
     state: JournalState | None = None
@@ -1554,6 +1559,7 @@ def cmd_exec(args: argparse.Namespace, read_only: str = "") -> int:
         wiring = build(Path(args.workspace).resolve(), console=console, interactive=False,
                        resume=args.resume, ephemeral=args.ephemeral,
                        trust=getattr(args, "trust", False),
+                       review=read_only == REVIEW_READ_ONLY,
                        **_config_args(args, mode=Mode(args.mode or Mode.DONT_ASK.value)))
     except FoundryError as exc:
         if forked is not None:

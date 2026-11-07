@@ -393,10 +393,15 @@ What a codex user still notices day to day, next:
      own (landed, D-141).
 103. ~~`developer_instructions` and `compact_prompt`~~ -- codex's
      instruction settings (landed, D-142).
+104. ~~`review_model`~~ -- the model reviews run on (landed, D-143).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
-hosted web search, and interactive PTY sessions for long-running commands.
+hosted web search, interactive PTY sessions for long-running commands, and
+codex's desktop notifications (`tui.notifications`), sent while its
+terminal has lost focus, which a session reading lines cannot tell -- a
+`notify` program (D-050) is told when a turn ends, and the terminal's title
+says when an approval waits (D-139).
 
 ## V2 candidates (explicitly no commitment to order)
 

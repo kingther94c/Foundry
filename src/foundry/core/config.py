@@ -79,6 +79,9 @@ def _validate_backend_setting(key: str, value: Any) -> None:
             raise ConfigError(
                 f"backend.verbosity must be one of {', '.join(VERBOSITY_LEVELS)}, got {value!r}"
             )
+    elif key == "review_model":
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ConfigError(f"backend.review_model must be a model's name, got {value!r}")
     elif key == "images":
         if not isinstance(value, bool):
             raise ConfigError(
@@ -150,6 +153,9 @@ class BackendConfig:
     name: str = "personal"
     base_url: str = "https://api.openai.com/v1"
     model: str = "gpt-5"
+    # codex's review_model (D-143): what /review's task and foundry review
+    # run on, behind the same endpoint; None for the session's model.
+    review_model: str | None = None
     protocol: str = "openai_compat"
     credential_source: str = "api_key"
     headers: dict[str, str] = field(default_factory=dict)

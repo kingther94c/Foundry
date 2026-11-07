@@ -97,6 +97,9 @@ class RunTask:
     # A side question (/side, D-129): answered, then dropped from the
     # conversation.
     side: bool = False
+    # The model it runs on, the session's own again after it: /review's,
+    # backend.review_model (D-143). "" for the session's.
+    model: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,9 +222,21 @@ def take_images(wiring: "Wiring") -> tuple:
     return images
 
 
+def _switch_model(wiring: "Wiring", name: str, by: str) -> None:
+    """The model the next request goes to, journaled so a resume goes on
+    with the one the session last had."""
+    before, wiring.runtime.model = wiring.runtime.model, name
+    wiring.session.append(EventType.MODEL_CHANGE, {"from": before, "to": name, "by": by})
+
+
 def run_task(wiring: "Wiring", task: RunTask):
     policy = wiring.runtime.policy
     policy.read_only = task.read_only
+    own = wiring.runtime.model if task.model else ""
+    other = task.model if task.model and task.model != own else ""
+    if other:
+        _switch_model(wiring, other, "review")
+        wiring.runtime.events.emit(Notice(f"reviewing on {other} (review_model)", level="info"))
     try:
         if task.side:
             # What is owed to the conversation -- a note, the images queued
@@ -236,6 +251,8 @@ def run_task(wiring: "Wiring", task: RunTask):
         return wiring.runtime.interrupted()
     finally:
         policy.read_only = ""
+        if other:
+            _switch_model(wiring, own, "review")
         wiring.renderer.settle()
 
 
@@ -901,6 +918,8 @@ def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
         ("mode", runtime.policy.mode.value),
         ("effort", config.backend.effort or API_DEFAULT_EFFORT),
         *([("verbosity", config.backend.verbosity)] if config.backend.verbosity else []),
+        *([("reviews", f"on {config.backend.review_model} (review_model)")]
+          if config.backend.review_model else []),
         ("tokens", f"{usage.input_tokens:,} in ({usage.cached_input_tokens:,} cached), "
                    f"{usage.output_tokens:,} out"),
         ("context", f"about {used:,} of {limit:,} tokens ({100 * used // max(limit, 1)}%)"
@@ -1171,7 +1190,8 @@ def _review(wiring: "Wiring", console: Console, arguments: str) -> RunTask | Non
         return None
     console.print(f"[dim]reviewing {escape(what)}; nothing is changed while it runs[/dim]",
                   soft_wrap=True)
-    return RunTask(text, read_only=REVIEW_READ_ONLY)
+    return RunTask(text, read_only=REVIEW_READ_ONLY,
+                   model=wiring.config.backend.review_model or "")
 
 
 # --- /approve (D-038) ------------------------------------------------------------------
