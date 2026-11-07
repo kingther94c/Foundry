@@ -404,7 +404,10 @@ class AgentRuntime:
             if refused:
                 # Not sent, so not recorded as input: a resume owes it nothing.
                 return self._terminate(TerminalStatus.BLOCKED, refused)
-            for event, note in notes:
+            # What background hooks said since the last request, first: it
+            # came before this prompt's own hooks (D-120). Taken only for a
+            # prompt that is sent, so a refused one loses none of it.
+            for event, note in [*self._background_notes(), *notes]:
                 message += f"\n\nFrom a {event} hook: {note}"
         # The request records carry every message the model was sent; this is
         # for input that never reached one, which a resumed session still owes
@@ -455,10 +458,14 @@ class AgentRuntime:
                         return self._terminate(TerminalStatus.BLOCKED, self._said(
                             "a SessionStart hook stopped the task after compaction", stops))
                     for note in notes:
-                        message = f"From a {SESSION_START} hook: {note}"
-                        self._journal(EventType.USER_INPUT, {"text": message,
-                                                             "hook": SESSION_START})
-                        self.context.append_user(message, ())
+                        self._hook_message(SESSION_START, note)
+
+            if self.hooks is not None:
+                # codex's safe point: what background hooks said once the
+                # last request and its calls were done goes to the next
+                # request (D-120).
+                for event, note in self._background_notes():
+                    self._hook_message(event, note)
 
             if self.context.context_exhausted():
                 return self._terminate(TerminalStatus.PARTIAL, "context window exhausted")
@@ -1050,7 +1057,18 @@ class AgentRuntime:
         payload = self._hook_payload(event, omit, **fields)
         runs = self.hooks.run(hooks, scrubbed(payload, self.scrub),
                               cancelled=(lambda: self._cancelled) if stoppable else None)
+        if not runs:
+            # Each runs in the background: heard from later (D-120).
+            return None
         verdict = READERS[event](runs)
+        self._heard(event, verdict, call_id)
+        return verdict
+
+    def _heard(self, event: str, verdict: HookVerdict, call_id: str | None = None, *,
+               background: bool = False) -> None:
+        """Say what ``event``'s hooks said: to the user, the warnings and
+        messages; to the journal, each run. Their notes are scrubbed in
+        place and, at a call, kept for its reply."""
         clean = self.scrub or (lambda text: text)
         for message in verdict.messages:
             self._emit(Notice(f"{event} hook: {clean(message)}", level="warning"))
@@ -1062,9 +1080,30 @@ class AgentRuntime:
             self._hook_notes.setdefault(call_id, []).extend(
                 (event, note) for note in verdict.context)
             record["call_id"] = call_id
+        if background:
+            record["async"] = True
         record["runs"] = scrubbed(verdict.records, self.scrub)
         self._journal(EventType.HOOK, record)
-        return verdict
+
+    def _background_notes(self) -> list[tuple[str, str]]:
+        """What the background hooks that ended since said (D-120), heard
+        now, at a safe point, as codex delivers it: their warnings to the
+        user and their runs to the journal; their notes returned, by event."""
+        if self.hooks is None:
+            return []
+        runs = self.hooks.finished()
+        notes: list[tuple[str, str]] = []
+        for event in dict.fromkeys(run.hook.event for run in runs):
+            verdict = READERS[event]([run for run in runs if run.hook.event == event])
+            self._heard(event, verdict, background=True)
+            notes += [(event, note) for note in verdict.context]
+        return notes
+
+    def _hook_message(self, event: str, note: str) -> None:
+        """A hook's note for the work in hand, as a message of its own."""
+        message = f"From a {event} hook: {note}"
+        self._journal(EventType.USER_INPUT, {"text": message, "hook": event})
+        self.context.append_user(message, ())
 
     def _tool_hooks(self, event: str, call: ToolUseBlock, op: Operation,
                     **fields: Any) -> HookVerdict | None:
@@ -1131,6 +1170,9 @@ class AgentRuntime:
                             reason=SESSION_END_REASON)
         except KeyboardInterrupt:
             self._emit(Notice(f"{SESSION_END} hooks stopped", level="warning"))
+        finally:
+            # Background hooks still running have no one left to tell (D-120).
+            self.hooks.close()
 
     def _stop_hooks(self, last_message: str, active: bool) -> str:
         """The Stop hooks (D-116), as the model is done: what the task goes

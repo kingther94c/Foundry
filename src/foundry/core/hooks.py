@@ -1,4 +1,4 @@
-"""Lifecycle hooks, as codex's (D-115 to D-119).
+"""Lifecycle hooks, as codex's (D-115 to D-120).
 
 A hook is a command line the user's own configuration names -- in
 ``hooks.json`` beside ``config.toml``, in a ``[hooks]`` table of it, or in
@@ -32,6 +32,13 @@ Like a notify program or an MCP server, a hook is a program Foundry starts,
 so a repository's configuration may not name one. A hook that fails, times
 out or answers in a shape it does not know is a warning, and the call goes
 on as codex lets it: a hook is a guardrail, and policy is the boundary.
+
+A hook marked ``async`` runs in the background, as codex's: the work goes on
+without it, and what it says -- a note for the model, a message for the
+user -- is taken at the next safe point, before the task's next model
+request or with the next prompt. It decides nothing. SessionEnd hooks run
+in step whatever they say, and those still running when the session closes
+are ended.
 """
 
 from __future__ import annotations
@@ -41,6 +48,7 @@ import functools
 import json
 import re
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -122,7 +130,8 @@ class Hook:
     timeout_s: int = DEFAULT_TIMEOUT_S
     status_message: str = ""
     context_tokens: int = DEFAULT_CONTEXT_TOKENS
-    # codex's `async`: what such a hook says informs and never decides.
+    # codex's `async`: run in the background (D-120); what such a hook says
+    # informs and never decides.
     background: bool = False
     source: str = ""      # the file it was read from
 
@@ -226,6 +235,10 @@ def _handler(entry: Any, event: str, matcher: str, where: str, source: str) -> H
     background = entry.get("async", False)
     if not isinstance(background, bool):
         raise ConfigError(f"{where}.async must be true or false")
+    if event == SESSION_END:
+        # codex runs these in step whatever they say: a session closing
+        # waits for nothing after them.
+        background = False
     status = _text(entry.get("statusMessage", ""), f"{where}.statusMessage", empty=True)
     tokens = entry.get("additionalContextLimit", DEFAULT_CONTEXT_TOKENS)
     if isinstance(tokens, bool) or not isinstance(tokens, int) or tokens < 0:
@@ -313,6 +326,12 @@ class HookSet:
     cwd: Path | None = None
     env_policy: Any = None              # the user's [shell_environment_policy]
     environ: dict[str, str] | None = None   # the environment to start from
+    # Background hooks (D-120): their runs as they end, for the runtime to
+    # take at its next safe point; their threads; what ends those running.
+    _finished: list = field(default_factory=list, compare=False, repr=False)
+    _lock: Any = field(default_factory=threading.Lock, compare=False, repr=False)
+    _threads: list = field(default_factory=list, compare=False, repr=False)
+    _halt: Any = field(default_factory=threading.Event, compare=False, repr=False)
 
     def matching(self, event: str, names: tuple[str, ...]) -> list[Hook]:
         return [hook for hook in self.hooks if hook.event == event
@@ -323,8 +342,16 @@ class HookSet:
         """Run ``hooks`` with ``payload`` on their stdin, all at once as
         codex starts them, so one that hangs does not keep another from
         starting; their runs in the order the hooks are. KeyboardInterrupt
-        when the session is stopped meanwhile, once each is ended."""
+        when the session is stopped meanwhile, once each is ended. A
+        background hook is started and not waited for: its run is had from
+        :meth:`finished` once it ends (D-120)."""
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        for hook in hooks:
+            if hook.background:
+                self._start(hook, data)
+        hooks = [hook for hook in hooks if not hook.background]
+        if not hooks:
+            return []
         if len(hooks) == 1:
             return [self._run_one(hooks[0], data, cancelled)]
         stop = threading.Event()
@@ -359,6 +386,45 @@ class HookSet:
             raise KeyboardInterrupt
         return [run if run is not None else HookRun(hook, error="stopped")
                 for run, hook in zip(runs, hooks)]
+
+    def _start(self, hook: Hook, data: bytes) -> None:
+        """Run a background hook on a thread of its own. Only the session's
+        close ends it, not a stopped task: codex lets it finish."""
+        def work() -> None:
+            try:
+                run = self._run_one(hook, data, self._halt.is_set)
+            except KeyboardInterrupt:
+                return
+            if self._halt.is_set():
+                return       # ended as the session closed: no one to tell
+            with self._lock:
+                self._finished.append(run)
+
+        thread = threading.Thread(target=work, daemon=True)
+        self._threads = [t for t in self._threads if t.is_alive()] + [thread]
+        thread.start()
+
+    def finished(self) -> list[HookRun]:
+        """The background hooks' runs that ended since last asked, in the
+        order they ended."""
+        with self._lock:
+            runs = list(self._finished)
+            self._finished.clear()
+        return runs
+
+    def settle(self, timeout_s: float) -> bool:
+        """Wait up to ``timeout_s`` for the background hooks running to end;
+        whether they all have."""
+        deadline = time.monotonic() + timeout_s
+        for thread in list(self._threads):
+            thread.join(max(0.0, deadline - time.monotonic()))
+        return not any(thread.is_alive() for thread in self._threads)
+
+    def close(self) -> None:
+        """End the background hooks still running, as the session closes:
+        what they would say has no one left to reach."""
+        self._halt.set()
+        self.settle(5)
 
     def _run_one(self, hook: Hook, data: bytes,
                  cancelled: Callable[[], bool] | None) -> HookRun:

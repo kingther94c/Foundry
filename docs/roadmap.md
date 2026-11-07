@@ -345,6 +345,9 @@ What a codex user still notices day to day, next:
 80. ~~PermissionRequest hooks~~ -- an approval prompt answered by the user's
     own program: a call allowed once or refused, only where someone would
     be asked (landed, D-119).
+81. ~~Background hooks~~ -- `async` hooks started and not waited for, their
+    notes heard before the next request or with the next prompt, ended as
+    the session closes (landed, D-120).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
