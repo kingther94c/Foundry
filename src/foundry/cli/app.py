@@ -413,6 +413,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
                       max_tool_calls=config.max_tool_calls),
         model=config.backend.model,
         max_output_tokens=config.backend.max_output_tokens,
+        stream_max_retries=config.backend.stream_max_retries,
         audit=AuditLog(home / "audit.jsonl", default_redactor()),
         git_baseline=baseline,
         credentials=source,

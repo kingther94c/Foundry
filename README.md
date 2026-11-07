@@ -105,6 +105,11 @@ this protocol, so the key is never sent to the OpenAI default host. Rounds read
 the previous round's prompt from the cache, and safety-classifier declines are
 retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 
+On any protocol, an answer whose stream is cut part-way -- a dropped
+connection, a stall, an overloaded server -- is asked again, saying so, up to
+`stream_max_retries` times under `[backend]` (5, as codex; 0 never); none of
+the cut answer is kept.
+
 A backend can name the variable its key is in, as codex's `model_providers`
 do -- then the key comes from there only, so two backends of one kind each
 send their own -- and take headers from variables and a query on every URL:

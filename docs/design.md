@@ -163,7 +163,10 @@ async def run_turn(user_input):
   (exponential backoff + Retry-After + a ceiling). Each retry is said before
   its wait -- a warning notice and a `model_retry` record -- and a 429 that
   says the quota is spent is `QuotaExceeded`, not retried, and ends the task
-  blocked ([D-085](decision-log.md)); an AuthError triggers a
+  blocked ([D-085](decision-log.md)). A stream that breaks after it began is a
+  `StreamDropped`: the runtime sends the same request again, up to
+  `backend.stream_max_retries` times, since nothing of a turn is acted on
+  before it finishes ([D-099](decision-log.md)); an AuthError triggers a
   single-flight refresh (a process lock plus a file lock against multi-instance
   races) and one retry. A policy denial is not an error: the call is answered
   with a tool result the model reads, and a `tool_rejected` event records it.

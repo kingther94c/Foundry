@@ -39,7 +39,7 @@ from foundry.core.conversation import (
     TurnRequest,
     Usage,
 )
-from foundry.core.errors import ProtocolError, TransientError
+from foundry.core.errors import ProtocolError, StreamDropped, TransientError
 from foundry.core.images import data_url
 from foundry.core.httpc import (HttpClient, NotStreaming, open_retrying_stream,
                                 retry_with_backoff)
@@ -350,7 +350,7 @@ class OpenAICompatBackend:
         # successful, empty turn: the run reported partial with an empty answer
         # and zero tokens, and nothing said the provider had failed.
         if not saw_chunk:
-            raise TransientError(
+            raise StreamDropped(
                 "the response stream carried no content before its terminator; "
                 "the provider closed the turn without answering"
             )

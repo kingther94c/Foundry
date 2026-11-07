@@ -51,7 +51,7 @@ from foundry.core.conversation import (
     TurnRequest,
     Usage,
 )
-from foundry.core.errors import ProtocolError, TransientError
+from foundry.core.errors import ProtocolError, StreamDropped, TransientError
 from foundry.core.images import data_url
 from foundry.core.httpc import (HttpClient, NotStreaming, open_retrying_stream,
                                 retry_with_backoff)
@@ -442,10 +442,8 @@ class ResponsesBackend:
         if not completed:
             # Partial content without a completion event means the connection
             # was cut mid-turn; accepting it presented a truncated answer as the
-            # model's complete one. Transient, but not retryable once deltas
-            # have been shown -- see the note in httpc.stream_sse. It buys an
-            # honest error, and the CLI keeps the session open.
-            raise TransientError(
+            # model's complete one. The runtime asks the turn again (D-099).
+            raise StreamDropped(
                 "the response stream ended without a completion event; "
                 "the connection was cut mid-turn"
             )

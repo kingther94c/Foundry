@@ -33,6 +33,14 @@ class TransientError(FoundryError):
         self.retry_after = retry_after
 
 
+class StreamDropped(TransientError):
+    """The response stream broke after it had begun: cut, stalled, or closed
+    before the turn was finished (D-099). Nothing of a turn is acted on before
+    it finishes, so the runtime sends the request again whole -- codex's
+    stream_max_retries -- where a failure before the stream began has already
+    had the request's own retries."""
+
+
 class AuthError(FoundryError):
     """Credentials missing, expired, or rejected. Refresh once, then surface."""
 

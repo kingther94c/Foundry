@@ -32,6 +32,7 @@ from foundry.core.errors import (
     FoundryError,
     InvalidToolCall,
     QuotaExceeded,
+    StreamDropped,
     ToolError,
     TransientError,
 )
@@ -200,6 +201,10 @@ class AgentRuntime:
     # backend.max_output_tokens (D-096): every request's cap, None the
     # backend's own.
     max_output_tokens: int | None = None
+    # backend.stream_max_retries (D-099): how often a turn whose stream was
+    # cut is asked again, and the wait before each.
+    stream_max_retries: int = 5
+    sleep: Callable[[float], None] = time.sleep
     audit: object | None = None
 
     git_baseline: object | None = None   # tools.git.GitBaseline
@@ -249,14 +254,21 @@ class AgentRuntime:
     def cancel(self) -> None:
         self._cancelled = True
 
-    def _retrying(self, exc: Exception, attempt: int, attempts: int, delay: float) -> None:
+    def _retrying(self, exc: Exception, attempt: int, attempts: int, delay: float,
+                  *, cut: bool = False, shown: bool = False) -> None:
         """A model request failed in a way worth trying again; the backend
-        waits ``delay`` seconds and makes try ``attempt`` of ``attempts``."""
-        self._journal(EventType.MODEL_RETRY, {
-            "attempt": attempt, "attempts": attempts, "delay": round(delay, 3),
-            "reason": _explain(exc)})
-        self._emit(Notice(f"{exc}; retrying in {_seconds(delay)} (try {attempt} of {attempts})",
-                          level="warning"))
+        waits ``delay`` seconds and makes try ``attempt`` of ``attempts``.
+        ``cut``: the turn's stream broke part-way and the turn is asked again
+        (D-099); ``shown``: some of its answer was already on screen."""
+        payload = {"attempt": attempt, "attempts": attempts, "delay": round(delay, 3),
+                   "reason": _explain(exc)}
+        if cut:
+            payload["cut"] = True
+        self._journal(EventType.MODEL_RETRY, payload)
+        again = "asking again" if cut else "retrying"
+        dropped = "; the answer above was cut off and is not kept" if shown else ""
+        self._emit(Notice(f"{exc}; {again} in {_seconds(delay)} (try {attempt} of {attempts})"
+                          f"{dropped}", level="warning"))
 
     def interrupted(self) -> TurnOutcome:
         """Ctrl+C reached the task (D-062): the calls it left are answered and
@@ -528,6 +540,27 @@ class AgentRuntime:
         ]
 
     def _sample(self, messages: tuple[Message, ...] | None = None, purpose: str = ""):
+        """One turn of the model's, asked again whole while its stream breaks
+        part-way (D-099): nothing of a turn is acted on before it finishes, so
+        the same request is safe to send again. The connection's own failures
+        had the backend's retries before they reached here."""
+        attempts = 1 + max(0, self.stream_max_retries)
+        for attempt in range(1, attempts + 1):
+            try:
+                return self._sample_once(messages, purpose)
+            except StreamDropped as exc:
+                if attempt == attempts:
+                    raise
+                delay = min(2.0 ** (attempt - 1), 60.0)
+                self._retrying(exc, attempt + 1, attempts, delay, cut=True,
+                               shown=bool(getattr(exc, "shown", "")))
+                self.sleep(delay)
+                # A task stopped while it waited is not asked again.
+                if self._cancelled:
+                    raise Cancelled("interrupted by user") from exc
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    def _sample_once(self, messages: tuple[Message, ...] | None, purpose: str):
         request = TurnRequest(
             messages=self.context.project() if messages is None else messages,
             tools=self.registry.schemas(),
@@ -566,21 +599,26 @@ class AgentRuntime:
         text_parts: list[str] = []
         reasoning: list[str] = []
         finished = None
-        for event in self.backend.stream_turn(request):
-            if isinstance(event, TextDelta):
-                text_parts.append(event.text)
-                # A summary is the model talking to itself, not to the user.
-                if not purpose:
-                    self._emit(MessageDelta(event.text))
-            elif isinstance(event, ReasoningComplete):
-                if event.text:
-                    reasoning.append(event.text)
-                    if not purpose and self.show_reasoning:
-                        self._emit(Reasoning(event.text))
-            elif isinstance(event, UsageUpdate):
-                pass  # carried on the finished turn
-            elif isinstance(event, TurnFinished):
-                finished = event.turn
+        try:
+            for event in self.backend.stream_turn(request):
+                if isinstance(event, TextDelta):
+                    text_parts.append(event.text)
+                    # A summary is the model talking to itself, not to the user.
+                    if not purpose:
+                        self._emit(MessageDelta(event.text))
+                elif isinstance(event, ReasoningComplete):
+                    if event.text:
+                        reasoning.append(event.text)
+                        if not purpose and self.show_reasoning:
+                            self._emit(Reasoning(event.text))
+                elif isinstance(event, UsageUpdate):
+                    pass  # carried on the finished turn
+                elif isinstance(event, TurnFinished):
+                    finished = event.turn
+        except StreamDropped as exc:
+            # What of it the user saw, so the notice can say it is not kept.
+            exc.shown = "".join(text_parts) if not purpose else ""
+            raise
 
         if finished is None:
             raise FatalError("backend produced no finished turn")

@@ -46,7 +46,7 @@ from foundry.core.conversation import (
     TurnRequest,
     Usage,
 )
-from foundry.core.errors import FatalError, ProtocolError, TransientError
+from foundry.core.errors import FatalError, ProtocolError, StreamDropped, TransientError
 from foundry.core.httpc import (HttpClient, NotStreaming, open_retrying_stream,
                                 retry_with_backoff)
 
@@ -292,13 +292,16 @@ def _turn_from_json(payload: Any, default_model: str) -> ModelTurn:
                      model=payload.get("model") or default_model)
 
 
-def _raise_api_error(event: dict[str, Any]) -> None:
+def _raise_api_error(event: dict[str, Any], *, streaming: bool = False) -> None:
     error = event.get("error") or {}
     kind = error.get("type") or "unknown_error"
     message = error.get("message") or "no message"
     detail = json.dumps(event)[:500]
     if kind in _TRANSIENT_ERROR_TYPES:
-        raise TransientError(f"the API reported {kind}: {message}", payload=detail)
+        # In a stream that has begun -- an overloaded_error part-way through
+        # -- the turn is asked again (D-099).
+        raise (StreamDropped if streaming else TransientError)(
+            f"the API reported {kind}: {message}", payload=detail)
     raise FatalError(f"the API reported {kind}: {message}", payload=detail)
 
 
@@ -519,12 +522,12 @@ class AnthropicBackend:
                 break
 
             elif kind == "error":
-                _raise_api_error(event)
+                _raise_api_error(event, streaming=True)
 
         if not stopped:
             # A connection cut mid-turn and a stream that closed with no
             # content at all are both not the model's complete answer.
-            raise TransientError(
+            raise StreamDropped(
                 "the response stream ended without message_stop; "
                 "the connection was cut mid-turn"
             )

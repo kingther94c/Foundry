@@ -149,6 +149,9 @@ class BackendConfig:
     credential_source: str = "api_key"
     headers: dict[str, str] = field(default_factory=dict)
     request_max_retries: int = 4
+    # How often a response stream cut part-way is asked again (D-099), as
+    # codex's: 0 never.
+    stream_max_retries: int = 5
     stream_idle_timeout_ms: int = 300_000
     # As codex's model_providers (D-084): the variable this backend's key is
     # read from, and only from (None: the protocol's own, or the store);
@@ -602,7 +605,8 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
     # reached range(0), left the retry loop with nothing to re-raise, and died
     # at `raise None`: a TypeError outside the taxonomy, so the CLI printed a
     # traceback rather than making the request once.
-    _BACKEND_INT_FLOORS = {"request_max_retries": 1, "stream_idle_timeout_ms": 1000}
+    _BACKEND_INT_FLOORS = {"request_max_retries": 1, "stream_max_retries": 0,
+                           "stream_idle_timeout_ms": 1000}
     for key, value in backend.items():
         floor = _BACKEND_INT_FLOORS.get(key)
         if floor is not None:

@@ -36,6 +36,7 @@ from foundry.core.errors import (
     FatalError,
     ProtocolError,
     QuotaExceeded,
+    StreamDropped,
     TransientError,
 )
 
@@ -296,11 +297,11 @@ class HttpClient:
             # from a model that finished speaking: a truncated half-sentence was
             # presented as the complete answer.
             #
-            # Transient, but NOT retried: open_retrying_stream only covers the
-            # first event, and a turn whose deltas are already on screen cannot
-            # be replayed. This comment used to claim a retry that no layer
-            # performs. What it buys is an honest error instead of a silent
-            # truncation; the CLI keeps the session open so the user can re-ask.
+            # Transient: past the first event, open_retrying_stream hands it on
+            # as StreamDropped, and the runtime asks the whole turn again
+            # (D-099) -- nothing of it has been acted on, and what it showed is
+            # said to be cut off. Before, this was an honest error the user had
+            # to re-ask after.
             #
             # Only Chat Completions sends [DONE]; the Responses protocol signals
             # completion with its own event, so that adapter checks for itself.
@@ -398,7 +399,19 @@ def open_retrying_stream(make_stream, *, attempts: int = 4, sleep=time.sleep, on
         connect, attempts=attempts, sleep=sleep, on_retry=on_retry)
     if not has_first:
         return iter(())
-    return itertools.chain((first,), iterator)
+    return itertools.chain((first,), _begun(iterator))
+
+
+def _begun(iterator):
+    """The rest of a stream that has begun: a transient failure in it is a
+    dropped stream (D-099), which the runtime asks again. The connection's own
+    retries are spent by now, and this is not one of them."""
+    try:
+        yield from iterator
+    except StreamDropped:
+        raise
+    except TransientError as exc:
+        raise StreamDropped(str(exc), payload=exc.payload) from exc
 
 
 def retry_with_backoff(operation, *, attempts: int = 4, base_delay: float = 1.0,
