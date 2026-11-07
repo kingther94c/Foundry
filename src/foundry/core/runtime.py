@@ -751,6 +751,21 @@ class AgentRuntime:
         })
         return changed
 
+    def aside(self) -> tuple:
+        """Where the conversation is before a side question (/side, D-129):
+        what going back to it restores."""
+        return (len(self.context.history), self.tool_ctx.read_tracker.snapshot(),
+                self.plan, self.plan_explanation)
+
+    def back_from_aside(self, point: tuple) -> None:
+        """Back where the conversation was before the side question: the
+        question and its answer dropped, journaled as a rewind is, and what
+        the model had read, and its plan, as they were."""
+        length, read, plan, explanation = point
+        self.rewind(length)
+        self.tool_ctx.read_tracker.restore(read)
+        self.plan, self.plan_explanation = plan, explanation
+
     def _history_payload(self) -> list[dict[str, Any]]:
         return [
             {"role": m.role.value,

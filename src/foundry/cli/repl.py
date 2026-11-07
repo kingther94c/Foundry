@@ -89,6 +89,9 @@ class RunTask:
     # What the user typed for it -- the line, or the command (D-108); set
     # by the prompt, which has it.
     typed: str = ""
+    # A side question (/side, D-129): answered, then dropped from the
+    # conversation.
+    side: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,6 +218,11 @@ def run_task(wiring: "Wiring", task: RunTask):
     policy = wiring.runtime.policy
     policy.read_only = task.read_only
     try:
+        if task.side:
+            # What is owed to the conversation -- a note, the images queued
+            # for the next message -- waits for it: the side question is
+            # dropped (D-129).
+            return wiring.runtime.run_turn(task.text, typed=task.typed or None)
         return wiring.runtime.run_turn(with_note(wiring, task.text), take_images(wiring),
                                        typed=task.typed or None)
     except KeyboardInterrupt:
@@ -377,6 +385,9 @@ def repl(wiring: "Wiring", console: Console,
                 if not isinstance(command, RunTask):
                     continue
                 task = replace(command, typed=line)
+        if task.side:
+            _ask_aside(wiring, console, task)
+            continue
         outcome = run_task(wiring, task)
         # The conversation goes on, so what the task left is answered (D-063).
         wiring.runtime.answer_left_calls()
@@ -762,6 +773,46 @@ def _goal(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
     """``/goal`` (D-127): the turn it starts, if any."""
     prompt = goal_command(wiring, console, arguments, confirm)
     return RunTask(prompt) if prompt is not None else None
+
+
+SIDE_READ_ONLY = "a side question changes nothing: edits and commands are refused"
+SIDE_PROMPT = ("The user asks a question on the side. Answer it from the conversation so "
+               "far and what you can read; change nothing, and do not go on with the "
+               "work in this answer. The question and your answer are then dropped from "
+               "the conversation.\n\nThe question: {question}")
+SIDE_BACK = ("[dim]back where the conversation was: the side question and its answer are "
+             "not in it[/dim]")
+
+
+def _side(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
+    """``/side QUESTION`` (and ``/btw``): a question answered read-only, from
+    the conversation so far, then dropped from it, as codex's side
+    conversation in an ephemeral fork (D-129)."""
+    question = arguments.strip()
+    if not question:
+        console.print("[yellow]usage: /side QUESTION -- asked on the side, then dropped "
+                      "from the conversation[/yellow]")
+        return None
+    return RunTask(SIDE_PROMPT.format(question=question), read_only=SIDE_READ_ONLY,
+                   side=True)
+
+
+def _ask_aside(wiring: "Wiring", console: Console, task: RunTask) -> None:
+    """The side question run, then the conversation back as it was --
+    however the answer ended. Not compacted meanwhile: going back needs the
+    history it left."""
+    runtime = wiring.runtime
+    point, compacting = runtime.aside(), runtime.auto_compact
+    runtime.auto_compact = False
+    try:
+        outcome = run_task(wiring, task)
+        runtime.answer_left_calls()
+        if outcome.status is TerminalStatus.CANCELLED:
+            console.print("[yellow]stopped[/yellow]")
+    finally:
+        runtime.auto_compact = compacting
+        runtime.back_from_aside(point)
+    console.print(SIDE_BACK)
 
 
 def _archive(wiring: "Wiring", console: Console, arguments: str) -> str:
@@ -1417,6 +1468,9 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("plan", "the model's current plan", _plan),
     Command("goal", "set a goal the session works toward, turn after turn, until it is "
             "done; alone, the goal", _goal, arguments="[OBJECTIVE]"),
+    Command("side", "ask something on the side: answered read-only, then dropped from the "
+            "conversation", _side, arguments="QUESTION"),
+    Command("btw", "the same as /side", _side, arguments="QUESTION"),
     Command("compact", "summarise the conversation so far to free context", _compact,
             arguments="[focus]"),
     Command("image", "attach an image to your next message -- a file, or the clipboard's",

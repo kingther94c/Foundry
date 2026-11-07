@@ -114,6 +114,14 @@ class ReadTracker:
         """Forget every read: the model's context no longer holds them."""
         self._read.clear()
 
+    def snapshot(self) -> frozenset[str]:
+        return frozenset(self._read)
+
+    def restore(self, read: frozenset[str]) -> None:
+        """The reads of a snapshot, and only those: what the model's context
+        holds again (/side, D-129)."""
+        self._read = set(read)
+
 
 def truncate_middle(text: str, limit: int) -> tuple[str, bool]:
     """Keep the head and tail, drop the middle, and say how much was dropped.

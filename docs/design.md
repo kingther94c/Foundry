@@ -651,6 +651,9 @@ class ModelBackend(Protocol):
 - **Goal** ([D-127](decision-log.md)). A resume takes the last `goal` record,
   adds the `token_usage` after it while it was active, and restores an active
   goal as paused.
+- **Side question** ([D-129](decision-log.md)). `/side`'s question and
+  answer are followed by a `rewound` record keeping the history from before
+  them, so a resume rebuilds the conversation without them.
 - **Archive** ([D-128](decision-log.md)). An archived session's folder is
   moved whole to `~/.foundry/archived_sessions/<id>`, where no list or lookup
   reads; unarchiving moves it back. A session a store holds is neither moved
