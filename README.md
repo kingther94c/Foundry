@@ -154,9 +154,12 @@ interrupted=14`
 
 Every command that works in a repository takes `-C DIR` (or `--cd DIR`,
 `--workspace DIR`; the default is the current directory), as codex does.
+codex's flags that mean something else here -- `--full-auto`, `-a`, `-s`,
+`--yolo`, `--search`, `--oss`, `--add-dir` and the like -- are refused with
+what Foundry takes instead (`-s read-only` is `--mode plan`).
 `run`, `resume`, `exec` and `record` take `-m MODEL`, `--mode MODE`,
 `-c key=value` (repeatable, such as `-c runtime.max_tool_rounds=60`; never a
-secret) and `--profile NAME`, a `[profiles.NAME]` table in your `config.toml`
+secret) and `-p NAME` (`--profile NAME`), a `[profiles.NAME]` table in your `config.toml`
 holding `backend`, `runtime` and `permissions` like the file itself:
 
 MCP servers go in the same file -- `foundry mcp add docs --env-var DOCS_TOKEN --

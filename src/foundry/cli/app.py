@@ -23,6 +23,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from foundry import __version__
+from foundry.cli.codex_flags import hints as codex_hints
 from foundry.cli.completion import SHELLS
 from foundry.cli.completion import script as completion_script
 from foundry.cli.render import Renderer, safe
@@ -1515,7 +1516,8 @@ def _config_flags(parser: argparse.ArgumentParser, *, modes: tuple[Mode, ...] = 
     parser.add_argument("-c", "--config", action="append", metavar="KEY=VALUE",
                         help="a setting, such as -c runtime.max_tool_rounds=60 "
                              "(repeatable; no secrets)")
-    parser.add_argument("--profile", help="a [profiles.<name>] table from your config.toml")
+    parser.add_argument("-p", "--profile",
+                        help="a [profiles.<name>] table from your config.toml")
 
 
 def _image_flag(parser: argparse.ArgumentParser) -> None:
@@ -1523,10 +1525,26 @@ def _image_flag(parser: argparse.ArgumentParser) -> None:
                         help="attach an image to the first task (repeatable)")
 
 
+class _Parser(argparse.ArgumentParser):
+    """Says, when it refuses one of codex's flags, what Foundry takes instead
+    (D-097). Only a command line it is already refusing is looked at."""
+
+    def parse_args(self, args=None, namespace=None):
+        parsed, unrecognized = self.parse_known_args(args, namespace)
+        if unrecognized:
+            argv = sys.argv[1:] if args is None else list(args)
+            # The subcommand's usage, not the list of every subcommand.
+            refusing = next((action.choices[argv[0]] for action in self._actions
+                             if isinstance(action, argparse._SubParsersAction)
+                             and argv and argv[0] in action.choices), self)
+            refusing.error("\n".join([f"unrecognized arguments: {' '.join(unrecognized)}",
+                                       *codex_hints(argv, unrecognized)]))
+        return parsed
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="foundry",
-                                     description="A local coding-agent runtime.")
-    parser.add_argument("--version", action="version", version=f"foundry {__version__}")
+    parser = _Parser(prog="foundry", description="A local coding-agent runtime.")
+    parser.add_argument("-V", "--version", action="version", version=f"foundry {__version__}")
     sub = parser.add_subparsers(dest="command")
 
     run = sub.add_parser("run", help="start a session (default)")
@@ -1731,7 +1749,8 @@ def main(argv: list[str] | None = None) -> int:
     # `foundry -m gpt-5` is `foundry run -m gpt-5`, as with no arguments at all
     # (D-042). A bare first word stays a subcommand, so a mistyped one is an
     # error rather than a task sent to the model.
-    if not argv or (argv[0].startswith("-") and argv[0] not in ("-h", "--help", "--version")):
+    if not argv or (argv[0].startswith("-")
+                    and argv[0] not in ("-h", "--help", "-V", "--version")):
         argv = ["run", *argv]
     argv, server_command = _split_command(argv)
     args = parser.parse_args(argv)

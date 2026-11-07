@@ -285,6 +285,9 @@ What a codex user still notices day to day, next:
     (landed, D-095).
 57. ~~The most one reply may be~~ -- `backend.max_output_tokens`, codex's
     `model_max_output_tokens`, on every protocol (landed, D-096).
+58. ~~codex's command-line flags~~ -- `--full-auto`, `-a`, `-s`, `--yolo` and
+    the rest refused with what Foundry takes instead; `-p` and `-V` taken
+    (landed, D-097).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
