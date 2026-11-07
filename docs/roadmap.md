@@ -288,6 +288,8 @@ What a codex user still notices day to day, next:
 58. ~~codex's command-line flags~~ -- `--full-auto`, `-a`, `-s`, `--yolo` and
     the rest refused with what Foundry takes instead; `-p` and `-V` taken
     (landed, D-097).
+59. ~~`-c` with codex's names~~ -- `-c model_reasoning_effort=high` told
+    `backend.effort`, as a file's key is (landed, D-098).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

@@ -545,6 +545,7 @@ _NOT_A_SETTING = {
     "sandbox_mode": "Foundry has no sandbox; runtime.mode decides what runs without asking",
 }
 _NOT_A_SETTING["model_providers"] = _NOT_A_SETTING["model_provider"]
+_NOT_A_SETTING["sandbox_workspace_write"] = _NOT_A_SETTING["sandbox_mode"]
 
 
 def _no_setting(layer: str, name: str, known: Any, tables: str) -> ConfigError:
@@ -781,6 +782,39 @@ _RUNTIME_KEYS = ("max_tool_rounds", "max_tool_calls", "max_output_bytes", "comma
 _SECRET_KEYS = frozenset({"api_key", "headers"})
 
 
+# What -c can set: a session's backend and runtime settings. A backend's name
+# is the profile's, which --profile chooses.
+_FLAG_KEYS = {"backend": frozenset(BackendConfig.__dataclass_fields__) - {"name"},
+              "runtime": frozenset(_RUNTIME_KEYS)}
+
+
+def _no_flag_setting(name: str, section: str, key: str) -> ConfigError:
+    """``-c NAME=...`` that no code reads, said with where it belongs, as a
+    file's is (D-098): codex's ``-c model_reasoning_effort=high`` is told
+    Foundry's name. Never the value, which may be a secret pasted by mistake."""
+    top = section.partition(".")[0]
+    if key in _NOT_A_SETTING or top in _NOT_A_SETTING:
+        hint = _NOT_A_SETTING.get(key) or _NOT_A_SETTING[top]
+    elif key in _CALLED_HERE:
+        hint = f"Foundry calls it {_CALLED_HERE[key]}"
+    elif key in _PROFILE_KEYS:
+        hint = "choose one with -p NAME"
+    elif top in _SECTIONS - set(_FLAG_KEYS):
+        hint = f"-c sets backend and runtime settings; [{top}] goes in your config.toml"
+    elif other := next((table for table, keys in _FLAG_KEYS.items()
+                        if key in keys and table != section), None):
+        hint = f"it is {other}.{key}"
+    else:
+        # In the table it was given under, when it was given one.
+        dotted = "." in name
+        pool = _FLAG_KEYS.get(section) if dotted else None
+        close = difflib.get_close_matches(key, sorted(pool or set().union(*_FLAG_KEYS.values())),
+                                          n=1)
+        hint = (f"did you mean {(f'{section}.' if pool else '') + close[0]!r}?" if close
+                else "")
+    return ConfigError(f"-c: no setting {name!r}" + (f"; {hint}" if hint else ""))
+
+
 def parse_settings(items: list[str]) -> dict[str, dict[str, Any]]:
     """``-c key=value`` settings as a config layer: ``backend.model=x``,
     ``runtime.max_tool_rounds=60``, or a bare key from either table. The value
@@ -798,10 +832,8 @@ def parse_settings(items: list[str]) -> dict[str, dict[str, Any]]:
         if key in _SECRET_KEYS:
             raise ConfigError(f"-c may not set {name}: secrets come only from the environment "
                               "or the credential store (foundry login)")
-        known = (section == "backend" and key in BackendConfig.__dataclass_fields__
-                 and key != "name") or (section == "runtime" and key in _RUNTIME_KEYS)
-        if not known:
-            raise ConfigError(f"-c: no setting {name!r}")
+        if key not in _FLAG_KEYS.get(section, ()):
+            raise _no_flag_setting(name, section, key)
         try:
             value = tomllib.loads(f"v = {raw}")["v"]
         except tomllib.TOMLDecodeError:

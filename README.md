@@ -194,7 +194,9 @@ where it belongs: `model` at the top of the file is told it goes under
 `[backend]`, a flat `[profiles.fast]` table that it needs
 `[profiles.fast.backend]`, and codex's names Foundry's own
 (`model_reasoning_effort` is `backend.effort`, `approval_policy` is
-`runtime.mode`).
+`runtime.mode`). `-c` is told the same: `-c model_reasoning_effort=high`
+names `backend.effort`, and `-c permissions.tool=x` sends the table to the
+file.
 
 To hear when long work stops, name a program at the top of `config.toml`; it
 is started when a turn ends, with a JSON description of the turn as its last
