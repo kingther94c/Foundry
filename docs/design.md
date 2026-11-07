@@ -169,7 +169,9 @@ async def run_turn(user_input):
   of the model's last message still without a result -- the running one as
   stopped, with what it changed unknown (a mutator other than `run_command`
   counts as a change), the rest as not run -- and the prompt comes back. An
-  abort at an approval ends its task the same way.
+  abort at an approval ends its task the same way. At the prompt one Ctrl+C
+  only says how to end the session; two in a row end it
+  ([D-077](decision-log.md)).
 - An asyncio core; blocking tool bodies run in `asyncio.to_thread`.
 
 ## 5. ContextManager

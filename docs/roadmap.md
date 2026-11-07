@@ -240,6 +240,8 @@ What a codex user still notices day to day, next:
     it lands, asked about or not, as codex shows an edit (landed, D-075).
 37. ~~Quiet reads, failures that say why~~ -- one line per read, the reason
     for anything that failed (landed, D-076).
+38. ~~Ctrl+C twice to end the session~~ -- one at the prompt says how, as
+    codex asks for a second (landed, D-077).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

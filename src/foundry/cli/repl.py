@@ -209,7 +209,8 @@ def run_task(wiring: "Wiring", task: RunTask):
         wiring.renderer.settle()
 
 
-STOPPED = "[yellow]stopped; the session is still open (Ctrl+C at the prompt ends it)[/yellow]"
+STOPPED = ("[yellow]stopped; the session is still open (Ctrl+C twice at the prompt, "
+           "or /exit, ends it)[/yellow]")
 TASK_ENDED = "[dim]the session is still open: ask more, /new for a fresh one, /exit to end it[/dim]"
 STOPPED_NOTE = "The user stopped your previous turn before it finished."
 
@@ -251,6 +252,10 @@ def input_waiting(timeout: float = PASTE_GAP_S) -> bool:
 
 # Below this much of the window left, the line turns yellow.
 CONTEXT_LOW_PERCENT = 20
+
+# What one Ctrl+C at the prompt says (D-077).
+CTRL_C_AGAIN = ("[dim]Ctrl+C again to end the session (it can be resumed), "
+                "or /exit[/dim]")
 
 
 def context_left(wiring: "Wiring") -> int:
@@ -299,13 +304,27 @@ def read_message(console: Console, prompt: str = PROMPT) -> str:
 
 def repl(wiring: "Wiring", console: Console) -> TerminalStatus | str:
     """Read messages until the user ends the session; NEW_SESSION if they
-    asked for another. A task's ending is not the session's (D-063)."""
+    asked for another. A task's ending is not the session's (D-063).
+
+    One Ctrl+C at the prompt only says how to end the session; two in a row
+    end it (D-077), as codex asks for. A Ctrl+C meant for a task that had
+    just ended, or a second one pressed to be sure, used to end the session.
+    End of input ends it at once."""
+    armed = False
     while True:
         try:
             line = read_message(console, prompt_for(wiring))
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             console.print()
             return TerminalStatus.CANCELLED
+        except KeyboardInterrupt:
+            console.print()
+            if armed:
+                return TerminalStatus.CANCELLED
+            armed = True
+            console.print(CTRL_C_AGAIN)
+            continue
+        armed = False
         if not line.strip():
             continue
         if line.startswith(SHELL):

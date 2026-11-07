@@ -181,8 +181,8 @@ the prompt says how much of the context window is left (yellow under 20%).
 yours -- and the model is told what it printed with your next message.
 `@src/app.py` (or `@"a path"`) in a message attaches that file, as `read_file`
 would show it. Ctrl+C while the model answers or a tool runs stops that turn
-and brings the prompt back, the conversation kept; Ctrl+C at the prompt ends
-the session. A task that ends -- `finish`, a budget -- says how, and the prompt
+and brings the prompt back, the conversation kept; at the prompt, Ctrl+C twice
+in a row (or `/exit`) ends the session. A task that ends -- `finish`, a budget -- says how, and the prompt
 comes back too: the session ends when you end it (exit code 13). When the session ends it says the tokens it used and the
 `foundry resume` command that continues it.
 
