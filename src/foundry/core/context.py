@@ -352,8 +352,14 @@ class ContextManager:
     def compaction_threshold(self) -> int:
         """Where automatic compaction starts: a share of the window (D-040),
         or the user's limit when that comes first (D-094) -- never later, so
-        a limit past the window cannot leave a session to run out of it."""
-        threshold = int(self.max_context_tokens * self.compact_above_fraction)
+        a limit past the window cannot leave a session to run out of it.
+
+        Never past the point the window counts as full either (D-095): in a
+        small window the room kept for the answer is more than the share
+        leaves, and a 32,000-token model ran out at 24,000 tokens before it
+        would have compacted at 25,600."""
+        threshold = min(int(self.max_context_tokens * self.compact_above_fraction),
+                        self.max_context_tokens - self.reserve_output_tokens)
         if self.compact_above_tokens is not None:
             threshold = min(threshold, self.compact_above_tokens)
         return threshold

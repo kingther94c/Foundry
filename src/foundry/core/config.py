@@ -150,11 +150,12 @@ class BackendConfig:
     env_http_headers: dict[str, str] = field(default_factory=dict)
     query_params: dict[str, str] = field(default_factory=dict)
     stream: bool = True
-    # anthropic_messages only: output_config.effort (None leaves it to the API),
-    # server-side fallbacks ("off" disables them), and the context window the
-    # runtime plans masking against (None keeps the backend's own figure).
+    # The reasoning effort (D-061; None leaves it to the API), and, for
+    # anthropic_messages only, server-side fallbacks ("off" disables them).
     effort: str | None = None
     fallbacks: str = "default"
+    # The model's context window, which masking and compaction are planned
+    # against, on every protocol (D-095); None keeps the backend's own figure.
     max_context_tokens: int | None = None
     # The reasoning summary asked for (D-044). Unset: anthropic_messages asks
     # for its summary, responses asks for nothing (a model that does not reason

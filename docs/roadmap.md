@@ -280,6 +280,9 @@ What a codex user still notices day to day, next:
     parser, as `codex completion` (landed, D-093).
 55. ~~When automatic compaction starts~~ -- `runtime.auto_compact_token_limit`,
     codex's `model_auto_compact_token_limit`, only ever sooner (landed, D-094).
+56. ~~The context window on every protocol~~ -- `backend.max_context_tokens`
+    no longer Claude's alone, and compaction before the window is full
+    (landed, D-095).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

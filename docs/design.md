@@ -221,7 +221,10 @@ async def run_turn(user_input):
   (at most 15%, with the plan appended). `/compact [focus]` does it on request;
   `runtime.auto_compact = false` turns the automatic one off, and
   `runtime.auto_compact_token_limit` ([D-094](decision-log.md)) starts it
-  sooner, never later. It enters the log
+  sooner, never later; nor does it start past the point the window counts as
+  full, where a small window's room for the answer would otherwise end the
+  task first ([D-095](decision-log.md)). The window is the backend's own
+  figure, or `backend.max_context_tokens` on any protocol. It enters the log
   as a `compacted` record (openhands condensation-as-event); a failure changes
   nothing and is not retried until the next task, and files read before it
   are read again before a patch.

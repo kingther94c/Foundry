@@ -32,7 +32,7 @@ from test_resume import _wire, repo  # noqa: F401  (fixture)
 ])
 def test_the_limit_only_ever_brings_it_sooner(limit, threshold):
     context = ContextManager(system_prompt="t", max_context_tokens=10_000,
-                             compact_above_tokens=limit)
+                             reserve_output_tokens=0, compact_above_tokens=limit)
     assert COMPACT_ABOVE_FRACTION == 0.8
     assert context.compaction_threshold() == threshold
 

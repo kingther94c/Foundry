@@ -354,10 +354,6 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
                                        else config.backend.fallbacks)
         if config.backend.reasoning_summary == "none":
             backend_kwargs["thinking_display"] = None
-        if config.backend.max_context_tokens is not None:
-            backend_kwargs["caps"] = dataclasses.replace(
-                AnthropicBackend().caps,
-                max_context_tokens=config.backend.max_context_tokens)
     elif (backend_class is ResponsesBackend
           and config.backend.reasoning_summary not in (None, "none")):
         backend_kwargs["reasoning_summary"] = config.backend.reasoning_summary
@@ -369,6 +365,12 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         max_retries=config.backend.request_max_retries,
         **backend_kwargs,
     )
+    if config.backend.max_context_tokens is not None:
+        # Every protocol's window (D-095), as codex's model_context_window:
+        # Claude's alone was settable, and the OpenAI shapes planned masking
+        # and compaction against 128,000 tokens whatever the model held.
+        backend.caps = dataclasses.replace(
+            backend.caps, max_context_tokens=config.backend.max_context_tokens)
 
     instructions = load_instructions(workspace.root, home, trusted=trusted,
                                      max_chars=config.project_doc_max_bytes,
