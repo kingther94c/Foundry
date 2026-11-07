@@ -45,7 +45,7 @@ from foundry.core.conversation import (
     Usage,
 )
 from foundry.core.context import unbind
-from foundry.core.errors import ResumeError
+from foundry.core.errors import ResumeError, SessionLocked
 from foundry.core.events import PlanStep, TerminalStatus
 from foundry.core.goal import ACTIVE, Goal, spent
 from foundry.core.policy.engine import normalize_path
@@ -704,8 +704,43 @@ def resolve_session(sessions: Path, session_id: str, workspace: Path) -> Path:
         named = named_session(sessions, session_id, workspace)
         journal = find_journal(sessions, named) if named is not None else None
     if journal is None:
+        if session_named(sessions.parent / ARCHIVED, session_id) is not None:
+            raise ResumeError(f"session {session_id} is archived; foundry unarchive "
+                              f"{session_id} brings it back")
         raise ResumeError(f"no such session: {session_id}")
     return journal
+
+
+# Where an archived session's folder is kept (D-128), beside sessions/, as
+# codex keeps archived_sessions: out of every list and lookup, kept whole.
+ARCHIVED = "archived_sessions"
+
+
+def session_named(sessions: Path, target: str) -> str | None:
+    """The session ``target`` names: its id, or the name /rename gave it --
+    the newest of that name, in any workspace (D-128); None for none."""
+    if find_journal(sessions, target) is not None:
+        return target
+    return named_session(sessions, target, None)
+
+
+def move_session(source: Path, destination: Path) -> None:
+    """Archive or unarchive (D-128): the session's folder moved whole --
+    never while a store holds it, never over another."""
+    if is_locked(source):
+        raise SessionLocked(f"session {source.name} is in use by a Foundry session")
+    if destination.exists():
+        raise ResumeError(f"{destination} already exists")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    source.rename(destination)
+
+
+def delete_session(folder: Path) -> None:
+    """Delete (D-128): the session's folder -- its journal and artifacts --
+    for good; never while a store holds it."""
+    if is_locked(folder):
+        raise SessionLocked(f"session {folder.name} is in use by a Foundry session")
+    shutil.rmtree(folder)
 
 
 def latest_session(sessions: Path, workspace: Path | None) -> str | None:

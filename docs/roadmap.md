@@ -363,6 +363,8 @@ What a codex user still notices day to day, next:
     from it, the source kept as it was (landed, D-126).
 88. ~~`/goal`~~ -- a goal the session works toward turn after turn, with a
     token budget, `get_goal` and `update_goal` (landed, D-127).
+89. ~~`foundry archive`, `unarchive` and `delete`; `/archive` and
+    `/delete`~~ -- by id or name (landed, D-128).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

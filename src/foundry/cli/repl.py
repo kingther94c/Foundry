@@ -69,6 +69,10 @@ if TYPE_CHECKING:
 NEW_SESSION = "new_session"
 # /fork (D-126): the session goes on as the fork the wiring names.
 FORK_SESSION = "fork_session"
+# /archive and /delete (D-128): the session ends, then is archived or deleted.
+ARCHIVE_SESSION = "archive_session"
+DELETE_SESSION = "delete_session"
+_ENDS = (NEW_SESSION, FORK_SESSION, ARCHIVE_SESSION, DELETE_SESSION)
 _EXIT = "exit"
 
 DIFF_MAX_LINES = 400
@@ -368,7 +372,7 @@ def repl(wiring: "Wiring", console: Console,
                 command = dispatch(wiring, console, *parsed)
                 if command == _EXIT:
                     return TerminalStatus.CANCELLED
-                if command in (NEW_SESSION, FORK_SESSION):
+                if command in _ENDS:
                     return command
                 if not isinstance(command, RunTask):
                     continue
@@ -758,6 +762,20 @@ def _goal(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
     """``/goal`` (D-127): the turn it starts, if any."""
     prompt = goal_command(wiring, console, arguments, confirm)
     return RunTask(prompt) if prompt is not None else None
+
+
+def _archive(wiring: "Wiring", console: Console, arguments: str) -> str:
+    """``/archive`` (D-128): the session ends and is archived, as codex's."""
+    return ARCHIVE_SESSION
+
+
+def _delete(wiring: "Wiring", console: Console, arguments: str) -> str | None:
+    """``/delete`` (D-128): the session ends and is deleted for good, once
+    the user says so."""
+    if not confirm(console, "delete this session for good, its journal and artifacts?"):
+        console.print("[dim]nothing was deleted[/dim]")
+        return None
+    return DELETE_SESSION
 
 
 def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
@@ -1420,6 +1438,9 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
             arguments="[NAME]"),
     Command("new", "end this session and start a fresh one", _new),
     Command("fork", "go on in a copy of this session, keeping this one as it is", _fork),
+    Command("archive", "end this session and archive it: out of every list, kept whole",
+            _archive),
+    Command("delete", "end this session and delete it for good", _delete),
     Command("exit", "end the session", _exit),
     Command("quit", "end the session", _exit),
 )}

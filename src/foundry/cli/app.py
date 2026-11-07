@@ -29,7 +29,7 @@ from foundry.cli.completion import SHELLS
 from foundry.cli.completion import script as completion_script
 from foundry.cli.render import Renderer, safe
 from foundry.cli.transcript import show_conversation
-from foundry.cli.repl import FORK_SESSION, NEW_SESSION
+from foundry.cli.repl import ARCHIVE_SESSION, DELETE_SESSION, FORK_SESSION, NEW_SESSION
 from foundry.cli.repl import attach as _attach
 from foundry.cli.repl import take_images as _take_images
 from foundry.cli.repl import confirm as _confirm
@@ -87,6 +87,7 @@ from foundry.core.prompts import (
 )
 from foundry.core.redaction import default_redactor
 from foundry.core.resume import (
+    ARCHIVED,
     CONTINUE_PROMPT,
     JournalState,
     find_journal,
@@ -100,8 +101,11 @@ from foundry.core.resume import (
     resolve_session,
     resume_note,
     same_path,
+    session_named,
     summarize,
 )
+from foundry.core.resume import delete_session as _delete_session
+from foundry.core.resume import move_session as _move_session
 from foundry.core.runtime import AgentRuntime, Budget
 from foundry.core.session import AuditLog, EventType, SessionStore
 from foundry.core.skills import (
@@ -840,6 +844,8 @@ def cmd_session(args: argparse.Namespace) -> int:
             _close(wiring, TerminalStatus.CANCELLED, "an image could not be attached")
             return 2
     status = TerminalStatus.CANCELLED
+    # /archive or /delete (D-128): done once the session is closed.
+    put_away, reason = "", "session ended"
     try:
         if args.task and not _interactive():
             # Nobody at a terminal to go on with (D-078): the task, then the
@@ -873,15 +879,105 @@ def cmd_session(args: argparse.Namespace) -> int:
                     console.print(f"[red]{exc}[/red]")
                     return EXIT_CODES[TerminalStatus.FAILED]
                 console.print(f"[dim]new session {wiring.session.session_id}[/dim]")
+            if ended in (ARCHIVE_SESSION, DELETE_SESSION):
+                put_away, ended = ended, TerminalStatus.CANCELLED
+                reason = ("the user archived this session" if put_away == ARCHIVE_SESSION
+                          else "the user deleted this session")
             status = ended
     except KeyboardInterrupt:
         wiring.runtime.cancel()
         console.print("\n[yellow]cancelled[/yellow]")
     finally:
-        _close(wiring, status, "session ended")
-        _say_farewell(console, wiring)
-
+        _close(wiring, status, reason)
+        if not put_away:
+            _say_farewell(console, wiring)
+    if put_away:
+        return _put_away(wiring.session.dir, put_away == DELETE_SESSION, console)
     return EXIT_CODES.get(status, 0)
+
+
+def _put_away(folder: Path, delete: bool, console) -> int:
+    """/archive and /delete (D-128): the session, closed, archived or deleted."""
+    session_id = folder.name
+    try:
+        if delete:
+            _delete_session(folder)
+        else:
+            _move_session(folder, folder.parent.parent / ARCHIVED / session_id)
+    except (ResumeError, OSError) as exc:
+        console.print(f"[red]cannot {'delete' if delete else 'archive'} session "
+                      f"{session_id}: {escape(str(exc))}[/red]", soft_wrap=True)
+        return EXIT_CODES[TerminalStatus.FAILED]
+    console.print(f"deleted session {session_id}" if delete else
+                  f"archived session {session_id}; foundry unarchive {session_id} brings it "
+                  "back", soft_wrap=True)
+    return EXIT_CODES[TerminalStatus.CANCELLED]
+
+
+def cmd_archive(args: argparse.Namespace) -> int:
+    """`foundry archive SESSION` and `foundry unarchive SESSION` (D-128), as
+    codex's: the session, by id or name, out of every list and lookup -- or
+    back in them -- kept whole."""
+    console = Console()
+    live, archived = user_dir() / "sessions", user_dir() / ARCHIVED
+    archive = args.command == "archive"
+    source, destination = (live, archived) if archive else (archived, live)
+    session_id = session_named(source, args.session)
+    if session_id is None:
+        elsewhere = session_named(destination, args.session) is not None
+        console.print(f"[red]{escape(_unfound(args.session, archive, elsewhere))}[/red]",
+                      soft_wrap=True)
+        return 1
+    try:
+        _move_session(source / session_id, destination / session_id)
+    except (ResumeError, OSError) as exc:
+        console.print(f"[red]cannot {args.command} {session_id}: {escape(str(exc))}[/red]",
+                      soft_wrap=True)
+        return 1
+    console.print(f"archived session {session_id}; foundry unarchive {session_id} brings it "
+                  "back" if archive else
+                  f"unarchived session {session_id}; foundry resume {session_id} continues it",
+                  soft_wrap=True)
+    return 0
+
+
+def _unfound(target: str, archive: bool, elsewhere: bool) -> str:
+    if not elsewhere:
+        return f"no such session: {target}"
+    return f"session {target} is already archived" if archive else \
+        f"session {target} is not archived"
+
+
+def cmd_delete(args: argparse.Namespace) -> int:
+    """`foundry delete SESSION` (D-128), as codex's: a session, archived or
+    not, deleted for good -- so asked first; --force skips the question, and
+    takes only an id, since a name could name another session than meant."""
+    console = Console()
+    for root in (user_dir() / "sessions", user_dir() / ARCHIVED):
+        session_id = session_named(root, args.session)
+        if session_id is not None:
+            break
+    else:
+        console.print(f"[red]no such session: {escape(args.session)}[/red]")
+        return 1
+    if args.force and session_id != args.session:
+        console.print("[red]--force takes a session id; a session named is deleted only "
+                      "once you say so[/red]")
+        return 2
+    if not args.force:
+        console.print(_session_line(summarize(root / session_id)), soft_wrap=True)
+        if not _confirm(console, f"delete session {session_id} for good, its journal and "
+                                 "artifacts?"):
+            console.print("[dim]nothing was deleted[/dim]")
+            return 1
+    try:
+        _delete_session(root / session_id)
+    except (ResumeError, OSError) as exc:
+        console.print(f"[red]cannot delete {session_id}: {escape(str(exc))}[/red]",
+                      soft_wrap=True)
+        return 1
+    console.print(f"deleted session {session_id}")
+    return 0
 
 
 def _switch_to_fork(wiring: Wiring, console, flags: dict) -> Wiring:
@@ -1118,9 +1214,10 @@ def cmd_logout(args: argparse.Namespace) -> int:
 
 def cmd_sessions(args: argparse.Namespace) -> int:
     console = Console()
-    root = user_dir() / "sessions"
+    root = user_dir() / (ARCHIVED if args.archived else "sessions")
     if not root.is_dir():
-        console.print("[dim]no sessions yet[/dim]")
+        console.print("[dim]no archived sessions[/dim]" if args.archived
+                      else "[dim]no sessions yet[/dim]")
         return 0
 
     entries = sorted((p for p in root.iterdir() if p.is_dir()), reverse=True)
@@ -1921,7 +2018,21 @@ def build_parser() -> argparse.ArgumentParser:
     sessions = sub.add_parser("sessions", help="list or show recorded sessions")
     sessions.add_argument("session_id", nargs="?", help="a session id or name: its records")
     sessions.add_argument("--limit", type=int, default=20)
+    sessions.add_argument("--archived", action="store_true",
+                          help="the archived sessions (foundry archive), not the others")
     sessions.set_defaults(func=cmd_sessions)
+
+    for name, said in (("archive", "move a recorded session out of every list, kept whole"),
+                       ("unarchive", "bring an archived session back")):
+        archiving = sub.add_parser(name, help=said)
+        archiving.add_argument("session", help="the session's id or name")
+        archiving.set_defaults(func=cmd_archive)
+
+    delete = sub.add_parser("delete", help="delete a recorded session for good")
+    delete.add_argument("session", help="the session's id or name")
+    delete.add_argument("--force", action="store_true",
+                        help="do not ask first (takes only an id)")
+    delete.set_defaults(func=cmd_delete)
 
     report = sub.add_parser("report", help="summarize recorded sessions")
     report.add_argument("--json", action="store_true")
