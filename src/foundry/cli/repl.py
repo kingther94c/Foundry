@@ -951,7 +951,8 @@ def show_mcp(wiring: "Wiring", console: Console, arguments: str = "") -> None:
     """``/mcp``: the MCP servers the user's configuration names, whether
     each is running, and the tools it offers, as codex's /mcp lists them
     (D-064). Only a server's program is shown, not its arguments, which may
-    carry a secret; what a server says of its tools is its own text, so it
+    carry a secret -- of one reached over HTTP, its scheme and host, not its
+    path (D-081); what a server says of its tools is its own text, so it
     is cleaned of terminal controls before it is shown.
     """
     servers = wiring.config.mcp_servers
@@ -969,8 +970,8 @@ def show_mcp(wiring: "Wiring", console: Console, arguments: str = "") -> None:
             state = "[yellow]stopped:[/yellow] its tools fail until a new session starts it"
         else:
             state = "[green]running[/green]"
-        program = Path(server.command).name
-        console.print(f"[bold]{escape(name)}[/bold] [dim]({escape(program)})[/dim] {state}",
+        console.print(f"[bold]{escape(name)}[/bold] [dim]({escape(server.shown_as())})[/dim] "
+                      f"{state}",
                       soft_wrap=True)
         for tool_name in mcp.tools.get(name, ()):
             tool = wiring.runtime.registry.tools[tool_name]

@@ -1,6 +1,9 @@
-"""An MCP client over stdio (D-043): another program's tools, under Foundry's policy.
+"""An MCP client over stdio (D-043) and streamable HTTP (D-081): another
+program's tools, under Foundry's policy.
 
-A server is a program the user names in their own config.toml. Foundry starts
+A server is a program the user names in their own config.toml -- or the
+address of one already running, reached over HTTP (see StreamableHttpClient).
+Foundry starts
 it with the same scrubbed environment a command gets (plus what the entry adds),
 speaks JSON-RPC 2.0 to it one message per line, lists its tools, and offers each
 to the model as ``mcp__<server>__<tool>``. Nothing about a call is the
@@ -16,10 +19,12 @@ and everything it started.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import threading
 import time
@@ -33,7 +38,9 @@ from foundry.core.config import McpServerConfig
 from foundry.core.conversation import ToolSchema
 from foundry.core.errors import (Cancelled, FoundryError, ImageRejected, InvalidToolCall,
                                  ToolError)
+from foundry.core.httpc import HttpClient
 from foundry.core.images import MAX_IMAGES_PER_MESSAGE, from_base64 as image_from_base64
+from foundry.core.redaction import Redactor, default_redactor
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput, truncate_middle
 from foundry.core.winapi import (
     CREATE_NEW_PROCESS_GROUP,
@@ -74,7 +81,79 @@ def tool_name(server: str, tool: str) -> str:
 # --- the connection ---------------------------------------------------------------
 
 
-class StdioClient:
+def _answer_for(message: dict) -> dict:
+    """The reply to a request from the server. Foundry offers it nothing but
+    a ping: no sampling, no roots, no elicitation."""
+    reply: dict[str, Any] = {"jsonrpc": "2.0", "id": message["id"]}
+    if message.get("method") == "ping":
+        reply["result"] = {}
+    else:
+        reply["error"] = {"code": -32601, "message": "not offered by this client"}
+    return reply
+
+
+def _result(method: str, reply: dict) -> dict:
+    if "error" in reply:
+        error = reply["error"]
+        text = error.get("message") if isinstance(error, dict) else str(error)
+        raise McpError(f"{method} failed: {str(text)[:300]}")
+    result = reply.get("result")
+    if not isinstance(result, dict):
+        raise McpError(f"{method} returned no result")
+    return result
+
+
+class _Protocol:
+    """What Foundry asks of a server, whatever carries the messages: the
+    handshake, its tools, and a call to one."""
+
+    server: McpServerConfig
+    capabilities: dict[str, Any]
+    server_info: dict[str, Any]
+
+    def request(self, method: str, params: dict | None = None, *, timeout: float,
+                cancelled: Callable[[], bool] | None = None) -> dict:
+        raise NotImplementedError
+
+    def _handshake(self) -> str:
+        """Initialize, and the protocol version the server answered with."""
+        result = self.request("initialize", {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": {"name": "foundry", "version": __version__},
+        }, timeout=self.server.startup_timeout_s)
+        version = result.get("protocolVersion")
+        if not isinstance(version, str):
+            raise McpError("its reply to initialize names no protocol version")
+        self.server_info = result.get("serverInfo") if isinstance(result.get("serverInfo"), dict) else {}
+        self.capabilities = (result.get("capabilities")
+                             if isinstance(result.get("capabilities"), dict) else {})
+        return version
+
+    def list_tools(self) -> list[dict]:
+        if "tools" not in self.capabilities:
+            return []
+        tools: list[dict] = []
+        cursor = None
+        for _ in range(_LIST_PAGES):
+            result = self.request("tools/list", {"cursor": cursor} if cursor else {},
+                                  timeout=self.server.startup_timeout_s)
+            page = result.get("tools")
+            if not isinstance(page, list):
+                raise McpError("tools/list returned no list of tools")
+            tools.extend(t for t in page if isinstance(t, dict))
+            cursor = result.get("nextCursor")
+            if not isinstance(cursor, str) or not cursor or len(tools) >= MAX_TOOLS_PER_SERVER:
+                break
+        return tools[:MAX_TOOLS_PER_SERVER]
+
+    def call_tool(self, name: str, arguments: dict, *,
+                  cancelled: Callable[[], bool] | None = None) -> dict:
+        return self.request("tools/call", {"name": name, "arguments": arguments},
+                            timeout=self.server.tool_timeout_s, cancelled=cancelled)
+
+
+class StdioClient(_Protocol):
     """One server process and the JSON-RPC conversation with it."""
 
     def __init__(self, server: McpServerConfig, cwd: Path,
@@ -131,16 +210,7 @@ class StdioClient:
         threading.Thread(target=self._read_stderr, daemon=True,
                          name=f"mcp-{self.server.name}-err").start()
 
-        result = self.request("initialize", {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {},
-            "clientInfo": {"name": "foundry", "version": __version__},
-        }, timeout=self.server.startup_timeout_s)
-        if not isinstance(result.get("protocolVersion"), str):
-            raise McpError("its reply to initialize names no protocol version")
-        self.server_info = result.get("serverInfo") if isinstance(result.get("serverInfo"), dict) else {}
-        self.capabilities = (result.get("capabilities")
-                             if isinstance(result.get("capabilities"), dict) else {})
+        self._handshake()
         self.notify("notifications/initialized")
 
     @property
@@ -225,14 +295,7 @@ class StdioClient:
             with self._cond:
                 self._pending.discard(rid)
                 self._responses.pop(rid, None)
-        if "error" in reply:
-            error = reply["error"]
-            text = error.get("message") if isinstance(error, dict) else str(error)
-            raise McpError(f"{method} failed: {str(text)[:300]}")
-        result = reply.get("result")
-        if not isinstance(result, dict):
-            raise McpError(f"{method} returned no result")
-        return result
+        return _result(method, reply)
 
     def _wait(self, rid: int, method: str, timeout: float,
               cancelled: Callable[[], bool] | None) -> dict:
@@ -318,15 +381,8 @@ class StdioClient:
             return
         if "method" in message:
             if "id" in message:
-                # A request from the server. Foundry offers it nothing but a
-                # ping: no sampling, no roots, no elicitation.
-                reply: dict[str, Any] = {"jsonrpc": "2.0", "id": message["id"]}
-                if message.get("method") == "ping":
-                    reply["result"] = {}
-                else:
-                    reply["error"] = {"code": -32601, "message": "not offered by this client"}
                 try:
-                    self._send(reply)
+                    self._send(_answer_for(message))
                 except McpError:
                     pass
             return   # notifications: progress, logs -- nothing to act on
@@ -336,29 +392,358 @@ class StdioClient:
                 self._responses[rid] = message
                 self._cond.notify_all()
 
-    # -- the protocol's two calls Foundry makes ----------------------------------
 
-    def list_tools(self) -> list[dict]:
-        if "tools" not in self.capabilities:
-            return []
-        tools: list[dict] = []
-        cursor = None
-        for _ in range(_LIST_PAGES):
-            result = self.request("tools/list", {"cursor": cursor} if cursor else {},
-                                  timeout=self.server.startup_timeout_s)
-            page = result.get("tools")
-            if not isinstance(page, list):
-                raise McpError("tools/list returned no list of tools")
-            tools.extend(t for t in page if isinstance(t, dict))
-            cursor = result.get("nextCursor")
-            if not isinstance(cursor, str) or not cursor or len(tools) >= MAX_TOOLS_PER_SERVER:
-                break
-        return tools[:MAX_TOOLS_PER_SERVER]
+# --- over streamable HTTP (D-081) --------------------------------------------------
 
-    def call_tool(self, name: str, arguments: dict, *,
-                  cancelled: Callable[[], bool] | None = None) -> dict:
-        return self.request("tools/call", {"name": name, "arguments": arguments},
-                            timeout=self.server.tool_timeout_s, cancelled=cancelled)
+# Visible ASCII, which is all a header value may carry here.
+_HEADER_VALUE = re.compile(r"[\x21-\x7e]{1,1024}\Z")
+# How long ending a session, or telling the server a call was given up on,
+# may take: neither is waited for past it.
+QUIET_TIMEOUT = 2.0
+_JSON = "application/json"
+_EVENTS = "text/event-stream"
+
+
+class _Exchange:
+    """The connection one request is waiting on, so the thread that gave up
+    on it can cut it."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._conn: http.client.HTTPConnection | None = None
+        self._aborted = False
+
+    def attach(self, conn: http.client.HTTPConnection) -> None:
+        """Called once the request is sent, so the connection has its socket."""
+        with self._lock:
+            self._conn = conn
+            aborted = self._aborted
+        if aborted:
+            raise McpError("given up on")
+
+    def abort(self) -> None:
+        with self._lock:
+            self._aborted = True
+            conn = self._conn
+        sock = conn.sock if conn is not None else None
+        if sock is None:
+            return   # not sent yet: attach() ends it
+        # Windows does not wake a read blocked on a socket that is shut down;
+        # closing its handle does. Detached first, so the socket object no
+        # longer names the handle and nothing closes it -- or a later socket
+        # given the same number -- a second time.
+        try:
+            socket.close(sock.detach())
+        except OSError:
+            pass
+
+
+class StreamableHttpClient(_Protocol):
+    """A server already running somewhere, reached at its address over the
+    streamable HTTP transport (D-081), as codex's ``url`` servers are.
+
+    Each message is a POST of its own; the reply to a request is either one
+    JSON body or an event stream that ends with it, and a request from the
+    server inside that stream is answered with another POST. The session id
+    the server hands out at initialize goes with every message after it, and
+    closing the session ends it on the server too.
+
+    A bearer token comes from the environment variable the entry names: read
+    when the server is started, held in memory for the Authorization header
+    only, and registered with the redactor, so a server that echoes it -- or
+    an error that quotes it -- shows ``[redacted]`` instead.
+
+    http.client cannot interrupt a read, so each request runs on a thread of
+    its own while the caller waits, watching for Ctrl+C and the timeout; on
+    either the connection is cut and the server told the request was given
+    up on, as over stdio.
+    """
+
+    def __init__(self, server: McpServerConfig, environ: dict[str, str] | None = None, *,
+                 http: HttpClient | None = None, redactor: Redactor | None = None) -> None:
+        self.server = server
+        self._environ = dict(os.environ if environ is None else environ)
+        self._http = http or HttpClient()
+        self._redactor = redactor or default_redactor()
+        self._token = ""
+        self._session = ""
+        self._protocol = ""
+        self._lock = threading.Lock()
+        self._next_id = 0
+        self._closed = False
+        self._stopped = ""
+        self.server_info: dict[str, Any] = {}
+        self.capabilities: dict[str, Any] = {}
+
+    def start(self) -> None:
+        variable = self.server.bearer_token_env_var
+        if variable:
+            token = self._environ.get(variable, "")
+            if not token:
+                raise McpError(f"{variable}, which bearer_token_env_var names, is not set")
+            if not _HEADER_VALUE.match(token):
+                # http.client would refuse it with a message quoting it.
+                raise McpError(f"the token in {variable} has characters a header cannot "
+                               "carry")
+            self._redactor.register(token)
+            self._token = token
+        version = self._handshake()
+        if not _HEADER_VALUE.match(version):
+            raise McpError("its protocol version cannot be sent back in a header")
+        self._protocol = version
+        self.notify("notifications/initialized")
+
+    @property
+    def running(self) -> bool:
+        return not self._closed and not self._stopped
+
+    def stderr_tail(self) -> str:
+        return ""   # a server Foundry did not start has no output of its own here
+
+    def close(self) -> None:
+        """End the session on the server too, as the protocol asks; one that
+        does not allow it answers 405, and one that does not answer is not
+        waited for."""
+        if self._closed:
+            return
+        self._closed = True
+        if not self._session or self._stopped:
+            return
+        try:
+            conn, path, proxy_headers = self._http.connect(self.server.url)
+            conn.timeout = QUIET_TIMEOUT
+            try:
+                conn.request("DELETE", path, headers={**proxy_headers, **self._headers()})
+                conn.getresponse().read(4096)
+            finally:
+                conn.close()
+        except (FoundryError, http.client.HTTPException, OSError):
+            pass
+
+    # -- messages --------------------------------------------------------------
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Accept": f"{_JSON}, {_EVENTS}"}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        if self._session:
+            headers["Mcp-Session-Id"] = self._session
+        if self._protocol:
+            headers["MCP-Protocol-Version"] = self._protocol
+        return headers
+
+    def notify(self, method: str, params: dict | None = None, *,
+               timeout: float | None = None) -> None:
+        message: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
+        if params is not None:
+            message["params"] = params
+        self._deliver(message, self.server.startup_timeout_s if timeout is None else timeout)
+
+    def _deliver(self, message: dict, timeout: float) -> None:
+        """POST a message that has no reply: a notification, or the answer to
+        a request of the server's."""
+        try:
+            conn, path, proxy_headers = self._http.connect(self.server.url)
+        except FoundryError as exc:
+            raise McpError(str(exc)) from exc
+        conn.timeout = timeout
+        body = json.dumps(message, ensure_ascii=False).encode("utf-8")
+        try:
+            conn.request("POST", path, body=body, headers={
+                "Content-Type": _JSON, **proxy_headers, **self._headers()})
+            raw = conn.getresponse()
+            self._check_status(raw)
+            raw.read(64 * 1024)
+        except (http.client.HTTPException, OSError) as exc:
+            raise McpError(f"the connection failed: {exc}") from exc
+        finally:
+            conn.close()
+
+    def _say_given_up(self, rid: int, reason: str) -> None:
+        def send() -> None:
+            try:
+                self.notify("notifications/cancelled", {"requestId": rid, "reason": reason},
+                            timeout=QUIET_TIMEOUT)
+            except Exception:  # noqa: BLE001 - nothing to do about it, and no one waiting
+                pass
+        threading.Thread(target=send, daemon=True,
+                         name=f"mcp-{self.server.name}-cancel").start()
+
+    def request(self, method: str, params: dict | None = None, *, timeout: float,
+                cancelled: Callable[[], bool] | None = None) -> dict:
+        if self._stopped or self._closed:
+            raise McpError(self._stopped or "the session with the server is closed")
+        with self._lock:
+            self._next_id += 1
+            rid = self._next_id
+        message: dict[str, Any] = {"jsonrpc": "2.0", "id": rid, "method": method}
+        if params is not None:
+            message["params"] = params
+        exchange = _Exchange()
+        outcome: dict[str, Any] = {}
+        done = threading.Event()
+
+        def run() -> None:
+            try:
+                outcome["reply"] = self._exchange(message, exchange, timeout)
+            except BaseException as exc:  # noqa: BLE001 - handed to the waiting thread
+                outcome["error"] = exc
+            finally:
+                done.set()
+
+        threading.Thread(target=run, daemon=True, name=f"mcp-{self.server.name}-http").start()
+        deadline = time.monotonic() + timeout
+        try:
+            while not done.wait(0.05):
+                if cancelled is not None and cancelled():
+                    break
+                if time.monotonic() >= deadline:
+                    break
+        except BaseException:
+            exchange.abort()
+            self._say_given_up(rid, "interrupted")
+            raise
+        if not done.is_set():
+            exchange.abort()
+            interrupted = cancelled is not None and cancelled()
+            self._say_given_up(rid, "interrupted" if interrupted else "timed out")
+            if interrupted:
+                raise Cancelled(f"{method} interrupted")
+            raise McpError(f"{method} timed out after {timeout:g}s")
+        error = outcome.get("error")
+        if isinstance(error, McpError):
+            raise error
+        if error is not None:
+            raise McpError(f"{method} failed: {error}") from error
+        return _result(method, outcome["reply"])
+
+    def _exchange(self, message: dict, exchange: _Exchange, timeout: float) -> dict:
+        """POST a request and read its reply: on its own thread."""
+        conn, path, proxy_headers = self._http.connect(self.server.url)
+        # The waiting thread decides when a request has taken too long, and
+        # tells the server; these only bound a thread no one waits for.
+        conn.timeout = min(timeout + QUIET_TIMEOUT, self._http.connect_timeout)
+        try:
+            body = json.dumps(message, ensure_ascii=False).encode("utf-8")
+            conn.request("POST", path, body=body, headers={
+                "Content-Type": _JSON, **proxy_headers, **self._headers()})
+            conn.sock.settimeout(timeout + QUIET_TIMEOUT)
+            exchange.attach(conn)
+            raw = conn.getresponse()
+            if message["method"] == "initialize":
+                self._take_session(raw.getheader("Mcp-Session-Id"))
+            self._check_status(raw)
+            kind = (raw.getheader("Content-Type") or "").split(";")[0].strip().lower()
+            if raw.status == 202:
+                raise McpError(f"{message['method']} was accepted with no reply")
+            if kind == _JSON:
+                return self._json_reply(raw, message["id"])
+            if kind == _EVENTS:
+                return self._event_reply(raw, message["id"])
+            raise McpError(f"its reply was {kind or 'of no content type'}, not JSON or an "
+                           "event stream")
+        except (http.client.HTTPException, OSError) as exc:
+            raise McpError(f"the connection failed: {exc}") from exc
+        finally:
+            conn.close()
+
+    def _take_session(self, value: str | None) -> None:
+        if value is None:
+            return   # a server that keeps no session
+        if not _HEADER_VALUE.match(value):
+            raise McpError("its session id cannot be sent back in a header")
+        self._session = value
+
+    def _check_status(self, raw: http.client.HTTPResponse) -> None:
+        status = raw.status
+        if status < 400:
+            return
+        said = " ".join(raw.read(2000).decode("utf-8", errors="replace").split())[:200]
+        if status == 404 and self._session:
+            # The session is gone -- the server restarted, or ended it.
+            self._stopped = "the server ended this session"
+            raise McpError(f"{self._stopped} (HTTP 404)")
+        if status in (401, 403):
+            if self._token:
+                raise McpError(f"the server refused the token (HTTP {status})")
+            raise McpError(f"the server refused the request (HTTP {status}); it may want a "
+                           "token, named by bearer_token_env_var")
+        raise McpError(f"HTTP {status}" + (f": {said}" if said else ""))
+
+    def _json_reply(self, raw: http.client.HTTPResponse, rid: int) -> dict:
+        data = raw.read(MAX_MESSAGE_BYTES + 1)
+        if len(data) > MAX_MESSAGE_BYTES:
+            raise McpError(f"a reply over {MAX_MESSAGE_BYTES} bytes")
+        try:
+            message = json.loads(data.decode("utf-8"))
+        except ValueError as exc:
+            raise McpError("its reply was not JSON") from exc
+        reply = self._take(message, rid)
+        if reply is None:
+            raise McpError("its reply answered another request")
+        return reply
+
+    def _event_reply(self, raw: http.client.HTTPResponse, rid: int) -> dict:
+        """Read events until the one that answers ``rid``."""
+        data: list[str] = []
+        size = 0
+        while True:
+            line = raw.readline(MAX_MESSAGE_BYTES + 1)
+            if len(line) > MAX_MESSAGE_BYTES:
+                raise McpError(f"an event over {MAX_MESSAGE_BYTES} bytes")
+            text = line.decode("utf-8", errors="replace").rstrip("\r\n")
+            if not text:
+                # A blank line ends an event; the end of the stream ends the last.
+                if data:
+                    reply = self._event("\n".join(data), rid)
+                    data, size = [], 0
+                    if reply is not None:
+                        return reply
+                if not line:
+                    raise McpError("its event stream ended without the reply")
+                continue
+            field_name, _, value = text.partition(":")
+            if field_name != "data":
+                continue   # a comment, or event, id or retry: nothing Foundry needs
+            value = value[1:] if value.startswith(" ") else value
+            size += len(value) + 1
+            if size > MAX_MESSAGE_BYTES:
+                raise McpError(f"an event over {MAX_MESSAGE_BYTES} bytes")
+            data.append(value)
+
+    def _event(self, text: str, rid: int) -> dict | None:
+        try:
+            message = json.loads(text)
+        except ValueError:
+            return None   # not a message: nothing to act on
+        return self._take(message, rid)
+
+    def _take(self, message: Any, rid: int) -> dict | None:
+        """The reply to ``rid`` among what the server sent, answering any
+        request of its own on the way."""
+        for item in message if isinstance(message, list) else [message]:
+            if not isinstance(item, dict):
+                continue
+            if "method" in item:
+                if "id" in item:
+                    try:
+                        self._deliver(_answer_for(item), QUIET_TIMEOUT)
+                    except McpError:
+                        pass
+                continue   # notifications: progress, logs -- nothing to act on
+            if item.get("id") == rid:
+                return item
+        return None
+
+
+Client = StdioClient | StreamableHttpClient
+
+
+def _client(server: McpServerConfig, cwd: Path,
+            environ: dict[str, str] | None) -> Client:
+    if server.url:
+        return StreamableHttpClient(server, environ)
+    return StdioClient(server, cwd, environ)
 
 
 # --- a server's tool, as Foundry offers it ----------------------------------------
@@ -409,7 +794,7 @@ def render_result(result: dict, images: list | None = None, name: str = "") -> s
 class McpTool:
     name: str
     kind: ToolKind
-    client: StdioClient
+    client: Client
     server: str
     remote: str
     description: str
@@ -457,7 +842,7 @@ class McpTool:
                           images=tuple(images or ()))
 
 
-def _tool(client: StdioClient, spec: dict, taken: set[str]) -> McpTool | str:
+def _tool(client: Client, spec: dict, taken: set[str]) -> McpTool | str:
     """The tool, or why it is not offered."""
     remote = spec.get("name")
     if not isinstance(remote, str) or not remote:
@@ -483,7 +868,7 @@ def _tool(client: StdioClient, spec: dict, taken: set[str]) -> McpTool | str:
 
 @dataclass(slots=True)
 class McpServers:
-    clients: list[StdioClient] = field(default_factory=list)
+    clients: list[Client] = field(default_factory=list)
     # server -> the names of its tools, as offered
     tools: dict[str, list[str]] = field(default_factory=dict)
     # server -> why it is not available
@@ -510,10 +895,10 @@ def start_servers(servers: dict[str, McpServerConfig], cwd: Path, registry, *,
     that came up. A server that fails is reported, never fatal."""
     found = McpServers()
     enabled = [s for s in servers.values() if s.enabled]
-    clients = {s.name: StdioClient(s, cwd, environ) for s in enabled}
+    clients = {s.name: _client(s, cwd, environ) for s in enabled}
     results: dict[str, list[dict] | str] = {}
 
-    def run(client: StdioClient) -> None:
+    def run(client: Client) -> None:
         try:
             client.start()
             results[client.server.name] = client.list_tools()

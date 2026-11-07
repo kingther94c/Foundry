@@ -142,6 +142,10 @@ env_vars = ["DOCS_TOKEN"]   # passed through by name; secrets never go in the fi
 # read_only = true          # you vouch it changes nothing: offered in plan mode too
 # enabled_tools = ["search", "fetch"]   # only these of its tools (by the server's names)
 # disabled_tools = ["delete_page"]      # never these
+
+[mcp_servers.tickets]
+url = "https://mcp.example.com/mcp"     # a server already running, over streamable HTTP
+bearer_token_env_var = "TICKETS_TOKEN"  # the variable holding its token, never the token
 ```
 
 ```toml

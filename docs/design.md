@@ -19,7 +19,7 @@ foundry/
 │   ├── context.py           # ContextManager: projection / truncation / masking / token accounting
 │   ├── policy/              # PolicyEngine: rules, modes, the six-step pipeline, the command segmenter
 │   ├── tools/               # ToolExecutor + the tool implementations + the workspace boundary
-│   ├── mcp.py               # the MCP client over stdio: servers' tools as policy-checked tools (D-043)
+│   ├── mcp.py               # the MCP client over stdio and HTTP: servers' tools as policy-checked tools (D-043, D-081)
 │   ├── images.py            # images the model is shown: checked, sized, base64 (D-045)
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
 │   ├── auth.py              # AuthProvider + DPAPI storage
@@ -361,7 +361,14 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   `enabled_tools` and `disabled_tools` ([D-080](decision-log.md)) leave the
   other tools unregistered, said at start, in `/mcp` and in the
   `capability_probe` record (`left_out`); a name the server does not list is
-  a warning.
+  a warning. An entry with `url` instead of `command`
+  ([D-081](decision-log.md)) is a server reached over streamable HTTP: a POST
+  per message, JSON or an event stream back, the session id and protocol
+  version on every message after initialize and DELETE at close; a bearer
+  token from the variable `bearer_token_env_var` names, sent only over https
+  or to this machine and registered with the redactor; each request on a
+  thread of its own, so Ctrl+C and the timeout cut its connection. `/mcp`
+  shows such a server's scheme and host, not its path.
 - `notify` ([D-050](decision-log.md)): a program from the user's own config,
   started when a turn ends with the turn's JSON as its last argument (codex's
   `agent-turn-complete`), found on PATH, without a shell, with the command

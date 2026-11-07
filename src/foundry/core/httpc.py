@@ -183,6 +183,12 @@ class HttpClient:
                                           timeout=self.connect_timeout)
         return conn, url, proxy_headers
 
+    def connect(self, url: str) -> tuple[http.client.HTTPConnection, str, dict[str, str]]:
+        """A connection to ``url``, through the proxy if one applies, for a
+        caller that speaks its own protocol over it (the MCP client, D-081):
+        the connection, the request target, and the proxy's own headers."""
+        return self._connect(url)
+
     def post_json(self, url: str, payload: dict, headers: dict[str, str]) -> Response:
         conn, path, proxy_headers = self._connect(url)
         body = json.dumps(payload).encode("utf-8")

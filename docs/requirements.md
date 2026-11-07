@@ -691,7 +691,7 @@ feature is V2 -- since landed, [D-035](decision-log.md)); LLM summarisation
 compaction (V1 uses masking + a clean termination; since landed,
 [D-040](decision-log.md)); MCP (aligning the internal
 representation with its shapes is enough; a stdio client since landed,
-[D-043](decision-log.md)); subagents (a seam is left);
+[D-043](decision-log.md), and streamable HTTP, [D-081](decision-log.md)); subagents (a seam is left);
 multi-repository tasks; browser/network tools; embeddings/RAG; automatic
 commits; skills and slash commands (V2; slash commands since landed,
 [D-039](decision-log.md)); Claude consumer OAuth; NTLM/Kerberos

@@ -17,11 +17,13 @@ from __future__ import annotations
 import os
 import re
 import tomllib
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from foundry.core.errors import ConfigError
+from foundry.core.httpc import _is_loopback
 from foundry.core.policy.engine import Layer, Mode, Rule, Verdict
 
 USER_DIR_ENV = "FOUNDRY_HOME"
@@ -133,7 +135,10 @@ class BackendConfig:
 _SERVER_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}\Z")
 _MCP_KEYS = frozenset({"command", "args", "env", "env_vars", "startup_timeout_s",
                        "tool_timeout_s", "read_only", "enabled", "enabled_tools",
-                       "disabled_tools"})
+                       "disabled_tools", "url", "bearer_token_env_var"})
+# What only a server Foundry starts can have (D-081).
+_PROGRAM_KEYS = ("command", "args", "env", "env_vars")
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,7 +146,8 @@ class McpServerConfig:
     """One MCP server the user's own configuration starts (D-043)."""
 
     name: str
-    command: str
+    # The program Foundry starts and speaks to over stdio -- or, with url, none.
+    command: str = ""
     args: tuple[str, ...] = ()
     # Plain values for the server's environment. Secrets belong in env_vars:
     # the names of variables passed through from Foundry's own environment.
@@ -158,12 +164,29 @@ class McpServerConfig:
     # all of them), and never those.
     enabled_tools: tuple[str, ...] | None = None
     disabled_tools: tuple[str, ...] = ()
+    # A server reached over streamable HTTP (D-081), as codex's url: its
+    # address, and the environment variable holding a bearer token for it.
+    # The token itself is never in the config.
+    url: str = ""
+    bearer_token_env_var: str = ""
 
     def offers(self, remote: str) -> bool:
         """Whether the user's configuration lets this tool be offered."""
         if self.enabled_tools is not None and remote not in self.enabled_tools:
             return False
         return remote not in self.disabled_tools
+
+    def shown_as(self) -> str:
+        """Where the server is, as it may be shown: its program, not its
+        arguments; or its address's scheme and host, not its path or query.
+        Either of those may carry a secret."""
+        if not self.url:
+            return Path(self.command).name
+        parts = urllib.parse.urlsplit(self.url)
+        host = parts.hostname or "?"
+        if ":" in host:
+            host = f"[{host}]"
+        return f"{parts.scheme}://{host}" + (f":{parts.port}" if parts.port else "")
 
 
 def _strings(value: Any, what: str) -> tuple[str, ...]:
@@ -176,6 +199,27 @@ def _seconds(value: Any, what: str, ceiling: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 < value <= ceiling:
         raise ConfigError(f"{what} must be a number of seconds above 0 and at most {ceiling:g}")
     return float(value)
+
+
+def _mcp_url(value: Any, where: str, *, token: bool) -> str:
+    """The address of a server reached over HTTP (D-081)."""
+    url = value.strip() if isinstance(value, str) else ""
+    parts = urllib.parse.urlsplit(url)
+    try:
+        parts.port
+    except ValueError:
+        url = ""
+    if parts.scheme not in ("http", "https") or not parts.hostname or not url:
+        raise ConfigError(f"{where}.url must be an http:// or https:// address")
+    if parts.username or parts.password:
+        raise ConfigError(f"{where}.url may not carry a user name or password; put a token "
+                          f"in an environment variable and name it in "
+                          f"{where}.bearer_token_env_var")
+    if token and parts.scheme == "http" and not _is_loopback(parts.hostname):
+        # Readable by every hop between here and there.
+        raise ConfigError(f"{where}: a bearer token is sent only over https, or to this "
+                          f"machine, and {where}.url is http://{parts.hostname}")
+    return url
 
 
 def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
@@ -193,9 +237,26 @@ def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
         if unknown:
             raise ConfigError(f"{where}: no setting {unknown[0]!r} "
                               f"(known: {', '.join(sorted(_MCP_KEYS))})")
+        token = entry.get("bearer_token_env_var", "")
+        if not isinstance(token, str) or (token and not _ENV_NAME.match(token)):
+            # Not echoed: a token pasted here by mistake would be printed.
+            raise ConfigError(f"{where}.bearer_token_env_var must be the name of an "
+                              "environment variable, not the token itself")
+        url = ""
         command = entry.get("command")
-        if not isinstance(command, str) or not command.strip():
-            raise ConfigError(f"{where}.command must name the program to run")
+        if "url" in entry:
+            both = [key for key in _PROGRAM_KEYS if key in entry]
+            if both:
+                raise ConfigError(f"{where}: url and {both[0]} do not go together -- a "
+                                  "server is a program Foundry starts, or an address it "
+                                  "reaches")
+            url = _mcp_url(entry["url"], where, token=bool(token))
+            command = ""
+        elif token:
+            raise ConfigError(f"{where}.bearer_token_env_var is for a server reached by url")
+        elif not isinstance(command, str) or not command.strip():
+            raise ConfigError(f"{where}.command must name the program to run, or "
+                              f"{where}.url the address of a server")
         env = entry.get("env", {})
         if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str)
                                                 for k, v in env.items()):
@@ -207,7 +268,7 @@ def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
                     raise ConfigError(f"{where}.{flag} must be true or false")
                 flags[flag] = entry[flag]
         servers[name] = McpServerConfig(
-            name=name, command=command.strip(),
+            name=name, command=command.strip(), url=url, bearer_token_env_var=token,
             args=_strings(entry.get("args", []), f"{where}.args"),
             env=tuple(sorted(env.items())),
             env_vars=_strings(entry.get("env_vars", []), f"{where}.env_vars"),
