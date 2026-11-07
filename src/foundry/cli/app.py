@@ -447,6 +447,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         scrub=default_redactor().scrub,
         hooks=(HookSet(config.hooks, cwd=workspace.root, env_policy=config.shell_environment)
                if config.hooks else None),
+        start_source="resume" if state is not None else "startup",
     )
     # A cancel from another thread (foundry mcp-server, D-103) reaches a
     # running command, search or MCP call, which poll this, not only the next
@@ -578,10 +579,14 @@ def _close(wiring: Wiring, status: TerminalStatus, reason: str) -> None:
     except OSError:
         pass
     try:
-        wiring.session.close()
+        # Told before the journal closes, so their runs are in it (D-117).
+        wiring.runtime.end_hooks()
     finally:
-        if wiring.mcp is not None:
-            wiring.mcp.close()
+        try:
+            wiring.session.close()
+        finally:
+            if wiring.mcp is not None:
+                wiring.mcp.close()
 
 
 def farewell(wiring: Wiring) -> str:
@@ -1293,6 +1298,9 @@ def cmd_exec(args: argparse.Namespace) -> int:
         wiring.runtime.cancel()
         status = TerminalStatus.CANCELLED
         reason = "interrupted"
+        if outcome is None:
+            # Stopped while it ran: the Interrupt hooks are told (D-117).
+            wiring.runtime.interrupt_hooks()
     finally:
         # The event protocol documents Termination as the terminal event, but a
         # headless run that ended normally never reached runtime._terminate, so

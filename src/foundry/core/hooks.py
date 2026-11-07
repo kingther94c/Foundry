@@ -1,11 +1,13 @@
-"""Lifecycle hooks, as codex's (D-115, D-116).
+"""Lifecycle hooks, as codex's (D-115, D-116, D-117).
 
 A hook is a command line the user's own configuration names -- in
 ``hooks.json`` beside ``config.toml``, in a ``[hooks]`` table of it, or in
 the machine's policy -- run at a point in a turn with what is happening as
 one JSON object on its stdin. The names and shapes are codex's, so a hook
-written for codex runs here unchanged. Four of codex's events are run:
+written for codex runs here unchanged. Seven of codex's events are run:
 
+* ``SessionStart``, at a session's first prompt (``startup``, or ``resume``):
+  a hook may add a note to it, or stop it.
 * ``UserPromptSubmit``, before a prompt is sent: a hook may stop it, so
   the model never sees it, or add a note to it.
 * ``PreToolUse``, before a tool call reaches policy: a hook may refuse the
@@ -16,6 +18,8 @@ written for codex runs here unchanged. Four of codex's events are run:
   feedback in place of the result, or add a note.
 * ``Stop``, when the model is done -- it answered without a call, or called
   ``finish``: a hook may send the task on, its reason the next prompt.
+* ``Interrupt``, when a task is stopped, and ``SessionEnd``, when a session
+  closes: told, and given a second (three at most) to act; neither decides.
 
 Like a notify program or an MCP server, a hook is a program Foundry starts,
 so a repository's configuration may not name one. A hook that fails, times
@@ -41,18 +45,31 @@ PRE_TOOL_USE = "PreToolUse"
 POST_TOOL_USE = "PostToolUse"
 USER_PROMPT_SUBMIT = "UserPromptSubmit"
 STOP = "Stop"
-HOOK_EVENTS = (PRE_TOOL_USE, POST_TOOL_USE, USER_PROMPT_SUBMIT, STOP)
+SESSION_START = "SessionStart"
+SESSION_END = "SessionEnd"
+INTERRUPT = "Interrupt"
+HOOK_EVENTS = (PRE_TOOL_USE, POST_TOOL_USE, USER_PROMPT_SUBMIT, STOP, SESSION_START,
+               SESSION_END, INTERRUPT)
 # Events codex gives no matcher: every hook of one runs, whatever its
-# matcher says.
-UNMATCHED_EVENTS = frozenset({USER_PROMPT_SUBMIT, STOP})
+# matcher says. SessionStart's matcher is tried on its source, SessionEnd's
+# on its reason, which is always "other".
+UNMATCHED_EVENTS = frozenset({USER_PROMPT_SUBMIT, STOP, INTERRUPT})
+SESSION_END_REASON = "other"
+# Where exit code 2 is a decision, its reason on stderr; elsewhere it is a
+# code like any other but 0.
+_EXIT_2_EVENTS = frozenset({PRE_TOOL_USE, POST_TOOL_USE, USER_PROMPT_SUBMIT, STOP})
 # codex's other events: named, so a hooks.json carried over says which of
 # its hooks would not run, rather than reading as a typo.
 CODEX_EVENTS = frozenset({
     "PreModelRequest", "PostModelRequest", "PermissionRequest", "PreCompact",
-    "PostCompact", "SessionStart", "SessionEnd", "SubagentStart", "SubagentStop",
-    "Interrupt",
+    "PostCompact", "SubagentStart", "SubagentStop",
 })
 DEFAULT_TIMEOUT_S = 600
+# SessionEnd and Interrupt hooks hold up a session that is closing or a
+# user who stopped it: a second unless set, three at most, as codex's.
+SHORT_EVENTS = frozenset({SESSION_END, INTERRUPT})
+SHORT_TIMEOUT_S = 1
+SHORT_MAX_TIMEOUT_S = 3
 # What a hook's additionalContext may take before it is cut, in codex's
 # tokens, counted here at four characters a token. 0 means no cut.
 DEFAULT_CONTEXT_TOKENS = 2_500
@@ -188,9 +205,13 @@ def _handler(entry: Any, event: str, matcher: str, where: str, source: str) -> H
         windows = _text(windows, f"{where}.commandWindows")
         if IS_WINDOWS:
             command = windows
-    timeout = entry.get("timeout", DEFAULT_TIMEOUT_S)
+    short = event in SHORT_EVENTS
+    timeout = entry.get("timeout", SHORT_TIMEOUT_S if short else DEFAULT_TIMEOUT_S)
     if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
         raise ConfigError(f"{where}.timeout is in seconds, a whole number of at least 1")
+    if short:
+        # Cut to codex's cap, as codex cuts it, so its files load here.
+        timeout = min(timeout, SHORT_MAX_TIMEOUT_S)
     background = entry.get("async", False)
     if not isinstance(background, bool):
         raise ConfigError(f"{where}.async must be true or false")
@@ -373,8 +394,8 @@ class HookVerdict:
     # given in place of the result. UserPromptSubmit: why the prompt is
     # not sent. Stop: what the task goes on with.
     block: list[str] = field(default_factory=list)
-    # UserPromptSubmit and Stop: the stopReason of each `continue: false`,
-    # "" for one without.
+    # UserPromptSubmit, Stop and SessionStart: the stopReason of each
+    # `continue: false`, "" for one without.
     stops: list[str] = field(default_factory=list)
     rewrites: list[dict[str, Any]] = field(default_factory=list)   # PreToolUse
     context: list[str] = field(default_factory=list)               # for the model
@@ -465,7 +486,7 @@ class _Reading:
         if run.error:
             self.fail(run.error)
             return None
-        if run.exit_code == 2 and self.control:
+        if run.exit_code == 2 and self.control and self.event in _EXIT_2_EVENTS:
             reason = run.stderr.strip()
             if not reason:
                 self.fail("exited with code 2 but did not write a reason to stderr")
@@ -696,9 +717,77 @@ def _stop_answer(reading: _Reading, answer: dict[str, Any]) -> None:
         reading.decided(_reason(answer.get("reason")))
 
 
+def read_session_start(runs: list[HookRun]) -> HookVerdict:
+    """SessionStart answers, as codex reads them: ``additionalContext``, or
+    plain text, is a note for the model with the session's first prompt;
+    ``continue: false`` stops that prompt. Exit code 2 decides nothing."""
+    verdict = HookVerdict()
+    for run in runs:
+        reading = _Reading(run, SESSION_START, verdict)
+        answer = reading.start()
+        if answer is not None:
+            _start_answer(reading, answer)
+        elif reading.plain:
+            verdict.context.append(_context(run.hook, reading.plain))
+        reading.done()
+    return verdict
+
+
+def _start_answer(reading: _Reading, answer: dict[str, Any]) -> None:
+    verdict = reading.verdict
+    output = _hook_output(answer, {"hookEventName": str, "additionalContext": str})
+    if output is None or not _typed(answer, _UNIVERSAL):
+        reading.fail("returned invalid SessionStart JSON output")
+        return
+    if answer.get("systemMessage"):
+        verdict.messages.append(answer["systemMessage"])
+    if output.get("additionalContext"):
+        verdict.context.append(_context(reading.run.hook, output["additionalContext"]))
+    if reading.control and answer.get("continue") is False:
+        reading.outcome = "stopped"
+        verdict.stops.append(_reason(answer.get("stopReason")))
+
+
+def read_session_end(runs: list[HookRun]) -> HookVerdict:
+    """SessionEnd runs, as codex reads them: what one prints is not read;
+    one that fails says why, from its stderr."""
+    verdict = HookVerdict()
+    for run in runs:
+        reading = _Reading(run, SESSION_END, verdict)
+        if run.error:
+            reading.fail(run.error)
+        elif run.exit_code is None:
+            reading.fail("exited without a status code")
+        elif run.exit_code != 0:
+            reading.fail(f"failed: {run.stderr.strip()}" if run.stderr.strip()
+                         else f"exited with code {run.exit_code}")
+        reading.done()
+    return verdict
+
+
+def read_interrupt(runs: list[HookRun]) -> HookVerdict:
+    """Interrupt answers, as codex reads them: nothing, or JSON with a
+    ``systemMessage``; plain text is a failure."""
+    verdict = HookVerdict()
+    for run in runs:
+        reading = _Reading(run, INTERRUPT, verdict)
+        answer = reading.start()
+        if answer is not None:
+            if not _typed(answer, {"systemMessage": str}):
+                reading.fail("returned invalid Interrupt JSON output")
+            elif answer.get("systemMessage"):
+                verdict.messages.append(answer["systemMessage"])
+        elif reading.plain:
+            reading.fail("returned text that is not JSON")
+        reading.done()
+    return verdict
+
+
 READERS: dict[str, Callable[[list[HookRun]], HookVerdict]] = {
     PRE_TOOL_USE: read_pre_tool_use, POST_TOOL_USE: read_post_tool_use,
     USER_PROMPT_SUBMIT: read_user_prompt_submit, STOP: read_stop,
+    SESSION_START: read_session_start, SESSION_END: read_session_end,
+    INTERRUPT: read_interrupt,
 }
 
 

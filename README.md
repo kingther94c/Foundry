@@ -225,15 +225,17 @@ notify = ["python", "C:/tools/notify.py"]   # not a .bat or .cmd: cmd.exe would 
 Hooks are codex's, in its format: programs your own files name, run at
 points in a task with what is happening as JSON on their stdin -- in
 `hooks.json` beside your `config.toml` (or the machine's `policy.toml`), or in
-`[hooks]` tables of it. A `UserPromptSubmit` hook may stop a prompt before it
-is sent or add a note to it; a `PreToolUse` hook may refuse a call or rewrite
-it (a rewrite still goes through policy and the approval); a `PostToolUse`
-hook may put its own feedback in place of a result, and either may add a note
-for the model; a `Stop` hook, run when the model is done (or calls
-`finish`), may send the task on with its reason as the next prompt. They run
-through `cmd /C`, in the workspace, with the command environment; one that
-fails is a warning and the task goes on. `/hooks` lists them; a repository's
-config may not name one.
+`[hooks]` tables of it. A `SessionStart` hook, run at a session's first
+prompt, and a `UserPromptSubmit` hook, run at each, may stop the prompt
+before it is sent or add a note to it; a `PreToolUse` hook may refuse a call
+or rewrite it (a rewrite still goes through policy and the approval); a
+`PostToolUse` hook may put its own feedback in place of a result, and either
+may add a note for the model; a `Stop` hook, run when the model is done (or
+calls `finish`), may send the task on with its reason as the next prompt; an
+`Interrupt` hook is told when you stop a task, and a `SessionEnd` hook when
+the session closes. They run through `cmd /C`, in the workspace, with the
+command environment; one that fails is a warning and the task goes on.
+`/hooks` lists them; a repository's config may not name one.
 
 ```json
 {"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [

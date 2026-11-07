@@ -1322,7 +1322,7 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("status", "session, model, mode, tokens, context and plan", _status),
     Command("diff", "every uncommitted change, and which of them this session made", _diff),
     Command("mcp", "the MCP servers, and the tools each offers", show_mcp),
-    Command("hooks", "the hooks run at each tool call, and from which file", show_hooks),
+    Command("hooks", "the lifecycle hooks this session runs, and from which file", show_hooks),
     Command("skills", "the skills the model may load; $name in a message asks for one",
             show_skills),
     Command("plan", "the model's current plan", _plan),

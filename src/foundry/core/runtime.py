@@ -61,10 +61,14 @@ from foundry.core.events import (
     new_id,
 )
 from foundry.core.hooks import (
+    INTERRUPT,
     PERMISSION_MODES,
     POST_TOOL_USE,
     PRE_TOOL_USE,
     READERS,
+    SESSION_END,
+    SESSION_END_REASON,
+    SESSION_START,
     STOP,
     USER_PROMPT_SUBMIT,
     HookVerdict,
@@ -265,6 +269,9 @@ class AgentRuntime:
     # The task a hook is told of, as codex's turn_id (D-116): the round it
     # began in, the same for each of its hooks.
     _turn_id: str = ""
+    # How the session began, for the SessionStart hooks at its first prompt
+    # (D-117): "startup" or "resume"; "" once they have run.
+    start_source: str = ""
 
     def __post_init__(self) -> None:
         # A backend that retries says so (D-085). Without this a 429 or a
@@ -385,10 +392,12 @@ class AgentRuntime:
 
         message = user_input
         if self.hooks is not None:
-            message, refused = self._prompt_hooks(user_input)
+            notes, refused = self._prompt_hooks(user_input)
             if refused:
                 # Not sent, so not recorded as input: a resume owes it nothing.
                 return self._terminate(TerminalStatus.BLOCKED, refused)
+            for event, note in notes:
+                message += f"\n\nFrom a {event} hook: {note}"
         # The request records carry every message the model was sent; this is
         # for input that never reached one, which a resumed session still owes
         # an answer to.
@@ -942,9 +951,11 @@ class AgentRuntime:
 
     # -- hooks (D-115) -----------------------------------------------------
 
-    def _hook_payload(self, event: str, **fields: Any) -> dict[str, Any]:
-        """What every hook is told, codex's names, then the event's own."""
-        return {
+    def _hook_payload(self, event: str, omit: tuple[str, ...] = (),
+                      **fields: Any) -> dict[str, Any]:
+        """What every hook is told, codex's names, then the event's own;
+        less ``omit``, the common fields codex does not tell this event."""
+        payload = {
             "session_id": self.session.session_id if self.session is not None else "",
             "transcript_path": str(self.session.path) if self.session is not None else None,
             "cwd": str(self.tool_ctx.workspace.root),
@@ -955,23 +966,28 @@ class AgentRuntime:
                                                     self.policy.mode.value),
             **fields,
         }
+        for name in omit:
+            payload.pop(name)
+        return payload
 
     def _run_hooks(self, event: str, names: tuple[str, ...] = (), call_id: str | None = None,
+                   *, omit: tuple[str, ...] = (), stoppable: bool = True,
                    **fields: Any) -> HookVerdict | None:
         """Run the hooks of ``event`` whose matcher takes one of ``names``,
         and say what they said: to the user, the warnings and messages; to
         the journal, each run. What a hook said for the model comes back
         scrubbed, in the verdict's notes; at a call, ``call_id``, they are
-        kept for its reply too. None when no hook matches."""
+        kept for its reply too. None when no hook matches. ``stoppable``
+        False: a cancel already honoured does not end them as they start."""
         hooks = self.hooks.matching(event, names)
         if not hooks:
             return None
         for hook in hooks:
             if hook.status_message:
                 self._emit(Notice(f"{event} hook: {hook.status_message}"))
-        payload = self._hook_payload(event, **fields)
+        payload = self._hook_payload(event, omit, **fields)
         runs = self.hooks.run(hooks, scrubbed(payload, self.scrub),
-                              cancelled=lambda: self._cancelled)
+                              cancelled=(lambda: self._cancelled) if stoppable else None)
         verdict = READERS[event](runs)
         clean = self.scrub or (lambda text: text)
         for message in verdict.messages:
@@ -996,20 +1012,50 @@ class AgentRuntime:
                                tool_name=hook_tool_name(op.tool), tool_use_id=call.call_id,
                                tool_input=hook_tool_input(op.tool, op.args), **fields)
 
-    def _prompt_hooks(self, prompt: str) -> tuple[str, str]:
-        """The UserPromptSubmit hooks (D-116): the prompt the model is sent,
-        their notes added to it, and why they stopped it, or ""."""
+    def _prompt_hooks(self, prompt: str) -> tuple[list[tuple[str, str]], str]:
+        """The hooks a prompt meets before it is sent: SessionStart's at a
+        session's first (D-117), then UserPromptSubmit's (D-116). Their
+        notes, by event, and why one stopped it, or ""."""
+        notes: list[tuple[str, str]] = []
+        clean = self.scrub or (lambda text: text)
+        if self.start_source:
+            # Once, as codex's pending start: a prompt it stopped spends it.
+            source, self.start_source = self.start_source, ""
+            verdict = self._run_hooks(SESSION_START, (source,), omit=("turn_id",),
+                                      source=source)
+            if verdict is not None:
+                if verdict.stops:
+                    refused = [clean(reason) for reason in verdict.stops if reason]
+                    return [], ("a SessionStart hook stopped this prompt, so it was not sent"
+                                + (": " + "; ".join(refused) if refused else ""))
+                notes += [(SESSION_START, note) for note in verdict.context]
         verdict = self._run_hooks(USER_PROMPT_SUBMIT, prompt=prompt)
         if verdict is None:
-            return prompt, ""
-        clean = self.scrub or (lambda text: text)
+            return notes, ""
         refused = [clean(reason) for reason in verdict.block + verdict.stops if reason]
         if verdict.block or verdict.stops:
-            return prompt, ("a UserPromptSubmit hook stopped this prompt, so it was not sent"
-                            + (": " + "; ".join(refused) if refused else ""))
-        for note in verdict.context:
-            prompt += f"\n\nFrom a {USER_PROMPT_SUBMIT} hook: {note}"
-        return prompt, ""
+            return [], ("a UserPromptSubmit hook stopped this prompt, so it was not sent"
+                        + (": " + "; ".join(refused) if refused else ""))
+        return notes + [(USER_PROMPT_SUBMIT, note) for note in verdict.context], ""
+
+    def interrupt_hooks(self) -> None:
+        """The Interrupt hooks (D-117): the task was stopped. Told, never
+        asked; a cancel already honoured does not cut them short."""
+        if self.hooks is not None:
+            self._run_hooks(INTERRUPT, stoppable=False)
+
+    def end_hooks(self) -> None:
+        """The SessionEnd hooks (D-117), as the session closes, before its
+        journal does. Told, never asked; a Ctrl+C meanwhile ends them, not
+        the close."""
+        if self.hooks is None:
+            return
+        try:
+            self._run_hooks(SESSION_END, (SESSION_END_REASON,), stoppable=False,
+                            omit=("model", "turn_id", "permission_mode"),
+                            reason=SESSION_END_REASON)
+        except KeyboardInterrupt:
+            self._emit(Notice(f"{SESSION_END} hooks stopped", level="warning"))
 
     def _stop_hooks(self, last_message: str, active: bool) -> str:
         """The Stop hooks (D-116), as the model is done: what the task goes
@@ -1320,6 +1366,8 @@ class AgentRuntime:
             # Honoured, so spent (D-062): a Ctrl+C or an abort stops the task
             # it came in, and the next one starts afresh.
             self._cancelled = False
+            # A second Ctrl+C while they run still ends the session (D-062).
+            self.interrupt_hooks()
         # The sink holds a tail of streamed text so a credential cannot straddle
         # two deltas unseen. Every path here is followed by an event that would
         # release it anyway; flushing first makes that independent of ordering.
