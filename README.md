@@ -223,7 +223,10 @@ nothing is stored on the server.
 How hard the model reasons is `effort` under `[backend]`, on every protocol:
 `none | minimal | low | medium | high | xhigh` for the OpenAI shapes (sent as
 `reasoning.effort` or `reasoning_effort`), the levels above for Claude. Unset
-sends none, and `/effort LEVEL` changes it mid-session.
+sends none, and `/effort LEVEL` changes it mid-session. How long a GPT-5
+model's answers are is `verbosity = "low" | "medium" | "high"` under
+`[backend]`, as codex's `model_verbosity` (`-c verbosity=low` for one run);
+Claude has no such setting, so it is refused there.
 
 At the prompt, a pasted block -- a stack trace, a log, some code -- is sent as
 one message, and so is what you type between two lines of three double quotes

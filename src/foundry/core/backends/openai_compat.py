@@ -109,7 +109,8 @@ def _tool_to_wire(schema: ToolSchema) -> dict[str, Any]:
 
 
 def build_body(request: TurnRequest, *, stream: bool,
-               effort: str | None = None) -> dict[str, Any]:
+               effort: str | None = None,
+               verbosity: str | None = None) -> dict[str, Any]:
     messages: list[dict[str, Any]] = []
     results: list[ToolResultBlock] = []
     for message in request.messages:
@@ -138,6 +139,9 @@ def build_body(request: TurnRequest, *, stream: bool,
     # Opt-in (D-061): a server that does not know the field may reject it.
     if effort:
         body["reasoning_effort"] = effort
+    # Opt-in too (D-090): GPT-5's answer length.
+    if verbosity:
+        body["verbosity"] = verbosity
     return body
 
 
@@ -183,6 +187,8 @@ class OpenAICompatBackend:
     on_retry: Any = None
     # reasoning_effort (D-061); None sends nothing.
     effort: str | None = None
+    # verbosity (D-090); None sends nothing.
+    verbosity: str | None = None
 
     @property
     def endpoint(self) -> str:
@@ -206,7 +212,8 @@ class OpenAICompatBackend:
         return model_ids(response.json())
 
     def stream_turn(self, request: TurnRequest) -> Iterator[StreamEvent]:
-        body = build_body(request, stream=self.stream, effort=self.effort)
+        body = build_body(request, stream=self.stream, effort=self.effort,
+                          verbosity=self.verbosity)
         if self.recorder is not None:
             self.recorder.record(RequestRecord(model=request.model, body=body,
                                                endpoint=self.endpoint))

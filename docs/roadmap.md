@@ -269,6 +269,8 @@ What a codex user still notices day to day, next:
     `exec resume` (landed, D-088).
 50. ~~Reasoning carried across rounds on Responses~~ -- encrypted, sent back
     with its turn to the same model, as codex does (landed, D-089).
+51. ~~How long the answers are~~ -- `backend.verbosity`, codex's
+    `model_verbosity`, on both OpenAI shapes (landed, D-090).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

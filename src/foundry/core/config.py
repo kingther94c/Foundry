@@ -56,6 +56,10 @@ OPENAI_EFFORT_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh")
 ANY_EFFORT = tuple(dict.fromkeys(OPENAI_EFFORT_LEVELS + EFFORT_LEVELS))
 FALLBACK_VALUES = ("default", "off")
 REASONING_SUMMARIES = ("auto", "concise", "detailed", "none")
+# How long the answers are (D-090), as codex's model_verbosity: GPT-5's
+# text.verbosity on the Responses API, verbosity on Chat Completions. Claude
+# has no such setting.
+VERBOSITY_LEVELS = ("low", "medium", "high")
 MIN_CONTEXT_TOKENS = 1000
 
 
@@ -65,6 +69,11 @@ def _validate_backend_setting(key: str, value: Any) -> None:
         if value is not None and value not in ANY_EFFORT:
             raise ConfigError(
                 f"backend.effort must be one of {', '.join(ANY_EFFORT)}, got {value!r}"
+            )
+    elif key == "verbosity":
+        if value is not None and value not in VERBOSITY_LEVELS:
+            raise ConfigError(
+                f"backend.verbosity must be one of {', '.join(VERBOSITY_LEVELS)}, got {value!r}"
             )
     elif key == "images":
         if not isinstance(value, bool):
@@ -154,6 +163,9 @@ class BackendConfig:
     # for its summary, responses asks for nothing (a model that does not reason
     # rejects the field). "none" asks for nothing anywhere.
     reasoning_summary: str | None = None
+    # How long the answers are (D-090): low, medium or high, for the OpenAI
+    # shapes only. Unset sends nothing, leaving it to the API.
+    verbosity: str | None = None
     # Whether the model takes images (D-045): view_image, -i and /image, and an
     # MCP tool's images. False for a text-only model, which refuses a request
     # that carries one.
@@ -762,6 +774,13 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
         raise ConfigError(
             f"backend.effort {effort!r} is not one the {config.backend.protocol} protocol "
             f"takes: {', '.join(effort_levels(config.backend.protocol))}")
+    if config.backend.verbosity is not None and config.backend.protocol == ANTHROPIC_PROTOCOL:
+        # Refused, not dropped: a setting that silently does nothing reads as
+        # one that works.
+        raise ConfigError(
+            f"backend.verbosity is not a setting the {ANTHROPIC_PROTOCOL} protocol takes: "
+            "it is GPT-5's (text.verbosity on the Responses API, verbosity on Chat "
+            "Completions); set it in the profile of an OpenAI endpoint instead")
     return config
 
 

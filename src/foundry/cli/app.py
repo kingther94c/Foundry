@@ -344,6 +344,9 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
     # Every protocol takes an effort (D-061); load_config checked it is one
     # this protocol knows.
     backend_kwargs: dict = {"effort": config.backend.effort}
+    if backend_class is not AnthropicBackend:
+        # GPT-5's answer length (D-090); load_config refused it for Claude.
+        backend_kwargs["verbosity"] = config.backend.verbosity
     if backend_class is AnthropicBackend:
         backend_kwargs["fallbacks"] = (None if config.backend.fallbacks == "off"
                                        else config.backend.fallbacks)

@@ -565,6 +565,7 @@ def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
                   f"{config.backend.name})"),
         ("mode", runtime.policy.mode.value),
         ("effort", config.backend.effort or API_DEFAULT_EFFORT),
+        *([("verbosity", config.backend.verbosity)] if config.backend.verbosity else []),
         ("tokens", f"{usage.input_tokens:,} in ({usage.cached_input_tokens:,} cached), "
                    f"{usage.output_tokens:,} out"),
         ("context", f"about {used:,} of {limit:,} tokens ({100 * used // max(limit, 1)}%)"),

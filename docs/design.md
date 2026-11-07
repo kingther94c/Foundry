@@ -264,6 +264,10 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   `reasoning_effort`, as the protocol spells it -- and writes `effort_change`;
   the model is not told. Each protocol's levels are checked when the
   configuration loads and when the command is typed; `default` sends none.
+- `backend.verbosity` ([D-090](decision-log.md)), codex's `model_verbosity`,
+  is sent as `text.verbosity` on the Responses API and `verbosity` on Chat
+  Completions; unset sends nothing, and `anthropic_messages` refuses it when
+  the configuration loads.
 - Rule syntax: `tool` / `tool(pattern)`, fnmatch, with a per-tool target key
   (run_command -> the segmented command string; file tools -> the
   workspace-relative path). The precedence order is fixed, with no numeric

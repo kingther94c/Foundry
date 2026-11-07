@@ -163,7 +163,8 @@ def _tool_to_wire(schema: ToolSchema) -> dict[str, Any]:
 def build_body(request: TurnRequest, *, stream: bool,
                reasoning_summary: str | None = None,
                effort: str | None = None,
-               include_reasoning: bool = False) -> dict[str, Any]:
+               include_reasoning: bool = False,
+               verbosity: str | None = None) -> dict[str, Any]:
     instructions = ""
     items: list[dict[str, Any]] = []
     results: list[ToolResultBlock] = []
@@ -206,6 +207,9 @@ def build_body(request: TurnRequest, *, stream: bool,
         # codex asks for it (D-089): dropped, a reasoning model started each
         # round of a tool loop from nothing.
         body["include"] = [INCLUDE_REASONING]
+    # Opt-in (D-090): GPT-5's answer length, as codex sends model_verbosity.
+    if verbosity:
+        body["text"] = {"verbosity": verbosity}
     return body
 
 
@@ -278,6 +282,8 @@ class ResponsesBackend:
     reasoning_summary: str | None = None
     # reasoning.effort (D-061); None sends nothing.
     effort: str | None = None
+    # text.verbosity (D-090); None sends nothing.
+    verbosity: str | None = None
     # The model has answered with reasoning (D-089): from then on its
     # encrypted reasoning is asked for, as it is whenever reasoning is
     # configured. Never before: a model that does not reason may refuse it.
@@ -307,7 +313,8 @@ class ResponsesBackend:
         body = build_body(request, stream=self.stream,
                           reasoning_summary=self.reasoning_summary, effort=self.effort,
                           include_reasoning=bool(self.reasons or self.effort
-                                                 or self.reasoning_summary))
+                                                 or self.reasoning_summary),
+                          verbosity=self.verbosity)
         if self.recorder is not None:
             self.recorder.record(RequestRecord(model=request.model, body=body,
                                                endpoint=self.endpoint))
