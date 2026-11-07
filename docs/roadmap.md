@@ -387,6 +387,8 @@ What a codex user still notices day to day, next:
     (landed, D-138).
 100. ~~The terminal title, and `/title`~~ -- what the session is doing,
      where a tab bar shows it (landed, D-139).
+101. ~~The rest of codex's slash commands~~ -- `/cwd`, and a line for each
+     one Foundry has no counterpart for (landed, D-140).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

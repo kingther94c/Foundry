@@ -709,7 +709,42 @@ CODEX_COMMANDS = {
     "debug-config": "foundry doctor checks the configuration and the environment",
     "ps": "Foundry runs no background terminals: each command runs to its end",
     "stop": "Foundry runs no background terminals: Ctrl+C stops the running task",
+    # The rest of codex's (D-140): what Foundry has instead, or that it has none.
+    "clean": "Foundry runs no background terminals: Ctrl+C stops the running task",
+    "config": "Foundry's settings are in config.toml in the Foundry folder: foundry doctor "
+              "names it and checks them, and /status shows this session's",
+    "vim": "the prompt edits with your terminal's own keys; Foundry has no Vim mode",
+    "keymap": "the prompt edits with your terminal's own keys; Foundry has none to remap",
+    "raw": "Foundry writes into the terminal's own scrollback, so text is selected there "
+           "as usual; /copy copies an answer as the model wrote it",
+    "theme": "code is coloured with the terminal's own colours, so its theme is the one "
+             "used",
+    "statusline": "the prompt shows the context left; /status shows the model, mode, "
+                  "tokens and the rest",
+    "ide": "Foundry has no IDE connection: mention a file with @path",
+    "app": "Foundry runs in the terminal only",
+    "apps": "Foundry has no apps: tools come from MCP servers, added with foundry mcp add",
+    "plugins": "Foundry has no plugins: tools come from MCP servers, added with foundry mcp "
+               "add, and skills from the skills folder",
+    "daemon": "Foundry runs no background server: each session is a process of its own",
+    "voice": "Foundry has no voice input",
+    "pets": "Foundry has no terminal pet",
+    "import": "Foundry imports nothing: it reads AGENTS.md and FOUNDRY.md, and the skills "
+              "in .agents/skills, as they are",
+    "tui": "Foundry has one terminal interface",
+    "presets": "a custom prompt is a saved one: ~/.foundry/prompts/NAME.md is /NAME",
+    "memories": "Foundry keeps no memories between sessions: what should carry over goes in "
+                "AGENTS.md or FOUNDRY.md",
+    "experimental": "Foundry has no experimental features to turn on",
+    "agents": "Foundry runs one agent per session: /side asks it on the side, /fork goes on "
+              "in a copy, and another terminal runs another session",
+    "setup-default-sandbox": "Foundry has no sandbox (docs/threat-model.md says what that "
+                             "leaves)",
+    "worktree": "git worktree add ../DIR makes one; foundry -C ../DIR starts a session in it",
+    "daybreak": "Foundry has no Daybreak",
 }
+CODEX_COMMANDS["pet"] = CODEX_COMMANDS["pets"]
+CODEX_COMMANDS["subagents"] = CODEX_COMMANDS["agents"]
 
 
 # --- the built-in commands -------------------------------------------------------------
@@ -1584,6 +1619,7 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("status", "session, model, mode, tokens, context and plan", _status),
     Command("diff", "every uncommitted change, and which of them this session made", _diff),
     Command("pwd", "the folder this session works in", _pwd),
+    Command("cwd", "the same as /pwd", _pwd),
     Command("title", "what the terminal title shows, or pick it for this session", _title,
             arguments="[ITEM...|none]"),
     Command("rollout", "where this session's journal is", _rollout),
