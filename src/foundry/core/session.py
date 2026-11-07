@@ -74,6 +74,8 @@ class EventType:
     # The user went back to an earlier point with /rewind (D-056): the history
     # it kept.
     REWOUND = "rewound"
+    # A model request failed and is being tried again (D-085).
+    MODEL_RETRY = "model_retry"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced

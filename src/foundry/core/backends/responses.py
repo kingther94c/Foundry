@@ -210,6 +210,8 @@ class ResponsesBackend:
     stream: bool = True
     recorder: Any = None
     max_retries: int = 4
+    # Told of each retry before its wait (D-085); the runtime sets it.
+    on_retry: Any = None
     # reasoning.summary ("auto", "concise", "detailed"); None sends nothing.
     reasoning_summary: str | None = None
     # reasoning.effort (D-061); None sends nothing.
@@ -248,7 +250,7 @@ class ResponsesBackend:
     def _single(self, body: dict[str, Any]) -> list[StreamEvent]:
         response = retry_with_backoff(
             lambda: self.client.post_json(self.endpoint, body, self._headers()),
-            attempts=self.max_retries,
+            attempts=self.max_retries, on_retry=self.on_retry,
         )
         payload = response.json()
         text, calls = _parse_output(payload.get("output", []))
@@ -282,7 +284,7 @@ class ResponsesBackend:
                     # Responses signals completion with its own event, checked
                     # below, rather than the Chat Completions [DONE] sentinel.
                     expect_done_sentinel=False),
-                attempts=self.max_retries,
+                attempts=self.max_retries, on_retry=self.on_retry,
             )
         except NotStreaming:
             self.stream = False

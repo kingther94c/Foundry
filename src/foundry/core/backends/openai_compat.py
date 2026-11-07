@@ -179,6 +179,8 @@ class OpenAICompatBackend:
     stream: bool = True
     recorder: Any = None
     max_retries: int = 4
+    # Told of each retry before its wait (D-085); the runtime sets it.
+    on_retry: Any = None
     # reasoning_effort (D-061); None sends nothing.
     effort: str | None = None
 
@@ -217,7 +219,7 @@ class OpenAICompatBackend:
     def _single(self, body: dict[str, Any]) -> list[StreamEvent]:
         response = retry_with_backoff(
             lambda: self.client.post_json(self.endpoint, body, self._headers()),
-            attempts=self.max_retries,
+            attempts=self.max_retries, on_retry=self.on_retry,
         )
         payload = response.json()
         choices = payload.get("choices") or []
@@ -274,7 +276,7 @@ class OpenAICompatBackend:
             # from a real gateway killed an in-progress task.
             chunks = open_retrying_stream(
                 lambda: self.client.stream_sse(self.endpoint, body, self._headers()),
-                attempts=self.max_retries,
+                attempts=self.max_retries, on_retry=self.on_retry,
             )
         except NotStreaming:
             # The endpoint does not stream. Degrade for the rest of the session

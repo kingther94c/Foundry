@@ -49,6 +49,13 @@ class ProtocolError(FatalError):
     category = "provider_protocol"
 
 
+class QuotaExceeded(FatalError):
+    """The account's quota is used up (D-085). It answers 429 like a rate
+    limit, but no wait clears it: a person has to."""
+
+    category = "quota"
+
+
 class ToolError(FoundryError):
     """The tool ran (or refused to run) and failed in a way the model should
     see and can act on."""

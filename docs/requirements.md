@@ -421,7 +421,8 @@ The V1 rules:
 - A malformed, unknown, or out-of-bounds tool call is not executed, and a
   structured error is returned to the model.
 - The error taxonomy: `TransientError (429/5xx/network, retried with
-  exponential backoff, respecting Retry-After) / AuthError (refresh and retry
+  exponential backoff, respecting Retry-After, each retry said before its
+  wait -- D-085) / AuthError (refresh and retry
   once) / FatalError (context exceeded, a content refusal)`, with a policy
   denial answered as a tool result rather than raised;
   retry logic belongs to AgentRuntime rather than being scattered across

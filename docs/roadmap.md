@@ -257,6 +257,9 @@ What a codex user still notices day to day, next:
 45. ~~A backend's own key, headers and query~~ -- `env_key`,
     `env_http_headers` and `query_params`, as codex's model providers
     (landed, D-084).
+46. ~~Retries you can see~~ -- each retry of a model request said before its
+    wait, as codex's "Reconnecting...", journaled and counted; a spent quota
+    not retried at all (landed, D-085).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

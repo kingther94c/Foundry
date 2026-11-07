@@ -158,7 +158,10 @@ async def run_turn(user_input):
   `prompt_cache_key` (where the backend's capabilities allow it).
 - The error taxonomy (`TransientError/AuthError/FatalError`) is
   mapped by the adapter and handled uniformly in the runtime for retries
-  (exponential backoff + Retry-After + a ceiling); an AuthError triggers a
+  (exponential backoff + Retry-After + a ceiling). Each retry is said before
+  its wait -- a warning notice and a `model_retry` record -- and a 429 that
+  says the quota is spent is `QuotaExceeded`, not retried, and ends the task
+  blocked ([D-085](decision-log.md)); an AuthError triggers a
   single-flight refresh (a process lock plus a file lock against multi-instance
   races) and one retry. A policy denial is not an error: the call is answered
   with a tool result the model reads, and a `tool_rejected` event records it.
@@ -460,7 +463,7 @@ class ModelBackend(Protocol):
   policy_decision / approval / command_exec / token_usage / capability_probe /
   validation_claim / git_baseline / termination / user_input / tool_reply /
   resumed / undo / mode_change / compacted / model_change / notified /
-  user_command / rewound / effort_change` (`user_input`, `tool_reply` and
+  user_command / rewound / effort_change / model_retry` (`user_input`, `tool_reply` and
   `resumed` added for resume, [D-035](decision-log.md); `undo` for undo,
   [D-036](decision-log.md); `mode_change` for plan approval,
   [D-038](decision-log.md); `compacted` for compaction, whose own request and
@@ -469,7 +472,8 @@ class ModelBackend(Protocol):
   notify program, [D-050](decision-log.md); `user_command` for `!COMMAND`,
   [D-055](decision-log.md); `rewound` for `/rewind`, which keeps the history
   it left as `compacted` does, [D-056](decision-log.md); `effort_change` for
-  `/effort`, [D-061](decision-log.md)). An image
+  `/effort`, [D-061](decision-log.md); `model_retry` for a model request
+  tried again, [D-085](decision-log.md)). An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).
   Artifact contents are stored content-addressed at

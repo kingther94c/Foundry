@@ -35,6 +35,7 @@ from foundry.core.errors import (
     ConfigError,
     FatalError,
     ProtocolError,
+    QuotaExceeded,
     TransientError,
 )
 
@@ -326,6 +327,13 @@ def raise_for_status(response: Response) -> None:
     if response.status in (401, 403):
         raise AuthError(f"authentication rejected (HTTP {response.status})", payload=detail)
     if response.status == 429:
+        if b'"insufficient_quota"' in response.body:
+            # OpenAI's spent quota is a 429 too. Taken for a rate limit it was
+            # waited out four times -- a minute and more of retries that could
+            # not succeed -- and then reported as "provider unavailable".
+            raise QuotaExceeded(
+                "the account's quota is used up (HTTP 429); waiting will not help, "
+                "so check its plan and billing", payload=detail)
         raise TransientError("rate limited (HTTP 429)", payload=detail,
                              retry_after=_retry_after_seconds(response))
     if response.status == 407:
@@ -367,7 +375,7 @@ def _retry_after_seconds(response: Response) -> float | None:
     return max(0.0, delay)
 
 
-def open_retrying_stream(make_stream, *, attempts: int = 4, sleep=time.sleep):
+def open_retrying_stream(make_stream, *, attempts: int = 4, sleep=time.sleep, on_retry=None):
     """Retry the connection, then hand back a lazy iterator over the rest.
 
     Wrapping the whole stream in ``list()`` made it retryable but stopped it
@@ -387,14 +395,14 @@ def open_retrying_stream(make_stream, *, attempts: int = 4, sleep=time.sleep):
             return iterator, None, False
 
     iterator, first, has_first = retry_with_backoff(
-        connect, attempts=attempts, sleep=sleep)
+        connect, attempts=attempts, sleep=sleep, on_retry=on_retry)
     if not has_first:
         return iter(())
     return itertools.chain((first,), iterator)
 
 
 def retry_with_backoff(operation, *, attempts: int = 4, base_delay: float = 1.0,
-                       sleep=time.sleep):
+                       sleep=time.sleep, on_retry=None):
     """Retry only what the taxonomy marks transient, honouring Retry-After.
 
     ``attempts`` is clamped to at least one try. It used to be used raw, so the
@@ -402,6 +410,10 @@ def retry_with_backoff(operation, *, attempts: int = 4, base_delay: float = 1.0,
     zero times, left ``last`` as None, and ended at ``raise None``: a TypeError,
     which is not a FoundryError, so the CLI died with a traceback instead of
     making the request once.
+
+    ``on_retry(exc, attempt, attempts, delay)`` hears of each retry before its
+    wait: the failure, the number of the try about to be made (2 for the
+    first retry), how many there will be at most, and the seconds to wait.
     """
     try:
         attempts = max(1, int(attempts))
@@ -417,5 +429,10 @@ def retry_with_backoff(operation, *, attempts: int = 4, base_delay: float = 1.0,
             if attempt == attempts - 1:
                 break
             delay = exc.retry_after if exc.retry_after is not None else base_delay * (2 ** attempt)
-            sleep(min(delay, 60.0))
+            delay = min(delay, 60.0)
+            if on_retry is not None:
+                # Told before the wait, not after: a wait of up to a minute in
+                # silence looked exactly like a hang (D-085).
+                on_retry(exc, attempt + 2, attempts, delay)
+            sleep(delay)
     raise last  # type: ignore[misc]

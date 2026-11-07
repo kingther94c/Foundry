@@ -345,6 +345,8 @@ class AnthropicBackend:
     stream: bool = True
     recorder: Any = None
     max_retries: int = 4
+    # Told of each retry before its wait (D-085); the runtime sets it.
+    on_retry: Any = None
     effort: str | None = None
     fallbacks: str | None = "default"
     thinking_display: str | None = THINKING_DISPLAY
@@ -402,7 +404,7 @@ class AnthropicBackend:
     def _single(self, body: dict[str, Any]) -> list[StreamEvent]:
         response = retry_with_backoff(
             lambda: self.client.post_json(self.endpoint, body, self._headers()),
-            attempts=self.max_retries,
+            attempts=self.max_retries, on_retry=self.on_retry,
         )
         return self._events_from_json(response.json(), body["model"])
 
@@ -433,7 +435,7 @@ class AnthropicBackend:
                     # Messages ends with its own message_stop event, checked
                     # below, not the Chat Completions [DONE] sentinel.
                     expect_done_sentinel=False),
-                attempts=self.max_retries,
+                attempts=self.max_retries, on_retry=self.on_retry,
             )
         except NotStreaming:
             # Degrade for the rest of the session, as the other adapters do,

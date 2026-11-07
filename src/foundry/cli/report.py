@@ -25,6 +25,8 @@ class SessionReport:
     model: str = ""
     turns: int = 0
     compactions: int = 0
+    # Model requests tried again after a 429, a 5xx or a dropped connection.
+    retries: int = 0
     tool_calls: int = 0
     patches_applied: int = 0
     patches_rejected: int = 0
@@ -51,6 +53,8 @@ def analyse(journal: Path) -> SessionReport:
                 report.turns += 1
         elif record.type == EventType.COMPACTED:
             report.compactions += 1
+        elif record.type == EventType.MODEL_RETRY:
+            report.retries += 1
         elif record.type == EventType.TOOL_CALL:
             report.tool_calls += 1
             # A patch the parser refused, or one policy denied, never reaches an
@@ -113,6 +117,7 @@ def summarize(reports: list[SessionReport]) -> dict:
             "failed": sum(r.commands_failed for r in reports),
         },
         "policy_denials": sum(r.denials for r in reports),
+        "model_retries": sum(r.retries for r in reports),
         "tokens": {
             "input": input_tokens,
             "output": sum(r.output_tokens for r in reports),
@@ -147,6 +152,7 @@ def render(root: Path, *, as_json: bool = False) -> str:
     lines.append(f"  commands              {summary['commands']['total']} "
                  f"({summary['commands']['failed']} nonzero exit)")
     lines.append(f"  policy denials        {summary['policy_denials']}")
+    lines.append(f"  model retries         {summary['model_retries']}")
     lines.append(f"  turns per session     {summary['turns_per_session']}")
     lines.append(f"  tokens                {summary['tokens']['input']} in / "
                  f"{summary['tokens']['output']} out")

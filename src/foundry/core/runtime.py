@@ -31,6 +31,7 @@ from foundry.core.errors import (
     FatalError,
     FoundryError,
     InvalidToolCall,
+    QuotaExceeded,
     ToolError,
     TransientError,
 )
@@ -112,6 +113,11 @@ def _explain(exc: Exception) -> str:
     if not detail:
         return str(exc)
     return f"{exc}: {detail[:300]}"
+
+
+def _seconds(delay: float) -> str:
+    """``4s``, ``1.5s``, ``0.2s``: a wait as the person watching reads it."""
+    return f"{delay:.1f}".rstrip("0").rstrip(".") + "s"
 
 
 # What a call the user's Ctrl+C or abort left is answered with (D-062).
@@ -228,10 +234,26 @@ class AgentRuntime:
     scrub: Callable[[str], str] | None = None   # what leaves for the notifier
     _notify_failed: bool = False
 
+    def __post_init__(self) -> None:
+        # A backend that retries says so (D-085). Without this a 429 or a
+        # dropped connection was waited out in silence -- up to a minute a
+        # try -- which looked exactly like a hang.
+        if hasattr(self.backend, "on_retry"):
+            self.backend.on_retry = self._retrying
+
     # -- helpers ----------------------------------------------------------
 
     def cancel(self) -> None:
         self._cancelled = True
+
+    def _retrying(self, exc: Exception, attempt: int, attempts: int, delay: float) -> None:
+        """A model request failed in a way worth trying again; the backend
+        waits ``delay`` seconds and makes try ``attempt`` of ``attempts``."""
+        self._journal(EventType.MODEL_RETRY, {
+            "attempt": attempt, "attempts": attempts, "delay": round(delay, 3),
+            "reason": _explain(exc)})
+        self._emit(Notice(f"{exc}; retrying in {_seconds(delay)} (try {attempt} of {attempts})",
+                          level="warning"))
 
     def interrupted(self) -> TurnOutcome:
         """Ctrl+C reached the task (D-062): the calls it left are answered and
@@ -376,6 +398,11 @@ class AgentRuntime:
                 self._emit(ErrorEvent(_explain(exc), category=exc.category, fatal=True))
                 return self._terminate(TerminalStatus.BLOCKED,
                                        f"provider unavailable: {_explain(exc)}")
+            except QuotaExceeded as exc:
+                # Blocked, not failed: nothing about the task went wrong, and
+                # the same task goes on once the account has quota again.
+                self._emit(ErrorEvent(_explain(exc), category=exc.category, fatal=True))
+                return self._terminate(TerminalStatus.BLOCKED, _explain(exc))
             except FatalError as exc:
                 self._emit(ErrorEvent(_explain(exc), category=exc.category, fatal=True))
                 return self._terminate(TerminalStatus.FAILED, _explain(exc))
