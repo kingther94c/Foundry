@@ -327,6 +327,9 @@ What a codex user still notices day to day, next:
 74. ~~Agent skills~~ -- `SKILL.md` folders, the user's and a trusted
     repository's `.agents/skills`, listed to the model and loaded with
     `load_skill`; `$name` and `/skills`, as codex's (landed, D-113).
+75. ~~Skills found and switched as codex's~~ -- `.agents/skills` up to the
+    repository's top, `[[skills.config]]` and `skills.max_context_tokens`
+    (landed, D-114).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

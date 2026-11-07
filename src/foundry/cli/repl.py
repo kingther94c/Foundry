@@ -1103,7 +1103,7 @@ def show_skills(wiring: "Wiring", console: Console, arguments: str = "") -> None
     cleaned of terminal controls before it is shown."""
     skills = wiring.skills
     home = wiring.home / "skills" if wiring.home else "skills in the Foundry folder"
-    if not skills.found and not skills.skipped:
+    if not skills.found and not skills.skipped and not skills.disabled:
         where = f"{home}" + (f" or this repository's {REPOSITORY_SKILLS.as_posix()}"
                              if wiring.trusted else "")
         console.print("[dim]no skills: a skill is a folder holding a SKILL.md, in "
@@ -1120,6 +1120,9 @@ def show_skills(wiring: "Wiring", console: Console, arguments: str = "") -> None
     for skill in skills.hidden:
         console.print(f"[dim]{escape(skill.name)} in {escape(str(skill.folder))}: hidden by "
                       "another of that name[/dim]", soft_wrap=True)
+    for skill in skills.disabled:
+        console.print(f"[dim]{escape(skill.name)} in {escape(str(skill.folder))}: turned off "
+                      f"by your {escape('[[skills.config]]')}[/dim]", soft_wrap=True)
     for folder, why in skills.skipped:
         console.print(f"[yellow]{escape(str(folder))}: not used, {safe(why)}[/yellow]",
                       soft_wrap=True)

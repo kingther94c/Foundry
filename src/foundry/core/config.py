@@ -522,6 +522,18 @@ class Config:
     notify: tuple[str, ...] = ()
     # Which variables commands get (D-083), from the user's own files only.
     shell_environment: ShellEnvironmentPolicy = field(default_factory=ShellEnvironmentPolicy)
+    # codex's [skills] (D-114), from the user's own files only: which skills
+    # are on or off -- ("path" or "name", what it matches, on) in order, the
+    # last that matches deciding, the machine's policy's after the user's --
+    # and the tokens the model's list may take.
+    skill_switches: tuple[tuple[str, str, bool], ...] = ()
+    managed_skill_switches: tuple[tuple[str, str, bool], ...] = ()
+    skills_max_context_tokens: int | None = None
+
+    def all_skill_switches(self) -> tuple[tuple[str, str, bool], ...]:
+        """The user's, then the policy's: what the machine's policy says of
+        a skill is said last, and so decides."""
+        return (*self.skill_switches, *self.managed_skill_switches)
     rules: list[Rule] = field(default_factory=list)
     provenance: dict[str, Provenance] = field(default_factory=dict)
 
@@ -544,6 +556,60 @@ def _parse_doc_names(raw: Any) -> tuple[str, ...]:
         raise ConfigError('project_doc_fallback_filenames must be a list of file names, '
                           'as ["CLAUDE.md"] (at most 16, no folders)')
     return tuple(dict.fromkeys(raw))
+
+
+# The most the model's list of skills may take (D-114), as codex's.
+MAX_SKILL_LIST_TOKENS = 10_000
+_SKILLS_KEYS = frozenset({"config", "max_context_tokens"})
+_SWITCH_KEYS = frozenset({"path", "name", "enabled"})
+
+
+def _parse_skills(raw: Any, config: "Config", *, managed: bool) -> None:
+    """codex's ``[skills]``: ``[[skills.config]]`` entries, each a ``path``
+    (a SKILL.md's, absolute) or a ``name`` and whether it is ``enabled``;
+    and ``max_context_tokens``, the model's list's budget."""
+    if not isinstance(raw, dict):
+        raise ConfigError("skills must be a table, as [skills] or [[skills.config]]")
+    for key in sorted(raw):
+        if key not in _SKILLS_KEYS:
+            hint = ("; Foundry bundles no skills" if key == "bundled"
+                    else f" (it takes {', '.join(sorted(_SKILLS_KEYS))})")
+            raise ConfigError(f"skills: no setting {key!r}{hint}")
+    tokens = raw.get("max_context_tokens")
+    if tokens is not None:
+        if (isinstance(tokens, bool) or not isinstance(tokens, int)
+                or not 0 < tokens <= MAX_SKILL_LIST_TOKENS):
+            raise ConfigError("skills.max_context_tokens must be a whole number of tokens "
+                              f"above 0 and at most {MAX_SKILL_LIST_TOKENS:,}")
+        config.skills_max_context_tokens = tokens
+    entries = raw.get("config", [])
+    if not isinstance(entries, list):
+        raise ConfigError("skills.config must be tables, as [[skills.config]]")
+    switches = []
+    for index, entry in enumerate(entries):
+        where = f"skills.config {index + 1}"
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{where} must be a table")
+        unknown = sorted(set(entry) - _SWITCH_KEYS)
+        if unknown:
+            raise ConfigError(f"{where}: no setting {unknown[0]!r} (it takes "
+                              f"{', '.join(sorted(_SWITCH_KEYS))})")
+        chosen = [key for key in ("path", "name") if key in entry]
+        if len(chosen) != 1:
+            raise ConfigError(f"{where} names a skill by path or by name, one of the two")
+        kind = chosen[0]
+        value = entry[kind]
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigError(f"{where}.{kind} must be a string")
+        if kind == "path" and not Path(value).is_absolute():
+            raise ConfigError(f"{where}.path must be the absolute path of a SKILL.md")
+        if not isinstance(entry.get("enabled"), bool):
+            raise ConfigError(f"{where}.enabled must be true or false")
+        switches.append((kind, value.strip(), entry["enabled"]))
+    if managed:
+        config.managed_skill_switches = (*config.managed_skill_switches, *switches)
+    else:
+        config.skill_switches = (*config.skill_switches, *switches)
 
 
 def _parse_notify(raw: Any) -> tuple[str, ...]:
@@ -606,7 +672,7 @@ FILE_OPENERS = ("vscode", "vscode-insiders", "windsurf", "cursor", "none")
 
 # What a configuration file holds (D-091). Profiles are the user's file's own.
 _SECTIONS = frozenset({"backend", "runtime", "permissions", "mcp_servers", "notify",
-                       "shell_environment_policy"})
+                       "shell_environment_policy", "skills"})
 _PROFILE_KEYS = frozenset({"profile", "profiles"})
 _RULE_KEYS = frozenset({"tool", "pattern", "decision", "reason"})
 # Another tool's names for settings Foundry has under its own, so a file
@@ -832,6 +898,15 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
                               "config.toml")
         config.notify = _parse_notify(data["notify"])
         config.record("notify", list(config.notify), layer)
+
+    if "skills" in data:
+        # Which of the user's skills are on, and the list's room: the user's
+        # own choice, as the skills folder is theirs.
+        if not connection_allowed:
+            raise ConfigError(f"{layer} config may not set skills; set them in your own "
+                              "config.toml")
+        _parse_skills(data["skills"], config, managed=layer == "managed")
+        config.record("skills", len(config.all_skill_switches()), layer)
 
     if "shell_environment_policy" in data:
         # What reaches every command the model runs: a repository widening it

@@ -27,6 +27,7 @@ from typing import Any
 
 from foundry.core.conversation import ToolSchema
 from foundry.core.errors import InvalidToolCall, ToolError
+from foundry.core.prompts import repository_top
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput, truncate_middle
 
 LOAD_SKILL = "load_skill"
@@ -70,19 +71,53 @@ class Skills:
     found: dict[str, Skill] = field(default_factory=dict)
     hidden: list[Skill] = field(default_factory=list)
     skipped: list[tuple[Path, str]] = field(default_factory=list)
+    # Turned off by the user's [[skills.config]] (D-114).
+    disabled: list[Skill] = field(default_factory=list)
     # Those the model's list had no room for: loadable all the same.
     left_out: list[str] = field(default_factory=list)
 
 
+def repository_skill_folders(workspace: Path) -> list[Path]:
+    """``.agents/skills`` in the workspace and each folder above it up to the
+    repository's top, the nearest first, as codex looks (D-114)."""
+    top = repository_top(workspace)
+    folders = [workspace]
+    if workspace != top:
+        folders.extend(p for p in workspace.parents if p.is_relative_to(top))
+    return [folder / REPOSITORY_SKILLS for folder in folders]
+
+
 def skill_roots(home: Path, workspace: Path | None, *, trusted: bool) -> list[tuple[Path, str]]:
-    """Where skills are looked for, the user's first."""
+    """Where skills are looked for, the user's first, then the repository's
+    nearest the workspace."""
     roots = [(home / "skills", YOURS)]
     if workspace is not None and trusted:
-        roots.append((workspace / REPOSITORY_SKILLS, REPOSITORY))
+        roots.extend((folder, REPOSITORY) for folder in repository_skill_folders(workspace))
     return roots
 
 
-def load_skills(home: Path, workspace: Path | None, *, trusted: bool) -> Skills:
+def switched_on(skill: Skill, switches) -> bool:
+    """What the user's ``[[skills.config]]`` says of a skill: the last entry
+    that matches it -- its SKILL.md's path, or its name -- or on."""
+    on = True
+    for kind, value, enabled in switches:
+        if kind == "name" and value == skill.name:
+            on = enabled
+        elif kind == "path" and _same_file(Path(value), skill.path):
+            on = enabled
+    return on
+
+
+def _same_file(given: Path, path: Path) -> bool:
+    try:
+        # A Windows path is the same whatever its case.
+        return given.resolve() == path
+    except OSError:
+        return False
+
+
+def load_skills(home: Path, workspace: Path | None, *, trusted: bool,
+                switches=()) -> Skills:
     skills = Skills()
     for root, source in skill_roots(home, workspace, trusted=trusted):
         if not root.is_dir():
@@ -99,7 +134,9 @@ def load_skills(home: Path, workspace: Path | None, *, trusted: bool) -> Skills:
             except _NotASkill as exc:
                 skills.skipped.append((folder, str(exc)))
                 continue
-            if skill.name in skills.found:
+            if not switched_on(skill, switches):
+                skills.disabled.append(skill)
+            elif skill.name in skills.found:
                 skills.hidden.append(skill)
             else:
                 skills.found[skill.name] = skill

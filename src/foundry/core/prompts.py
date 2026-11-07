@@ -173,7 +173,7 @@ def _doc_in(directory: Path, names: tuple[str, ...] = PROJECT_DOC_NAMES) -> Path
     return None
 
 
-def _repository_top(workspace: Path) -> Path:
+def repository_top(workspace: Path) -> Path:
     """The nearest directory at or above the workspace holding ``.git`` (a
     worktree's is a file); the workspace itself outside a repository, so a
     loose folder never picks up notes from wherever it happens to sit."""
@@ -188,7 +188,7 @@ def repository_docs(workspace: Path, fallbacks: tuple[str, ...] = ()) -> list[tu
     each with its path relative to the top. Directories below the workspace
     are not read. ``fallbacks`` are tried after the usual names (D-086)."""
     names = doc_names(fallbacks)
-    top = _repository_top(workspace)
+    top = repository_top(workspace)
     directories = [top]
     for part in workspace.relative_to(top).parts:
         directories.append(directories[-1] / part)

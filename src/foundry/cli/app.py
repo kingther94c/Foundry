@@ -97,11 +97,11 @@ from foundry.core.resume import (
 from foundry.core.runtime import AgentRuntime, Budget
 from foundry.core.session import AuditLog, EventType, SessionStore
 from foundry.core.skills import (
-    REPOSITORY_SKILLS,
     Skills,
     list_budget,
     load_skills,
     register as register_skills,
+    repository_skill_folders,
     skill_list,
 )
 from foundry.core.tools.base import ReadTracker, ToolContext
@@ -179,8 +179,8 @@ def _confirm_trust(console: Console, home: Path, workspace: Path, *,
         return True
     has_input = (workspace / ".foundry" / "config.toml").is_file() or (read_docs and bool(
         repository_docs(workspace, fallbacks)  # from the repository's top down (D-041)
-    )) or (workspace / ".foundry" / "prompts").is_dir() or (  # custom prompts (D-039)
-        workspace / REPOSITORY_SKILLS).is_dir()  # and skills (D-113)
+    )) or (workspace / ".foundry" / "prompts").is_dir() or any(  # custom prompts (D-039)
+        folder.is_dir() for folder in repository_skill_folders(workspace))  # skills (D-113)
     if not has_input:
         return False
     if not interactive or not sys.stdin or not sys.stdin.isatty():
@@ -310,7 +310,8 @@ def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
               session: SessionStore, state: JournalState | None, outside: frozenset[str], *,
               home: Path, console: Console) -> Wiring:
     registry = default_registry(recorder=session, images=config.backend.images)
-    skills = load_skills(home, workspace.root, trusted=trusted)
+    skills = load_skills(home, workspace.root, trusted=trusted,
+                         switches=config.all_skill_switches())
     register_skills(skills, registry)
     # Started before the rules are checked, so a rule for a server's tool is
     # not reported as one that can never match (D-043).
@@ -403,7 +404,10 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         system_prompt=system_prompt(policy),
         project_doc=instructions.text,
         environment=environment_paragraph(workspace.root, baseline, config.backend.model),
-        skills=skill_list(skills, list_budget(window)),
+        # codex's skills.max_context_tokens (D-114) at four characters a
+        # token, or its share of the window.
+        skills=skill_list(skills, config.skills_max_context_tokens * 4
+                          if config.skills_max_context_tokens else list_budget(window)),
         max_context_tokens=backend.capabilities().max_context_tokens,
         compact_above_tokens=config.auto_compact_token_limit,
     )
