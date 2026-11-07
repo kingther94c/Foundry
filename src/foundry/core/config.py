@@ -40,6 +40,7 @@ _HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}\Z")
 # matters: an Anthropic key sent to the OpenAI default host is a credential
 # handed to the wrong provider.
 ANTHROPIC_PROTOCOL = "anthropic_messages"
+CHAT_PROTOCOL = "openai_compat"
 _PROTOCOL_DEFAULTS: dict[str, dict[str, str]] = {
     ANTHROPIC_PROTOCOL: {"base_url": "https://api.anthropic.com/v1",
                          "model": "claude-opus-5-5"},
@@ -919,6 +920,19 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
             f"backend.verbosity is not a setting the {ANTHROPIC_PROTOCOL} protocol takes: "
             "it is GPT-5's (text.verbosity on the Responses API, verbosity on Chat "
             "Completions); set it in the profile of an OpenAI endpoint instead")
+    # The same for the two that were still dropped without a word (D-100).
+    if config.backend.fallbacks != "default" and config.backend.protocol != ANTHROPIC_PROTOCOL:
+        raise ConfigError(
+            f"backend.fallbacks is not a setting the {config.backend.protocol} protocol takes: "
+            f"it is Claude's server-side fallback model ({ANTHROPIC_PROTOCOL}); set it in the "
+            "profile of a Claude endpoint instead")
+    summary = config.backend.reasoning_summary
+    if summary not in (None, "none") and config.backend.protocol == CHAT_PROTOCOL:
+        raise ConfigError(
+            f"backend.reasoning_summary {summary!r} is not one the {CHAT_PROTOCOL} protocol "
+            "takes: Chat Completions has no reasoning summary to ask for (the Responses API "
+            "and Claude do); what a server streams of its reasoning is shown unless "
+            "runtime.show_reasoning = false")
     return config
 
 

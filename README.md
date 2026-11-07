@@ -239,7 +239,8 @@ starts once the context passes 80% of the window, or sooner with
 What the model shows of its reasoning appears dim under "thinking" before it
 acts: Claude's thinking summaries, the reasoning DeepSeek-style servers stream,
 and -- with `reasoning_summary = "auto"` under `[backend]` -- a Responses
-model's summaries. `show_reasoning = false` under `[runtime]` hides it. A
+model's summaries (Chat Completions has none to ask for, so it refuses the
+setting). `show_reasoning = false` under `[runtime]` hides it. A
 Responses model's reasoning is also carried from one round to the next, as
 codex carries it: asked for encrypted and sent back with its turn, since
 nothing is stored on the server.

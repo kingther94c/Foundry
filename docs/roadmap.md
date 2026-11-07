@@ -292,6 +292,8 @@ What a codex user still notices day to day, next:
     `backend.effort`, as a file's key is (landed, D-098).
 60. ~~A stream cut part-way asked again~~ -- `backend.stream_max_retries`, as
     codex's, instead of ending the task blocked (landed, D-099).
+61. ~~Settings the protocol cannot send~~ -- `fallbacks` off Claude and a
+    summary asked of Chat Completions refused, not dropped (landed, D-100).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

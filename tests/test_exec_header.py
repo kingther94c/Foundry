@@ -57,12 +57,12 @@ def test_the_first_event_carries_the_settings(repo, tmp_path, monkeypatch, capsy
 def test_what_was_chosen_is_what_it_carries(repo, tmp_path, monkeypatch, capsys, fake_model):
     httpd, handler = fake_model
     _configure(tmp_path / "home", httpd, monkeypatch,
-               'effort = "high"\nverbosity = "low"\nreasoning_summary = "auto"\n'
+               'effort = "high"\nverbosity = "low"\nreasoning_summary = "none"\n'
                '[profiles.ci.backend]\neffort = "minimal"\n')
     _exec(handler, "--json", "--mode", "plan", "--profile", "ci", "--workspace", str(repo))
     first = json.loads(capsys.readouterr().out.splitlines()[0])
     assert (first["profile"], first["mode"], first["effort"], first["verbosity"],
-            first["reasoning_summary"]) == ("ci", "plan", "minimal", "low", "auto")
+            first["reasoning_summary"]) == ("ci", "plan", "minimal", "low", "none")
 
 
 # --- the terminal --------------------------------------------------------------------------
@@ -90,10 +90,10 @@ def test_they_are_said_on_stderr_before_anything_else(repo, tmp_path, monkeypatc
 def test_summary_and_verbosity_only_when_set(repo, tmp_path, monkeypatch, capsys, fake_model):
     httpd, handler = fake_model
     _configure(tmp_path / "home", httpd, monkeypatch,
-               'verbosity = "high"\nreasoning_summary = "concise"\n')
+               'verbosity = "high"\nreasoning_summary = "none"\n')
     _exec(handler, "--workspace", str(repo))
     err = capsys.readouterr().err
-    assert "  summary   concise\n" in err and "  verbosity high\n" in err
+    assert "  summary   none\n" in err and "  verbosity high\n" in err
 
 
 def test_a_resumed_run_says_them_too(repo, tmp_path, monkeypatch, capsys, fake_model):
