@@ -145,6 +145,7 @@ project_doc_max_bytes = 32768      # characters; 0 reads none of the repository'
 | `foundry login [--with-api-key]` / `login status` / `logout` | credential management (DPAPI encrypted): `--with-api-key` reads the key from a pipe, as `printenv OPENAI_API_KEY \| foundry login --with-api-key`; `status` says where it comes from, never what it is |
 | `foundry mcp list [--json]` / `add NAME -- COMMAND [ARGS...]` / `add NAME --url URL` / `remove NAME` | the MCP servers in your config.toml, as `codex mcp`: `add` takes `--env KEY=VALUE`, `--env-var NAME` (a secret, passed through by name), `--bearer-token-env-var VAR` and `--read-only`; the file is edited in place, comments kept |
 | `foundry doctor` | environment self-check |
+| `foundry completion [powershell\|bash]` | a Tab-completion script for the shell, as `codex completion`: add `foundry completion powershell \| Out-String \| Invoke-Expression` to your `$PROFILE`, or `eval "$(foundry completion bash)"` to `~/.bashrc` (Git Bash); subcommands, flags and `--mode`'s values complete, paths are left to the shell |
 
 Exit codes: `completed=0 partial=10 blocked=11 failed=12 cancelled=13
 interrupted=14`

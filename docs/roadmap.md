@@ -276,6 +276,8 @@ What a codex user still notices day to day, next:
 53. ~~An unattended run says what it runs with~~ -- model, protocol, profile,
     mode and effort under the session's line, as codex's exec opens (landed,
     D-092).
+54. ~~Tab completion~~ -- `foundry completion powershell|bash`, built from the
+    parser, as `codex completion` (landed, D-093).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),

@@ -23,6 +23,8 @@ from rich.console import Console
 from rich.markup import escape
 
 from foundry import __version__
+from foundry.cli.completion import SHELLS
+from foundry.cli.completion import script as completion_script
 from foundry.cli.render import Renderer, safe
 from foundry.cli.repl import NEW_SESSION
 from foundry.cli.repl import attach as _attach
@@ -1375,6 +1377,22 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_completion(args: argparse.Namespace) -> int:
+    """``foundry completion [powershell|bash]`` (D-093): a Tab-completion
+    script for the shell, printed for a profile line to load."""
+    text = completion_script(args.shell, build_parser())
+    sys.stdout.flush()
+    stream = getattr(sys.stdout, "buffer", None)
+    if stream is None:
+        sys.stdout.write(text)
+    else:
+        # As bytes: printed as text on Windows, every newline became CRLF,
+        # and bash reads the carriage return as part of each line.
+        stream.write(text.encode("utf-8"))
+        stream.flush()
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     console = Console()
     ok = True
@@ -1583,6 +1601,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser("doctor", help="check the environment")
     doctor.set_defaults(func=cmd_doctor)
+
+    completion = sub.add_parser("completion",
+                                help="print a Tab-completion script for your shell")
+    completion.add_argument("shell", nargs="?", choices=SHELLS, default="powershell",
+                            help="powershell (the default) or bash")
+    completion.set_defaults(func=cmd_completion)
 
     mcp = sub.add_parser("mcp", help="list, add or remove MCP servers in your config.toml")
     mcp.set_defaults(func=cmd_mcp)
