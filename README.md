@@ -142,7 +142,7 @@ project_doc_max_bytes = 32768      # characters; 0 reads none of the repository'
 | `foundry record <task> --output f.json` | record a session as a replay fixture |
 | `foundry sessions [id]` | list sessions with each one's first message (and which are in use), or show one |
 | `foundry report [--json]` | patch first-try success rate, command failures, denials, model retries, token stats |
-| `foundry login` / `logout` | credential management (DPAPI encrypted) |
+| `foundry login [--with-api-key]` / `login status` / `logout` | credential management (DPAPI encrypted): `--with-api-key` reads the key from a pipe, as `printenv OPENAI_API_KEY \| foundry login --with-api-key`; `status` says where it comes from, never what it is |
 | `foundry mcp list [--json]` / `add NAME -- COMMAND [ARGS...]` / `add NAME --url URL` / `remove NAME` | the MCP servers in your config.toml, as `codex mcp`: `add` takes `--env KEY=VALUE`, `--env-var NAME` (a secret, passed through by name), `--bearer-token-env-var VAR` and `--read-only`; the file is edited in place, comments kept |
 | `foundry doctor` | environment self-check |
 

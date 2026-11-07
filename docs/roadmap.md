@@ -263,6 +263,8 @@ What a codex user still notices day to day, next:
 47. ~~Which files are instructions~~ -- `AGENTS.override.md`,
     `project_doc_fallback_filenames` and `project_doc_max_bytes`, as codex's
     (landed, D-086).
+48. ~~A key piped to login~~ -- `foundry login --with-api-key` and `login
+    status`, as codex's, without ever showing the key (landed, D-087).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
