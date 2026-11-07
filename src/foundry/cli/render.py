@@ -53,6 +53,11 @@ REASONING_LINES = 8
 # A command's output under it (D-068): its last lines, the rest with -v.
 COMMAND_OUTPUT_LINES = 5
 COMMAND_OUTPUT_LINE_CHARS = 240
+# Foundry's own tools that only read the workspace: under their line, nothing
+# when they worked (D-076). An MCP server's tools are not among them: what one
+# does is the server's to say.
+QUIET_WHEN_OK = frozenset({"read_file", "list_files", "search_text", "read_artifact",
+                           "git_status", "git_diff", "view_image", "repo_map"})
 # What a patch changed, under it (D-075): its first lines, the rest with -v.
 PATCH_DIFF_LINES = 40
 _DIFF_STYLE = (("@@", "cyan"), ("+", "green"), ("-", "red"), (" ", "dim"), ("(", "dim"))
@@ -273,9 +278,14 @@ class Renderer:
         elif isinstance(event, ToolEnd):
             if event.tool == "update_plan" and event.ok:
                 return
+            # A read's own line says what it read; that it worked is not news
+            # (D-076). -v still says so.
+            if event.ok and event.tool in QUIET_WHEN_OK and not self.verbose:
+                return
             mark = "[green]ok[/green]" if event.ok else "[red]failed[/red]"
-            # A command's exit code is always worth the few words (D-068).
-            said = self.verbose or event.tool == "run_command"
+            # A command's exit code is always worth the few words (D-068), and
+            # so is why anything failed (D-076).
+            said = self.verbose or event.tool == "run_command" or not event.ok
             detail = f" {safe(event.summary)}" if said and event.summary else ""
             self.console.print(f"   {mark}{detail}")
             if event.output and event.tool == "apply_patch":

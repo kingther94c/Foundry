@@ -106,8 +106,9 @@ def test_nothing_printed_adds_nothing():
 
 
 def test_other_tools_are_shown_as_before():
-    assert _render(_end("", tool="read_file", summary="1: import os")).strip() == "ok"
-    assert "1: import os" in _render(_end("", tool="read_file", summary="1: import os"),
+    # (A read that worked says nothing at all since D-076: test_quiet_reads.py.)
+    assert _render(_end("", tool="docs.lookup", summary="1: import os")).strip() == "ok"
+    assert "1: import os" in _render(_end("", tool="docs.lookup", summary="1: import os"),
                                      verbose=True)
 
 

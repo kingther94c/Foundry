@@ -89,6 +89,11 @@ def _tool_end_summary(op: Operation, output: ToolOutput, content: str) -> str:
         if meta.get("output_incomplete"):
             summary += " (output incomplete)"
         return summary
+    # A patch's first line is "Applied:"; what failed is what the person
+    # watching needs (D-076). What landed is shown as its diff.
+    if op.tool == "apply_patch" and output.metadata.get("rejections"):
+        first, *rest = output.metadata["rejections"]
+        return f"{first} (and {len(rest)} more)" if rest else first
     return content.splitlines()[0] if content else ""
 
 

@@ -613,6 +613,9 @@ class ApplyPatch:
             lines.append("Rejected (left untouched):\n" + "\n".join(f"  {r}" for r in rejected))
         content = "\n\n".join(lines) if lines else "(no operations)"
         metadata: dict[str, Any] = {"applied": len(applied), "rejected": len(rejected)}
+        if rejected:
+            # What was refused and why, for the line under the patch (D-076).
+            metadata["rejections"] = rejected
         if changes:
             metadata["changes"] = changes
         if shown:

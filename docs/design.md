@@ -103,6 +103,10 @@ PROTOCOL_VERSION = 1
   a task or the session ends.
 - Every string an event carries passes the redactor on its way out, nested
   ones included (a plan's steps sit inside a tuple).
+- Under a tool's line: nothing when one of Foundry's own read-only tools
+  worked (`ok` with `-v`), `ok` for any other, and `failed` with the reason
+  for any that failed; a patch refused in part names what it refused
+  ([D-076](decision-log.md)).
 - `ToolEnd{call_id, tool, ok, summary, duration_ms, output}`: for
   `run_command`, `summary` is the exit code and `output` the last lines the
   command printed (at most 20 and 4,000 characters), shown under it -- 5 lines,
