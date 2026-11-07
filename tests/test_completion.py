@@ -135,7 +135,7 @@ CASES = [
     ("foundry login ", ["status"]),
     ("foundry completion ", ["bash", "powershell"]),
     # The value of --profile is not the exec subcommand: still at the top.
-    ("foundry --profile exec re", ["record", "report", "resume"]),
+    ("foundry --profile exec re", ["record", "report", "resume", "review"]),
 ]
 LEFT_TO_THE_SHELL = ["foundry exec -m ", "foundry mcp add docs -- ", "foundry exec --workspace ",
                      "foundry --profile ", "foundry mcp add docs -- python --e"]

@@ -1013,42 +1013,66 @@ def _init(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
 REVIEW_UNCOMMITTED = ("Review the uncommitted changes in this repository, as a careful "
                       "code reviewer would. `git_status` and `git_diff` show what changed.")
 REVIEW_USAGE = "usage: /review [--base REV | --commit REV] [focus]"
+REVIEW_AS_ASKED = ("Review this repository as the user asks below, as a careful code reviewer "
+                   "would. `git_status` and `git_diff` show what is not committed, and "
+                   '`git_diff` with {"base": REV} or {"commit": REV} what a branch or a '
+                   "commit changed.")
+
+
+def review_task(root: Path, *, base: str | None = None, commit: str | None = None,
+                title: str = "", focus: str = "", instructions: str = "") -> tuple[str, str]:
+    """A review's prompt, and what it reviews in a few words: the
+    uncommitted changes; what this branch changed since it left ``base``;
+    what ``commit`` changed; or what the user's ``instructions`` ask
+    (D-131). /review and ``foundry review`` both build theirs here. A
+    revision is resolved first, and the model is given its id, so what it
+    reviews is what the user named: ToolError when it does not resolve."""
+    if instructions:
+        scope, what = f"{REVIEW_AS_ASKED}\n\nThe user asks: {instructions}", "what you asked"
+    elif base is not None:
+        sha = resolve_commit(base, root)
+        scope = (f"Review what this branch changed since it left {base} (commit "
+                 f"{sha}): the commits since their merge base, and anything not yet "
+                 "committed -- as a careful code reviewer would. `git_diff` with "
+                 f'{{"base": "{sha}"}} shows them, and `git_status` what is not '
+                 "committed.")
+        what = f"the changes since {base} ({sha[:12]})"
+    elif commit is not None:
+        sha = resolve_commit(commit, root)
+        titled = f' (the user calls it "{title}")' if title else ""
+        scope = (f"Review what commit {sha}{titled} changed, as a careful code reviewer "
+                 f'would. `git_diff` with {{"commit": "{sha}"}} shows its message '
+                 "and its changes.")
+        what = f"commit {sha[:12]}" + (f" ({title})" if title else "")
+    else:
+        scope, what = REVIEW_UNCOMMITTED, "the uncommitted changes"
+    text = f"{scope}\n\n{builtin_prompt('review')}"
+    if focus:
+        text += f"\n\nThe user asks you to focus on: {focus}"
+    return text, what
 
 
 def _review(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
     """``/review [focus]``: the uncommitted changes, read-only (D-039).
     ``--base REV``: what this branch changed since it left REV, as a pull
-    request shows it; ``--commit REV``: what one commit changed (D-066). The
-    revision is resolved before the task starts, and the model is given its
-    id, so what it reviews is what the user named."""
+    request shows it; ``--commit REV``: what one commit changed (D-066)."""
     words = arguments.split(maxsplit=2)
+    base = commit = None
+    focus = arguments
     if words and words[0] in ("--base", "--commit"):
         if len(words) < 2:
             console.print(f"[yellow]{REVIEW_USAGE}[/yellow]")
             return None
-        flag, revision, focus = words[0], words[1], words[2] if len(words) > 2 else ""
-        try:
-            commit = resolve_commit(revision, wiring.workspace.root)
-        except ToolError as exc:
-            console.print(f"[yellow]{escape(str(exc))}[/yellow]")
-            return None
-        if flag == "--base":
-            scope = (f"Review what this branch changed since it left {revision} (commit "
-                     f"{commit}): the commits since their merge base, and anything not yet "
-                     "committed -- as a careful code reviewer would. `git_diff` with "
-                     f'{{"base": "{commit}"}} shows them, and `git_status` what is not '
-                     "committed.")
-            what = f"the changes since {revision} ({commit[:12]})"
+        focus = words[2] if len(words) > 2 else ""
+        if words[0] == "--base":
+            base = words[1]
         else:
-            scope = (f"Review what commit {commit} changed, as a careful code reviewer "
-                     f'would. `git_diff` with {{"commit": "{commit}"}} shows its message '
-                     "and its changes.")
-            what = f"commit {commit[:12]}"
-    else:
-        scope, what, focus = REVIEW_UNCOMMITTED, "the uncommitted changes", arguments
-    text = f"{scope}\n\n{builtin_prompt('review')}"
-    if focus:
-        text += f"\n\nThe user asks you to focus on: {focus}"
+            commit = words[1]
+    try:
+        text, what = review_task(wiring.workspace.root, base=base, commit=commit, focus=focus)
+    except ToolError as exc:
+        console.print(f"[yellow]{escape(str(exc))}[/yellow]")
+        return None
     console.print(f"[dim]reviewing {escape(what)}; nothing is changed while it runs[/dim]",
                   soft_wrap=True)
     return RunTask(text, read_only=REVIEW_READ_ONLY)

@@ -30,6 +30,7 @@ from foundry.cli.completion import script as completion_script
 from foundry.cli.render import Renderer, safe
 from foundry.cli.transcript import show_conversation
 from foundry.cli.repl import ARCHIVE_SESSION, DELETE_SESSION, FORK_SESSION, NEW_SESSION
+from foundry.cli.repl import REVIEW_READ_ONLY, review_task
 from foundry.cli.repl import attach as _attach
 from foundry.cli.repl import take_images as _take_images
 from foundry.cli.repl import confirm as _confirm
@@ -59,6 +60,7 @@ from foundry.core.errors import (
     FoundryError,
     ResumeError,
     SessionLocked,
+    ToolError,
     UndoError,
 )
 from foundry.core.goal import ACTIVE as GOAL_ACTIVE
@@ -1333,15 +1335,16 @@ MAX_STDIN_TASK_BYTES = 1_000_000
 _BOMS = ((b"\xef\xbb\xbf", "utf-8"), (b"\xff\xfe", "utf-16-le"), (b"\xfe\xff", "utf-16-be"))
 
 
-def _task_from_stdin() -> str:
+def _task_from_stdin(command: str = "exec", what: str = "task") -> str:
     """`exec -` (D-053): the task, read whole from stdin, as `codex exec -`
-    reads it. UTF-8, or what a byte-order mark says (PowerShell 5.1's files
-    are UTF-16), or else the console's code page. ValueError when there is
-    nothing to read, or nobody piped anything in."""
+    reads it -- or `review -`'s instructions (D-131). UTF-8, or what a
+    byte-order mark says (PowerShell 5.1's files are UTF-16), or else the
+    console's code page. ValueError when there is nothing to read, or nobody
+    piped anything in."""
     stream = sys.stdin
     if stream is None or stream.isatty():
-        raise ValueError("exec - reads the task from stdin; pipe it in, as "
-                         "`Get-Content task.md | foundry exec -`")
+        raise ValueError(f"{command} - reads the {what} from stdin; pipe it in, as "
+                         f"`Get-Content {what}.md | foundry {command} -`")
     buffer = getattr(stream, "buffer", None)
     data = (buffer.read(MAX_STDIN_TASK_BYTES + 1) if buffer is not None
             else stream.read(MAX_STDIN_TASK_BYTES + 1).encode("utf-8"))
@@ -1355,7 +1358,7 @@ def _task_from_stdin() -> str:
         text = decode_output(data).text
     text = text.replace("\r\n", "\n").strip()
     if not text:
-        raise ValueError("stdin held no task")
+        raise ValueError(f"stdin held no {what}")
     return text
 
 
@@ -1381,11 +1384,13 @@ def _result_text(outcome) -> str | None:
                       ensure_ascii=False)
 
 
-def cmd_exec(args: argparse.Namespace) -> int:
+def cmd_exec(args: argparse.Namespace, read_only: str = "") -> int:
     """Headless: one task, no prompts, ASK resolves to DENY.
 
     Fail-closed is the whole point. An unattended run that silently approved
     whatever it was asked would be strictly worse than one that stops.
+    ``read_only``, when given, refuses every edit and command for the whole
+    run, saying why -- as `foundry review`'s is (D-131).
     """
     console = Console(stderr=True)
     if args.task is None and args.resume is None:
@@ -1425,6 +1430,7 @@ def cmd_exec(args: argparse.Namespace) -> int:
         return EXIT_CODES[TerminalStatus.FAILED]
 
     unattended(wiring)
+    wiring.runtime.policy.read_only = read_only
     if schema is not None:
         wiring.runtime.registry.get("finish").result_schema = schema
 
@@ -1493,6 +1499,55 @@ def cmd_exec(args: argparse.Namespace) -> int:
                 summary=(outcome.text if outcome else "")))
         _close(wiring, status, reason)
     return EXIT_CODES.get(status, 0)
+
+
+# What a headless review is asked to end with (D-131): only finish reports
+# an outcome, and the review is what it reports.
+REVIEW_FINISH = ("Nobody reads a reply in this run: once the review is done, call `finish` "
+                 "with status `completed` and the whole review as its summary -- the summary "
+                 "is what is printed.")
+REVIEW_TARGETS = ("review needs one of --uncommitted, --base BRANCH, --commit SHA, or the "
+                  "review's instructions")
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    """``foundry review``, as ``codex review`` (D-131): the uncommitted
+    changes, a branch's since it left BRANCH, one commit's, or what the
+    user's instructions ask, reviewed headlessly as exec runs a task, with
+    every edit and command refused. The review is the run's finish summary,
+    printed, and written by -o."""
+    console = Console(stderr=True)
+    # argparse lets one at most be given.
+    if not (args.uncommitted or args.base is not None or args.commit is not None
+            or args.prompt is not None):
+        console.print(f"[red]{REVIEW_TARGETS}[/red]")
+        return 2
+    if args.title is not None and args.commit is None:
+        console.print("[red]--title names a commit: it goes with --commit[/red]")
+        return 2
+    instructions = (args.prompt or "").strip()
+    if args.prompt == "-":
+        try:
+            instructions = _task_from_stdin("review", "instructions")
+        except (OSError, ValueError) as exc:
+            console.print(f"[red]{escape(str(exc))}[/red]")
+            return 2
+    elif args.prompt is not None and not instructions:
+        console.print("[red]the review's instructions are empty[/red]")
+        return 2
+    try:
+        text, what = review_task(Path(args.workspace).resolve(), base=args.base,
+                                 commit=args.commit, title=args.title or "",
+                                 instructions=instructions)
+    except ToolError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        return 2
+    console.print(f"[dim]reviewing {escape(what)}; nothing is changed while it runs[/dim]",
+                  soft_wrap=True)
+    args.task = f"{text}\n\n{REVIEW_FINISH}"
+    args.resume = args.output_schema = args.mode = None
+    args.image = []
+    return cmd_exec(args, read_only=REVIEW_READ_ONLY)
 
 
 def _write_last_message(path: Path, text: str, console: Console) -> None:
@@ -1996,6 +2051,26 @@ def build_parser() -> argparse.ArgumentParser:
     _config_flags(execute, modes=(Mode.DONT_ASK, Mode.PLAN, Mode.ACCEPT_EDITS))
     execute.set_defaults(func=cmd_exec)
 
+    review = sub.add_parser("review", help="review changes headlessly, read-only, as codex "
+                                           "review does")
+    targets = review.add_mutually_exclusive_group()
+    targets.add_argument("--uncommitted", action="store_true",
+                         help="the staged, unstaged and untracked changes")
+    targets.add_argument("--base", metavar="BRANCH",
+                         help="what this branch changed since it left BRANCH")
+    targets.add_argument("--commit", metavar="SHA", help="what one commit changed")
+    targets.add_argument("prompt", nargs="?", metavar="PROMPT",
+                         help="the review's instructions instead; - reads them from stdin")
+    review.add_argument("--title", help="the commit's title, shown with it (with --commit)")
+    review.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
+                        help="repository to review (default: here)")
+    review.add_argument("--json", action="store_true", help="emit the event stream as JSONL")
+    review.add_argument("-o", "--output-last-message", metavar="FILE",
+                        help="write the review to FILE")
+    # Read-only whatever the mode; dont_ask, as nobody is there to approve.
+    _config_flags(review, modes=(Mode.DONT_ASK,))
+    review.set_defaults(func=cmd_review)
+
     record = sub.add_parser("record", help="capture a session as a replay fixture")
     record.add_argument("task")
     record.add_argument("--output", required=True, help="fixture file to write")
@@ -2114,13 +2189,15 @@ def exec_resume(argv: list[str], parser: argparse.ArgumentParser) -> list[str] |
 
     Only a first word `resume` before any `--` is read this way, so
     `foundry exec -- resume` is still the task. None: the form is used without
-    saying which session.
+    saying which session. `foundry exec review ...`, as codex spells it too,
+    is `foundry review ...` (D-131).
     """
     if not argv or argv[0] != "exec":
         return argv
     takes_value = _value_options(parser, "exec")
     options: list[tuple[str, bool]] = []    # (token, is an option's value)
     words: list[str] = []
+    first = 0                               # where the first word is
     i = 1
     while i < len(argv):
         token = argv[i]
@@ -2136,8 +2213,11 @@ def exec_resume(argv: list[str], parser: argparse.ArgumentParser) -> list[str] |
                 i += 2
                 continue
         else:
+            first = first or i
             words.append(token)
         i += 1
+    if words and words[0] == "review":
+        return ["review", *argv[1:first], *argv[first + 1:]]
     if not words or words[0] != "resume":
         return argv
     last = ("--last", False) in options
