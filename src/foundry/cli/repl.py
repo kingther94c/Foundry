@@ -29,6 +29,7 @@ from rich.syntax import Syntax
 from foundry.cli.copying import copy_answer
 from foundry.cli.exporting import export_conversation
 from foundry.cli.goals import GoalTurns, goal_command
+from foundry.cli.memories import memories_command
 from foundry.cli.render import print_plan, safe, sanitize
 from foundry.core.commands import PROMPTS, builtin_prompt, expand, parse_command, usage_hint
 from foundry.core.config import TERMINAL_TITLE_ITEMS, effort_levels, title_items
@@ -750,8 +751,6 @@ CODEX_COMMANDS = {
               "in .agents/skills, as they are",
     "tui": "Foundry has one terminal interface",
     "presets": "a custom prompt is a saved one: ~/.foundry/prompts/NAME.md is /NAME",
-    "memories": "Foundry keeps no memories between sessions: what should carry over goes in "
-                "AGENTS.md or FOUNDRY.md",
     "experimental": "Foundry has no experimental features; codex's [features] are read "
                     "as Foundry's own settings, and foundry features list says what each is "
                     "here",
@@ -1667,6 +1666,9 @@ COMMANDS: dict[str, Command] = {c.name: c for c in (
     Command("hooks", "the lifecycle hooks this session runs, and from which file", show_hooks),
     Command("skills", "the skills the model may load; $name in a message asks for one",
             show_skills),
+    Command("memories", "the workspace's memories, and whether this session uses them and "
+            "is read for them", memories_command,
+            arguments="[use on|off | generate on|off]"),
     Command("plan", "the model's current plan", _plan),
     Command("goal", "set a goal the session works toward, turn after turn, until it is "
             "done; alone, the goal", _goal, arguments="[OBJECTIVE]"),

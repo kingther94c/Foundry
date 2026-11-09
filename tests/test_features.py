@@ -53,11 +53,13 @@ def _replies(request) -> dict:
 # --- the switches -------------------------------------------------------------------
 
 
-def test_each_is_on_by_default_as_codex_s_is(tmp_path):
+def test_each_is_as_codex_s_is_by_default(tmp_path):
     config = _config(tmp_path, "")
     assert (config.subagents, config.run_hooks, config.shell_tool, config.view_image,
-            config.goals) == (True, True, True, True, True)
-    assert [state(config, f) for f in FEATURES if f.setting] == ["on"] * 5
+            config.goals, config.memories) == (True, True, True, True, True, False)
+    assert {f.name: state(config, f) for f in FEATURES if f.setting} == {
+        "multi_agent": "on", "hooks": "on", "shell_tool": "on", "view_image": "on",
+        "goals": "on", "memories": "off"}
 
 
 @pytest.mark.parametrize("name, setting", [("multi_agent", "subagents"),
@@ -65,7 +67,8 @@ def test_each_is_on_by_default_as_codex_s_is(tmp_path):
                                            ("codex_hooks", "run_hooks"),
                                            ("shell_tool", "shell_tool"),
                                            ("view_image", "view_image"),
-                                           ("goals", "goals")])
+                                           ("goals", "goals"),
+                                           ("memories", "memories")])
 def test_off_is_the_setting_s_off(tmp_path, name, setting):
     config = _config(tmp_path, f"[features]\n{name} = false\n")
     assert getattr(config, setting) is False
@@ -180,7 +183,7 @@ def test_a_resumed_session_s_goal_stays_in_its_journal_with_goals_off(repo, tmp_
 
 
 @pytest.mark.parametrize("name, said", [
-    ("memories", "Foundry keeps no memories between sessions"),
+    ("fast_mode", "Foundry asks for no service tier"),
     ("web_search_request", "Foundry has no web search of its own"),
     ("unified_exec", "Foundry runs each command to its end"),
     ("apps", "Foundry has no apps"),
@@ -245,8 +248,8 @@ def test_dash_c_sets_one(tmp_path):
     config = _config(tmp_path, "", settings=parse_settings(["features.multi_agent=false"]))
     assert config.subagents is False
     assert config.explain("features.multi_agent").endswith("(from cli (-c))")
-    with pytest.raises(ConfigError, match="features.memories cannot be turned on"):
-        _config(tmp_path, "", settings=parse_settings(["features.memories=true"]))
+    with pytest.raises(ConfigError, match="features.apps cannot be turned on"):
+        _config(tmp_path, "", settings=parse_settings(["features.apps=true"]))
 
 
 def _flags(*argv: str) -> argparse.Namespace:
@@ -343,7 +346,7 @@ def test_a_line_inside_a_value_is_not_the_setting(user, capsys):
 
 
 @pytest.mark.parametrize("argv, said", [
-    (["enable", "memories"], "features.memories cannot be turned on"),
+    (["enable", "web_search"], "features.web_search cannot be turned on"),
     (["enable", "steer"], "codex's steer has no counterpart"),
     (["disable", "multi_agnet"], "no feature 'multi_agnet'"),
 ])

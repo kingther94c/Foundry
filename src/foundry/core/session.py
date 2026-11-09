@@ -84,6 +84,9 @@ class EventType:
     # The session's goal changed (D-127): the whole goal as it is after, and
     # who changed it.
     GOAL = "goal"
+    # Whether the session may be read for memories (D-145): "disabled" by
+    # generate_memories = false or /memories, "enabled" by /memories again.
+    MEMORY_MODE = "memory_mode"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced

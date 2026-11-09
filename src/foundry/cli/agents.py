@@ -128,6 +128,7 @@ class Spawner:
             developer_instructions=parent.context.developer_instructions,
             environment=parent.context.environment,
             skills=parent.context.skills,
+            memories=parent.context.memories,
             max_context_tokens=parent.context.max_context_tokens,
             reserve_output_tokens=parent.context.reserve_output_tokens,
             compact_above_tokens=parent.context.compact_above_tokens,

@@ -353,7 +353,10 @@ The V1 rules:
   codex's `[features]` are read as Foundry's own settings, from the user's
   layers only: a feature Foundry has is a switch, and one it has no
   counterpart for is off, so turning it on is refused
-  ([D-144](decision-log.md)).
+  ([D-144](decision-log.md)). `features.memories` turns on codex's
+  memories, tuned by `[memories]` from the same layers: notes a model keeps
+  from a trusted workspace's idle sessions, given to that workspace's later
+  sessions only ([D-145](decision-log.md)).
 - **Policy rules**: the rule lists from every layer are **concatenated** and
   then evaluated uniformly as deny > ask > allow (layer order does not affect
   the result; deny-from-anywhere wins); the exception is the **managed layer**

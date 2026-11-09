@@ -48,8 +48,9 @@ FEATURES = (
             setting="shell_tool"),
     Feature("view_image", "the model's view_image tool", setting="view_image"),
     Feature("goals", "/goal, a goal the session works toward", setting="goals"),
-    Feature("memories", "Foundry keeps no memories between sessions: what should carry "
-                        "over goes in AGENTS.md or FOUNDRY.md"),
+    Feature("memories", "notes kept from a workspace's earlier sessions, for the sessions "
+                        "after them ([memories]); off by default, as codex's",
+            setting="memories"),
     Feature("unified_exec", _NO_PTY),
     Feature("shell_snapshot", "each command starts from the session's own environment "
                               "([shell_environment_policy]), not a snapshot of your shell"),

@@ -14,6 +14,7 @@ import shutil
 import dataclasses
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from enum import Enum
@@ -24,6 +25,7 @@ from typing import Any
 from rich.console import Console
 from rich.markup import escape
 
+import foundry
 from foundry import __version__
 from foundry.cli.codex_flags import hints as codex_hints
 from foundry.cli.completion import SHELLS
@@ -60,6 +62,12 @@ from foundry.core.features import ALIASES as FEATURE_ALIASES
 from foundry.core.features import FEATURES, refusal
 from foundry.core.features import state as feature_state
 from foundry.core.mcp import McpServers, start_servers
+from foundry.core.memories import SESSIONS_DIR as MEMORY_SESSIONS
+from foundry.core.memories import MemoryTool, forget, load_state, run_pass
+from foundry.core.memories import folder as memories_folder
+from foundry.core.memories import instructions as memory_instructions
+from foundry.core.memories import notes as memory_notes
+from foundry.core.memories import summary as memory_summary
 from foundry.core.errors import (
     AuthError,
     ConfigError,
@@ -130,7 +138,7 @@ from foundry.core.tools.git import capture_baseline, is_git_repository
 from foundry.core.tools.agent import SpawnAgent
 from foundry.core.tools.registry import default_registry
 from foundry.core.undo import apply_undo, other_changes, plan_undo, read_source, undo_payload
-from foundry.core.winapi import decode_output, looks_like_credential
+from foundry.core.winapi import IS_WINDOWS, decode_output, looks_like_credential
 from foundry.core.workspace import PathRejected, Workspace
 
 TRUST_FILE = "trusted.json"
@@ -171,6 +179,11 @@ class Wiring:
     images: list = field(default_factory=list)
     # What the user chose with /mode and /model (D-047): /new keeps it.
     chosen: dict = field(default_factory=dict)
+    # The workspace's memories (D-145): their folder where the feature is on
+    # and the workspace trusted, else None; and whether this session's
+    # instructions carry their summary.
+    memory_folder: Path | None = None
+    memories_used: bool = False
 
 
 def _trusted_paths(home: Path) -> set[str]:
@@ -337,6 +350,11 @@ def build(workspace_path: Path, *, home: Path | None = None,
         session.write_header(workspace=str(workspace.root), profile=config.backend.name,
                              model=config.backend.model, foundry_version=__version__)
         session.append("git_baseline", baseline.as_payload())
+        if not config.memory_settings.generate:
+            # codex's generate_memories = false (D-145): a session started now
+            # is never read for memories.
+            session.append(EventType.MEMORY_MODE, {"mode": "disabled",
+                                                   "by": "generate_memories"})
     else:
         session, state, outside = _reopen(home / "sessions", resume, workspace.root, current)
         # The baseline the session started from, not a fresh one: its account of
@@ -380,61 +398,9 @@ def _reopen(sessions: Path, session_id: str, root: Path,
         raise
 
 
-def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
-              session: SessionStore, state: JournalState | None, outside: frozenset[str], *,
-              home: Path, console: Console) -> Wiring:
-    # view_image only where the backend takes images (D-045) and codex's
-    # view_image feature is on (D-144).
-    registry = default_registry(recorder=session,
-                                images=config.backend.images and config.view_image)
-    if config.subagents:
-        # Its spawner is given the session once there is one (D-141).
-        registry.register(SpawnAgent(Spawner()))
-    skills = load_skills(home, workspace.root, trusted=trusted,
-                         switches=config.all_skill_switches())
-    register_skills(skills, registry)
-    # Started before the rules are checked, so a rule for a server's tool is
-    # not reported as one that can never match (D-043).
-    mcp = (start_servers(config.mcp_servers, workspace.root, registry)
-           if config.mcp_servers else McpServers())
-    try:
-        return _assemble_with(workspace, config, trusted, baseline, session, state, outside,
-                              home=home, console=console, registry=registry, mcp=mcp,
-                              skills=skills)
-    except BaseException:
-        mcp.close()
-        raise
-
-
-def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline,
-                   session: SessionStore, state: JournalState | None, outside: frozenset[str],
-                   *, home: Path, console: Console, registry, mcp: McpServers,
-                   skills: Skills) -> Wiring:
-    policy = PolicyEngine(
-        rules=list(builtin_rules()) + list(config.rules),
-        mode=config.mode,
-        dirty_files=set(baseline.dirty_paths) | set(baseline.untracked_paths) | set(outside),
-    )
-
-    dead = policy.dead_rules(registry.names())
-    for rule in dead:
-        console.print(f"[yellow]warning:[/yellow] rule for unknown tool {rule.tool!r} "
-                      "can never match")
-
-    vault = CredentialVault(home / "auth.json")
-    source = _credential_source(config, vault)
-    api_key = ""
-    missing_credential = ""
-    try:
-        api_key = source.acquire().reveal()
-    except AuthError as exc:
-        # Still deferred so `doctor` and `sessions` work without a credential --
-        # but the message is kept. Discarding it meant Foundry sent an
-        # Authorization-less request, waited out a full round trip, and reported
-        # the server "rejecting authentication", which pointed the user at their
-        # token instead of at the fact that they had never set one.
-        missing_credential = str(exc)
-
+def make_backend(config: Config, api_key: str):
+    """The model backend a configuration names: a session's, and the memory
+    pass's (D-145)."""
     backend_class = _PROTOCOLS.get(config.backend.protocol)
     if backend_class is None:
         raise ConfigError(
@@ -469,6 +435,71 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         # and compaction against 128,000 tokens whatever the model held.
         backend.caps = dataclasses.replace(
             backend.caps, max_context_tokens=config.backend.max_context_tokens)
+    return backend
+
+def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
+              session: SessionStore, state: JournalState | None, outside: frozenset[str], *,
+              home: Path, console: Console) -> Wiring:
+    # view_image only where the backend takes images (D-045) and codex's
+    # view_image feature is on (D-144).
+    registry = default_registry(recorder=session,
+                                images=config.backend.images and config.view_image)
+    if config.subagents:
+        # Its spawner is given the session once there is one (D-141).
+        registry.register(SpawnAgent(Spawner()))
+    skills = load_skills(home, workspace.root, trusted=trusted,
+                         switches=config.all_skill_switches())
+    register_skills(skills, registry)
+    # Started before the rules are checked, so a rule for a server's tool is
+    # not reported as one that can never match (D-043).
+    mcp = (start_servers(config.mcp_servers, workspace.root, registry)
+           if config.mcp_servers else McpServers())
+    try:
+        return _assemble_with(workspace, config, trusted, baseline, session, state, outside,
+                              home=home, console=console, registry=registry, mcp=mcp,
+                              skills=skills)
+    except BaseException:
+        mcp.close()
+        raise
+
+
+def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline,
+                   session: SessionStore, state: JournalState | None, outside: frozenset[str],
+                   *, home: Path, console: Console, registry, mcp: McpServers,
+                   skills: Skills) -> Wiring:
+    # codex's memories (D-145): kept and given only in a workspace the user
+    # trusts, and only the workspace's own; read in full with read_memories.
+    memory_folder = memories_folder(home, workspace.root) if config.memories and trusted else None
+    remembered = (memory_summary(memory_folder)
+                  if memory_folder is not None and config.memory_settings.use else "")
+    if remembered:
+        registry.register(MemoryTool(memory_folder))
+    policy = PolicyEngine(
+        rules=list(builtin_rules()) + list(config.rules),
+        mode=config.mode,
+        dirty_files=set(baseline.dirty_paths) | set(baseline.untracked_paths) | set(outside),
+    )
+
+    dead = policy.dead_rules(registry.names())
+    for rule in dead:
+        console.print(f"[yellow]warning:[/yellow] rule for unknown tool {rule.tool!r} "
+                      "can never match")
+
+    vault = CredentialVault(home / "auth.json")
+    source = _credential_source(config, vault)
+    api_key = ""
+    missing_credential = ""
+    try:
+        api_key = source.acquire().reveal()
+    except AuthError as exc:
+        # Still deferred so `doctor` and `sessions` work without a credential --
+        # but the message is kept. Discarding it meant Foundry sent an
+        # Authorization-less request, waited out a full round trip, and reported
+        # the server "rejecting authentication", which pointed the user at their
+        # token instead of at the fact that they had never set one.
+        missing_credential = str(exc)
+
+    backend = make_backend(config, api_key)
     window = backend.capabilities().max_context_tokens
     if (config.backend.max_output_tokens is not None
             and config.backend.max_output_tokens > window // 2):
@@ -489,6 +520,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         # token, or its share of the window.
         skills=skill_list(skills, config.skills_max_context_tokens * 4
                           if config.skills_max_context_tokens else list_budget(window)),
+        memories=memory_instructions(remembered),
         max_context_tokens=backend.capabilities().max_context_tokens,
         compact_above_tokens=config.auto_compact_token_limit,
     )
@@ -544,7 +576,8 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
                     prompts=load_custom_prompts(home, workspace.root, trusted=trusted),
                     instructions=(("developer_instructions",) if config.developer_instructions
                                   else ()) + tuple(instructions.sources),
-                    mcp=mcp, skills=skills)
+                    mcp=mcp, skills=skills, memory_folder=memory_folder,
+                    memories_used=bool(remembered))
     renderer.title_facts = lambda: _title_facts(wiring)
     if "spawn_agent" in registry.names():
         registry.get("spawn_agent").spawner.wiring = wiring
@@ -949,6 +982,9 @@ def cmd_session(args: argparse.Namespace) -> int:
             # At a terminal a task given here is the first message, and the
             # session goes on after it, as `codex "task"` does (D-078).
             first = args.task
+            if _interactive() and wiring.memory_folder is not None:
+                # codex reads sessions for memories as one starts (D-145).
+                start_memory_pass(wiring, args.profile)
             while (ended := _repl(wiring, console, first)) in (NEW_SESSION, FORK_SESSION,
                                                                 RESUME_SESSION):
                 first = None
@@ -1792,6 +1828,79 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     return 0
 
 
+def start_memory_pass(wiring: Wiring, profile: str | None) -> None:
+    """codex's memory pass as a session starts (D-145), in a process of its
+    own: it says nothing, outlives the session, and is one at a time for a
+    workspace. It runs this process's own Foundry -- installed, or a clone's
+    run-foundry.py -- from the Foundry folder with -P, so nothing in the
+    workspace is imported in its place."""
+    source = str(Path(foundry.__file__).resolve().parent.parent)
+    start = (f"import sys; sys.path.insert(0, {source!r}); "
+             "from foundry.__main__ import main; raise SystemExit(main())")
+    argv = [sys.executable, "-P", "-c", start, "memories", "update", "--quiet",
+            "-C", str(wiring.workspace.root)]
+    if profile:
+        argv += ["-p", profile]
+    flags = 0
+    if IS_WINDOWS:
+        flags = (subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+                 | subprocess.CREATE_NO_WINDOW)
+    try:
+        subprocess.Popen(argv, cwd=str(wiring.home or user_dir()), stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=flags, start_new_session=not IS_WINDOWS,
+                         close_fds=True)
+    except OSError:
+        pass        # memories wait for the next session's pass
+
+
+def cmd_memories(args: argparse.Namespace) -> int:
+    """``foundry memories [show] | update | reset`` (D-145): this workspace's
+    memories; the sessions due read now, in the foreground, as a session's
+    start reads them in the background; or the memories forgotten, and the
+    sessions before now never read for them again."""
+    console = Console()
+    home = user_dir()
+    try:
+        root = Workspace(args.workspace).root
+    except PathRejected as exc:
+        raise ConfigError(str(exc)) from exc
+    action = getattr(args, "memories_command", None) or "show"
+    folder = memories_folder(home, root)
+    if action == "reset":
+        if forget(home, root):
+            console.print(f"forgot the memories of {escape(str(root))}; sessions from now on "
+                          "are read for them", soft_wrap=True)
+        else:
+            console.print(f"[dim]{escape(str(root))} has no memories[/dim]", soft_wrap=True)
+        return 0
+    if action == "show":
+        own = folder / MEMORY_SESSIONS
+        kept = len(list(own.glob("*.md"))) if own.is_dir() else 0
+        last = load_state(folder).get("last_pass") or {}
+        console.print(f"{escape(str(folder))}: {kept} session(s) kept"
+                      + (f"; the last pass read {last.get('read', 0)}" if last else
+                         "; no pass yet"), soft_wrap=True)
+        # What a session starts with, then what read_memories gives it.
+        for heading, text in (("summary", memory_summary(folder)),
+                              ("notes", memory_notes(folder))):
+            if text:
+                console.print(f"\n[bold]{heading}[/bold]")
+                console.print(text, markup=False, highlight=False, soft_wrap=True)
+        return 0
+    if str(root) not in _trusted_paths(home):
+        raise ConfigError(f"memories are kept only for a workspace you trust; {root} is not "
+                          "(a session there asks, and exec --trust trusts it)")
+    config = load_config(root, home=home, profile=getattr(args, "profile", None))
+    api_key = _credential_source(config, CredentialVault(home / "auth.json")).acquire().reveal()
+    result = run_pass(home=home, root=root, settings=config.memory_settings,
+                      backend=make_backend(config, api_key), model=config.backend.model,
+                      scrub=default_redactor().scrub)
+    if not args.quiet:
+        console.print(escape(result.said()), soft_wrap=True)
+    return 0 if not result.errors else EXIT_CODES[TerminalStatus.FAILED]
+
+
 def cmd_features(args: argparse.Namespace) -> int:
     """``foundry features list | enable | disable``, as ``codex features``
     (D-144): codex's feature flags, each with what it is here and whether it
@@ -2437,6 +2546,22 @@ def build_parser() -> argparse.ArgumentParser:
         switch = features_sub.add_parser(name, help=f"turn a feature {said} in your "
                                                     "config.toml, for later sessions")
         switch.add_argument("name", metavar="FEATURE")
+
+    memories = sub.add_parser("memories", help="this workspace's memories: shown, updated "
+                                               "now, or forgotten")
+    memories.set_defaults(func=cmd_memories, workspace=".", quiet=False)
+    memories_sub = memories.add_subparsers(dest="memories_command")
+    for name, said in (("show", "where they are, and how many sessions are in them"),
+                       ("update", "read the sessions due now, and merge the notes"),
+                       ("reset", "forget them; sessions from now on are read for them")):
+        memory_action = memories_sub.add_parser(name, help=said)
+        memory_action.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
+                                   help="the repository (default: here)")
+        if name == "update":
+            memory_action.add_argument("-p", "--profile",
+                                       help="a [profiles.<name>] table from your config.toml")
+            memory_action.add_argument("--quiet", action="store_true",
+                                       help="say nothing (a session's start runs it so)")
 
     mcp = sub.add_parser("mcp", help="list, add or remove MCP servers in your config.toml")
     mcp.set_defaults(func=cmd_mcp)

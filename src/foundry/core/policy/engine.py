@@ -368,7 +368,10 @@ READ_ONLY_TOOLS = ("list_files", "search_text", "read_file", "read_artifact",
                    "list_mcp_resources", "list_mcp_resource_templates",
                    # A skill's own files, in the folders the user keeps or
                    # trusts (D-113), and nothing the model names beyond them.
-                   "load_skill")
+                   "load_skill",
+                   # The workspace's own memories (D-145): one file Foundry
+                   # wrote, named by nothing the model says.
+                   "read_memories")
 
 
 def builtin_rules() -> tuple[Rule, ...]:

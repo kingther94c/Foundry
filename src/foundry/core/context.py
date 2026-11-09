@@ -146,6 +146,8 @@ class ContextManager:
     developer_instructions: str = ""
     # The skills the model may load (D-113): each one's name and description.
     skills: str = ""
+    # The summary of the workspace's memories (D-145), headed as notes.
+    memories: str = ""
     max_context_tokens: int = 128_000
     # The most recent rounds whose output is never masked, whatever the pressure.
     mask_after_turns: int = MASK_AFTER_TURNS
@@ -265,12 +267,12 @@ class ContextManager:
         """Assembled in a fixed order: base prompt, then the policy-derived
         permissions paragraph (so the model is told the truth about what will be
         auto-allowed), then the user's developer instructions, as codex sends
-        them after its own (D-142), the project doc, the skills, then
-        environment facts."""
+        them after its own (D-142), the project doc, the skills, the
+        memories' summary (D-145), then environment facts."""
         developer = (DEVELOPER_HEADING + self.developer_instructions
                      if self.developer_instructions else "")
         parts = [p for p in (self.system_prompt, developer, self.project_doc, self.skills,
-                             self.environment) if p]
+                             self.memories, self.environment) if p]
         return Message.text(Role.SYSTEM, "\n\n".join(parts))
 
     def project(self) -> tuple[Message, ...]:

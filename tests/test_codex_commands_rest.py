@@ -48,7 +48,6 @@ def test_cwd_is_pwd(repo, tmp_path):
     ("import", "AGENTS.md"),
     ("tui", "one terminal interface"),
     ("presets", "~/.foundry/prompts/NAME.md is /NAME"),
-    ("memories", "AGENTS.md or FOUNDRY.md"),
     ("experimental", "no experimental features"),
     ("agents", "ask for one in a message"),
     ("subagents", "ask for one in a message"),

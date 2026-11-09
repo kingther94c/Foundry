@@ -559,6 +559,10 @@ class Config:
     shell_tool: bool = True
     view_image: bool = True
     goals: bool = True
+    # codex's memories (D-145): off by default, as codex's are; turned on with
+    # its [features] memories, and its [memories] settings.
+    memories: bool = False
+    memory_settings: MemorySettings = field(default_factory=lambda: MemorySettings())
     # The editor a file the model cites opens in (D-106), as codex's
     # file_opener: one of FILE_OPENERS, ``none`` for no links.
     file_opener: str = "vscode"
@@ -630,6 +634,79 @@ def _parse_doc_names(raw: Any) -> tuple[str, ...]:
         raise ConfigError('project_doc_fallback_filenames must be a list of file names, '
                           'as ["CLAUDE.md"] (at most 16, no folders)')
     return tuple(dict.fromkeys(raw))
+
+
+@dataclass(frozen=True, slots=True)
+class MemorySettings:
+    """codex's ``[memories]`` (D-145), by what each does here."""
+
+    generate: bool = True              # generate_memories
+    use: bool = True                   # use_memories
+    disable_on_external_context: bool = False
+    max_raw_memories: int = 256        # max_raw_memories_for_consolidation
+    max_age_days: int = 30             # max_rollout_age_days
+    max_sessions_per_pass: int = 16    # max_rollouts_per_startup
+    min_idle_hours: int = 6            # min_rollout_idle_hours
+    extract_model: str = ""
+    consolidation_model: str = ""
+
+
+# codex's [memories] names: its switches, its numbers with the range codex
+# takes each one to (a number outside it is taken as its nearer end, as
+# codex takes it), and its models.
+_MEMORY_SWITCHES = {"generate_memories": "generate", "use_memories": "use",
+                    "disable_on_external_context": "disable_on_external_context",
+                    "no_memories_if_mcp_or_web_search": "disable_on_external_context"}
+_MEMORY_NUMBERS = {"max_raw_memories_for_consolidation": ("max_raw_memories", 1, 4096),
+                   "max_rollout_age_days": ("max_age_days", 0, 90),
+                   "max_rollouts_per_startup": ("max_sessions_per_pass", 1, 128),
+                   "min_rollout_idle_hours": ("min_idle_hours", 1, 48)}
+_MEMORY_MODELS = ("extract_model", "consolidation_model")
+_ONE_STORE = "Foundry keeps one store of memories, in a folder of each workspace's own"
+_MEMORY_ELSEWHERE = {
+    "version": _ONE_STORE,
+    "dual_write": _ONE_STORE,
+    "max_unused_days": ("Foundry does not track when a memory was last used: the newest "
+                        "max_raw_memories_for_consolidation sessions' memories are kept"),
+    "min_rate_limit_remaining_percent": "Foundry sees no rate-limit windows",
+    "consolidation_service_tier": "Foundry asks for no service tier",
+    "dedicated_tools": ("the model reads the notes with read_memories whenever memories are "
+                        "used"),
+}
+
+
+def _parse_memories(raw: Any, current: MemorySettings) -> MemorySettings:
+    if not isinstance(raw, dict):
+        raise ConfigError("memories must be a table, as [memories]")
+    changes: dict[str, Any] = {}
+    named: dict[str, str] = {}
+    for key, value in raw.items():
+        if key in _MEMORY_SWITCHES:
+            field_name = _MEMORY_SWITCHES[key]
+            if field_name in named:
+                raise ConfigError(f"memories.{named[field_name]} and memories.{key} are the "
+                                  f"same setting; set {named[field_name]} alone")
+            named[field_name] = key
+            if not isinstance(value, bool):
+                raise ConfigError(f"memories.{key} must be true or false, got {value!r}")
+            changes[field_name] = value
+        elif key in _MEMORY_NUMBERS:
+            field_name, low, high = _MEMORY_NUMBERS[key]
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ConfigError(f"memories.{key} must be a whole number, got {value!r}")
+            changes[field_name] = min(max(value, low), high)
+        elif key in _MEMORY_MODELS:
+            if not isinstance(value, str) or not value.strip():
+                raise ConfigError(f"memories.{key} must be a model's name, got {value!r}")
+            changes[key] = value.strip()
+        elif key in _MEMORY_ELSEWHERE:
+            raise ConfigError(f"no setting memories.{key}; {_MEMORY_ELSEWHERE[key]}")
+        else:
+            close = difflib.get_close_matches(
+                key, [*_MEMORY_SWITCHES, *_MEMORY_NUMBERS, *_MEMORY_MODELS], n=1)
+            raise ConfigError(f"no setting memories.{key}"
+                              + (f"; did you mean {close[0]!r}?" if close else ""))
+    return dataclasses.replace(current, **changes)
 
 
 # The most the model's list of skills may take (D-114), as codex's.
@@ -746,7 +823,8 @@ FILE_OPENERS = ("vscode", "vscode-insiders", "windsurf", "cursor", "none")
 
 # What a configuration file holds (D-091). Profiles are the user's file's own.
 _SECTIONS = frozenset({"backend", "runtime", "permissions", "mcp_servers", "notify",
-                       "shell_environment_policy", "skills", "hooks", "features"})
+                       "shell_environment_policy", "skills", "hooks", "features",
+                       "memories"})
 _PROFILE_KEYS = frozenset({"profile", "profiles"})
 _RULE_KEYS = frozenset({"tool", "pattern", "decision", "reason"})
 # Another tool's names for settings Foundry has under its own, so a file
@@ -1049,6 +1127,15 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
             raise ConfigError(f"{layer} config may not set features; set them in your own "
                               "config.toml")
         apply_features(config, data["features"], layer)
+
+    if "memories" in data:
+        # What is kept of the user's sessions, and what a session is given of
+        # it (D-145): the user's own choice, as the feature is.
+        if not connection_allowed:
+            raise ConfigError(f"{layer} config may not set memories; set them in your own "
+                              "config.toml")
+        config.memory_settings = _parse_memories(data["memories"], config.memory_settings)
+        config.record("memory_settings", dataclasses.asdict(config.memory_settings), layer)
 
     if "shell_environment_policy" in data:
         # What reaches every command the model runs: a repository widening it

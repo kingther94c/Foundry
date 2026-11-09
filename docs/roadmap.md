@@ -396,6 +396,9 @@ What a codex user still notices day to day, next:
 104. ~~`review_model`~~ -- the model reviews run on (landed, D-143).
 105. ~~`[features]`~~ -- codex's feature flags read as Foundry's own
      settings, and `foundry features` (landed, D-144).
+106. ~~Memories~~ -- notes kept from a workspace's earlier sessions, for
+     the sessions after them; `foundry memories`, `/memories` (landed,
+     D-145).
 
 Not planned for now: a Windows sandbox (codex's needs dedicated local users,
 WFP filters and an elevated service; the threat model documents its absence),
