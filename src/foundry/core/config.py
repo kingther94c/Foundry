@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from foundry.core.errors import ConfigError
+from foundry.core.features import apply_features
 from foundry.core.hooks import HOOKS_FILE, Hook, parse_hooks, read_hooks_file
 from foundry.core.httpc import _is_loopback
 from foundry.core.winapi import looks_like_credential
@@ -551,6 +552,13 @@ class Config:
     # Whether the model may start sub-agents (D-141), as codex's multi_agent
     # feature, on by default as codex's is.
     subagents: bool = True
+    # codex's other features Foundry has (D-144), each on by default as
+    # codex's is: the hooks of the user's own files (the machine policy's
+    # always run), the model's run_command and view_image, and /goal.
+    run_hooks: bool = True
+    shell_tool: bool = True
+    view_image: bool = True
+    goals: bool = True
     # The editor a file the model cites opens in (D-106), as codex's
     # file_opener: one of FILE_OPENERS, ``none`` for no links.
     file_opener: str = "vscode"
@@ -588,6 +596,13 @@ class Config:
     # codex's lifecycle hooks (D-115), from the user's own files and the
     # machine's policy only: each one is a program Foundry starts.
     hooks: tuple[Hook, ...] = ()
+    # How many of them, first, are the machine policy's.
+    managed_hooks: int = 0
+
+    def active_hooks(self) -> tuple[Hook, ...]:
+        """The hooks a session runs: features.hooks = false leaves out those
+        of the user's own files, never the machine policy's (D-144)."""
+        return self.hooks if self.run_hooks else self.hooks[:self.managed_hooks]
 
     def all_skill_switches(self) -> tuple[tuple[str, str, bool], ...]:
         """The user's, then the policy's: what the machine's policy says of
@@ -731,7 +746,7 @@ FILE_OPENERS = ("vscode", "vscode-insiders", "windsurf", "cursor", "none")
 
 # What a configuration file holds (D-091). Profiles are the user's file's own.
 _SECTIONS = frozenset({"backend", "runtime", "permissions", "mcp_servers", "notify",
-                       "shell_environment_policy", "skills", "hooks"})
+                       "shell_environment_policy", "skills", "hooks", "features"})
 _PROFILE_KEYS = frozenset({"profile", "profiles"})
 _RULE_KEYS = frozenset({"tool", "pattern", "decision", "reason"})
 # Another tool's names for settings Foundry has under its own, so a file
@@ -1026,6 +1041,15 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         config.hooks = (*config.hooks, *parse_hooks(data["hooks"], f"{layer} config"))
         config.record("hooks", len(config.hooks), layer)
 
+    if "features" in data:
+        # codex's switches (D-144): the user's own choice of what the session
+        # has, as hooks are; a repository turning off the user's hooks would
+        # be a loosening dressed as a switch.
+        if not connection_allowed:
+            raise ConfigError(f"{layer} config may not set features; set them in your own "
+                              "config.toml")
+        apply_features(config, data["features"], layer)
+
     if "shell_environment_policy" in data:
         # What reaches every command the model runs: a repository widening it
         # would hand its own test code the user's environment.
@@ -1088,8 +1112,9 @@ def _no_flag_setting(name: str, section: str, key: str) -> ConfigError:
         hint = f"Foundry calls it {_CALLED_HERE[key]}"
     elif key in _PROFILE_KEYS:
         hint = "choose one with -p NAME"
-    elif top in _SECTIONS - set(_FLAG_KEYS):
-        hint = f"-c sets backend and runtime settings; [{top}] goes in your config.toml"
+    elif top in _SECTIONS - set(_FLAG_KEYS) - {"features"}:
+        hint = (f"-c sets backend, runtime and features settings; [{top}] goes in your "
+                "config.toml")
     elif other := next((table for table, keys in _FLAG_KEYS.items()
                         if key in keys and table != section), None):
         hint = f"it is {other}.{key}"
@@ -1132,6 +1157,11 @@ def settings_layer(values: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _set_flag(layer: dict[str, dict[str, Any]], name: str, value: Any) -> None:
+    if name.startswith("features."):
+        # codex's switches (D-144), checked as a file's are when applied:
+        # -c features.NAME=true is codex's --enable NAME.
+        layer.setdefault("features", {})[name.removeprefix("features.")] = value
+        return
     section, dot, key = name.rpartition(".")
     if not dot:
         section = "backend" if key in BackendConfig.__dataclass_fields__ else "runtime"
@@ -1180,6 +1210,7 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
                connection_allowed=True, allow_rules_permitted=True)
     # codex reads a hooks.json beside each config layer's file (D-115).
     _add_hooks_file(config, managed.parent / HOOKS_FILE, "managed")
+    config.managed_hooks = len(config.hooks)
 
     user = _load_toml(root / "config.toml")
     _apply(config, user, "user", connection_allowed=True, allow_rules_permitted=True,
@@ -1214,6 +1245,13 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
         config.record(key, value, "cli")
 
     _apply_protocol_defaults(config)
+    if not config.shell_tool:
+        # codex's shell_tool off (D-144): every command the model asks for is
+        # refused, ahead of any rule allowing it, and the model is told so with
+        # the rules -- as codex's model has no shell. The user's ! still runs.
+        config.rules.append(Rule(tool="run_command", pattern="*", verdict=Verdict.DENY,
+                                 layer=Layer.USER, rule_id="features.shell_tool",
+                                 reason="run_command is off: features.shell_tool = false"))
     effort = config.backend.effort
     if effort is not None and effort not in effort_levels(config.backend.protocol):
         raise ConfigError(

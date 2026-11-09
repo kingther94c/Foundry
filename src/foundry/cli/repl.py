@@ -752,7 +752,9 @@ CODEX_COMMANDS = {
     "presets": "a custom prompt is a saved one: ~/.foundry/prompts/NAME.md is /NAME",
     "memories": "Foundry keeps no memories between sessions: what should carry over goes in "
                 "AGENTS.md or FOUNDRY.md",
-    "experimental": "Foundry has no experimental features to turn on",
+    "experimental": "Foundry has no experimental features; codex's [features] are read "
+                    "as Foundry's own settings, and foundry features list says what each is "
+                    "here",
     "agents": "Foundry's sub-agents work while the session waits, each line of theirs shown "
               "as 'agent N:' -- ask for one in a message; /side asks on the side, /fork goes "
               "on in a copy, and another terminal runs another session",
@@ -846,6 +848,11 @@ def _resume(wiring: "Wiring", console: Console, arguments: str) -> str:
 
 def _goal(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
     """``/goal`` (D-127): the turn it starts, if any."""
+    if not wiring.config.goals:
+        # codex's goals feature, off (D-144).
+        console.print("[yellow]goals are off in your configuration (features.goals = "
+                      "false)[/yellow]")
+        return None
     prompt = goal_command(wiring, console, arguments, confirm)
     return RunTask(prompt) if prompt is not None else None
 
@@ -1453,7 +1460,14 @@ def show_hooks(wiring: "Wiring", console: Console, arguments: str = "") -> None:
     /hooks lists them -- each one's event, matcher, command and file. They
     come from the user's own files and the machine's policy only, so there
     is no review to ask for here, as codex asks of a repository's."""
-    hooks = wiring.config.hooks
+    hooks = wiring.config.active_hooks()
+    off = len(wiring.config.hooks) - len(hooks)
+    if off:
+        # codex's hooks feature, off (D-144): the machine policy's still run.
+        console.print(f"[dim]{off} hook(s) of your own files are not run: features.hooks = "
+                      "false[/dim]")
+    if not hooks and off:
+        return None
     if not hooks:
         where = wiring.home / HOOKS_FILE if wiring.home else HOOKS_FILE
         console.print(f"[dim]no hooks: codex's hooks.json format, in {escape(str(where))} or "

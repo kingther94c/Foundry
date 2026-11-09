@@ -1,5 +1,6 @@
 """Adding and removing an MCP server in the user's own config.toml (D-082),
-as ``codex mcp add`` and ``codex mcp remove`` do.
+as ``codex mcp add`` and ``codex mcp remove`` do, and turning a feature on
+or off there (D-144), as ``codex features enable`` and ``disable`` do.
 
 The standard library reads TOML but does not write it, and the file is the
 user's: its comments, order and layout are theirs. So an edit is text -- a
@@ -32,6 +33,8 @@ _BARE_KEY = re.compile(r"[A-Za-z0-9_-]+\Z")
 # and the check after the edit refuses it.
 _HEADER = re.compile(r"\s*\[(?!\[)([^\[\]]+)\]\s*(#.*)?\Z")
 _ANY_HEADER = re.compile(r"\s*\[\[?[^\[\]]+\]\]?\s*(#.*)?\Z")
+# A setting's line: its key, bare or quoted, and a comment after its value.
+_SETTING = re.compile(r'\s*(?:([A-Za-z0-9_-]+)|"([^"\\]*)")\s*=[^#]*(#.*)?\Z')
 
 
 def toml_string(value: str) -> str:
@@ -189,3 +192,52 @@ def remove_server(path: Path, name: str) -> None:
                           f"{path}, so it cannot be taken out here; remove it by hand")
     newline = "\r\n" if "\r\n" in text else "\n"
     _write(path, edited.rstrip() + (newline if edited.strip() else ""))
+
+
+def set_feature(path: Path, name: str, value: bool) -> None:
+    """``name = value`` under ``[features]`` in the config at ``path``, as
+    codex's ``features enable`` writes it: its line changed where it has one,
+    added under the table's header where it has none, and the table appended
+    to a file without one."""
+    text, data = _read(path)
+    expected = copy.deepcopy(data)
+    features = expected.setdefault("features", {})
+    if not isinstance(features, dict):
+        raise ConfigError(f"features in {path} is not a table; set {name} there by hand")
+    features[name] = value
+    newline = "\r\n" if "\r\n" in text else "\n"
+    line = f"{_key(name)} = {_value(value)}"
+    lines = text.splitlines(keepends=True)
+    header = next((i for i, text_line in enumerate(lines)
+                   if _header_key(text_line.rstrip("\r\n")) == "features"), None)
+    if header is None:
+        if text and not text.endswith(("\n", "\r")):
+            text += newline
+        edited = text + (newline if text.strip() else "") + f"[features]{newline}{line}{newline}"
+    else:
+        if not lines[header].endswith(("\n", "\r")):
+            lines[header] += newline
+        end = header + 1
+        while end < len(lines) and not _ANY_HEADER.match(lines[end].rstrip("\r\n")):
+            end += 1
+        for index in range(header + 1, end):
+            match = _SETTING.match(lines[index].rstrip("\r\n"))
+            if match and name in (match.group(1), match.group(2)):
+                # Its comment kept, as the rest of the user's file is.
+                comment = f"  {match.group(3)}" if match.group(3) else ""
+                ending = lines[index][len(lines[index].rstrip("\r\n")):] or newline
+                lines[index] = line + comment + ending
+                break
+        else:
+            lines.insert(header + 1, line + newline)
+        edited = "".join(lines)
+    try:
+        parsed = tomllib.loads(edited)
+    except tomllib.TOMLDecodeError:
+        parsed = None
+    if parsed != expected:
+        # [features] written inline or as dotted keys, which a line here
+        # cannot change.
+        raise ConfigError(f"the features in {path} are not written as a [features] table, so "
+                          f"{name} cannot be set here; set it by hand")
+    _write(path, edited)

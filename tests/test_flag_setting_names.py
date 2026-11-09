@@ -40,8 +40,8 @@ def test_codex_s_name_is_told_foundry_s(codex, foundry):
     ("profile=fast", "choose one with -p NAME"),
     ("backend.max_tool_rounds=5", "it is runtime.max_tool_rounds"),
     ("runtime.model=gpt-5", "it is backend.model"),
-    ("permissions.tool=x", "-c sets backend and runtime settings; [permissions] goes in "
-                           "your config.toml"),
+    ("permissions.tool=x", "-c sets backend, runtime and features settings; [permissions] "
+                           "goes in your config.toml"),
     ("mcp_servers.docs.command=uvx", "[mcp_servers] goes in your config.toml"),
     ("shell_environment_policy.inherit=all", "[shell_environment_policy] goes in"),
     ("max_tool_round=5", "did you mean 'max_tool_rounds'?"),

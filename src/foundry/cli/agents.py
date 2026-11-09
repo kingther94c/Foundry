@@ -115,7 +115,10 @@ class Spawner:
 
     def _runtime(self, wiring: "Wiring", store: SessionStore, number: int) -> AgentRuntime:
         parent = wiring.runtime
-        registry = default_registry(recorder=store, images=parent.tool_ctx.images)
+        # The parent's own built-in tools: view_image only where it has it
+        # (D-045, D-144).
+        registry = default_registry(recorder=store,
+                                    images="view_image" in parent.registry.names())
         for name in parent.registry.names():
             if name not in NOT_FOR_SUBAGENTS and name not in registry.names():
                 registry.register(parent.registry.get(name))   # skills', MCP servers'

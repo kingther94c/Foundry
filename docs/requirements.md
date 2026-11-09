@@ -350,6 +350,10 @@ The V1 rules:
   ([D-042](decision-log.md)). A key no code reads is refused in every layer,
   as on the command line: in a file, a table of one, and a permission rule,
   named with where the setting lives when it does ([D-091](decision-log.md)).
+  codex's `[features]` are read as Foundry's own settings, from the user's
+  layers only: a feature Foundry has is a switch, and one it has no
+  counterpart for is off, so turning it on is refused
+  ([D-144](decision-log.md)).
 - **Policy rules**: the rule lists from every layer are **concatenated** and
   then evaluated uniformly as deny > ask > allow (layer order does not affect
   the result; deny-from-anywhere wins); the exception is the **managed layer**

@@ -54,8 +54,11 @@ from foundry.core.config import (
     parse_settings,
     user_dir,
 )
-from foundry.core.config_edit import add_server, remove_server, toml_string
+from foundry.core.config_edit import add_server, remove_server, set_feature, toml_string
 from foundry.core.context import ContextManager
+from foundry.core.features import ALIASES as FEATURE_ALIASES
+from foundry.core.features import FEATURES, refusal
+from foundry.core.features import state as feature_state
 from foundry.core.mcp import McpServers, start_servers
 from foundry.core.errors import (
     AuthError,
@@ -380,7 +383,10 @@ def _reopen(sessions: Path, session_id: str, root: Path,
 def _assemble(workspace: Workspace, config: Config, trusted: bool, baseline,
               session: SessionStore, state: JournalState | None, outside: frozenset[str], *,
               home: Path, console: Console) -> Wiring:
-    registry = default_registry(recorder=session, images=config.backend.images)
+    # view_image only where the backend takes images (D-045) and codex's
+    # view_image feature is on (D-144).
+    registry = default_registry(recorder=session,
+                                images=config.backend.images and config.view_image)
     if config.subagents:
         # Its spawner is given the session once there is one (D-141).
         registry.register(SpawnAgent(Spawner()))
@@ -520,9 +526,10 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         show_reasoning=config.show_reasoning,
         notifier=Notifier(tuple(config.notify), workspace.root) if config.notify else None,
         scrub=default_redactor().scrub,
-        hooks=(HookSet(config.hooks, cwd=workspace.root, env_policy=config.shell_environment,
+        hooks=(HookSet(config.active_hooks(), cwd=workspace.root,
+                       env_policy=config.shell_environment,
                        mcp={client.server.name: client for client in mcp.clients})
-               if config.hooks else None),
+               if config.active_hooks() else None),
         start_sources=["resume" if state is not None else "startup"],
     )
     # A cancel from another thread (foundry mcp-server, D-103) reaches a
@@ -565,7 +572,9 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
         wiring.resumed, wiring.outside, wiring.name = state, outside, state.name
         wiring.note = resume_note(state, outside, config.mode.value)
         runtime.plan, runtime.plan_explanation = state.plan, state.plan_explanation
-        if state.goal is not None:
+        if state.goal is not None and config.goals:
+            # With features.goals off (D-144) the goal stays in the journal,
+            # for a session that has goals on to go on with.
             # Not pursued on its own once resumed: /goal resume goes on (D-127).
             runtime.restore_goal(state.goal if state.goal.status != GOAL_ACTIVE
                                  else dataclasses.replace(state.goal, status=GOAL_PAUSED))
@@ -749,8 +758,17 @@ def _config_args(args: argparse.Namespace, *, mode: Mode | None = None) -> dict:
     chosen = mode or (Mode(args.mode) if args.mode else None)
     if chosen is not None:
         overrides["mode"] = chosen
-    return {"overrides": overrides or None, "profile": args.profile,
-            "settings": parse_settings(args.config or [])}
+    settings = parse_settings(args.config or [])
+    # codex's --enable and --disable (D-144): -c features.NAME=true and =false.
+    switched: dict[str, bool] = {}
+    for flag, value in (("enable", True), ("disable", False)):
+        for name in getattr(args, flag, None) or []:
+            if switched.get(name, value) != value:
+                raise ConfigError(f"--enable and --disable both name {name}")
+            switched[name] = value
+    if switched:
+        settings.setdefault("features", {}).update(switched)
+    return {"overrides": overrides or None, "profile": args.profile, "settings": settings}
 
 
 # How many sessions the resume picker offers, and how much of each one's
@@ -1774,6 +1792,39 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_features(args: argparse.Namespace) -> int:
+    """``foundry features list | enable | disable``, as ``codex features``
+    (D-144): codex's feature flags, each with what it is here and whether it
+    is on, and one turned on or off in the user's own config.toml -- not a
+    profile's, as codex's is not."""
+    console = Console()
+    action = getattr(args, "features_command", None) or "list"
+    if action in ("enable", "disable"):
+        value = action == "enable"
+        problem = refusal(args.name, value)
+        if problem:
+            raise ConfigError(problem)
+        name = FEATURE_ALIASES.get(args.name, args.name)
+        path = user_dir() / "config.toml"
+        set_feature(path, name, value)
+        console.print(f"[green]{action}d[/green] {escape(name)}: features.{escape(name)} = "
+                      f"{'true' if value else 'false'} in {escape(str(path))}; a new session "
+                      "goes by it", soft_wrap=True)
+        return 0
+    config = load_config(home=user_dir())
+    width = max(len(feature.name) for feature in FEATURES)
+    for feature in FEATURES:
+        said = feature_state(config, feature)
+        style = "green" if said == "on" else "dim"
+        here = (escape(feature.said) if feature.setting or feature.ignored
+                else f"[dim]{escape(feature.said)}[/dim]")
+        console.print(f"{escape(feature.name):<{width}}  [{style}]{said:<7}[/{style}]  {here}",
+                      soft_wrap=True)
+    console.print("[dim]codex's other features have no counterpart here: off is what each "
+                  "already is[/dim]")
+    return 0
+
+
 # What `foundry mcp get` shows in place of a value a credential's name marks.
 HIDDEN = "[hidden]"
 
@@ -2130,6 +2181,12 @@ def _config_flags(parser: argparse.ArgumentParser, *, modes: tuple[Mode, ...] = 
                              "(repeatable; no secrets)")
     parser.add_argument("-p", "--profile",
                         help="a [profiles.<name>] table from your config.toml")
+    parser.add_argument("--enable", action="append", metavar="FEATURE",
+                        help="turn a feature on for this run, as -c features.FEATURE=true "
+                             "(repeatable); foundry features list names them")
+    parser.add_argument("--disable", action="append", metavar="FEATURE",
+                        help="turn a feature off for this run, as -c features.FEATURE=false "
+                             "(repeatable)")
 
 
 def _stderr_console(args: argparse.Namespace) -> Console:
@@ -2370,6 +2427,17 @@ def build_parser() -> argparse.ArgumentParser:
     _config_flags(serve, modes=(Mode.DONT_ASK, Mode.PLAN, Mode.ACCEPT_EDITS))
     serve.set_defaults(func=cmd_mcp_server)
 
+    features = sub.add_parser("features", help="codex's feature flags: what each is here, "
+                                               "and turning one on or off in your "
+                                               "config.toml")
+    features.set_defaults(func=cmd_features)
+    features_sub = features.add_subparsers(dest="features_command")
+    features_sub.add_parser("list", help="each feature, whether it is on, and what it is here")
+    for name, said in (("enable", "on"), ("disable", "off")):
+        switch = features_sub.add_parser(name, help=f"turn a feature {said} in your "
+                                                    "config.toml, for later sessions")
+        switch.add_argument("name", metavar="FEATURE")
+
     mcp = sub.add_parser("mcp", help="list, add or remove MCP servers in your config.toml")
     mcp.set_defaults(func=cmd_mcp)
     mcp_sub = mcp.add_subparsers(dest="mcp_command")
@@ -2508,5 +2576,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except FoundryError as exc:
-        Console().print(f"[red]{exc}[/red]")
+        # Its words as they are: "[features]" in one is not markup (D-144).
+        Console().print(f"[red]{escape(str(exc))}[/red]")
         return EXIT_CODES[TerminalStatus.FAILED]
