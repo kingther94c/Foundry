@@ -291,6 +291,10 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
 - A read-only task sets `PolicyEngine.read_only` for its turn (`/review`,
   [D-039](decision-log.md)): every mutator is refused at step 2 with that
   reason, whatever the mode, and the field is cleared when the turn ends.
+  While it is set, a request offers no mutator at all, so the model is not
+  invited to spend a turn on a refusal; a call to one anyway is still
+  refused by the policy ([D-148](decision-log.md)). Plan mode is still
+  offered them: it plans the changes it will make once approved.
   `/review --base REV` and `/review --commit REV` ([D-066](decision-log.md))
   review a branch or one commit the same way.
 - The mode changes only when the user says so at the session's prompt:

@@ -24,7 +24,8 @@ from foundry.core.backends.base import (ModelBackend, ReasoningComplete, TextDel
                                         TurnFinished, UsageUpdate)
 from foundry.core.commands import builtin_prompt
 from foundry.core.context import ContextManager
-from foundry.core.conversation import Message, Role, ToolUseBlock, TurnRequest, Usage
+from foundry.core.conversation import (Message, Role, ToolSchema, ToolUseBlock, TurnRequest,
+                                       Usage)
 from foundry.core.errors import (
     AuthError,
     Cancelled,
@@ -848,10 +849,22 @@ class AgentRuntime:
         self._run_hooks(event, omit=("permission_mode",), stoppable=event == PRE_MODEL_REQUEST,
                         **fields)
 
+    def _offered_tools(self) -> tuple[ToolSchema, ...]:
+        """The tools a request offers. A read-only task -- a review, /side,
+        /recap, a read-only sub-agent -- is not offered the ones its policy
+        refuses whatever their arguments (D-148): offered, they invited a
+        model to spend a turn on an edit or a test run that could only be
+        refused. A call to one is still refused, not unknown."""
+        schemas = self.registry.schemas()
+        if not self.policy.read_only:
+            return schemas
+        return tuple(s for s in schemas
+                     if self.registry.get(s.name).kind is not ToolKind.MUTATOR)
+
     def _attempt(self, messages: tuple[Message, ...] | None, purpose: str):
         request = TurnRequest(
             messages=self.context.project() if messages is None else messages,
-            tools=self.registry.schemas(),
+            tools=self._offered_tools(),
             model=self.model,
             max_output_tokens=self.max_output_tokens,
         )
