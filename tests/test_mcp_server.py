@@ -394,6 +394,29 @@ def test_a_reply_continues_the_session_held_open(client, model, home):
     assert EventType.RESUMED not in _types(home, first["sessionId"])
 
 
+def _unanswered(messages: list[dict]) -> list[str]:
+    """The tool calls in a Chat Completions conversation with no result,
+    which every provider refuses."""
+    called = [call["id"] for m in messages if m["role"] == "assistant"
+              for call in m.get("tool_calls") or ()]
+    answered = {m["tool_call_id"] for m in messages if m["role"] == "tool"}
+    return [call for call in called if call not in answered]
+
+
+def test_the_first_task_s_finish_is_answered_before_a_reply(client, model, home):
+    """Found in P9 (D-167): the finish that ended the first task went to the
+    model again with no result, which every provider refuses."""
+    model.turns = [_finish("first"), _finish("second")]
+    first = client.call(1, "foundry", prompt="the first task")["structuredContent"]
+    client.call(2, "foundry-reply", sessionId=first["sessionId"], prompt="the second task")
+    messages = model.requests[1]["messages"]
+    assert _unanswered(messages) == []
+    said = [m["content"] for m in messages if m["role"] == "tool"]
+    assert said == ["finish was accepted: the task ended with status partial."]
+    # Journaled, so a resume finds nothing to repair.
+    assert _types(home, first["sessionId"]).count(EventType.TOOL_REPLY) == 2
+
+
 def test_a_reply_to_a_session_no_longer_open_resumes_it(home, model, repo):
     model.turns = [_finish("first"), _finish("second")]
     before = _Client(home, repo)
@@ -406,6 +429,7 @@ def test_a_reply_to_a_session_no_longer_open_resumes_it(home, model, repo):
     assert (second["sessionId"], second["text"]) == (first["sessionId"], "second")
     assert EventType.RESUMED in _types(home, first["sessionId"])
     assert any("the first task" in str(m.get("content")) for m in model.requests[1]["messages"])
+    assert _unanswered(model.requests[1]["messages"]) == []
     # The task carries the resume's note, as exec --resume's does.
     task = model.requests[1]["messages"][-1]["content"]
     assert task.endswith("\n\nthe second task") and task != "the second task"

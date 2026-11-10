@@ -531,6 +531,11 @@ class Server:
                 wiring.session.record_termination(status, reason)
             except OSError:
                 pass  # the journal says it is degraded; the answer still goes
+        # The session is held open for a foundry-reply, so the calls the task
+        # left -- finish, and any after it -- are answered now, as the REPL
+        # answers them (D-063, D-167): a request with a call left unanswered is
+        # refused by every provider.
+        wiring.runtime.answer_left_calls()
         return _answer(wiring.session.session_id, status, reason, outcome.text)
 
     def _settle(self, rid: Any, entry: _Open | None) -> bool:

@@ -520,7 +520,8 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   as an MCP server over stdio. Each `tools/call` runs on a thread of its own,
   in a session `build()` makes and `unattended()` leaves with nobody to ask
   (ASK becomes DENY), as exec's; `foundry-reply` takes the session held open,
-  or resumes it from its journal. A call's `config` is the client's layer,
+  or resumes it from its journal; the calls a task left -- its `finish` --
+  are answered as it ends, as the REPL answers them ([D-167](decision-log.md)). A call's `config` is the client's layer,
   after the server's own `-c` and with a repository config's limits
   (`load_config(client_settings=...)`, [D-150](decision-log.md)): no backend
   setting, no features, hooks, servers or instructions, budgets only lower
