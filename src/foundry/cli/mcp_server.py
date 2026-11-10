@@ -389,7 +389,14 @@ class Server:
                     self._claim(entry.place, rid)
                     entry.running = rid
                     self._requests[rid] = entry
-                    return entry
+                    cancelled = rid in self._cancelled
+            if entry is not None:
+                # A cancel that came between _work's look and the entry being
+                # registered found no runtime to stop; it is honoured here, as
+                # a session just built honours one (D-156).
+                if cancelled:
+                    entry.wiring.runtime.cancel()
+                return entry
             journal = find_journal((self._home or user_dir()) / "sessions", task.session_id)
             if journal is None:
                 raise _Refused(f"no session {task.session_id}: give the sessionId a {START} "
@@ -626,13 +633,29 @@ def _is_id(value: Any) -> bool:
     return isinstance(value, (str, int)) and not isinstance(value, bool)
 
 
-def _place(path: Path) -> str:
-    """The repository a task would work in, as a key."""
+# How many superprojects up a submodule's place is looked for.
+MAX_SUPERPROJECTS = 8
+
+
+def _git_line(arguments: list[str], path: Path) -> str:
     try:
-        code, out, _ = run_git(["rev-parse", "--show-toplevel"], path)
+        code, out, _ = run_git(arguments, path)
     except (FoundryError, OSError):
-        code, out = 1, ""
-    top = out.strip() if code == 0 and out.strip() else str(path)
+        return ""
+    return out.strip() if code == 0 else ""
+
+
+def _place(path: Path) -> str:
+    """The repository a task would work in, as a key: the outermost
+    superproject of a submodule. A task in the superproject writes the
+    submodule's files too, so the two were two tasks writing one file
+    (D-156)."""
+    top = _git_line(["rev-parse", "--show-toplevel"], path) or str(path)
+    for _ in range(MAX_SUPERPROJECTS):
+        outer = _git_line(["rev-parse", "--show-superproject-working-tree"], Path(top))
+        if not outer:
+            break
+        top = outer
     return os.path.normcase(os.path.realpath(top))
 
 

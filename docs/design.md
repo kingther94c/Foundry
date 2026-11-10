@@ -510,9 +510,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   and modes only narrower. The reading thread answers pings and passes
   `notifications/cancelled` to `runtime.cancel()`, which the runtime checks
   between the pieces of a streamed answer and before each tool call, and
-  which long-running tools poll through `ToolContext.cancelled`. One task at
-  a time per Git top level; at most 8 sessions held open, the least recently
-  used closed past that. stdin and stdout are duplicated for the protocol,
+  which long-running tools poll through `ToolContext.cancelled`; a cancel
+  that comes before the request is registered with its runtime is looked for
+  again once it is ([D-156](decision-log.md)). One task at a time per Git top
+  level -- a submodule's being its outermost superproject's; at most 8
+  sessions held open, the least recently used closed past that. stdin and stdout are duplicated for the protocol,
   descriptor 0 then pointed at the null device and 1 at stderr. A client that
   offers elicitation ([D-104](decision-log.md)) is the session's approval
   callback instead: `elicitation/create` with the operation's display and
