@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from foundry.cli.repl import _compact
+from foundry.cli.slash_commands import _compact
 from foundry.core.events import TerminalStatus
 from foundry.core.hooks import (
     Hook,

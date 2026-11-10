@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from foundry.cli.repl import CODEX_COMMANDS, COMMANDS
+from foundry.cli.slash_commands import CODEX_COMMANDS, COMMANDS
 from foundry.core.policy.engine import Mode
 
 from test_resume import _wire, repo  # noqa: F401  (repo is a fixture)

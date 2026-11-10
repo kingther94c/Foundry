@@ -14,7 +14,7 @@ import builtins
 import pytest
 
 from foundry.cli import app
-from foundry.cli.repl import API_DEFAULT_EFFORT
+from foundry.cli.session_settings import API_DEFAULT_EFFORT
 from foundry.core.backends.anthropic import AnthropicBackend
 from foundry.core.backends.anthropic import build_body as anthropic_body
 from foundry.core.backends.base import collect_turn

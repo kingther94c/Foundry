@@ -16,9 +16,9 @@ from typing import Any
 from rich.console import Console
 from rich.markup import escape
 
-from foundry.cli.repl import REVIEW_READ_ONLY, review_task
-from foundry.cli.repl import attach as _attach
-from foundry.cli.repl import take_images as _take_images
+from foundry.cli.slash_commands import REVIEW_READ_ONLY, review_task
+from foundry.cli.attachments import attach as _attach
+from foundry.cli.attachments import take_images as _take_images
 from foundry.cli.repl import with_note as _with_note
 from foundry.cli.session_commands import _forget, _fork
 from foundry.cli.wiring import Wiring, _announce_resume, _close, _config_args, build

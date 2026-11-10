@@ -16,7 +16,8 @@ import pytest
 from rich.console import Console
 
 from foundry.cli.render import QUIET_WHEN_OK, Renderer
-from foundry.cli.repl import RunTask, run_task
+from foundry.cli.repl import run_task
+from foundry.cli.slash_commands import RunTask
 from foundry.cli.wiring import _close
 from foundry.core.events import TerminalStatus, ToolBegin, ToolEnd
 from foundry.core.runtime import _tool_end_summary

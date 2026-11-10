@@ -13,7 +13,8 @@ import json
 
 import pytest
 
-from foundry.cli.repl import PROMPT, REWIND_SHOWN, prompt_for, rewind_points
+from foundry.cli.repl import PROMPT, prompt_for
+from foundry.cli.slash_commands import REWIND_SHOWN, rewind_points
 from foundry.cli.wiring import _close
 from foundry.core.context import SUMMARY_PREFIX, ContextManager
 from foundry.core.conversation import ImageBlock, Message, Role, TextBlock

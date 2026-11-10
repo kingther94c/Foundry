@@ -15,6 +15,7 @@ import pytest
 from rich.console import Console
 
 from foundry.cli import repl
+from foundry.cli.slash_commands import _side
 from foundry.cli.wiring import _close
 from foundry.core.events import TerminalStatus
 from foundry.core.resume import read_journal
@@ -151,7 +152,7 @@ def test_it_goes_back_however_the_side_question_ends(repo, tmp_path, monkeypatch
     monkeypatch.setattr(type(wiring.runtime), "answer_left_calls", interrupted)
     console = Console(file=io.StringIO())
     with pytest.raises(KeyboardInterrupt):
-        repl._ask_aside(wiring, console, repl._side(wiring, console, "what?"))
+        repl._ask_aside(wiring, console, _side(wiring, console, "what?"))
     assert wiring.runtime.context.history == []
     assert wiring.runtime.auto_compact is True
     assert EventType.REWOUND in {r.type for r in SessionStore.read_records(wiring.session.path)}

@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from foundry.cli.repl import MAX_MENTIONS
+from foundry.cli.attachments import MAX_MENTIONS
 from foundry.core.policy.engine import Rule, Verdict
 from foundry.core.redaction import PLACEHOLDER, default_redactor
 from foundry.core.tools.files import DEFAULT_READ_LINES

@@ -18,7 +18,8 @@ import pytest
 from rich.console import Console
 
 from foundry.cli.render import Renderer, Working, elapsed
-from foundry.cli.repl import RunTask, run_task
+from foundry.cli.repl import run_task
+from foundry.cli.slash_commands import RunTask
 from foundry.cli.wiring import _close
 from foundry.core.conversation import Usage
 from foundry.core.events import (

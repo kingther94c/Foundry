@@ -16,7 +16,8 @@ import pytest
 from rich.console import Console
 
 from foundry.cli.render import Renderer, Working
-from foundry.cli.repl import RunTask, run_task
+from foundry.cli.repl import run_task
+from foundry.cli.slash_commands import RunTask
 from foundry.cli.wiring import _close
 from foundry.core.events import EventSink, TerminalStatus, ToolBegin, ToolEnd, ToolOutputDelta
 from foundry.core.redaction import Redactor

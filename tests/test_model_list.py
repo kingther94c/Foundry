@@ -25,7 +25,7 @@ from foundry.core.backends.responses import ResponsesBackend
 from foundry.core.errors import AuthError, FatalError, ProtocolError, TransientError
 from foundry.core.httpc import HttpClient
 from foundry.core.session import SessionStore
-from foundry.cli.repl import MODELS_SHOWN
+from foundry.cli.session_settings import MODELS_SHOWN
 
 from test_resume import _Live, _wire, repo  # noqa: F401  (repo is a fixture)
 from test_slash_commands import _repl, _shown

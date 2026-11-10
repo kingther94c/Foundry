@@ -10,7 +10,7 @@ import pytest
 from rich.console import Console
 
 from foundry.cli import app
-from foundry.cli.repl import RECAP, RECAP_READ_ONLY
+from foundry.cli.slash_commands import RECAP, RECAP_READ_ONLY
 from foundry.core.session import EventType, SessionStore
 
 from test_fork import _model

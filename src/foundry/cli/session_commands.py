@@ -17,14 +17,14 @@ from rich.markup import escape
 
 from foundry.cli.render import safe
 from foundry.cli.transcript import show_conversation
-from foundry.cli.repl import ARCHIVE_SESSION, DELETE_SESSION, FORK_SESSION, NEW_SESSION
-from foundry.cli.repl import RESUME_SESSION
-from foundry.cli.repl import attach as _attach
-from foundry.cli.repl import take_images as _take_images
-from foundry.cli.repl import confirm as _confirm
+from foundry.cli.slash_commands import ARCHIVE_SESSION, DELETE_SESSION, FORK_SESSION, NEW_SESSION
+from foundry.cli.slash_commands import RESUME_SESSION
+from foundry.cli.attachments import attach as _attach
+from foundry.cli.attachments import take_images as _take_images
+from foundry.cli.slash_commands import confirm as _confirm
 from foundry.cli.repl import repl as _repl
-from foundry.cli.repl import show_outcome as _show_outcome
-from foundry.cli.repl import show_undo_plan as _show_plan
+from foundry.cli.slash_commands import show_outcome as _show_outcome
+from foundry.cli.slash_commands import show_undo_plan as _show_plan
 from foundry.cli.repl import with_note as _with_note
 from foundry.cli.setup_commands import start_memory_pass
 from foundry.cli.wiring import Wiring, _announce_resume, _close, _config_args, _say_farewell, build

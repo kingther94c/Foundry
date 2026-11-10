@@ -14,8 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from foundry.cli import repl
-from foundry.cli.repl import files_named
+from foundry.cli.attachments import files_named, workspace_files
 from foundry.core.errors import ToolError
 from foundry.core.policy.engine import Rule, Verdict
 from foundry.core.tools.git import run_git
@@ -121,7 +120,8 @@ def test_part_of_a_name_is_not_a_name(repo, tmp_path):
 def test_what_does_not_look_like_a_file_is_not_looked_for(repo, tmp_path, monkeypatch):
     _files(repo, "src/property")
     asked = []
-    monkeypatch.setattr(repl, "workspace_files", lambda root: asked.append(root) or [])
+    monkeypatch.setattr("foundry.cli.attachments.workspace_files",
+                        lambda root: asked.append(root) or [])
     _, typist, sent = _sent_once(repo, tmp_path, "what does @property do?")
     assert sent == "what does @property do?" and asked == [] and NO_SUCH not in _shown(typist)
 
@@ -136,8 +136,9 @@ def test_a_file_git_knows_but_that_is_gone_is_not_found(repo, tmp_path):
 def test_the_list_is_asked_for_once_a_message(repo, tmp_path, monkeypatch):
     _files(repo, "src/x.py", "src/y.py")
     asked = []
-    listing = repl.workspace_files
-    monkeypatch.setattr(repl, "workspace_files", lambda root: asked.append(root) or listing(root))
+    listing = workspace_files
+    monkeypatch.setattr("foundry.cli.attachments.workspace_files",
+                        lambda root: asked.append(root) or listing(root))
     _, _, sent = _sent_once(repo, tmp_path, "@x.py and @y.py and @z.py")
     assert sent.count(NOTE) == 2 and len(asked) == 1
 
@@ -161,7 +162,7 @@ def test_what_git_lists(repo):
     (repo / ".gitignore").write_text("*.log\n", encoding="utf-8")
     _files(repo, ".gitignore", "src/x.py")
     _files(repo, "src/new.py", "out/run.log", commit=False)
-    assert sorted(repl.workspace_files(repo)) == [".gitignore", "a.py", "b.py", "src/new.py",
+    assert sorted(workspace_files(repo)) == [".gitignore", "a.py", "b.py", "src/new.py",
                                                   "src/x.py"]
 
 
@@ -169,10 +170,11 @@ def test_no_names_when_git_cannot_say(repo, monkeypatch):
     def broken(args, cwd):
         raise ToolError("git is not on PATH")
 
-    monkeypatch.setattr(repl, "run_git", broken)
-    assert repl.workspace_files(repo) == []
-    monkeypatch.setattr(repl, "run_git", lambda args, cwd: (128, "a.py\0", "fatal"))
-    assert repl.workspace_files(repo) == []
+    monkeypatch.setattr("foundry.cli.attachments.run_git", broken)
+    assert workspace_files(repo) == []
+    monkeypatch.setattr("foundry.cli.attachments.run_git",
+                        lambda args, cwd: (128, "a.py\0", "fatal"))
+    assert workspace_files(repo) == []
 
 
 @pytest.mark.parametrize("name, files, found", [

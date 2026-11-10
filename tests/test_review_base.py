@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from foundry.cli.repl import REVIEW_USAGE
+from foundry.cli.slash_commands import REVIEW_USAGE
 from foundry.core.errors import InvalidToolCall, ToolError
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.base import ReadTracker, ToolContext
@@ -186,5 +186,5 @@ def test_a_review_that_cannot_start_sends_nothing(repo, history, tmp_path, typed
 
 
 def test_help_shows_the_usage(repo, tmp_path):
-    from foundry.cli.repl import COMMANDS
+    from foundry.cli.slash_commands import COMMANDS
     assert COMMANDS["review"].arguments == "[--base REV | --commit REV] [focus]"

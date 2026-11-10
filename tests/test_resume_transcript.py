@@ -31,7 +31,8 @@ from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.registry import default_registry
 
 from test_resume import _wire, call, repo, turn  # noqa: F401  (repo is a fixture)
-from foundry.cli.repl import RunTask, run_task
+from foundry.cli.repl import run_task
+from foundry.cli.slash_commands import RunTask
 
 from test_slash_commands import _repl, _sent
 

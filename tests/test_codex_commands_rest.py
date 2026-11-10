@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from foundry.cli.repl import CODEX_COMMANDS, COMMANDS
+from foundry.cli.slash_commands import CODEX_COMMANDS, COMMANDS
 
 from test_resume import _wire, repo  # noqa: F401  (repo is a fixture)
 from test_slash_commands import _repl, _shown

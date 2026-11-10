@@ -15,7 +15,7 @@ import json
 import pytest
 
 from foundry.cli import app
-from foundry.cli.repl import REVIEW_AS_ASKED, REVIEW_READ_ONLY, REVIEW_UNCOMMITTED
+from foundry.cli.slash_commands import REVIEW_AS_ASKED, REVIEW_READ_ONLY, REVIEW_UNCOMMITTED
 from foundry.cli.unattended import REVIEW_FINISH
 from foundry.core.tools.git import run_git
 
@@ -175,7 +175,7 @@ def test_exec_review_is_review_as_codex_spells_it(repo, tmp_path, monkeypatch, c
 
 
 def test_review_reaches_the_review_from_slash_review_too(repo, tmp_path):
-    from foundry.cli.repl import review_task
+    from foundry.cli.slash_commands import review_task
 
     text, what = review_task(repo, focus="naming")
     assert text.startswith(REVIEW_UNCOMMITTED) and text.endswith(

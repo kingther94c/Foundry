@@ -19,7 +19,7 @@ import pytest
 from rich.console import Console
 
 from foundry.cli import app
-from foundry.cli.repl import NO_MCP
+from foundry.cli.session_settings import NO_MCP
 from foundry.cli.wiring import _rule_writer
 from foundry.core.config import load_config
 from foundry.core.config_edit import add_server, remove_server, server_table

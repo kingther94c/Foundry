@@ -13,7 +13,8 @@ import builtins
 import pytest
 
 from foundry.cli import app
-from foundry.cli.repl import COMMANDS, REVIEW_READ_ONLY, REVIEW_UNCOMMITTED, repl
+from foundry.cli.repl import repl
+from foundry.cli.slash_commands import COMMANDS, REVIEW_READ_ONLY, REVIEW_UNCOMMITTED
 from foundry.cli.wiring import _close, _confirm_trust, _remember_trust
 from foundry.core.commands import (
     PROMPT_MAX_BYTES,
@@ -359,7 +360,8 @@ class _Exploding:
 def test_the_read_only_switch_is_cleared_even_when_the_turn_fails(repo, tmp_path):
     wiring = _wire(repo, tmp_path / "home", [], approve=ApprovalChoice.ONCE)
     wiring.runtime.backend = _Exploding()
-    from foundry.cli.repl import RunTask, run_task
+    from foundry.cli.repl import run_task
+    from foundry.cli.slash_commands import RunTask
 
     with pytest.raises(RuntimeError):
         run_task(wiring, RunTask("review", read_only="reviewing"))

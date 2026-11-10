@@ -13,7 +13,6 @@ import sys
 
 import pytest
 
-from foundry.cli import repl as repl_module
 from foundry.cli.repl import SHELL_USAGE, run_shell, with_note
 from foundry.cli.wiring import _close
 from foundry.core.errors import ToolError
@@ -148,7 +147,7 @@ def test_ctrl_c_stops_it_and_the_model_is_not_told(repo, tmp_path, monkeypatch):
     def interrupted(*args, **kwargs):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(repl_module, "run_process", interrupted)
+    monkeypatch.setattr("foundry.cli.repl.run_process", interrupted)
     wiring = _wire(repo, tmp_path / "home", [])
     typist = _repl(wiring, "!python -m pytest")
     assert "stopped; the model is not told about it" in _shown(typist)
@@ -162,7 +161,7 @@ def test_a_command_that_cannot_start_is_said_and_not_journaled(repo, tmp_path, m
     def missing(*args, **kwargs):
         raise ToolError("powershell.exe was not found on PATH")
 
-    monkeypatch.setattr(repl_module, "run_process", missing)
+    monkeypatch.setattr("foundry.cli.repl.run_process", missing)
     wiring = _wire(repo, tmp_path / "home", [])
     typist = _repl(wiring, "!echo hi")
     assert "powershell.exe was not found on PATH" in _shown(typist)

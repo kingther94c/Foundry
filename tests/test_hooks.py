@@ -17,7 +17,7 @@ import pytest
 from rich.console import Console
 
 from foundry.cli.wiring import build
-from foundry.cli.repl import show_hooks
+from foundry.cli.session_settings import show_hooks
 from foundry.core.backends.replay import ScriptedBackend
 from foundry.core.config import load_config, parse_settings
 from foundry.core.conversation import ModelTurn, StopReason, ToolResultBlock, ToolUseBlock, Usage
@@ -684,7 +684,7 @@ def test_the_shell_environment_policy_reaches_hooks(repo, home, tmp_path):
 
 
 def test_slash_hooks_is_a_command():
-    from foundry.cli.repl import COMMANDS
+    from foundry.cli.slash_commands import COMMANDS
 
     assert COMMANDS["hooks"].run is show_hooks
 

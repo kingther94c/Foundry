@@ -20,7 +20,8 @@ from rich.text import Text
 
 from foundry.cli.markdown import MarkdownLines, inline
 from foundry.cli.render import Renderer, sanitize
-from foundry.cli.repl import RunTask, run_task
+from foundry.cli.repl import run_task
+from foundry.cli.slash_commands import RunTask
 from foundry.cli.wiring import _close
 from foundry.core.events import MessageDelta, Notice, TerminalStatus
 

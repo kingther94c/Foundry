@@ -18,11 +18,18 @@ import zlib
 
 import pytest
 
-from foundry.cli import repl
-from foundry.cli.repl import CLIPBOARD_NAME, CLIPBOARD_SCRIPT, attach_clipboard, clipboard_image
+from foundry.cli.attachments import (
+    CLIPBOARD_NAME,
+    CLIPBOARD_SCRIPT,
+    CLIPBOARD_TIMEOUT_S,
+    attach,
+    attach_clipboard,
+    clipboard_image,
+)
 from foundry.core.conversation import ImageBlock
 from foundry.core.errors import ImageRejected
 from foundry.core.images import MAX_IMAGE_BYTES, MAX_IMAGES_PER_MESSAGE
+from foundry.core.winapi import CREATE_NO_WINDOW
 
 from test_resume import _wire, repo, turn  # noqa: F401  (fixture)
 from test_slash_commands import _repl, _shown
@@ -48,7 +55,7 @@ PNG_1x1 = _png()
 def _drawn(monkeypatch, width=4, height=3):
     """The script as it is, reading a bitmap PowerShell draws, not the clipboard."""
     assert CLIPBOARD_SCRIPT.count(CLIPBOARD_READ) == 1
-    monkeypatch.setattr(repl, "CLIPBOARD_SCRIPT", CLIPBOARD_SCRIPT.replace(
+    monkeypatch.setattr("foundry.cli.attachments.CLIPBOARD_SCRIPT", CLIPBOARD_SCRIPT.replace(
         CLIPBOARD_READ, f"(New-Object System.Drawing.Bitmap {width}, {height})"))
 
 
@@ -79,7 +86,8 @@ def test_the_image_comes_back_as_png(monkeypatch):
 
 @windows
 def test_a_clipboard_without_an_image_gives_none(monkeypatch):
-    monkeypatch.setattr(repl, "CLIPBOARD_SCRIPT", CLIPBOARD_SCRIPT.replace(CLIPBOARD_READ, "$null"))
+    monkeypatch.setattr("foundry.cli.attachments.CLIPBOARD_SCRIPT",
+                        CLIPBOARD_SCRIPT.replace(CLIPBOARD_READ, "$null"))
     assert clipboard_image() is None
 
 
@@ -100,17 +108,18 @@ def test_slash_image_alone_attaches_it_to_the_next_message(repo, tmp_path, monke
 
 def test_powershell_is_started_by_its_path_with_nothing_on_its_input(monkeypatch):
     run = _Run(stdout=base64.b64encode(PNG_1x1).decode())
-    monkeypatch.setattr(repl, "IS_WINDOWS", True)
-    monkeypatch.setattr(repl, "find_program", lambda name: r"C:\Windows\System32\powershell.exe"
+    monkeypatch.setattr("foundry.cli.attachments.IS_WINDOWS", True)
+    monkeypatch.setattr("foundry.cli.attachments.find_program",
+                        lambda name: r"C:\Windows\System32\powershell.exe"
                         if name == "powershell.exe" else None)
-    monkeypatch.setattr(repl.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     assert clipboard_image() == PNG_1x1
     [(argv, kwargs)] = run.calls
     assert argv == [r"C:\Windows\System32\powershell.exe", "-NoProfile", "-NonInteractive",
                     "-Sta", "-Command", CLIPBOARD_SCRIPT]
     assert kwargs["stdin"] is subprocess.DEVNULL
-    assert kwargs["timeout"] == repl.CLIPBOARD_TIMEOUT_S
-    assert kwargs["creationflags"] == repl.CREATE_NO_WINDOW
+    assert kwargs["timeout"] == CLIPBOARD_TIMEOUT_S
+    assert kwargs["creationflags"] == CREATE_NO_WINDOW
 
 
 @pytest.mark.parametrize("run, said", [
@@ -121,23 +130,23 @@ def test_powershell_is_started_by_its_path_with_nothing_on_its_input(monkeypatch
     (_Run(raises=OSError("no such program")), "the clipboard could not be read (no such program)"),
 ])
 def test_a_clipboard_that_cannot_be_read_says_why(monkeypatch, run, said):
-    monkeypatch.setattr(repl, "IS_WINDOWS", True)
-    monkeypatch.setattr(repl, "find_program", lambda name: "powershell.exe")
-    monkeypatch.setattr(repl.subprocess, "run", run)
+    monkeypatch.setattr("foundry.cli.attachments.IS_WINDOWS", True)
+    monkeypatch.setattr("foundry.cli.attachments.find_program", lambda name: "powershell.exe")
+    monkeypatch.setattr(subprocess, "run", run)
     with pytest.raises(ImageRejected) as caught:
         clipboard_image()
     assert str(caught.value) == said
 
 
 def test_without_powershell_it_says_so(monkeypatch):
-    monkeypatch.setattr(repl, "IS_WINDOWS", True)
-    monkeypatch.setattr(repl, "find_program", lambda name: None)
+    monkeypatch.setattr("foundry.cli.attachments.IS_WINDOWS", True)
+    monkeypatch.setattr("foundry.cli.attachments.find_program", lambda name: None)
     with pytest.raises(ImageRejected, match="powershell.exe was not found on PATH"):
         clipboard_image()
 
 
 def test_elsewhere_it_says_windows_only(monkeypatch):
-    monkeypatch.setattr(repl, "IS_WINDOWS", False)
+    monkeypatch.setattr("foundry.cli.attachments.IS_WINDOWS", False)
     with pytest.raises(ImageRejected, match="read on Windows only"):
         clipboard_image()
 
@@ -152,7 +161,7 @@ def _clipboard(monkeypatch, data):
         reads.append(1)
         return data
 
-    monkeypatch.setattr(repl, "clipboard_image", read)
+    monkeypatch.setattr("foundry.cli.attachments.clipboard_image", read)
     return reads
 
 
@@ -191,7 +200,7 @@ def test_an_empty_dash_i_is_still_a_usage_error(repo, tmp_path, monkeypatch):
     reads = _clipboard(monkeypatch, PNG_1x1)
     wiring = _wire(repo, tmp_path / "home", [])
     console = _Silent()
-    assert not repl.attach(wiring, console, "")
+    assert not attach(wiring, console, "")
     assert console.printed == ["[yellow]usage: /image PATH[/yellow]"] and reads == []
 
 

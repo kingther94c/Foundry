@@ -11,7 +11,7 @@ import argparse
 import pytest
 
 from foundry.cli import app
-from foundry.cli.repl import CODEX_COMMANDS
+from foundry.cli.slash_commands import CODEX_COMMANDS
 from foundry.cli.wiring import _close, _config_args, build
 from foundry.core.config import Config, load_config, parse_settings
 from foundry.core.errors import ConfigError

@@ -201,7 +201,7 @@ def test_fork_that_cannot_be_copied_says_so(repo, tmp_path, monkeypatch):
     def broken(sessions, source):
         raise OSError("disk full")
 
-    monkeypatch.setattr("foundry.cli.repl.fork_journal", broken)
+    monkeypatch.setattr("foundry.cli.slash_commands.fork_journal", broken)
     wiring = _wire(repo, tmp_path / "home", [])
     assert "cannot fork this session: disk full" in _shown(_repl(wiring, "/fork"))
 

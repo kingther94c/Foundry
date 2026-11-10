@@ -18,7 +18,8 @@ import pytest
 from rich.console import Console
 
 from foundry.cli.render import PATCH_DIFF_LINES, Renderer
-from foundry.cli.repl import RunTask, run_task
+from foundry.cli.repl import run_task
+from foundry.cli.slash_commands import RunTask
 from foundry.cli.unattended import _event_payload
 from foundry.cli.wiring import _close
 from foundry.core.events import EventSink, TerminalStatus, ToolEnd

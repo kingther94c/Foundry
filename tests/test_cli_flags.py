@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from foundry.cli import app
-from foundry.cli.repl import NEW_SESSION
+from foundry.cli.slash_commands import NEW_SESSION
 from foundry.cli.session_commands import cmd_session
 from foundry.cli.unattended import _write_last_message
 from foundry.cli.wiring import _config_args
