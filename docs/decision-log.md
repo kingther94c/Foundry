@@ -1105,3 +1105,14 @@
   - The lock itself is not in this change: it needs the download, which waits on the user.
 - **Rationale**: the download is the only part that needs the user; the rest -- writing, checking and installing from a lock -- can be built and tested now with wheels made up for the tests, so that pinning, when allowed, is one command and a review.
 - **What it may not weaken**: an install without a lock works as it did; nothing in this change downloads anything.
+
+## D-165 A restricted-token sandbox, measured: not adopted; a low-integrity write fence is what it leaves
+- **Date**: 2026-11-10 · **Status**: confirmed (P7, D-162); D-003 stands
+- **Background**: the last V2 candidate was research into a restricted-token sandbox, the kind codex's unelevated Windows level is built on. D-003 says V1 claims no sandbox because a half-built one gives a false sense of security; the question was whether one could be built without an administrator and still run git, Python, pytest and npm.
+- **Decision**: not adopted. `scripts/sandbox_probe.py` measured three configurations on Windows 11 ([research/windows-sandbox.md](research/windows-sandbox.md)):
+  - A **write-restricted token** lets a command delete whatever the user can delete (`DELETE` is not checked against the restricting SIDs); Python starts under it only with Everyone among the restricting SIDs, so whatever Everyone may write it may write; and it cannot write into folders Python makes private (`tempfile.mkdtemp`, pytest's `tmp_path`, since Python 3.12.4), so test suites fail. Not worth carrying over.
+  - **Low integrity alone**, with the workspace and its `TEMP` labelled low, refuses every write, delete and rename outside them, and git, Python, pytest, npm and PowerShell work.
+  - In every configuration the command still reads whatever the user can read, connects anywhere, and decrypts what DPAPI protects for the user, Foundry's own stored credential among it.
+  The V2 candidate this leaves is an opt-in low-integrity **write fence**, disclosed as that -- the model's commands cannot write or delete outside the workspace -- and never as a sandbox.
+- **Rationale**: a fence against writes is a real gain against a command that damages or plants files outside the workspace, and none against one that reads a secret and sends it; calling it a sandbox would be the false sense of security D-003 refused. What it would cost -- a label left on the user's workspace, other low-integrity programs able to write there, tools that write to the user's profile refused, interprocess paths not yet measured, results from an elevated session only -- is the design work a V2 decision would start from.
+- **What it may not weaken**: nothing in Foundry changes; the probe is a script, and its tests change nothing outside a temporary folder they remove.

@@ -7,11 +7,13 @@ impersonate any existing coding agent.
 
 **Current status (2026-11-10): M0-M4 implemented and running, the corporate
 Gateway (M3) still partial; the 106 items of the codex-parity list have
-landed.** 4657 tests pass (one is skipped) on a machine with no network and no credentials
-(including the security regressions from six rounds of adversarial review,
-and 780 generated breaker-table invariant combinations). What comes next --
-verifying against a model, a review of the newer attack surface, and the
-corporate machine -- is in [docs/roadmap.md](docs/roadmap.md). After round 6 there was a separate clean-room check:
+landed, and so has the work after them that needs no one else (D-146 to
+D-165).** 4,860 tests pass (one is skipped) on a machine with no network and
+no credentials (including the security regressions from six rounds of
+adversarial review, and 780 generated breaker-table invariant combinations).
+What is left waits on others -- a model endpoint to verify against, the
+corporate machine, and the download that pins the wheelhouse's hashes -- and
+is in [docs/roadmap.md](docs/roadmap.md). After round 6 there was a separate clean-room check:
 rebuild the wheelhouse, install into a fresh venv with `--no-index`, and run a
 real task again (failing tests -> patch -> re-run green -> finish citing the
 event id from its own tool output). All 14 checks passed.

@@ -388,5 +388,11 @@ dedicated local account + a WFP firewall + an elevation helper service, which
 is several quarters of engineering), checkpoints of the whole workspace (undo
 of a session's own patches landed, D-036), and an actual distribution
 mechanism for managed policy.
+A restricted token has since been measured
+([research/windows-sandbox.md](research/windows-sandbox.md),
+[D-165](decision-log.md)): a write-restricted token alone lets a command
+delete the user's files and breaks pytest's `tmp_path`; low integrity alone
+fences writes and deletes outside the workspace, and leaves reading, the
+network and the user's DPAPI secrets open -- a write fence, not a sandbox.
 Until then, honest disclosure + strong ASK + a complete audit trail is V1's
 position, not an oversight.

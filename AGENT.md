@@ -14,7 +14,8 @@ src/foundry/prompts/ versioned system prompts
 tests/              4658 tests; fixtures/ holds the golden-task sample repo
 demo/               mini_foundry.py + the notebook: the architecture in one file
 run-foundry.py      run the CLI from this clone, no install (foundry.cmd wraps it)
-scripts/            build_wheelhouse.py; delta.py, which keeps DELTA.md
+scripts/            build_wheelhouse.py; delta.py, which keeps DELTA.md;
+                    sandbox_probe.py, research only (D-165)
 DELTA.md            how this branch differs from main (on main, the empty template)
 docs/               requirements, design, threat model, decision log, research
 ```
