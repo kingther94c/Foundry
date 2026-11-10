@@ -14,6 +14,7 @@ import json
 import pytest
 
 from foundry.cli import app
+from foundry.cli.unattended import FINISH_REMINDER, RESULT_REMINDER
 from foundry.core.errors import InvalidToolCall
 from foundry.core.events import EventSink, TerminalStatus, Termination
 from foundry.core.json_schema import (
@@ -330,7 +331,7 @@ def test_exec_reminds_the_model_of_the_result(repo, tmp_path, monkeypatch, capsy
                      "--output-schema", str(_schema_file(tmp_path))])
     assert code == 0 and json.loads(capsys.readouterr().out)["name"] == "Ann"
     reminder = httpd.requests[1]["messages"][-1]["content"]
-    assert app.FINISH_REMINDER in reminder and app.RESULT_REMINDER in reminder
+    assert FINISH_REMINDER in reminder and RESULT_REMINDER in reminder
 
 
 def test_exec_without_a_result_leaves_stdout_empty(repo, tmp_path, monkeypatch, capsys,
@@ -376,7 +377,8 @@ def test_exec_scrubs_the_result(repo, tmp_path, monkeypatch, capsys, fake_model)
     secret = "s3cr3t-result-value-0123456789"
     redactor = Redactor()
     redactor.register(secret)
-    monkeypatch.setattr(app, "default_redactor", lambda: redactor)
+    monkeypatch.setattr("foundry.cli.unattended.default_redactor", lambda: redactor)
+    monkeypatch.setattr("foundry.cli.wiring.default_redactor", lambda: redactor)
     handler.turns, handler.index = [
         tool_turn("finish", {"status": "completed", "summary": "s", "claims": [],
                              "result": {"name": secret, "age": 1}}, "f1")], 0

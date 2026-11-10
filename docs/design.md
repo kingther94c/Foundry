@@ -47,7 +47,10 @@ foundry/
 │                            #   journal's whole conversation as Markdown (D-124);
 │                            #   file_links.py, a cited file as a link to it in the editor (D-106);
 │                            #   transcript.py, a resumed session's conversation shown again (D-108);
-│                            #   mcp_server.py, Foundry as an MCP server over stdio (D-103)
+│                            #   mcp_server.py, Foundry as an MCP server over stdio (D-103);
+│                            #   app.py, the parser and main; wiring.py builds a session; the
+│                            #   commands are in session_commands.py, unattended.py, login.py,
+│                            #   mcp_commands.py and setup_commands.py (D-158)
 ├── prompts/                 # versioned assets: the base system prompt, the patch format description, the permissions section template
 └── __main__.py              # entry point: bootstraps in UTF-8 mode
 ```

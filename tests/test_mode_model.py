@@ -13,6 +13,8 @@ import builtins
 import pytest
 
 from foundry.cli import app
+from foundry.cli.repl import repl
+from foundry.cli.wiring import _announce_resume, _close
 from foundry.core.events import ApprovalChoice, Notice, TerminalStatus
 from foundry.core.policy.engine import Mode
 from foundry.core.prompts import mode_line
@@ -25,7 +27,7 @@ from test_undo import _Typist
 
 def _session(wiring, *lines) -> _Typist:
     typist = _Typist([*lines, "/exit"])
-    app._close(wiring, app._repl(wiring, typist), "session ended")
+    _close(wiring, repl(wiring, typist), "session ended")
     return typist
 
 
@@ -212,12 +214,12 @@ def test_a_resume_names_the_model_it_does_not_carry_over(repo, tmp_path):
     resumed = _wire(repo, home, [], resume="last")
     events: list = []
     resumed.runtime.events.subscribe(events.append)
-    app._announce_resume(resumed)
+    _announce_resume(resumed)
     assert resumed.runtime.model == "fake"
     assert any(isinstance(e, Notice) and e.text == (
         "it had been switched to the model second before it stopped; a resume continues on "
         "fake, as configured (-m second goes on with the other)") for e in events)
-    app._close(resumed, TerminalStatus.CANCELLED, "session ended")
+    _close(resumed, TerminalStatus.CANCELLED, "session ended")
 
 
 def test_a_resume_on_the_switched_model_says_nothing_of_it(repo, tmp_path):
@@ -227,10 +229,10 @@ def test_a_resume_on_the_switched_model_says_nothing_of_it(repo, tmp_path):
     resumed = _wire(repo, home, [], resume="last", overrides={"model": "second"})
     events: list = []
     resumed.runtime.events.subscribe(events.append)
-    app._announce_resume(resumed)
+    _announce_resume(resumed)
     assert not any(isinstance(e, Notice) and "had been switched to the model" in e.text
                    for e in events)
-    app._close(resumed, TerminalStatus.CANCELLED, "session ended")
+    _close(resumed, TerminalStatus.CANCELLED, "session ended")
 
 
 def test_the_model_change_record_is_synced(tmp_path):

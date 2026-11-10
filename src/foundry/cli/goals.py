@@ -34,7 +34,7 @@ from foundry.core.goal import (
 )
 
 if TYPE_CHECKING:
-    from foundry.cli.app import Wiring
+    from foundry.cli.wiring import Wiring
 
 # A goal turn that calls no tool did nothing; this many in a row block the
 # goal, so a model that only talks cannot spend without end.

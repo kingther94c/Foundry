@@ -15,6 +15,7 @@ import tempfile
 import pytest
 
 from foundry.cli import app
+from foundry.cli.wiring import _close
 
 from test_cli_e2e import text_turn, tool_turn
 from test_cli_flags import _exec_home
@@ -34,14 +35,14 @@ def folders(tmp_path, monkeypatch):
         made[-1].mkdir()
         return str(made[-1])
 
-    real_close = app._close
+    real_close = _close
 
     def close(wiring, status, reason):
         closed.append((wiring.session.path, wiring.session.path.exists()))
         real_close(wiring, status, reason)
 
     monkeypatch.setattr(tempfile, "mkdtemp", mkdtemp)
-    monkeypatch.setattr(app, "_close", close)
+    monkeypatch.setattr("foundry.cli.unattended._close", close)
     return made, closed
 
 
@@ -96,7 +97,7 @@ def test_removed_however_it_ends(repo, tmp_path, monkeypatch, capsys, fake_model
     def interrupted(*args, **kwargs):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(app, "_run_unattended", interrupted)
+    monkeypatch.setattr("foundry.cli.unattended._run_unattended", interrupted)
     assert app.main(["exec", "--ephemeral", "fix it", "-C", str(repo)]) == 13
     assert len(made) == 1 and not made[0].exists() and _kept(home) == []
 
@@ -111,7 +112,7 @@ def test_removed_when_the_session_cannot_start(repo, tmp_path, monkeypatch, caps
     def broken(*args, **kwargs):
         raise ConfigError("no tools today")
 
-    monkeypatch.setattr(app, "_assemble", broken)
+    monkeypatch.setattr("foundry.cli.wiring._assemble", broken)
     assert app.main(["exec", "--ephemeral", "fix it", "-C", str(repo)]) == 12
     assert "no tools today" in capsys.readouterr().err
     assert len(made) == 1 and not made[0].exists()

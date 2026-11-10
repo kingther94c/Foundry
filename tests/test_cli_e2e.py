@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 from rich.console import Console
 
-from foundry.cli.app import build
+from foundry.cli.wiring import build
 from foundry.core.events import ApprovalChoice, TerminalStatus
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.git import run_git

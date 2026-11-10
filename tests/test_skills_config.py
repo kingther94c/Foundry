@@ -18,7 +18,7 @@ import os
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
+from foundry.cli.wiring import _confirm_trust
 from foundry.core.config import load_config
 from foundry.core.errors import ConfigError
 from foundry.core.skills import REPOSITORY, YOURS, load_skills, repository_skill_folders
@@ -101,7 +101,7 @@ def test_a_workspace_whose_repository_has_them_above_it_is_asked_about(nested, t
     top, work = nested
     _skill(top / ".agents" / "skills", "release")
     out = io.StringIO()
-    assert not app._confirm_trust(Console(file=out), tmp_path / "home", work, interactive=False)
+    assert not _confirm_trust(Console(file=out), tmp_path / "home", work, interactive=False)
     assert "provides Foundry instructions" in out.getvalue()
 
 

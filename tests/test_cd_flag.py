@@ -34,7 +34,7 @@ def test_it_is_not_the_setting_flag():
 
 def test_it_may_come_first(monkeypatch):
     seen = []
-    monkeypatch.setattr(app, "cmd_session", lambda args: seen.append(args) or 0)
+    monkeypatch.setattr("foundry.cli.app.cmd_session", lambda args: seen.append(args) or 0)
     assert app.main(["-C", "../other", "fix it"]) == 0
     assert seen[0].command == "run" and seen[0].workspace == "../other"
     assert seen[0].task == "fix it"

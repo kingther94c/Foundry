@@ -222,7 +222,7 @@ def test_a_session_that_cannot_be_archived_says_so(repo, tmp_path, monkeypatch, 
     def broken(source, destination):
         raise OSError("held open")
 
-    monkeypatch.setattr(app, "_move_session", broken)
+    monkeypatch.setattr("foundry.cli.session_commands._move_session", broken)
     _typed(monkeypatch, "/archive")
     assert app.main(["run", "--workspace", str(repo)]) == 12
     assert "cannot archive session " in capsys.readouterr().out

@@ -15,9 +15,9 @@ import time
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
 from foundry.cli.render import Renderer, Working
 from foundry.cli.repl import RunTask, run_task
+from foundry.cli.wiring import _close
 from foundry.core.events import EventSink, TerminalStatus, ToolBegin, ToolEnd, ToolOutputDelta
 from foundry.core.redaction import Redactor
 from foundry.core.tools import command
@@ -210,7 +210,7 @@ def test_a_session_emits_it_for_the_call(repo, tmp_path):
     assert (delta.call_id, delta.text, delta.stream) == ("c1", "collected 340 items", "stdout")
     assert kinds.index(ToolBegin) < kinds.index(ToolOutputDelta) < kinds.index(ToolEnd)
     assert wiring.runtime.tool_ctx.on_output is None
-    app._close(wiring, TerminalStatus.COMPLETED, "test")
+    _close(wiring, TerminalStatus.COMPLETED, "test")
 
 
 def test_a_call_that_stops_leaves_nothing_to_tell(repo, tmp_path, monkeypatch):
@@ -225,7 +225,7 @@ def test_a_call_that_stops_leaves_nothing_to_tell(repo, tmp_path, monkeypatch):
     outcome = run_task(wiring, RunTask("run it"))
     assert outcome.status is TerminalStatus.CANCELLED
     assert wiring.runtime.tool_ctx.on_output is None
-    app._close(wiring, outcome.status, "test")
+    _close(wiring, outcome.status, "test")
 
 
 # --- on the screen -----------------------------------------------------------------------

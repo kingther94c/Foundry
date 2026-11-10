@@ -202,7 +202,7 @@ def test_the_wiring_actually_connects_the_redactor(tmp_path, monkeypatch):
     redactor; this is the half that was missing."""
     from rich.console import Console
 
-    from foundry.cli.app import build
+    from foundry.cli.wiring import build
     from foundry.core.redaction import default_redactor
     from foundry.core.tools.git import run_git
 
@@ -508,7 +508,7 @@ def test_login_refuses_rather_than_hanging_without_a_terminal(tmp_path, monkeypa
     import argparse
     import getpass
 
-    from foundry.cli.app import cmd_login
+    from foundry.cli.login import cmd_login
 
     monkeypatch.setenv("FOUNDRY_HOME", str(tmp_path))
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
@@ -528,7 +528,7 @@ def test_login_stores_the_credential_the_configured_source_reads(tmp_path, monke
     import getpass
 
     from foundry.core.auth import CredentialVault, StaticTokenSource
-    from foundry.cli.app import cmd_login
+    from foundry.cli.login import cmd_login
 
     (tmp_path / "config.toml").write_text(
         '[backend]\ncredential_source = "gateway_token"\n', encoding="utf-8")

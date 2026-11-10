@@ -14,6 +14,7 @@ import json
 
 import pytest
 
+from foundry.cli.wiring import _close
 from foundry.core.backends.anthropic import PROVIDER, build_body
 from foundry.core.context import BOUND_PROVIDER, ContextManager, MASK_NOTICE, unbind
 from foundry.core.conversation import (
@@ -25,7 +26,6 @@ from foundry.core.conversation import (
     ToolUseBlock,
     TurnRequest,
 )
-from foundry.cli import app
 from foundry.core.events import TerminalStatus
 from foundry.core.resume import _as_received, read_journal
 from foundry.core.session import EventType, SessionStore
@@ -337,7 +337,7 @@ def test_a_resume_through_the_app_keeps_out_what_was_left_out(repo, tmp_path):
     first.runtime.context.system_prompt += "\nA new rule."       # what /mode does
     first.runtime.run_turn("noted?")
     assert words(first.runtime.backend.seen[-1].messages) == []
-    app._close(first, TerminalStatus.CANCELLED, "session ended")
+    _close(first, TerminalStatus.CANCELLED, "session ended")
 
     # The resumed prompt is built again, without the rule: w2 was made
     # against the prompt with it, w0 and w1 against the one before.
@@ -346,4 +346,4 @@ def test_a_resume_through_the_app_keeps_out_what_was_left_out(repo, tmp_path):
     after.runtime.run_turn("and B?")
     assert words(after.runtime.backend.seen[0].messages) == []
     assert words(after.runtime.context.history) == ["w0", "w1", "w2", "w3"]
-    app._close(after, TerminalStatus.CANCELLED, "session ended")
+    _close(after, TerminalStatus.CANCELLED, "session ended")

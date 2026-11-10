@@ -19,10 +19,10 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
+from foundry.cli.wiring import _close, build
 from foundry.core.config import McpServerConfig, load_config
 from foundry.core.errors import Cancelled, ConfigError, InvalidToolCall, ToolError
-from foundry.core.events import ApprovalChoice
+from foundry.core.events import ApprovalChoice, TerminalStatus
 from foundry.core.mcp import (
     MAX_TOOLS_PER_SERVER,
     McpError,
@@ -431,23 +431,23 @@ def test_a_rule_for_a_servers_tool_is_not_called_dead(repo, tmp_path):
     home = _config(tmp_path / "home", _entry() + '\n[[permissions]]\ntool = "mcp__fake__*"\n'
                    'pattern = "*"\ndecision = "allow"\n')
     out = io.StringIO()
-    wiring = app.build(repo, home=home, console=Console(file=out, width=200),
+    wiring = build(repo, home=home, console=Console(file=out, width=200),
                        overrides={"base_url": "http://127.0.0.1:9/v1", "model": "fake"})
-    app._close(wiring, app.TerminalStatus.CANCELLED, "done")
+    _close(wiring, TerminalStatus.CANCELLED, "done")
     assert "can never match" not in out.getvalue()
 
 
 def test_a_failed_build_still_ends_the_servers(repo, tmp_path, monkeypatch):
     home = _config(tmp_path / "home", _entry() + '\n[backend]\nprotocol = "carrier-pigeon"\n')
     started_clients = []
-    real = app.start_servers
+    real = start_servers
 
     def spy(*args, **kwargs):
         found = real(*args, **kwargs)
         started_clients.extend(found.clients)
         return found
 
-    monkeypatch.setattr(app, "start_servers", spy)
+    monkeypatch.setattr("foundry.cli.wiring.start_servers", spy)
     with pytest.raises(ConfigError, match="unknown protocol"):
-        app.build(repo, home=home, console=Console(file=io.StringIO()))
+        build(repo, home=home, console=Console(file=io.StringIO()))
     assert started_clients and all(not c.running for c in started_clients)

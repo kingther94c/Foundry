@@ -7,12 +7,15 @@ read_memories -- only in a workspace the user trusts, and only its own.
 from __future__ import annotations
 
 import os
+import subprocess
 import time
 
 import pytest
 
 from foundry.cli import app
 from foundry.cli.memories import NOT_TRUSTED, TURN_ON, USAGE
+from foundry.cli.setup_commands import start_memory_pass
+from foundry.cli.wiring import _remember_trust
 from foundry.core.config import MemorySettings, load_config, parse_settings
 from foundry.core.errors import ConfigError
 from foundry.core.events import TerminalStatus
@@ -48,7 +51,7 @@ def _home(tmp_path, text: str = "[features]\nmemories = true\n", *, trust=None):
     home.mkdir(parents=True, exist_ok=True)
     (home / "config.toml").write_text(text, encoding="utf-8")
     if trust is not None:
-        app._remember_trust(home, trust)
+        _remember_trust(home, trust)
     return home
 
 
@@ -477,8 +480,9 @@ def cli(tmp_path, monkeypatch, repo):
 
         def reveal(self):
             return "k"
-    monkeypatch.setattr(app, "_credential_source", lambda config, vault: _Key())
-    monkeypatch.setattr(app, "make_backend", lambda config, key: backend)
+    monkeypatch.setattr("foundry.cli.setup_commands._credential_source",
+                        lambda config, vault: _Key())
+    monkeypatch.setattr("foundry.cli.setup_commands.make_backend", lambda config, key: backend)
     return home, backend
 
 
@@ -533,18 +537,18 @@ def test_a_session_starts_the_pass_in_a_process_of_its_own(repo, tmp_path, monke
     wiring = _wire(repo, home, [])
     with monkeypatch.context() as patch:
         # Only for the start: the session runs git through Popen too.
-        patch.setattr(app.subprocess, "Popen",
+        patch.setattr(subprocess, "Popen",
                       lambda argv, **kwargs: started.append((argv, kwargs)))
-        app.start_memory_pass(wiring, "work")
+        start_memory_pass(wiring, "work")
     wiring.session.close()
     (argv, kwargs), = started
     assert argv[1:3] == ["-P", "-c"]
     assert argv[4:] == ["memories", "update", "--quiet", "-C", str(wiring.workspace.root),
                         "-p", "work"]
-    assert kwargs["cwd"] == str(home) and kwargs["stdout"] == app.subprocess.DEVNULL
+    assert kwargs["cwd"] == str(home) and kwargs["stdout"] == subprocess.DEVNULL
     # It runs this Foundry, wherever it was imported from: here, the source
     # tree, which python -m foundry would not find from the Foundry folder.
-    shown = app.subprocess.run([*argv[:4], "memories", "show", "-C", str(repo)],
+    shown = subprocess.run([*argv[:4], "memories", "show", "-C", str(repo)],
                                cwd=str(home), capture_output=True, text=True,
                                encoding="utf-8", env={**os.environ, "FOUNDRY_HOME": str(home)},
                                timeout=120)
@@ -562,11 +566,11 @@ def test_which_sessions_start_it(repo, tmp_path, monkeypatch, text, interactive,
                                   '"http://127.0.0.1:9/v1"\n', trust=repo)
     monkeypatch.setenv("FOUNDRY_HOME", str(home))
     started = []
-    monkeypatch.setattr(app, "start_memory_pass",
+    monkeypatch.setattr("foundry.cli.session_commands.start_memory_pass",
                         lambda wiring, profile: started.append(profile))
-    monkeypatch.setattr(app, "_interactive", lambda: interactive)
-    monkeypatch.setattr(app, "_repl",
+    monkeypatch.setattr("foundry.cli.session_commands._interactive", lambda: interactive)
+    monkeypatch.setattr("foundry.cli.session_commands._repl",
                         lambda wiring, console, first=None: TerminalStatus.CANCELLED)
-    monkeypatch.setattr(app, "show_conversation", lambda wiring: None)
+    monkeypatch.setattr("foundry.cli.session_commands.show_conversation", lambda wiring: None)
     app.main(["run", "-C", str(repo)])
     assert started == ([None] if starts else [])

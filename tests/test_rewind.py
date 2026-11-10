@@ -13,8 +13,8 @@ import json
 
 import pytest
 
-from foundry.cli import app
 from foundry.cli.repl import PROMPT, REWIND_SHOWN, prompt_for, rewind_points
+from foundry.cli.wiring import _close
 from foundry.core.context import SUMMARY_PREFIX, ContextManager
 from foundry.core.conversation import ImageBlock, Message, Role, TextBlock
 from foundry.core.errors import ResumeError
@@ -185,7 +185,7 @@ def test_a_resume_continues_from_where_the_rewind_left(repo, tmp_path):
     try:
         assert _history(second) == live
     finally:
-        app._close(second, TerminalStatus.CANCELLED, "done")
+        _close(second, TerminalStatus.CANCELLED, "done")
 
 
 def test_a_resume_right_after_a_rewind_starts_from_what_it_kept(repo, tmp_path):
@@ -200,7 +200,7 @@ def test_a_resume_right_after_a_rewind_starts_from_what_it_kept(repo, tmp_path):
         assert second.runtime.context._sent == sent and len(sent) == 3
         assert second.runtime.context._unbound == set()
     finally:
-        app._close(second, TerminalStatus.CANCELLED, "done")
+        _close(second, TerminalStatus.CANCELLED, "done")
 
 
 def _corrupt(path, change):

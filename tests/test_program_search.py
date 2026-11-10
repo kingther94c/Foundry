@@ -203,10 +203,10 @@ def test_the_doctor_asks_the_real_powershell(search_cwd, tmp_path, monkeypatch, 
     import argparse
     import re
 
-    from foundry.cli import app
+    from foundry.cli.setup_commands import cmd_doctor
     shutil.copy(IMPOSTOR, search_cwd / "powershell.exe")
     monkeypatch.setenv("FOUNDRY_HOME", str(tmp_path / "home"))
-    app.cmd_doctor(argparse.Namespace())
+    cmd_doctor(argparse.Namespace())
     assert re.search(r"powershell \d", capsys.readouterr().out)
 
 

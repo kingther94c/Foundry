@@ -20,6 +20,7 @@ import pytest
 from rich.console import Console
 
 from foundry.cli import app
+from foundry.cli.wiring import _credential_source, build, request_headers
 from foundry.core.auth import CredentialVault, EnvKeySource
 from foundry.core.backends.anthropic import AnthropicBackend
 from foundry.core.backends.base import with_query
@@ -107,7 +108,7 @@ def test_a_named_variable_is_the_only_place_the_key_comes_from(tmp_path, monkeyp
 def test_every_kind_of_backend_reads_the_named_variable(tmp_path, backend):
     config = load_config(home=_config(tmp_path / "home", "[backend]\n" + "".join(
         f'{k} = "{v}"\n' for k, v in backend.items())))
-    source = app._credential_source(config, CredentialVault(tmp_path / "auth.json"))
+    source = _credential_source(config, CredentialVault(tmp_path / "auth.json"))
     assert isinstance(source, EnvKeySource) and source.env_var == "MY_KEY"
 
 
@@ -128,14 +129,14 @@ def test_header_values_come_from_variables_and_are_scrubbed(monkeypatch):
     backend = BackendConfig(headers={"X-Static": "s"},
                             env_http_headers={"X-Org-Id": "CORP_ORG_ID", "X-Team": "CORP_TEAM",
                                               "X-Empty": "CORP_EMPTY"})
-    assert app.request_headers(backend) == {"X-Static": "s", "X-Org-Id": "org-7f3a9c2e5d"}
+    assert request_headers(backend) == {"X-Static": "s", "X-Org-Id": "org-7f3a9c2e5d"}
     assert default_redactor().scrub("org-7f3a9c2e5d") == "[redacted]"
 
 
 def test_a_header_value_with_a_line_break_is_refused_unquoted(monkeypatch):
     monkeypatch.setenv("CORP_ORG_ID", "org\r\nX-Evil: 1")
     with pytest.raises(ConfigError, match="CORP_ORG_ID holds a line break") as caught:
-        app.request_headers(BackendConfig(env_http_headers={"X-Org-Id": "CORP_ORG_ID"}))
+        request_headers(BackendConfig(env_http_headers={"X-Org-Id": "CORP_ORG_ID"}))
     assert "Evil" not in str(caught.value)
 
 
@@ -199,7 +200,7 @@ def test_a_session_sends_them(repo, tmp_path, monkeypatch, seen_server):
         f'[backend]\nbase_url = "http://{host}:{port}/v1"\nmodel = "fake"\nstream = false\n'
         'env_key = "CORP_GATEWAY_KEY"\nenv_http_headers = { "X-Org-Id" = "CORP_ORG_ID" }\n'
         'query_params = { api-version = "2025-04-01-preview" }\n'))
-    wiring = app.build(repo, home=home, console=Console(file=io.StringIO(), width=100))
+    wiring = build(repo, home=home, console=Console(file=io.StringIO(), width=100))
     wiring.runtime.run_turn("hello")
     assert wiring.runtime.backend.list_models() == ["fake"]
     wiring.session.close()

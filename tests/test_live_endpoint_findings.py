@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from foundry.cli.app import _event_payload, _plain
+from foundry.cli.unattended import _event_payload, _plain
 from foundry.core.conversation import Usage
 from foundry.core.events import (
     MessageDelta,

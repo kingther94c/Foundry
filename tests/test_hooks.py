@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from foundry.cli.app import build
+from foundry.cli.wiring import build
 from foundry.cli.repl import show_hooks
 from foundry.core.backends.replay import ScriptedBackend
 from foundry.core.config import load_config, parse_settings

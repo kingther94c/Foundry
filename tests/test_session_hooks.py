@@ -11,9 +11,10 @@ from pathlib import Path
 import pytest
 
 from foundry.cli import app
+from foundry.cli.wiring import _close, build
 from foundry.core.config import load_config
 from foundry.core.conversation import TextBlock
-from foundry.core.events import TerminalStatus
+from foundry.core.events import EXIT_CODES, TerminalStatus
 from foundry.core.hooks import (
     SHORT_MAX_TIMEOUT_S,
     SHORT_TIMEOUT_S,
@@ -327,8 +328,8 @@ def test_a_start_hook_for_a_resume_runs_on_a_resume_only(repo, home, tmp_path):
                                         _group(again.command, "resume")]})
     first = _wire(repo, home, [turn(text="ok")])
     first.runtime.run_turn("go")
-    app._close(first.wiring, TerminalStatus.CANCELLED, "session ended")
-    second = app.build(repo, home=home, overrides=OVERRIDES, resume=first.session.session_id)
+    _close(first.wiring, TerminalStatus.CANCELLED, "session ended")
+    second = build(repo, home=home, overrides=OVERRIDES, resume=first.session.session_id)
     try:
         second.runtime.backend = _Live([turn(text="ok")])
         second.runtime.run_turn("go on")
@@ -336,7 +337,7 @@ def test_a_start_hook_for_a_resume_runs_on_a_resume_only(repo, home, tmp_path):
         assert _user_texts(request)[-1].endswith(
             "go on\n\nFrom a SessionStart hook: resumed: re-read the diff")
     finally:
-        app._close(second, TerminalStatus.CANCELLED, "session ended")
+        _close(second, TerminalStatus.CANCELLED, "session ended")
     assert [c["source"] for c in _stdin(fresh)] == ["startup"]
     assert [c["source"] for c in _stdin(again)] == ["resume"]
 
@@ -406,7 +407,7 @@ def test_a_session_end_hook_is_told_as_the_session_closes(repo, home, tmp_path):
     wiring = _wire(repo, home, [turn(text="ok")])
     wiring.runtime.run_turn("go")
     assert hook.calls() == []
-    app._close(wiring.wiring, TerminalStatus.PARTIAL, "session ended")
+    _close(wiring.wiring, TerminalStatus.PARTIAL, "session ended")
     (told,) = _stdin(hook)
     assert Path(told.pop("cwd")) == Path(wiring.workspace.root)
     assert told == {"session_id": wiring.session.session_id,
@@ -423,7 +424,7 @@ def test_a_session_end_hook_of_another_reason_is_not_run(repo, home, tmp_path):
     hook = Scripted(tmp_path / "h")
     _hooks_json(home, {"SessionEnd": [_group(hook.command, "logout")]})
     wiring = _wire(repo, home, [])
-    app._close(wiring.wiring, TerminalStatus.CANCELLED, "session ended")
+    _close(wiring.wiring, TerminalStatus.CANCELLED, "session ended")
     assert hook.calls() == []
 
 
@@ -431,7 +432,7 @@ def test_a_failing_session_end_hook_is_a_warning(repo, home, tmp_path):
     hook = Scripted(tmp_path / "h").answer(stderr="could not upload", exit=1)
     _hooks_json(home, {"SessionEnd": [_group(hook.command)]})
     wiring = _wire(repo, home, [])
-    app._close(wiring.wiring, TerminalStatus.CANCELLED, "session ended")
+    _close(wiring.wiring, TerminalStatus.CANCELLED, "session ended")
     assert any(n.startswith("SessionEnd hook `") and n.endswith("failed: could not upload")
                for n in _notices(wiring))
 
@@ -440,7 +441,7 @@ def test_a_session_end_hook_has_a_second(repo, home, tmp_path):
     hook = Scripted(tmp_path / "h").answer(sleep=2.5)
     _hooks_json(home, {"SessionEnd": [_group(hook.command)]})
     wiring = _wire(repo, home, [])
-    app._close(wiring.wiring, TerminalStatus.CANCELLED, "session ended")
+    _close(wiring.wiring, TerminalStatus.CANCELLED, "session ended")
     assert any(n.endswith("timed out after 1s") for n in _notices(wiring))
 
 
@@ -449,7 +450,7 @@ def test_a_cancelled_session_still_tells_its_end_hook(repo, home, tmp_path):
     _hooks_json(home, {"SessionEnd": [_group(hook.command)]})
     wiring = _wire(repo, home, [])
     wiring.runtime.cancel()
-    app._close(wiring.wiring, TerminalStatus.CANCELLED, "session ended")
+    _close(wiring.wiring, TerminalStatus.CANCELLED, "session ended")
     (hooked,) = _records(wiring, EventType.HOOK)
     assert (hooked["runs"][0]["outcome"], hooked["runs"][0]["exit_code"]) == ("completed", 0)
 
@@ -464,7 +465,7 @@ def test_a_ctrl_c_during_session_end_still_closes_the_session(repo, home, tmp_pa
         raise KeyboardInterrupt
 
     monkeypatch.setattr(HookSet, "run", stopped)
-    app._close(wiring.wiring, TerminalStatus.CANCELLED, "session ended")
+    _close(wiring.wiring, TerminalStatus.CANCELLED, "session ended")
     assert "SessionEnd hooks stopped" in _notices(wiring)
     assert not is_locked(wiring.session.path.parent)
 
@@ -490,10 +491,10 @@ def test_exec_tells_the_hooks_of_a_ctrl_c_and_of_its_end(repo, home, tmp_path, m
     def ctrl_c(runtime, task, images=()):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(app, "_run_unattended", ctrl_c)
+    monkeypatch.setattr("foundry.cli.unattended._run_unattended", ctrl_c)
     code = app.main(["exec", "go", "--workspace", str(repo)])
     capsys.readouterr()
-    assert code == app.EXIT_CODES[TerminalStatus.CANCELLED]
+    assert code == EXIT_CODES[TerminalStatus.CANCELLED]
     assert [c["hook_event_name"] for c in _stdin(stop)] == ["Interrupt"]
     assert [c["hook_event_name"] for c in _stdin(end)] == ["SessionEnd"]
 
@@ -512,7 +513,7 @@ def test_exec_tells_no_interrupt_hook_after_its_task(repo, home, tmp_path, monke
     def ctrl_c(*args, **kwargs):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(app, "_run_unattended", ended)
+    monkeypatch.setattr("foundry.cli.unattended._run_unattended", ended)
     monkeypatch.setattr("builtins.print", ctrl_c)    # as the answer is printed
     try:
         app.main(["exec", "go", "--workspace", str(repo)])

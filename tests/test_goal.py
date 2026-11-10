@@ -14,10 +14,10 @@ import json
 
 import pytest
 
-from foundry.cli import app
 from foundry.cli.exporting import conversation_markdown
 from foundry.cli.goals import IDLE_TURNS
 from foundry.cli.repl import STOPPED_NOTE
+from foundry.cli.wiring import _announce_resume, _close
 from foundry.core.conversation import ModelTurn, StopReason, Usage
 from foundry.core.errors import ToolError, TransientError
 from foundry.core.events import Notice, TerminalStatus
@@ -429,14 +429,14 @@ def test_a_resumed_session_has_its_goal_back_paused(repo, tmp_path):
     wiring = _wire(repo, home, [spend(text="partly", used=(30, 7, 10))])
     wiring.runtime.change_goal(Goal("ship it", token_budget=1000, tokens_used=3), by="user")
     wiring.runtime.run_turn("go")         # as if the process were killed after it
-    app._close(wiring, TerminalStatus.CANCELLED, "killed")
+    _close(wiring, TerminalStatus.CANCELLED, "killed")
     resumed = _wire(repo, home, [], resume="last")
     said = _notices(resumed)
     assert resumed.runtime.goal == Goal("ship it", status="paused", token_budget=1000,
                                         tokens_used=30)
     assert "update_goal" in resumed.runtime.registry.tools
     assert _records(resumed, EventType.GOAL) == _records(wiring, EventType.GOAL)
-    app._announce_resume(resumed)
+    _announce_resume(resumed)
     assert ("its goal is paused (30 of 1,000 tokens, 0s); /goal resume goes on with it"
             in said)
 
@@ -445,7 +445,7 @@ def test_a_resumed_session_keeps_a_goal_as_it_was_left(repo, tmp_path):
     home = tmp_path / "home"
     wiring = _wire(repo, home, [])
     wiring.runtime.change_goal(Goal("ship it", status="complete"), by="model")
-    app._close(wiring, TerminalStatus.CANCELLED, "done")
+    _close(wiring, TerminalStatus.CANCELLED, "done")
     assert _wire(repo, home, [], resume="last").runtime.goal.status == "complete"
 
 
@@ -454,7 +454,7 @@ def test_a_cleared_goal_is_not_resumed(repo, tmp_path):
     wiring = _wire(repo, home, [])
     wiring.runtime.change_goal(Goal("ship it"), by="user")
     wiring.runtime.change_goal(None, by="user")
-    app._close(wiring, TerminalStatus.CANCELLED, "done")
+    _close(wiring, TerminalStatus.CANCELLED, "done")
     assert _wire(repo, home, [], resume="last").runtime.goal is None
 
 

@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 from rich.console import Console
 
-from foundry.cli.app import build
+from foundry.cli.wiring import build
 from foundry.core.backends.base import collect_turn
 from foundry.core.backends.openai_compat import OpenAICompatBackend
 from foundry.core.backends.responses import ResponsesBackend
@@ -207,7 +207,7 @@ def test_a_prose_reply_is_reminded_to_call_finish(repo, tmp_path):
     """Running on its own repository, Foundry finished the work, described it
     in prose with the event ids, and exited partial: nobody reads a reply in
     an unattended run, and only finish reports an outcome."""
-    from foundry.cli.app import FINISH_REMINDER, _run_unattended
+    from foundry.cli.unattended import FINISH_REMINDER, _run_unattended
 
     wiring = _unattended(repo, tmp_path, [_said("I fixed it (event 12)."), _finished()])
     outcome = _run_unattended(wiring.runtime, "fix it")
@@ -219,7 +219,7 @@ def test_a_prose_reply_is_reminded_to_call_finish(repo, tmp_path):
 
 
 def test_the_reminder_is_sent_once(repo, tmp_path):
-    from foundry.cli.app import _run_unattended
+    from foundry.cli.unattended import _run_unattended
 
     wiring = _unattended(repo, tmp_path, [_said("done"), _said("still done")])
     outcome = _run_unattended(wiring.runtime, "fix it")
@@ -230,7 +230,7 @@ def test_the_reminder_is_sent_once(repo, tmp_path):
 
 
 def test_a_run_that_calls_finish_is_not_reminded(repo, tmp_path):
-    from foundry.cli.app import _run_unattended
+    from foundry.cli.unattended import _run_unattended
 
     wiring = _unattended(repo, tmp_path, [_finished()])
     outcome = _run_unattended(wiring.runtime, "fix it")

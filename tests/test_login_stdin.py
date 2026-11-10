@@ -16,13 +16,14 @@ import sys
 import pytest
 
 from foundry.cli import app
+from foundry.cli.login import STDIN_SECRET_LIMIT
 from foundry.core.auth import CredentialVault
 from foundry.core.redaction import Redactor
 
 from test_mcp import _config
 
 KEY = "sk-test-0123456789abcdefXYZ"
-LIMIT = app.STDIN_SECRET_LIMIT
+LIMIT = STDIN_SECRET_LIMIT
 
 
 class _Stdin:

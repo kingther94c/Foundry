@@ -30,16 +30,8 @@ from rich.console import Console
 from rich.markup import escape
 
 from foundry import __version__
-from foundry.cli.app import (
-    NO_FINISH,
-    Wiring,
-    _close,
-    _config_args,
-    _run_unattended,
-    announce_start,
-    build,
-    unattended,
-)
+from foundry.cli.unattended import NO_FINISH, _run_unattended, announce_start, unattended
+from foundry.cli.wiring import Wiring, _close, _config_args, build
 from foundry.cli.render import sanitize, visible
 from foundry.cli.repl import with_note
 from foundry.core.config import load_config, settings_layer, user_dir

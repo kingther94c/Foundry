@@ -21,6 +21,7 @@ from rich.console import Console
 from foundry.cli import app
 from foundry.cli.render import Renderer
 from foundry.cli.transcript import MAX_SHOWN, MAX_USER_LINES, show_conversation
+from foundry.cli.wiring import _close
 from foundry.core.context import SUMMARY_PREFIX
 from foundry.core.conversation import (ImageBlock, Message, Role, TextBlock, ToolResultBlock,
                                        ToolUseBlock)
@@ -69,7 +70,7 @@ def test_the_conversation_is_shown_as_it_was_typed(repo, tmp_path):
     resumed = _resumed(repo, home, wiring.session.session_id)
     assert _shown(resumed) == ["foundry> what is in @a.py?", "-> read a.py",
                                "It sets A to 1.", END]
-    app._close(resumed, TerminalStatus.CANCELLED, "test")
+    _close(resumed, TerminalStatus.CANCELLED, "test")
 
 
 def test_a_command_is_shown_as_the_command(repo, tmp_path):
@@ -83,7 +84,7 @@ def test_a_command_is_shown_as_the_command(repo, tmp_path):
     resumed = _resumed(repo, home, wiring.session.session_id)
     assert _shown(resumed) == ["foundry> /fix a.py", "Fixed.", END]
     assert read_journal(resumed.session.path).first_task == "/fix a.py"
-    app._close(resumed, TerminalStatus.CANCELLED, "test")
+    _close(resumed, TerminalStatus.CANCELLED, "test")
     assert summarize(resumed.session.path.parent).first_task == "/fix a.py"
 
 
@@ -99,7 +100,7 @@ def test_a_resumes_note_is_not_shown(repo, tmp_path):
     assert _inputs(again)[-1] == {"text": note_and_task, "typed": "go on"}
     third = _resumed(repo, home, sid)
     assert _shown(third) == ["foundry> start", "Started.", "foundry> go on", "Going on.", END]
-    app._close(third, TerminalStatus.CANCELLED, "test")
+    _close(third, TerminalStatus.CANCELLED, "test")
 
 
 def test_typed_is_journaled_only_when_the_message_says_more(repo, tmp_path):
@@ -114,7 +115,7 @@ def test_a_message_nobody_typed_is_journaled_as_it_is(repo, tmp_path):
     run_task(wiring, RunTask("from a command's own task"))
     assert _inputs(wiring) == [{"text": "from a program"},
                                {"text": "from a command's own task"}]
-    app._close(wiring, TerminalStatus.CANCELLED, "test")
+    _close(wiring, TerminalStatus.CANCELLED, "test")
 
 
 def test_a_task_from_the_command_line_is_journaled_as_typed(repo, tmp_path, monkeypatch):
@@ -122,8 +123,8 @@ def test_a_task_from_the_command_line_is_journaled_as_typed(repo, tmp_path, monk
     wiring = _wire(repo, home, [turn(text="Started.")])
     _repl(wiring, "start")
     again = _resumed(repo, home, wiring.session.session_id, [turn(text="ok")])
-    monkeypatch.setattr(app, "build", lambda *a, **k: again)
-    monkeypatch.setattr(app, "_interactive", lambda: False)
+    monkeypatch.setattr("foundry.cli.session_commands.build", lambda *a, **k: again)
+    monkeypatch.setattr("foundry.cli.session_commands._interactive", lambda: False)
     monkeypatch.setenv("FOUNDRY_HOME", str(home))
     app.main(["resume", again.session.session_id, "carry on", "--workspace", str(repo)])
     assert _inputs(again)[-1]["typed"] == "carry on"
@@ -140,8 +141,8 @@ def test_shown_at_a_terminal_before_the_resume_is_announced(repo, tmp_path, monk
     _repl(wiring, "start the work")
     again = _resumed(repo, home, wiring.session.session_id, [turn(text="ok")])
     again.renderer.console = _console()
-    monkeypatch.setattr(app, "build", lambda *a, **k: again)
-    monkeypatch.setattr(app, "_interactive", lambda: interactive)
+    monkeypatch.setattr("foundry.cli.session_commands.build", lambda *a, **k: again)
+    monkeypatch.setattr("foundry.cli.session_commands._interactive", lambda: interactive)
     monkeypatch.setattr(builtins, "input", lambda prompt="": "/exit")
     monkeypatch.setenv("FOUNDRY_HOME", str(home))
     args = ["resume", again.session.session_id, "--workspace", str(repo)]

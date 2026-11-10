@@ -10,6 +10,7 @@ import json
 import pytest
 
 from foundry.cli import app
+from foundry.cli.wiring import _remember_trust
 
 from test_resume import repo  # noqa: F401 (fixture)
 
@@ -105,7 +106,7 @@ def test_the_workspace_s_rules_once_it_is_trusted(repo, home, capsys):
     code, out = _check(capsys, repo, "--json", "make deploy")
     assert json.loads(out.out)["at_a_terminal"]["verdict"] == "ask"
     assert "not trusted yet: its rules are not applied" in out.err
-    app._remember_trust(home, repo.resolve())
+    _remember_trust(home, repo.resolve())
     said = _json(capsys, repo, "make deploy")
     assert said["at_a_terminal"]["verdict"] == "deny"
     assert said["at_a_terminal"]["rule"] == "project.0"

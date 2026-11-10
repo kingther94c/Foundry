@@ -17,7 +17,7 @@ import io
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
+from foundry.cli.wiring import _confirm_trust, _remember_trust, build
 from foundry.core.config import load_config, parse_settings
 from foundry.core.errors import ConfigError
 from foundry.core.prompts import (PROJECT_DOC_MAX_BYTES, doc_names, load_instructions,
@@ -185,7 +185,7 @@ def test_a_repository_may_not_name_its_files_as_instructions(tmp_path):
 
 def _asked(tmp_path, workspace, **settings):
     out = io.StringIO()
-    app._confirm_trust(Console(file=out, width=200), tmp_path / "home", workspace,
+    _confirm_trust(Console(file=out, width=200), tmp_path / "home", workspace,
                        interactive=False, **settings)
     return "provides Foundry instructions; not loading them" in out.getvalue()
 
@@ -208,7 +208,7 @@ def test_a_session_reads_by_the_users_settings(repo, tmp_path):
     home = _config(tmp_path / "home", ('[runtime]\nproject_doc_max_bytes = 40\n'
                                        'project_doc_fallback_filenames = ["CLAUDE.md"]\n'))
     _write(repo / "CLAUDE.md", "Run the tests with pytest. " + "x" * 100)
-    app._remember_trust(home, repo)
+    _remember_trust(home, repo)
     wiring = _wire(repo, home, [])
     system = wiring.runtime.context.system_message().text_content
     assert "Run the tests with pytest. " + "x" * 13 + "\n[project document truncated]" in system
@@ -223,7 +223,7 @@ def test_a_session_asks_about_a_file_only_a_fallback_name_reads(repo, tmp_path):
                         ('[runtime]\nproject_doc_fallback_filenames = ["CLAUDE.md"]\n', True)):
         out = io.StringIO()
         home = _config(tmp_path / f"home{int(asked)}", text)
-        wiring = app.build(repo, home=home, overrides=OVERRIDES,
+        wiring = build(repo, home=home, overrides=OVERRIDES,
                            console=Console(file=out, width=200))
         assert (said in out.getvalue()) is asked
         wiring.session.close()
@@ -237,7 +237,7 @@ def test_a_trusted_repositorys_own_settings_still_apply(repo, tmp_path):
     assert untrusted.config.max_tool_rounds == 40
     untrusted.session.close()
     home = tmp_path / "home2"
-    app._remember_trust(home, repo)
+    _remember_trust(home, repo)
     trusted = _wire(repo, home, [])
     assert trusted.config.max_tool_rounds == 5
     trusted.session.close()

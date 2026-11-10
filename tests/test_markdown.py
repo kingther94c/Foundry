@@ -18,10 +18,10 @@ from rich.console import Console
 from rich.syntax import Syntax
 from rich.text import Text
 
-from foundry.cli import app
 from foundry.cli.markdown import MarkdownLines, inline
 from foundry.cli.render import Renderer, sanitize
 from foundry.cli.repl import RunTask, run_task
+from foundry.cli.wiring import _close
 from foundry.core.events import MessageDelta, Notice, TerminalStatus
 
 from test_resume import _wire, repo, turn  # noqa: F401  (repo is a fixture)
@@ -225,4 +225,4 @@ def test_a_session_on_a_terminal(repo, tmp_path):
     run_task(wiring, RunTask("check"))
     shown = wiring.renderer.console.file.getvalue()
     assert "Summary\nAll green." in shown and "**" not in shown and "##" not in shown
-    app._close(wiring, TerminalStatus.COMPLETED, "test")
+    _close(wiring, TerminalStatus.COMPLETED, "test")

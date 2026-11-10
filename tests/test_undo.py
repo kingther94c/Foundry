@@ -15,6 +15,9 @@ import json
 import sys
 
 from foundry.cli import app
+from foundry.cli.repl import repl
+from foundry.cli.wiring import _close
+from foundry.core.events import TerminalStatus
 from foundry.core.redaction import Redactor
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.base import ReadTracker, ToolContext
@@ -320,7 +323,7 @@ def _patched_session(repo, home):
                                 turn(call("p1", "apply_patch", {"patch": PATCH_A})),
                                 turn(text="A is 2 now")])
     wiring.runtime.run_turn("make A 2")
-    app._close(wiring, app.TerminalStatus.CANCELLED, "session ended")
+    _close(wiring, TerminalStatus.CANCELLED, "session ended")
     assert (repo / "a.py").read_text(encoding="utf-8") == "A = 2\n"
     return wiring.session.session_id
 
@@ -395,8 +398,8 @@ def test_slash_undo_reverts_the_last_patch_and_tells_the_model(repo, tmp_path):
         turn(text="A is 1 again"),
     ])
     typist = _Typist(["make A 2", "/undo", "y", "what is A?", "/exit"])
-    status = app._repl(wiring, typist)
-    app._close(wiring, status, "session ended")
+    status = repl(wiring, typist)
+    _close(wiring, status, "session ended")
 
     assert (repo / "a.py").read_text(encoding="utf-8") == "A = 1\n"
     told = wiring.runtime.backend.seen[-1].messages[-1].blocks[0].text
@@ -416,7 +419,7 @@ def test_slash_undo_asks_first_and_says_when_there_is_nothing(repo, tmp_path):
         turn(text="done"),
     ])
     typist = _Typist(["/undo", "make A 2", "/undo", "n", "/exit"])
-    app._close(wiring, app._repl(wiring, typist), "session ended")
+    _close(wiring, repl(wiring, typist), "session ended")
     assert any("nothing to undo" in line for line in typist.printed)
     assert (repo / "a.py").read_text(encoding="utf-8") == "A = 2\n"
     assert not [r for r in SessionStore.read_records(wiring.session.path)
@@ -436,4 +439,4 @@ def test_a_resumed_session_is_told_what_was_undone_after_it_stopped(repo, tmp_pa
         assert "undid patches" in wiring.note and "a.py" in wiring.note
         assert "a.py" not in wiring.outside  # back as it was: not someone else's change
     finally:
-        app._close(wiring, app.TerminalStatus.CANCELLED, "session ended")
+        _close(wiring, TerminalStatus.CANCELLED, "session ended")

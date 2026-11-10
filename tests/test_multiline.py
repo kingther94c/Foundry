@@ -17,9 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from foundry.cli import app
 from foundry.cli import repl as repl_module
-from foundry.cli.repl import BLOCK, input_waiting, read_message
+from foundry.cli.repl import BLOCK, input_waiting, read_message, repl
+from foundry.cli.wiring import _close
 from foundry.core.events import TerminalStatus
 
 from test_resume import _wire, repo, turn  # noqa: F401 (fixture)
@@ -111,8 +111,8 @@ def test_the_model_gets_a_paste_as_one_message(repo, tmp_path, monkeypatch):
     _waiting(monkeypatch, True, False, True, False, False)   # blank lines, then a paste
     typist = _Recorder(["   ", "  ", "why does this fail?", "ValueError: bad", "and this?",
                         "/exit"])
-    status = app._repl(wiring, typist)
-    app._close(wiring, status, "session ended")
+    status = repl(wiring, typist)
+    _close(wiring, status, "session ended")
     assert _sent(wiring) == ["why does this fail?\nValueError: bad", "and this?"]
 
 
@@ -120,8 +120,8 @@ def test_a_discarded_block_sends_nothing_and_the_session_goes_on(repo, tmp_path,
     wiring = _wire(repo, tmp_path / "home", [turn(text="ok")])
     _waiting(monkeypatch)
     typist = _Interrupting([BLOCK, "never mind", None, "real task", "/exit"])
-    status = app._repl(wiring, typist)
-    app._close(wiring, status, "session ended")
+    status = repl(wiring, typist)
+    _close(wiring, status, "session ended")
     assert status is TerminalStatus.CANCELLED and _sent(wiring) == ["real task"]
 
 
@@ -129,7 +129,7 @@ def test_help_says_how(repo, tmp_path, monkeypatch):
     wiring = _wire(repo, tmp_path / "home", [])
     _waiting(monkeypatch)
     typist = _Recorder(["/help", "/exit"])
-    app._close(wiring, app._repl(wiring, typist), "session ended")
+    _close(wiring, repl(wiring, typist), "session ended")
     assert any("a pasted block is one message" in p for p in typist.printed)
 
 

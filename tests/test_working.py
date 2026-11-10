@@ -17,9 +17,9 @@ from types import SimpleNamespace
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
 from foundry.cli.render import Renderer, Working, elapsed
 from foundry.cli.repl import RunTask, run_task
+from foundry.cli.wiring import _close
 from foundry.core.conversation import Usage
 from foundry.core.events import (
     ApprovalChoice,
@@ -175,14 +175,14 @@ def test_ctrl_c_during_a_command_leaves_no_line_up(repo, tmp_path):
     outcome = run_task(wiring, RunTask("go"))
     assert outcome.status is TerminalStatus.CANCELLED
     assert wiring.renderer._live is None
-    app._close(wiring, outcome.status, "test")
+    _close(wiring, outcome.status, "test")
 
 
 def test_closing_the_session_takes_it_down(repo, tmp_path):
     wiring = _wire(repo, tmp_path / "home", [])
     wiring.renderer.console = _terminal()
     wiring.renderer.work("working")
-    app._close(wiring, TerminalStatus.COMPLETED, "test")
+    _close(wiring, TerminalStatus.COMPLETED, "test")
     assert wiring.renderer._live is None
 
 
@@ -196,4 +196,4 @@ def test_a_session_on_a_terminal_shows_it_and_ends_with_it_down(repo, tmp_path):
     shown = wiring.renderer.console.file.getvalue()
     assert "working (0s, Ctrl+C to stop)" in shown and "running (" in shown
     assert "It printed 42." in shown and wiring.renderer._live is None
-    app._close(wiring, TerminalStatus.COMPLETED, "test")
+    _close(wiring, TerminalStatus.COMPLETED, "test")

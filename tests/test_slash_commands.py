@@ -13,7 +13,8 @@ import builtins
 import pytest
 
 from foundry.cli import app
-from foundry.cli.repl import COMMANDS, REVIEW_READ_ONLY, REVIEW_UNCOMMITTED
+from foundry.cli.repl import COMMANDS, REVIEW_READ_ONLY, REVIEW_UNCOMMITTED, repl
+from foundry.cli.wiring import _close, _confirm_trust, _remember_trust
 from foundry.core.commands import (
     PROMPT_MAX_BYTES,
     CustomPrompt,
@@ -43,7 +44,7 @@ class _Recorder(_Typist):
 
 def _repl(wiring, *lines):
     typist = _Recorder([*lines, "/exit"])
-    app._close(wiring, app._repl(wiring, typist), "session ended")
+    _close(wiring, repl(wiring, typist), "session ended")
     return typist
 
 
@@ -164,7 +165,7 @@ def test_a_repository_with_only_prompts_is_asked_about(tmp_path, monkeypatch):
     import io
 
     out = io.StringIO()
-    assert not app._confirm_trust(Console(file=out), tmp_path / "home", workspace,
+    assert not _confirm_trust(Console(file=out), tmp_path / "home", workspace,
                                   interactive=False)
     assert "provides Foundry instructions" in out.getvalue()
 
@@ -185,7 +186,7 @@ def test_a_trusted_repositorys_prompt_is_marked_as_the_repositorys(repo, tmp_pat
     home = tmp_path / "home"
     (repo / ".foundry" / "prompts").mkdir(parents=True)
     (repo / ".foundry" / "prompts" / "check.md").write_text("Run the checks.", encoding="utf-8")
-    app._remember_trust(home, repo)
+    _remember_trust(home, repo)
     wiring = _wire(repo, home, [turn(text="ok")])
     typist = _repl(wiring, "/check")
     assert _sent(wiring) == ["Run the checks."]
@@ -363,4 +364,4 @@ def test_the_read_only_switch_is_cleared_even_when_the_turn_fails(repo, tmp_path
     with pytest.raises(RuntimeError):
         run_task(wiring, RunTask("review", read_only="reviewing"))
     assert wiring.runtime.policy.read_only == ""
-    app._close(wiring, TerminalStatus.CANCELLED, "session ended")
+    _close(wiring, TerminalStatus.CANCELLED, "session ended")

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import dataclasses
 
-from foundry.cli import app
+from foundry.cli.repl import repl
+from foundry.cli.wiring import _announce_resume, _close
 from foundry.core.events import ApprovalChoice, Notice, PlanStep, StepStatus, TerminalStatus
 from foundry.core.policy.engine import Mode, PolicyEngine
 from foundry.core.prompts import (
@@ -64,7 +65,7 @@ def test_approving_ends_plan_mode_and_starts_the_work(repo, tmp_path):
     wiring, asked = _planning(repo, tmp_path / "home", [
         turn(call("p1", "apply_patch", {"patch": PATCH_A})), turn(text="A is 2")])
     keys = _Keys(["plan how to make A 2", "/approve", "y", "/exit"])
-    app._close(wiring, app._repl(wiring, keys), "session ended")
+    _close(wiring, repl(wiring, keys), "session ended")
 
     assert (repo / "a.py").read_text(encoding="utf-8") == "A = 2\n"
     assert asked == ["apply_patch"], "default mode still asks before each edit"
@@ -93,7 +94,7 @@ def test_approving_ends_plan_mode_and_starts_the_work(repo, tmp_path):
 def test_approving_with_edits_lets_patches_apply_without_asking(repo, tmp_path):
     wiring, asked = _planning(repo, tmp_path / "home", [
         turn(call("p1", "apply_patch", {"patch": PATCH_A})), turn(text="A is 2")])
-    app._close(wiring, app._repl(wiring, _Keys(["plan it", "/approve", "e", "/exit"])),
+    _close(wiring, repl(wiring, _Keys(["plan it", "/approve", "e", "/exit"])),
                "session ended")
     assert (repo / "a.py").read_text(encoding="utf-8") == "A = 2\n"
     assert asked == []
@@ -108,7 +109,7 @@ def test_declining_or_no_answer_keeps_planning_and_changes_nothing(repo, tmp_pat
         home = tmp_path / f"home-{answer}"
         wiring, asked = _planning(repo, home, [])
         keys = _Keys(["plan it", "/approve", answer, "/exit"])
-        app._close(wiring, app._repl(wiring, keys), "session ended")
+        _close(wiring, repl(wiring, keys), "session ended")
         assert wiring.runtime.policy.mode is Mode.PLAN
         assert len(wiring.runtime.backend.seen) == 2, "no turn ran"
         assert any("still in plan mode" in line for line in keys.printed)
@@ -120,7 +121,7 @@ def test_declining_or_no_answer_keeps_planning_and_changes_nothing(repo, tmp_pat
 def test_outside_plan_mode_there_is_nothing_to_approve(repo, tmp_path):
     wiring = _wire(repo, tmp_path / "home", [])
     keys = _Keys(["/approve", "/exit"])
-    app._close(wiring, app._repl(wiring, keys), "session ended")
+    _close(wiring, repl(wiring, keys), "session ended")
     assert any("nothing to approve" in line and "default mode" in line for line in keys.printed)
     assert wiring.runtime.backend.seen == []
     assert not _records(wiring, EventType.MODE_CHANGE)
@@ -130,7 +131,7 @@ def test_with_no_plan_set_it_says_so_before_asking(repo, tmp_path):
     wiring = _wire(repo, tmp_path / "home", [turn(text="I would change A to 2.")],
                    overrides={"mode": Mode.PLAN})
     keys = _Keys(["plan it", "/approve", "n", "/exit"])
-    app._close(wiring, app._repl(wiring, keys), "session ended")
+    _close(wiring, repl(wiring, keys), "session ended")
     assert any("has not set a plan" in line for line in keys.printed)
 
 
@@ -138,21 +139,21 @@ def test_an_approval_does_not_carry_over_a_resume(repo, tmp_path):
     home = tmp_path / "home"
     wiring, _ = _planning(repo, home, [
         turn(call("p1", "apply_patch", {"patch": PATCH_A})), turn(text="A is 2")])
-    app._close(wiring, app._repl(wiring, _Keys(["plan it", "/approve", "y", "/exit"])),
+    _close(wiring, repl(wiring, _Keys(["plan it", "/approve", "y", "/exit"])),
                "session ended")
     assert read_journal(wiring.session.path).mode == "default"
 
     resumed = _wire(repo, home, [], resume="last", overrides={"mode": Mode.PLAN})
     events: list = []
     resumed.runtime.events.subscribe(events.append)
-    app._announce_resume(resumed)
+    _announce_resume(resumed)
     assert resumed.runtime.policy.mode is Mode.PLAN
     assert resumed.runtime.plan == (PlanStep("Change A to 2", StepStatus.PENDING),)
     assert ("the user had switched this session to default mode. That does not carry "
             "over a resume: this run is in plan mode") in resumed.note
     assert any(isinstance(e, Notice) and "/approve" in e.text and "default mode" in e.text
                for e in events)
-    app._close(resumed, TerminalStatus.CANCELLED, "session ended")
+    _close(resumed, TerminalStatus.CANCELLED, "session ended")
 
 
 def test_a_session_never_switched_says_nothing_about_modes(tmp_path):

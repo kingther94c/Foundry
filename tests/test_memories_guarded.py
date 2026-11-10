@@ -63,8 +63,9 @@ SECRET = "gw-0123456789abcdef"
 @pytest.fixture()
 def redactor(monkeypatch):
     fresh = Redactor()
-    for module in ("foundry.core.redaction", "foundry.core.memories", "foundry.cli.app",
-                   "foundry.core.mcp"):
+    for module in ("foundry.core.redaction", "foundry.core.memories", "foundry.cli.wiring",
+                   "foundry.cli.session_commands", "foundry.cli.unattended",
+                   "foundry.cli.mcp_commands", "foundry.cli.setup_commands", "foundry.core.mcp"):
         monkeypatch.setattr(f"{module}.default_redactor", lambda: fresh)
     return fresh
 

@@ -20,9 +20,10 @@ from types import SimpleNamespace
 
 from rich.console import Console
 
-from foundry.cli import app, mcp_server
+from foundry.cli import mcp_server
 from foundry.cli.mcp_server import MAX_QUESTION_CHARS, MAX_SHOWN_CHARS, _question
 from foundry.cli.render import Renderer, visible
+from foundry.cli.wiring import _rule_writer
 from foundry.core.config import load_config
 from foundry.core.events import ApprovalChoice, ApprovalKind, ApprovalRequest
 from foundry.core.policy.engine import Decision, PolicyEngine, Verdict
@@ -166,7 +167,7 @@ def test_always_allows_exactly_the_call_approved(tmp_path):
     home = tmp_path / "home"
     policy = PolicyEngine(rules=[])
     approved = '{"query": "*"}'
-    app._rule_writer(home, policy)(SimpleNamespace(tool="mcp__docs__search", target=approved))
+    _rule_writer(home, policy)(SimpleNamespace(tool="mcp__docs__search", target=approved))
     [rule] = [r for r in load_config(home=home).rules if r.tool == "mcp__docs__search"]
     assert rule.pattern == '{"query": "[*]"}'
 
@@ -179,6 +180,6 @@ def test_always_allows_exactly_the_call_approved(tmp_path):
     assert not allowed('{"query": "x", "upload": "key"}')
     for special in ("a?b", "[ab]"):
         exact = f'{{"query": "{special}"}}'
-        app._rule_writer(home, policy)(SimpleNamespace(tool="t", target=exact))
+        _rule_writer(home, policy)(SimpleNamespace(tool="t", target=exact))
     rules = {r.pattern for r in load_config(home=home).rules if r.tool == "t"}
     assert rules == {'{"query": "a[?]b"}', '{"query": "[[]ab]"}'}

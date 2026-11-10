@@ -23,7 +23,8 @@ import pytest
 from rich.console import Console
 
 from foundry.cli import mcp_server
-from foundry.cli.app import NO_FINISH, build, unattended
+from foundry.cli.unattended import NO_FINISH, unattended
+from foundry.cli.wiring import build
 from foundry.cli.mcp_server import Server
 from foundry.core.config import McpServerConfig
 from foundry.core.conversation import ModelTurn, StopReason, ToolUseBlock, Usage

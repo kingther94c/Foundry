@@ -14,6 +14,7 @@ import builtins
 
 from foundry.cli import app
 from foundry.cli.repl import TASK_ENDED
+from foundry.cli.wiring import _close
 from foundry.core.conversation import Message, Role, ToolUseBlock
 from foundry.core.events import TerminalStatus
 from foundry.core.resume import read_journal
@@ -99,14 +100,14 @@ def test_calls_left_before_any_ending_say_it_was_interrupted(repo, tmp_path):
     wiring.runtime.answer_left_calls()
     [reply] = _records(wiring, EventType.TOOL_REPLY)
     assert reply["content"].startswith("Not run: the task ended (interrupted) before")
-    app._close(wiring, TerminalStatus.CANCELLED, "session ended")
+    _close(wiring, TerminalStatus.CANCELLED, "session ended")
 
 
 def test_an_unattended_run_still_ends_with_its_task(repo, tmp_path):
     wiring = _wire(repo, tmp_path / "home", [turn(_finish(), call("r1", "read_file",
                                                                   {"path": "a.py"}))])
     assert wiring.runtime.run_turn("do it").status is TerminalStatus.COMPLETED
-    app._close(wiring, TerminalStatus.CANCELLED, "session ended")
+    _close(wiring, TerminalStatus.CANCELLED, "session ended")
     # Nothing answered in the journal: a resume repairs them, as it did.
     assert not _records(wiring, EventType.TOOL_REPLY)
     assert [r.outcome for r in read_journal(wiring.session.path).repairs] == [

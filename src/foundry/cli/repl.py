@@ -65,7 +65,7 @@ from foundry.core.undo import (
 )
 
 if TYPE_CHECKING:
-    from foundry.cli.app import Wiring
+    from foundry.cli.wiring import Wiring
 
 # What repl() returns when the user typed /new: the caller closes this session
 # and starts another.

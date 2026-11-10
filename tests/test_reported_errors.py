@@ -30,7 +30,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
+from foundry.cli.wiring import build
 from foundry.core.backends.base import raise_reported_error
 from foundry.core.conversation import Role
 from foundry.core.errors import FatalError, QuotaExceeded, StreamDropped
@@ -127,7 +127,7 @@ def _session(repo, tmp_path, server, protocol, *script):
     (home / "config.toml").write_text(
         f'[backend]\nprotocol = "{protocol}"\nbase_url = "http://{host}:{port}/v1"\n'
         'model = "m"\nrequest_max_retries = 2\n', encoding="utf-8")
-    wiring = app.build(repo, home=home, console=Console(file=io.StringIO(), width=300))
+    wiring = build(repo, home=home, console=Console(file=io.StringIO(), width=300))
     slept, notices = [], []
     wiring.runtime.sleep = slept.append
     wiring.runtime.events.subscribe(

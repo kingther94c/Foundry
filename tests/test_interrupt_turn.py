@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from foundry.cli import app
-from foundry.cli.repl import STOPPED, STOPPED_NOTE
+from foundry.cli.repl import STOPPED, STOPPED_NOTE, repl
+from foundry.cli.wiring import _close
 from foundry.core.context import ContextManager
 from foundry.core.conversation import Message, Role, ToolResultBlock, ToolUseBlock
 from foundry.core.events import ApprovalChoice, TerminalStatus, ToolEnd
@@ -172,7 +172,7 @@ def test_ctrl_c_during_compact_keeps_the_conversation(repo, tmp_path):
     # The summary request is the one stopped; the next message is answered.
     wiring = _wire(repo, tmp_path / "home", [turn(text="hi"), _CtrlC(turn(text="again"))])
     typist = _Typist(["hello", "/compact", "still here?", "/exit"])
-    app._close(wiring, app._repl(wiring, typist), "session ended")
+    _close(wiring, repl(wiring, typist), "session ended")
     assert ("[yellow]compaction cancelled; the conversation is unchanged[/yellow]"
             in typist.printed)
     assert [m.text_content for m in wiring.runtime.context.history
@@ -189,7 +189,7 @@ def test_a_ctrl_c_as_the_task_ends_writes_no_second_ending(repo, tmp_path):
     outcome = wiring.runtime.interrupted()
     assert outcome.status is TerminalStatus.CANCELLED
     assert outcome.text == "interrupted by user"
-    app._close(wiring, TerminalStatus.CANCELLED, "session ended")
+    _close(wiring, TerminalStatus.CANCELLED, "session ended")
     assert [e["status"] for e in _records(wiring, EventType.TERMINATION)] == ["partial"]
 
 
@@ -197,7 +197,7 @@ def test_one_shot_runs_still_end_on_ctrl_c(repo, tmp_path):
     wiring = _wire(repo, tmp_path / "home", [_CtrlC(turn(text="never"))])
     with pytest.raises(KeyboardInterrupt):
         wiring.runtime.run_turn("explain a.py")
-    app._close(wiring, TerminalStatus.CANCELLED, "interrupted")
+    _close(wiring, TerminalStatus.CANCELLED, "interrupted")
 
 
 def _uses(*ids):

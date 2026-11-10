@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
+from foundry.cli.wiring import build
 from foundry.core.backends.base import ReasoningComplete, collect_turn
 from foundry.core.backends.responses import PROVIDER, ResponsesBackend, build_body
 from foundry.core.conversation import (Message, OpaqueBlock, Role, TextBlock, ToolResultBlock,
@@ -212,7 +212,7 @@ DONE = {"type": "message", "content": [{"type": "output_text", "text": "add subt
 
 def _wired(repo, tmp_path, rounds, **kwargs):
     host, port = rounds.server_address
-    return app.build(repo, home=tmp_path / "home", overrides={
+    return build(repo, home=tmp_path / "home", overrides={
         "base_url": f"http://{host}:{port}/v1", "model": "gpt-5", "stream": False,
         "protocol": "responses"}, console=Console(file=io.StringIO(), width=100), **kwargs)
 

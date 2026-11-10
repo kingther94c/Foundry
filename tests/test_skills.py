@@ -19,7 +19,7 @@ import subprocess
 
 import pytest
 
-from foundry.cli import app
+from foundry.cli.wiring import _confirm_trust, _remember_trust
 from foundry.core.errors import InvalidToolCall, ToolError
 from foundry.core.policy.engine import Mode, PolicyEngine, Verdict
 from foundry.core.redaction import default_redactor
@@ -373,7 +373,7 @@ def test_a_repositorys_skill_is_asked_about_first(tmp_path):
     out = io.StringIO()
     from rich.console import Console
 
-    assert not app._confirm_trust(Console(file=out), tmp_path / "home", work, interactive=False)
+    assert not _confirm_trust(Console(file=out), tmp_path / "home", work, interactive=False)
     assert "provides Foundry instructions" in out.getvalue()
 
 
@@ -382,7 +382,7 @@ def test_a_trusted_repositorys_skill_is_offered(repo, tmp_path):
     _skill(repo / ".agents" / "skills", "deploy", description="Deploy the service.")
     untrusted = _wire(repo, home, [])
     assert "deploy" not in untrusted.skills.found
-    app._remember_trust(home, repo)
+    _remember_trust(home, repo)
     trusted = _wire(repo, home, [])
     assert trusted.skills.found["deploy"].source == REPOSITORY
     assert "- deploy: Deploy the service." in _system(trusted)
@@ -393,7 +393,7 @@ def test_what_is_not_as_it_should_be_is_said_at_the_start(repo, tmp_path):
     _skill(home / "skills", "bad", text="---\nname: x\n---\n")
     _skill(home / "skills", "deploy")
     _skill(repo / ".agents" / "skills", "deploy")
-    app._remember_trust(home, repo)
+    _remember_trust(home, repo)
     wiring = _wire(repo, home, [])
     said = wiring.renderer.console.file.getvalue()
     assert "skill folder" in said and "is not used: its SKILL.md has no description" in said
@@ -481,7 +481,7 @@ def test_skills_lists_them(repo, tmp_path):
     _skill(home / "skills", "bad", text="---\nname: x\n---\n")
     _skill(repo / ".agents" / "skills", "release")
     _skill(repo / ".agents" / "skills", "deploy", description="Deploy it.")
-    app._remember_trust(home, repo)
+    _remember_trust(home, repo)
     wiring = _wire(repo, home, [])
     shown = _plain(_repl(wiring, "/skills"))
     assert "$deploy (the repository's) Deploy it." in shown
@@ -496,7 +496,7 @@ def test_skills_says_where_they_go_when_there_are_none(repo, tmp_path):
     assert ("no skills: a skill is a folder holding a SKILL.md, in "
             f"{home / 'skills'}") in shown
     assert ".agents/skills" not in shown
-    app._remember_trust(home, repo)
+    _remember_trust(home, repo)
     shown = " ".join(_shown(_repl(_wire(repo, home, []), "/skills")).split())
     assert "or this repository's .agents/skills" in shown
 

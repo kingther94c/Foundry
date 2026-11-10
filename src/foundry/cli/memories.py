@@ -28,7 +28,7 @@ from foundry.core.memories import (
 from foundry.core.session import EventType, SessionStore
 
 if TYPE_CHECKING:
-    from foundry.cli.app import Wiring
+    from foundry.cli.wiring import Wiring
 
 USAGE = "usage: /memories [use on|off | generate on|off]"
 TURN_ON = ("memories are off: foundry features enable memories turns them on (codex's "

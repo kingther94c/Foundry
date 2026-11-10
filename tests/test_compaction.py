@@ -15,8 +15,8 @@ import json
 
 import pytest
 
-from foundry.cli import app
 from foundry.cli.report import analyse
+from foundry.cli.unattended import _event_payload
 from foundry.core.backends.replay import _emit
 from foundry.core.commands import builtin_prompt
 from foundry.core.config import load_config
@@ -440,6 +440,6 @@ def test_the_setting(tmp_path, repo):
 
 
 def test_the_event_reaches_a_json_consumer():
-    payload = app._event_payload(Compacted(tokens_before=9_000, tokens_after=800, auto=True))
+    payload = _event_payload(Compacted(tokens_before=9_000, tokens_after=800, auto=True))
     assert json.loads(json.dumps(payload)) == {"kind": "compacted", "tokens_before": 9_000,
                                                "tokens_after": 800, "auto": True}

@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
+from foundry.cli.wiring import build
 from foundry.core.backends.anthropic import build_body as anthropic_body
 from foundry.core.backends.openai_compat import build_body as chat_body
 from foundry.core.backends.responses import build_body as responses_body
@@ -169,7 +169,7 @@ def test_it_reaches_the_wire(repo, tmp_path, capture, protocol, field):
     (home / "config.toml").write_text(
         f'[backend]\nprotocol = "{protocol}"\nmax_output_tokens = 2048\nstream = false\n'
         f'base_url = "http://{host}:{port}/v1"\nmodel = "gpt-5"\n', encoding="utf-8")
-    wiring = app.build(repo, home=home, console=Console(file=io.StringIO(), width=100))
+    wiring = build(repo, home=home, console=Console(file=io.StringIO(), width=100))
     try:
         wiring.runtime.run_turn("say ok")
     finally:

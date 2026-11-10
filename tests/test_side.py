@@ -14,7 +14,8 @@ import io
 import pytest
 from rich.console import Console
 
-from foundry.cli import app, repl
+from foundry.cli import repl
+from foundry.cli.wiring import _close
 from foundry.core.events import TerminalStatus
 from foundry.core.resume import read_journal
 from foundry.core.session import EventType, SessionStore
@@ -154,7 +155,7 @@ def test_it_goes_back_however_the_side_question_ends(repo, tmp_path, monkeypatch
     assert wiring.runtime.context.history == []
     assert wiring.runtime.auto_compact is True
     assert EventType.REWOUND in {r.type for r in SessionStore.read_records(wiring.session.path)}
-    app._close(wiring, TerminalStatus.CANCELLED, "done")
+    _close(wiring, TerminalStatus.CANCELLED, "done")
 
 
 def test_a_side_question_needs_a_question(repo, tmp_path):
@@ -171,7 +172,7 @@ def test_a_resumed_session_does_not_have_it(repo, tmp_path):
     assert [m.text_content for m in state.history] == ["what is A?", "A is 1"]
     resumed = _wire(repo, home, [], resume="last")
     assert len(resumed.runtime.context.history) == 2
-    app._close(resumed, TerminalStatus.CANCELLED, "done")
+    _close(resumed, TerminalStatus.CANCELLED, "done")
 
 
 def test_help_lists_them(repo, tmp_path):

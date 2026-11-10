@@ -15,6 +15,8 @@ import subprocess
 import pytest
 
 from foundry.cli import app
+from foundry.cli.unattended import FINISH_REMINDER
+from foundry.core.resume import CONTINUE_PROMPT
 
 from test_cli_e2e import text_turn, tool_turn
 from test_fork import FORK_NOTE, _journals, _model, _said
@@ -49,7 +51,7 @@ def test_a_copy_goes_on_and_the_source_is_kept(repo, tmp_path, monkeypatch, caps
     source, fork = journals["source"].parent.name, journals["fork"].parent.name
     assert f"forked {source} into {fork}; {source} is kept as it was" in capsys.readouterr().err
     kept, forked = _said(journals["source"]), _said(journals["fork"])
-    assert kept == ["what is A?", "A is 1", app.FINISH_REMINDER, "A again"]
+    assert kept == ["what is A?", "A is 1", FINISH_REMINDER, "A again"]
     assert forked[:len(kept)] == kept and forked[-1] == "B again"
     assert forked[len(kept)].startswith(FORK_NOTE.format(source))
     assert forked[len(kept)].endswith("and B?")
@@ -72,7 +74,7 @@ def test_without_a_task_it_carries_on(repo, tmp_path, monkeypatch, capsys, fake_
     _source(tmp_path, monkeypatch, fake_model, repo)
     httpd = _then(fake_model, text_turn("going on"), text_turn("still"))
     assert app.main(["exec", "--fork", "last", "-C", str(repo)]) == 10
-    assert httpd.requests[0]["messages"][-1]["content"].endswith(app.CONTINUE_PROMPT)
+    assert httpd.requests[0]["messages"][-1]["content"].endswith(CONTINUE_PROMPT)
 
 
 def test_a_completed_source_needs_a_task(repo, tmp_path, monkeypatch, capsys, fake_model):
@@ -109,7 +111,7 @@ def test_a_copy_that_cannot_be_made_runs_nothing(repo, tmp_path, monkeypatch, ca
     def full(*args):
         raise OSError("the disk is full")
 
-    monkeypatch.setattr(app, "fork_journal", full)
+    monkeypatch.setattr("foundry.cli.session_commands.fork_journal", full)
     httpd = _then(fake_model, text_turn("never"))
     assert app.main(["exec", "--fork", "last", "and B?", "-C", str(repo)]) == 12
     assert "cannot fork: the disk is full" in capsys.readouterr().err

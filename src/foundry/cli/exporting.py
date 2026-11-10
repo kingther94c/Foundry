@@ -23,7 +23,7 @@ from foundry.cli.copying import CopyFailed, as_shown, copy_text
 from foundry.core.session import EventType, JournalRecord, SessionStore
 
 if TYPE_CHECKING:
-    from foundry.cli.app import Wiring
+    from foundry.cli.wiring import Wiring
 
 TITLE = "# Foundry conversation\n"
 # Not shown as a line of its own: the answer a finish gave is its task's

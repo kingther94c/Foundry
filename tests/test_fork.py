@@ -16,7 +16,9 @@ import subprocess
 import pytest
 
 from foundry.cli import app
+from foundry.cli.session_commands import _fork
 from foundry.core.errors import ResumeError
+from foundry.core.events import EXIT_CODES, TerminalStatus
 from foundry.core.resume import fork_journal, read_journal, resume_note
 from foundry.core.session import EventType, SessionStore
 
@@ -180,14 +182,14 @@ def test_fork_goes_on_in_a_copy_and_keeps_this_one(repo, tmp_path, monkeypatch, 
 def test_a_fork_that_cannot_go_on_is_dropped_and_this_one_goes_on(
         repo, tmp_path, monkeypatch, capsys, fake_model):
     home, _ = _model(tmp_path, monkeypatch, fake_model, "A is 1", "B is 1")
-    real = app.build
+    from foundry.cli.wiring import build as real
 
     def build(root, **kwargs):
         if kwargs.get("resume"):
             raise ResumeError("HEAD has moved")
         return real(root, **kwargs)
 
-    monkeypatch.setattr(app, "build", build)
+    monkeypatch.setattr("foundry.cli.session_commands.build", build)
     _typed(monkeypatch, "what is A?", "/fork", "and B?", "/exit")
     assert app.main(["run", "--workspace", str(repo)]) == 13
     assert list(_journals(home)) == ["source"]
@@ -244,10 +246,10 @@ def test_fork_by_name_and_a_name_no_session_has(home, repo):
     sid = _session(home, repo, 1, "parser")
     args = argparse.Namespace(resume="parser", workspace=str(repo))
     quiet = _Quiet()
-    assert app._fork(args, quiet) is None
+    assert _fork(args, quiet) is None
     assert args.resume != sid and f"forked {sid} into {args.resume}" in quiet.text()
     args = argparse.Namespace(resume="lexer", workspace=str(repo))
-    assert app._fork(args, quiet) == app.EXIT_CODES[app.TerminalStatus.FAILED]
+    assert _fork(args, quiet) == EXIT_CODES[TerminalStatus.FAILED]
     assert "cannot fork: no such session: lexer" in quiet.text()
 
 

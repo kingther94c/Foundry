@@ -15,7 +15,7 @@ import json
 import pytest
 from rich.console import Console
 
-from foundry.cli.app import _event_payload
+from foundry.cli.unattended import _event_payload
 from foundry.cli.render import COMMAND_OUTPUT_LINE_CHARS, COMMAND_OUTPUT_LINES, Renderer
 from foundry.core.events import EventSink, ToolEnd
 from foundry.core.redaction import Redactor

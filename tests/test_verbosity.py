@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
+from foundry.cli.wiring import build
 from foundry.core.backends.anthropic import AnthropicBackend
 from foundry.core.backends.anthropic import build_body as anthropic_body
 from foundry.core.backends.base import collect_turn
@@ -219,7 +219,7 @@ def test_every_request_of_a_session_carries_it(repo, tmp_path, capture, protocol
     (home / "config.toml").write_text(
         f'[backend]\nprotocol = "{protocol}"\nverbosity = "low"\nstream = false\n'
         f'base_url = "http://{host}:{port}/v1"\nmodel = "gpt-5"\n', encoding="utf-8")
-    wiring = app.build(repo, home=home, console=Console(file=io.StringIO(), width=100))
+    wiring = build(repo, home=home, console=Console(file=io.StringIO(), width=100))
     try:
         wiring.runtime.run_turn("summarise the repo")
         wiring.runtime.run_turn("and again")

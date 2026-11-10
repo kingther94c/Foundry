@@ -20,6 +20,7 @@ from rich.console import Console
 
 from foundry.cli import app
 from foundry.cli.repl import NO_MCP
+from foundry.cli.wiring import _rule_writer
 from foundry.core.config import load_config
 from foundry.core.config_edit import add_server, remove_server, server_table
 from foundry.core.errors import ConfigError
@@ -281,7 +282,7 @@ def test_the_empty_mcp_line_names_the_table():
 def test_always_on_a_command_with_quotes_leaves_a_config_that_reads(home):
     home.mkdir()
     policy = PolicyEngine(rules=[])
-    persist = app._rule_writer(home, policy)
+    persist = _rule_writer(home, policy)
     persist(SimpleNamespace(tool="run_command", target='echo "hi" C:\\temp'))
     rules = [r for r in load_config(home=home).rules if r.tool == "run_command"]
     assert [r.pattern for r in rules] == ['echo "hi" C:/temp']

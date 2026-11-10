@@ -17,9 +17,10 @@ import json
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
 from foundry.cli.render import PATCH_DIFF_LINES, Renderer
 from foundry.cli.repl import RunTask, run_task
+from foundry.cli.unattended import _event_payload
+from foundry.cli.wiring import _close
 from foundry.core.events import EventSink, TerminalStatus, ToolEnd
 from foundry.core.redaction import Redactor
 from foundry.core.session import ArtifactStore, SessionStore
@@ -212,7 +213,7 @@ def test_a_credential_in_the_diff_never_leaves():
     sink.subscribe(seen.append)
     sink.emit(_end(f"updated .env (+1 -0)\n+TOKEN={CANARY}"))
     assert CANARY not in console.file.getvalue() and "+TOKEN=[redacted]" in console.file.getvalue()
-    assert CANARY not in json.dumps(app._event_payload(seen[0]))
+    assert CANARY not in json.dumps(_event_payload(seen[0]))
 
 
 # --- in a session ------------------------------------------------------------------------
@@ -236,6 +237,6 @@ def test_a_session_shows_what_its_patch_changed(repo, tmp_path):
     end = [e for e in events if isinstance(e, ToolEnd) and e.call_id == "c2"][0]
     assert end.output.startswith("updated a.py (+1 -1)\n@@")
     path = wiring.session.path
-    app._close(wiring, TerminalStatus.COMPLETED, "test")
+    _close(wiring, TerminalStatus.COMPLETED, "test")
     journal = "\n".join(json.dumps(r.payload) for r in SessionStore.read_records(path))
     assert "@@ -1 +1 @@" not in journal                  # shown, never journaled

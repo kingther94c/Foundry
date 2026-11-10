@@ -14,8 +14,9 @@ import sys
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
-from foundry.cli.app import _PROTOCOLS, build
+from foundry.cli.login import cmd_login
+from foundry.cli.setup_commands import cmd_doctor
+from foundry.cli.wiring import _PROTOCOLS, build
 from foundry.core.auth import ApiKeySource, CredentialVault
 from foundry.core.backends.anthropic import AnthropicBackend
 from foundry.core.backends.base import collect_turn
@@ -199,7 +200,7 @@ def test_login_non_tty_names_anthropic_variable(tmp_path, monkeypatch, capsys):
     home = _home(tmp_path, ANTHROPIC_TOML)
     monkeypatch.setenv("FOUNDRY_HOME", str(home))
     monkeypatch.setattr(sys, "stdin", _Stdin(False))
-    assert app.cmd_login(argparse.Namespace()) == 1
+    assert cmd_login(argparse.Namespace()) == 1
     out = " ".join(capsys.readouterr().out.split())
     assert "ANTHROPIC_API_KEY" in out
     assert "OPENAI_API_KEY" not in out
@@ -213,7 +214,7 @@ def test_login_stores_to_the_anthropic_field(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "stdin", _Stdin(True))
     import getpass
     monkeypatch.setattr(getpass, "getpass", lambda prompt="": ANTHROPIC_KEY)
-    assert app.cmd_login(argparse.Namespace()) == 0
+    assert cmd_login(argparse.Namespace()) == 0
     stored = CredentialVault(home / "auth.json", redactor=Redactor()).load()
     assert stored["anthropic_api_key"] == ANTHROPIC_KEY
     assert stored["api_key"] == OPENAI_KEY
@@ -224,7 +225,7 @@ def test_login_for_openai_still_names_openai(tmp_path, monkeypatch, capsys):
     home = _home(tmp_path, "")
     monkeypatch.setenv("FOUNDRY_HOME", str(home))
     monkeypatch.setattr(sys, "stdin", _Stdin(False))
-    assert app.cmd_login(argparse.Namespace()) == 1
+    assert cmd_login(argparse.Namespace()) == 1
     assert "OPENAI_API_KEY" in " ".join(capsys.readouterr().out.split())
 
 
@@ -299,14 +300,14 @@ def test_unknown_protocol_error_lists_anthropic(tmp_path):
 def test_doctor_lists_anthropic_for_an_unknown_protocol(tmp_path, monkeypatch, capsys):
     home = _home(tmp_path, '[backend]\nprotocol = "nope"\n')
     monkeypatch.setenv("FOUNDRY_HOME", str(home))
-    assert app.cmd_doctor(argparse.Namespace()) == 1
+    assert cmd_doctor(argparse.Namespace()) == 1
     assert "anthropic_messages" in capsys.readouterr().out
 
 
 def test_doctor_accepts_anthropic(tmp_path, monkeypatch, capsys):
     home = _home(tmp_path, ANTHROPIC_TOML)
     monkeypatch.setenv("FOUNDRY_HOME", str(home))
-    app.cmd_doctor(argparse.Namespace())
+    cmd_doctor(argparse.Namespace())
     out = capsys.readouterr().out
     assert "protocol  anthropic_messages" in out
     assert "api.anthropic.com" in out

@@ -15,6 +15,7 @@ import json
 import pytest
 
 from foundry.cli import app
+from foundry.cli.session_commands import _choose_resume
 from foundry.core.events import EXIT_CODES, TerminalStatus
 from foundry.core.resume import latest_session, recent_sessions
 
@@ -29,10 +30,10 @@ FAILED = EXIT_CODES[TerminalStatus.FAILED]
 def _chosen(argv, monkeypatch, *, interactive=False, answers=()):
     """What `foundry resume` would continue: the parsed arguments after the
     choice, and what it said."""
-    monkeypatch.setattr(app, "_interactive", lambda: interactive)
+    monkeypatch.setattr("foundry.cli.session_commands._interactive", lambda: interactive)
     console = _Answers(answers)
     args = app.build_parser().parse_args(argv)
-    stop = app._choose_resume(args, console)
+    stop = _choose_resume(args, console)
     return stop, args, " ".join(console.printed)
 
 

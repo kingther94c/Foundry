@@ -21,7 +21,7 @@ import sys
 
 import pytest
 
-from foundry.cli import app
+from foundry.cli.wiring import _guard_credentials, build
 from foundry.core import winapi
 from foundry.core.config import McpServerConfig, ShellEnvironmentPolicy, load_config
 from foundry.core.hooks import Hook, HookSet
@@ -119,7 +119,7 @@ def test_a_session_withholds_what_its_configuration_reads_a_credential_from(
         'env_http_headers = { "X-Tenant" = "DOCS_TENANT" }\n'
         '[shell_environment_policy]\ninherit = "all"\ninclude = ["NPM_TOKEN"]\n')))
     assert redactor.registered_values() == ()
-    app._guard_credentials(config)
+    _guard_credentials(config)
     assert withheld == {"GATEWAY_AUTH", "CORP_ID", "DOCS_BEARER", "DOCS_TENANT"}
     # Registered now, before any command builds an environment.
     assert redactor.registered_values() == ("npm-secret-0123456789",)
@@ -130,8 +130,8 @@ def test_a_session_withholds_what_its_configuration_reads_a_credential_from(
 
 def test_build_guards_before_anything_starts(repo, home, monkeypatch):
     guarded = []
-    monkeypatch.setattr(app, "_guard_credentials", guarded.append)
-    wiring = app.build(repo, home=home, overrides=OVERRIDES)
+    monkeypatch.setattr("foundry.cli.wiring._guard_credentials", guarded.append)
+    wiring = build(repo, home=home, overrides=OVERRIDES)
     try:
         assert guarded == [wiring.config]
     finally:

@@ -12,6 +12,7 @@ import pytest
 
 from foundry.cli import app
 from foundry.cli.repl import CODEX_COMMANDS
+from foundry.cli.wiring import _close, _config_args, build
 from foundry.core.config import Config, load_config, parse_settings
 from foundry.core.errors import ConfigError
 from foundry.core.features import BY_NAME, CODEX_FEATURES, FEATURES, refusal, state
@@ -172,7 +173,7 @@ def test_a_resumed_session_s_goal_stays_in_its_journal_with_goals_off(repo, tmp_
     wiring = _wire(repo, home, [turn(text="partly")])
     wiring.runtime.change_goal(Goal("ship it", token_budget=1000), by="user")
     wiring.runtime.run_turn("go")
-    app._close(wiring, TerminalStatus.CANCELLED, "killed")
+    _close(wiring, TerminalStatus.CANCELLED, "killed")
     (home / "config.toml").write_text("[features]\ngoals = false\n", encoding="utf-8")
     resumed = _wire(repo, home, [], resume="last")
     assert resumed.runtime.goal is None
@@ -257,16 +258,16 @@ def _flags(*argv: str) -> argparse.Namespace:
 
 
 def test_enable_and_disable_are_dash_c_features():
-    settings = app._config_args(_flags("--disable", "multi_agent", "--enable", "goals",
+    settings = _config_args(_flags("--disable", "multi_agent", "--enable", "goals",
                                        "-c", "features.hooks=false"))["settings"]
     assert settings == {"features": {"hooks": False, "multi_agent": False, "goals": True}}
     with pytest.raises(ConfigError, match="--enable and --disable both name goals"):
-        app._config_args(_flags("--enable", "goals", "--disable", "goals"))
+        _config_args(_flags("--enable", "goals", "--disable", "goals"))
 
 
 def test_enable_reaches_the_session(repo, tmp_path):
-    settings = app._config_args(_flags("--disable", "multi_agent"))["settings"]
-    wiring = app.build(repo, home=_home(tmp_path), settings=settings,
+    settings = _config_args(_flags("--disable", "multi_agent"))["settings"]
+    wiring = build(repo, home=_home(tmp_path), settings=settings,
                        overrides={"model": "fake"})
     try:
         assert "spawn_agent" not in wiring.runtime.registry.names()

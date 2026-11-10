@@ -27,7 +27,7 @@ from foundry.core.conversation import Message, Role, ToolUseBlock
 from foundry.core.winapi import CREATE_NO_WINDOW, IS_WINDOWS, find_program
 
 if TYPE_CHECKING:
-    from foundry.cli.app import Wiring
+    from foundry.cli.wiring import Wiring
 
 # The text, from base64 on the input, put on the clipboard -- kept there
 # after PowerShell ends, and tried again while another program holds it.

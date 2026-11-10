@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from foundry.cli.app import unattended
+from foundry.cli.unattended import unattended
 from foundry.core.policy.engine import Mode, PolicyEngine, Rule, Verdict
 from foundry.core.prompts import base_system_prompt, permissions_paragraph
 from foundry.core.session import ArtifactStore

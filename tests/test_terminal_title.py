@@ -11,10 +11,10 @@ import io
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
 from foundry.cli.render import Renderer
 from foundry.cli.title import ACTION_REQUIRED, MAX_TITLE, clean, compose
-from foundry.core.events import ApprovalChoice, ApprovalKind, ApprovalRequest
+from foundry.cli.wiring import _close, build
+from foundry.core.events import ApprovalChoice, ApprovalKind, ApprovalRequest, TerminalStatus
 from foundry.core.config import DEFAULT_TERMINAL_TITLE, load_config
 from foundry.core.errors import ConfigError
 
@@ -174,12 +174,12 @@ def test_a_session_at_a_terminal_writes_one_and_exec_does_not(repo, tmp_path):
     assert facts["project-name"] == repo.name and not facts["thread-name"]
     assert facts["thread-id"] == wiring.session.session_id
     assert facts["model"] == wiring.runtime.model
-    unattended = app.build(repo, home=tmp_path / "home", interactive=False,
+    unattended = build(repo, home=tmp_path / "home", interactive=False,
                            overrides=OVERRIDES, console=Console(file=io.StringIO()))
     try:
         assert unattended.renderer.title_items == ()
     finally:
-        app._close(unattended, app.TerminalStatus.CANCELLED, "done")
+        _close(unattended, TerminalStatus.CANCELLED, "done")
 
 
 # --- /title -------------------------------------------------------------------

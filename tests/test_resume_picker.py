@@ -12,7 +12,10 @@ import builtins
 import pytest
 
 from foundry.cli import app
+from foundry.cli.session_commands import PICK_LIMIT, pick_session
+from foundry.cli.wiring import _close
 from foundry.core import session as session_module
+from foundry.core.errors import FoundryError
 from foundry.core.events import EXIT_CODES, TerminalStatus
 from foundry.core.resume import recent_sessions, summarize
 from foundry.core.session import EventType, SessionStore
@@ -93,19 +96,19 @@ def test_enter_is_the_newest_and_a_number_picks(home, repo):
     older = _session(home, repo, 1, "fix the parser", "completed")
     newer = _session(home, repo, 2, "add a flag\nwith these details")
     console = _Answers([""])
-    assert app.pick_session(console, repo) == newer
+    assert pick_session(console, repo) == newer
     shown = "\n".join(console.printed)
     assert " 1  " + newer in shown and " 2  " + older in shown
     assert "fix the parser" in shown and "completed" in shown and "interrupted" in shown
     assert "add a flag" in shown and "with these details" not in shown
-    assert app.pick_session(_Answers(["2"]), repo) == older
+    assert pick_session(_Answers(["2"]), repo) == older
 
 
 def test_a_wrong_answer_is_asked_again(home, repo):
     _session(home, repo, 1, "a")
     newer = _session(home, repo, 2, "b")
     console = _Answers(["0", "3", "x", " 1 "])
-    assert app.pick_session(console, repo) == newer
+    assert pick_session(console, repo) == newer
     assert console.asked == 4
     assert sum("a number from 1 to 2" in p for p in console.printed) == 3
 
@@ -114,7 +117,7 @@ def test_a_wrong_answer_is_asked_again(home, repo):
 def test_ctrl_c_resumes_none(home, repo, stop):
     _session(home, repo, 1, "a")
     _session(home, repo, 2, "b")
-    assert app.pick_session(_Answers([stop]), repo) is None
+    assert pick_session(_Answers([stop]), repo) is None
 
 
 @pytest.mark.parametrize("count", [0, 1])
@@ -122,7 +125,7 @@ def test_with_nothing_to_choose_between_it_does_not_ask(home, repo, count):
     for number in range(count):
         _session(home, repo, number + 1, "a")
     console = _Answers([])
-    assert app.pick_session(console, repo) == "last"
+    assert pick_session(console, repo) == "last"
     assert console.asked == 0 and console.printed == []
 
 
@@ -130,9 +133,9 @@ def test_at_most_ten_are_offered_and_a_long_message_is_cut(home, repo):
     for number in range(1, 13):
         _session(home, repo, number, "word " * 40)
     console = _Answers([""])
-    app.pick_session(console, repo)
+    pick_session(console, repo)
     lines = [p for p in console.printed if "-0000000" in p]
-    assert len(lines) == app.PICK_LIMIT
+    assert len(lines) == PICK_LIMIT
     assert all(("word " * 40).strip() not in line and "..." in line for line in lines)
 
 
@@ -140,15 +143,15 @@ def test_at_most_ten_are_offered_and_a_long_message_is_cut(home, repo):
 
 
 def _resumed(monkeypatch, interactive, answer=""):
-    monkeypatch.setattr(app, "_interactive", lambda: interactive)
+    monkeypatch.setattr("foundry.cli.session_commands._interactive", lambda: interactive)
     monkeypatch.setattr(builtins, "input", lambda prompt="": answer)
     seen = {}
 
     def build(workspace, *, console, resume=None, **flags):
         seen["resume"] = resume
-        raise app.FoundryError("stop here")
+        raise FoundryError("stop here")
 
-    monkeypatch.setattr(app, "build", build)
+    monkeypatch.setattr("foundry.cli.session_commands.build", build)
     return seen
 
 
@@ -203,17 +206,17 @@ def test_the_picked_session_resumes(home, repo, monkeypatch):
     monkeypatch.setattr(session_module, "new_session_id", lambda: next(ids))
     first = _wire(repo, home, [turn(text="one")])
     first.runtime.run_turn("the first task")
-    app._close(first, TerminalStatus.CANCELLED, "done")
+    _close(first, TerminalStatus.CANCELLED, "done")
     second = _wire(repo, home, [turn(text="two")])
     second.runtime.run_turn("the second task")
-    app._close(second, TerminalStatus.CANCELLED, "done")
-    picked = app.pick_session(_Answers(["2"]), repo)
+    _close(second, TerminalStatus.CANCELLED, "done")
+    picked = pick_session(_Answers(["2"]), repo)
     assert picked == first.session.session_id
     third = _wire(repo, home, [], resume=picked)
     try:
         assert third.runtime.context.history[0].text_content == "the first task"
     finally:
-        app._close(third, TerminalStatus.CANCELLED, "done")
+        _close(third, TerminalStatus.CANCELLED, "done")
 
 
 # --- foundry sessions --------------------------------------------------------------

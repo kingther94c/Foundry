@@ -13,9 +13,9 @@ import sys
 
 import pytest
 
-from foundry.cli import app
 from foundry.cli import repl as repl_module
-from foundry.cli.repl import SHELL_USAGE, run_shell
+from foundry.cli.repl import SHELL_USAGE, run_shell, with_note
+from foundry.cli.wiring import _close
 from foundry.core.errors import ToolError
 from foundry.core.events import TerminalStatus
 from foundry.core.redaction import PLACEHOLDER, default_redactor
@@ -92,7 +92,7 @@ def test_the_models_commands_still_show_their_errors(repo, tmp_path):
         result = wiring.runtime.context.history[2].blocks[0]
         assert result.call_id == "c1" and "\n\n[stderr]\nboom\n" in result.content
     finally:
-        app._close(wiring, TerminalStatus.CANCELLED, "done")
+        _close(wiring, TerminalStatus.CANCELLED, "done")
 
 
 @windows
@@ -188,11 +188,11 @@ def test_no_command_run_before_it_can_vouch_for_the_workspace(repo, tmp_path):
         run_shell(wiring, _Recorder([]), "echo changed nothing, perhaps")
         [record] = _records(wiring)
         assert wiring.runtime._last_mutation > history[-1]["event_ordinal"]
-        outcome = wiring.runtime.run_turn(app._with_note(wiring, "is it still fine?"))
+        outcome = wiring.runtime.run_turn(with_note(wiring, "is it still fine?"))
         assert outcome.status is TerminalStatus.PARTIAL
         assert "cannot vouch for it" in outcome.text
     finally:
-        app._close(wiring, TerminalStatus.CANCELLED, "done")
+        _close(wiring, TerminalStatus.CANCELLED, "done")
 
 
 def test_a_session_with_a_command_in_it_resumes(repo, tmp_path):
@@ -204,7 +204,7 @@ def test_a_session_with_a_command_in_it_resumes(repo, tmp_path):
         texts = [m.text_content for m in second.runtime.context.history]
         assert any("\n$ echo hello\nhello" in t for t in texts)
     finally:
-        app._close(second, TerminalStatus.CANCELLED, "done")
+        _close(second, TerminalStatus.CANCELLED, "done")
 
 
 def test_help_says_how_to_run_one(repo, tmp_path):

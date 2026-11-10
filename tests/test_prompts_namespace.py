@@ -84,12 +84,12 @@ def test_it_finds_no_builtin(repo, tmp_path):
 
 
 def test_a_repositorys_prompt_is_reached_where_it_is_trusted(repo, tmp_path):
-    from foundry.cli import app
+    from foundry.cli.wiring import _remember_trust
 
     home = tmp_path / "home"
     (repo / ".foundry" / "prompts").mkdir(parents=True)
     (repo / ".foundry" / "prompts" / "check.md").write_text("Run the checks.", encoding="utf-8")
-    app._remember_trust(home, repo)
+    _remember_trust(home, repo)
     wiring = _wire(repo, home, [turn(text="ok")])
     typist = _repl(wiring, "/prompts:check")
     assert _sent(wiring) == ["Run the checks."]

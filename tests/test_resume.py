@@ -17,7 +17,8 @@ import pytest
 from rich.console import Console
 
 from foundry.cli import app
-from foundry.cli.app import build
+from foundry.cli.repl import repl, with_note
+from foundry.cli.wiring import _announce_resume, _close, build
 from foundry.core.backends.anthropic import build_body
 from foundry.core.backends.replay import ScriptedBackend
 from foundry.core.context import MASK_NOTICE, ContextManager
@@ -215,14 +216,14 @@ def test_the_next_request_is_the_one_an_uninterrupted_session_sends(repo, tmp_pa
     uninterrupted = _wire(repo, tmp_path / "home-a", [*first, turn(text="B is 1")])
     uninterrupted.runtime.run_turn("what is A?")
     uninterrupted.runtime.run_turn("and B?")
-    app._close(uninterrupted, TerminalStatus.CANCELLED, "session ended")
+    _close(uninterrupted, TerminalStatus.CANCELLED, "session ended")
 
     before = _wire(repo, tmp_path / "home-b", first)
     before.runtime.run_turn("what is A?")
-    app._close(before, TerminalStatus.CANCELLED, "session ended")
+    _close(before, TerminalStatus.CANCELLED, "session ended")
     after = _wire(repo, tmp_path / "home-b", [turn(text="B is 1")], resume="last")
-    after.runtime.run_turn(app._with_note(after, "and B?"))
-    app._close(after, TerminalStatus.CANCELLED, "session ended")
+    after.runtime.run_turn(with_note(after, "and B?"))
+    _close(after, TerminalStatus.CANCELLED, "session ended")
 
     expected = uninterrupted.runtime.backend.seen[-1].messages
     sent = after.runtime.backend.seen[0].messages
@@ -359,7 +360,7 @@ def test_after_finish_a_resumed_session_needs_evidence_of_its_own(repo, tmp_path
                                    cite_latest(first)])
     assert first.runtime.run_turn("check python").status is TerminalStatus.COMPLETED
     old = first.runtime.registry.tools["run_command"].history[-1]["event_ordinal"]
-    app._close(first, TerminalStatus.CANCELLED, "session ended")
+    _close(first, TerminalStatus.CANCELLED, "session ended")
 
     second = _wire(repo, home, [finish("f2", claims=[{"claim_text": "python runs",
                                                       "command_event_id": old}])],
@@ -367,8 +368,8 @@ def test_after_finish_a_resumed_session_needs_evidence_of_its_own(repo, tmp_path
     accepted = second.runtime.context.history[-1].blocks[0]
     assert accepted.call_id == "f9" and not accepted.is_error
     assert accepted.content == "finish was accepted: the session ended with status completed."
-    outcome = second.runtime.run_turn(app._with_note(second, "is python there?"))
-    app._close(second, TerminalStatus.CANCELLED, "session ended")
+    outcome = second.runtime.run_turn(with_note(second, "is python there?"))
+    _close(second, TerminalStatus.CANCELLED, "session ended")
     assert outcome.status is TerminalStatus.PARTIAL
     assert "not a recorded command" in outcome.text
 
@@ -376,8 +377,8 @@ def test_after_finish_a_resumed_session_needs_evidence_of_its_own(repo, tmp_path
     third.runtime.backend = _Live([turn(call("c3", "run_command",
                                              {"command": "python --version"})),
                                    cite_latest(third)])
-    outcome = third.runtime.run_turn(app._with_note(third, "check it properly"))
-    app._close(third, TerminalStatus.CANCELLED, "session ended")
+    outcome = third.runtime.run_turn(with_note(third, "check it properly"))
+    _close(third, TerminalStatus.CANCELLED, "session ended")
     assert outcome.status is TerminalStatus.COMPLETED, outcome.text
 
     ordinals = [r.ordinal for r in SessionStore.read_records(third.session.path)]
@@ -391,12 +392,12 @@ def test_files_changed_while_stopped_are_guarded(repo, tmp_path):
                                turn(call("c2", "apply_patch", {"patch": PATCH_A})),
                                turn(text="patched")])
     first.runtime.run_turn("change A")
-    app._close(first, TerminalStatus.CANCELLED, "session ended")
+    _close(first, TerminalStatus.CANCELLED, "session ended")
     assert (repo / "a.py").read_text(encoding="utf-8") == "A = 2\n"
 
     (repo / "b.py").write_text("B = 5\n", encoding="utf-8")  # the user, between runs
     second = _wire(repo, home, [], resume="last")
-    app._close(second, TerminalStatus.CANCELLED, "session ended")
+    _close(second, TerminalStatus.CANCELLED, "session ended")
 
     assert second.outside == frozenset({"b.py"})
     assert "patching them asks first: b.py." in second.note
@@ -415,7 +416,7 @@ def test_a_moved_head_is_refused_and_nothing_is_written(repo, tmp_path):
     home = tmp_path / "home"
     first = _wire(repo, home, [turn(text="hello")])
     first.runtime.run_turn("hi")
-    app._close(first, TerminalStatus.CANCELLED, "session ended")
+    _close(first, TerminalStatus.CANCELLED, "session ended")
     before = first.session.path.read_bytes()
     start = first.runtime.git_baseline.head
 
@@ -565,8 +566,8 @@ def test_a_session_that_goes_on_after_a_blocked_turn_records_how_it_ended(repo, 
 
     wiring = _wire(repo, tmp_path / "home", [])
     wiring.runtime.backend = _DropsOnce([None, turn(text="here now")])
-    status = app._repl(wiring, _Typist(["hello?", "hello again", "/exit"]))
-    app._close(wiring, status, "session ended")
+    status = repl(wiring, _Typist(["hello?", "hello again", "/exit"]))
+    _close(wiring, status, "session ended")
 
     endings = [r.payload["status"] for r in SessionStore.read_records(wiring.session.path)
                if r.type == EventType.TERMINATION]
@@ -580,7 +581,7 @@ def test_a_session_that_goes_on_after_a_blocked_turn_records_how_it_ended(repo, 
 def _one_session(repo, home):
     wiring = _wire(repo, home, [turn(text="hello")])
     wiring.runtime.run_turn("hi")
-    app._close(wiring, TerminalStatus.CANCELLED, "session ended")
+    _close(wiring, TerminalStatus.CANCELLED, "session ended")
     return wiring.session
 
 
@@ -679,8 +680,8 @@ def test_a_change_of_model_is_announced(repo, tmp_path):
                    overrides={"model": "another"})
     heard = []
     wiring.runtime.events.subscribe(heard.append)
-    app._announce_resume(wiring)
-    app._close(wiring, TerminalStatus.CANCELLED, "session ended")
+    _announce_resume(wiring)
+    _close(wiring, TerminalStatus.CANCELLED, "session ended")
     texts = [e.text for e in heard if isinstance(e, Notice)]
     assert any(t.startswith(f"resumed session {session.session_id}") for t in texts)
     assert any("continues on" in t and "another" in t for t in texts)

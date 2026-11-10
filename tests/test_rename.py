@@ -15,7 +15,9 @@ import argparse
 import pytest
 
 from foundry.cli import app
+from foundry.cli.session_commands import _choose_resume, _session_line
 from foundry.core.errors import ResumeError
+from foundry.core.events import EXIT_CODES, TerminalStatus
 from foundry.core.resume import (
     MAX_NAME,
     journal_name,
@@ -195,7 +197,7 @@ def test_resume_all_finds_a_name_in_any_workspace(home, repo, tmp_path):
     there = _session(home, other, 1, "elsewhere")
     args = argparse.Namespace(resume="elsewhere", all=True, last=False, task=None,
                               workspace=str(repo))
-    assert app._choose_resume(args, _Quiet()) is None
+    assert _choose_resume(args, _Quiet()) is None
     assert args.resume == there and args.workspace == str(other)
 
 
@@ -203,7 +205,7 @@ def test_resume_all_with_a_name_no_session_has(home, repo):
     args = argparse.Namespace(resume="nothing", all=True, last=False, task=None,
                               workspace=str(repo))
     quiet = _Quiet()
-    assert app._choose_resume(args, quiet) == app.EXIT_CODES[app.TerminalStatus.FAILED]
+    assert _choose_resume(args, quiet) == EXIT_CODES[TerminalStatus.FAILED]
     assert "no such session: nothing" in quiet.text()
 
 
@@ -233,7 +235,7 @@ def test_listings_show_the_name(home, repo, capsys):
 
 def test_the_session_line_marks_the_name(home, repo):
     _session(home, repo, 1, "pa[red]rser")
-    line = app._session_line(summarize(home / "sessions" / _session_id(1)))
+    line = _session_line(summarize(home / "sessions" / _session_id(1)))
     assert "[bold]pa\\[red]rser[/bold]" in line
 
 

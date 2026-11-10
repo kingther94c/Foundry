@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import pytest
 
+from foundry.cli.wiring import _close
 from foundry.core.config import ShellEnvironmentPolicy, load_config
 from foundry.core.errors import ConfigError
 from foundry.core.redaction import Redactor
 from foundry.core.winapi import child_environment
 
-from foundry.cli import app
 from foundry.core.events import TerminalStatus
 
 from test_mcp import _config
@@ -161,7 +161,7 @@ def test_the_models_commands_get_it_too(repo, tmp_path, monkeypatch):
         turn(call("c1", "run_command", {"command": 'Write-Output "<$env:FOUNDRY_TEST_FLAG>"'})),
         turn(text="done")])
     wiring.runtime.run_turn("what is the flag?")
-    app._close(wiring, TerminalStatus.CANCELLED, "session ended")
+    _close(wiring, TerminalStatus.CANCELLED, "session ended")
     results = [block.content for message in wiring.runtime.context.history
                for block in message.blocks if getattr(block, "call_id", "") == "c1"
                and hasattr(block, "is_error")]

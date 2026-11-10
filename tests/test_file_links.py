@@ -17,11 +17,11 @@ import pytest
 from rich.console import Console
 from rich.text import Text
 
-from foundry.cli import app
 from foundry.cli.file_links import file_link
 from foundry.cli.markdown import MarkdownLines, inline
 from foundry.cli.render import Renderer, sanitize
 from foundry.cli.repl import RunTask, run_task
+from foundry.cli.wiring import _close
 from foundry.core.config import load_config, settings_layer
 from foundry.core.errors import ConfigError
 from foundry.core.events import MessageDelta, Notice, TerminalStatus
@@ -210,7 +210,7 @@ def test_a_session_links_what_its_model_cites(repo, tmp_path):
     assert wiring.renderer.workspace == wiring.workspace.root
     run_task(wiring, RunTask("check"))
     assert _uri(repo / "a.py", ":1", "windsurf") in wiring.renderer.console.file.getvalue()
-    app._close(wiring, TerminalStatus.COMPLETED, "test")
+    _close(wiring, TerminalStatus.COMPLETED, "test")
 
 
 def test_the_model_is_told_how_to_cite():

@@ -23,7 +23,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
+from foundry.cli.wiring import build
 from foundry.core.config import load_config, parse_settings
 from foundry.core.conversation import Role
 from foundry.core.errors import ConfigError, StreamDropped, TransientError
@@ -136,7 +136,7 @@ def _session(repo, tmp_path, server, protocol, *script, extra=""):
         f'[backend]\nprotocol = "{protocol}"\nbase_url = "http://{host}:{port}/v1"\n'
         f'model = "m"\nrequest_max_retries = 2\n{extra}', encoding="utf-8")
     out = io.StringIO()
-    wiring = app.build(repo, home=home, console=Console(file=out, width=300))
+    wiring = build(repo, home=home, console=Console(file=out, width=300))
     slept, notices = [], []
     wiring.runtime.sleep = slept.append
     wiring.runtime.events.subscribe(
@@ -278,7 +278,7 @@ def test_a_re_asked_session_resumes_as_if_it_had_not_been(repo, tmp_path, server
     session_id = wiring.session.path.parent.name
     history = wiring.runtime.context.history
     wiring.session.close()
-    again = app.build(repo, home=tmp_path / "home",
+    again = build(repo, home=tmp_path / "home",
                       console=Console(file=io.StringIO(), width=100), resume=session_id)
     assert again.runtime.context.history == history
     again.session.close()

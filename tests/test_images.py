@@ -21,6 +21,7 @@ from rich.console import Console
 from foundry.cli import app
 from foundry.cli import repl as repl_module
 from foundry.cli.repl import dispatch, run_task, RunTask
+from foundry.cli.wiring import _close, build
 from foundry.core import images
 from foundry.core.backends.anthropic import build_body as anthropic_body
 from foundry.core.backends.openai_compat import build_body as compat_body
@@ -36,6 +37,7 @@ from foundry.core.conversation import (
     TurnRequest,
 )
 from foundry.core.errors import ConfigError, ImageRejected, ToolError
+from foundry.core.events import TerminalStatus
 from foundry.core.mcp import McpTool, render_result
 from foundry.core.redaction import Redactor
 from foundry.core.resume import IMAGE_NOT_KEPT, read_journal
@@ -457,7 +459,7 @@ def _home(tmp_path, text=""):
 
 def _wiring(repo, tmp_path, *items):
     out = io.StringIO()
-    wiring = app.build(repo, home=_home(tmp_path), console=Console(file=out, width=200),
+    wiring = build(repo, home=_home(tmp_path), console=Console(file=out, width=200),
                        overrides={"base_url": "http://127.0.0.1:9/v1", "model": "fake"},
                        settings=parse_settings(list(items)))
     return wiring, out
@@ -490,7 +492,7 @@ def test_slash_image_queues_an_image_for_the_next_message(repo, tmp_path, monkey
         assert len(wiring.images) == images.MAX_IMAGES_PER_MESSAGE
         assert "at most" in out.getvalue()
     finally:
-        app._close(wiring, app.TerminalStatus.CANCELLED, "done")
+        _close(wiring, TerminalStatus.CANCELLED, "done")
 
 
 def test_a_backend_without_images_offers_none(repo, tmp_path, monkeypatch):
@@ -504,7 +506,7 @@ def test_a_backend_without_images_offers_none(repo, tmp_path, monkeypatch):
         dispatch(wiring, Console(file=out, width=200), "image", "shot.png")
         assert "set up without images" in out.getvalue() and wiring.images == []
     finally:
-        app._close(wiring, app.TerminalStatus.CANCELLED, "done")
+        _close(wiring, TerminalStatus.CANCELLED, "done")
     with pytest.raises(ConfigError, match="backend.images must be true or false"):
         load_config(home=_home(tmp_path, '[backend]\nimages = "yes"\n'))
 

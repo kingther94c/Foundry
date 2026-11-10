@@ -8,8 +8,8 @@ while ending it stays one key away and end of input still ends it at once.
 
 from __future__ import annotations
 
-from foundry.cli import app
-from foundry.cli.repl import CTRL_C_AGAIN
+from foundry.cli.repl import CTRL_C_AGAIN, repl
+from foundry.cli.wiring import _close
 from foundry.core.events import TerminalStatus
 from foundry.core.session import SessionStore
 
@@ -30,9 +30,9 @@ class _Keys(_Recorder):
 def _session(repo, tmp_path, turns, *keys):
     wiring = _wire(repo, tmp_path / "home", turns)
     typist = _Keys(list(keys))
-    status = app._repl(wiring, typist)
+    status = repl(wiring, typist)
     path = wiring.session.path
-    app._close(wiring, status, "session ended")
+    _close(wiring, status, "session ended")
     return wiring, typist, status, path
 
 

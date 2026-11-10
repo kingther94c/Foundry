@@ -11,8 +11,13 @@ from __future__ import annotations
 import pytest
 
 from foundry.cli import app
+from foundry.cli.repl import NEW_SESSION
+from foundry.cli.session_commands import cmd_session
+from foundry.cli.unattended import _write_last_message
+from foundry.cli.wiring import _config_args
 from foundry.core.config import load_config, parse_settings
 from foundry.core.errors import ConfigError
+from foundry.core.events import EXIT_CODES, TerminalStatus
 from foundry.core.policy.engine import Mode, PolicyEngine
 from foundry.core.prompts import UNATTENDED_LINE, mode_line, permissions_paragraph
 from test_resume import fake_model, repo  # noqa: F401  (fixtures)
@@ -156,12 +161,12 @@ def _parsed(*argv):
 def test_the_flags_become_build_arguments():
     args = _parsed("run", "-m", "m1", "--mode", "accept_edits", "-c", "max_tool_rounds=5",
                    "--profile", "work")
-    assert app._config_args(args) == {
+    assert _config_args(args) == {
         "overrides": {"model": "m1", "mode": Mode.ACCEPT_EDITS},
         "profile": "work",
         "settings": {"runtime": {"max_tool_rounds": 5}},
     }
-    assert app._config_args(_parsed("run")) == {"overrides": None, "profile": None,
+    assert _config_args(_parsed("run")) == {"overrides": None, "profile": None,
                                                  "settings": {}}
 
 
@@ -174,7 +179,7 @@ def test_exec_offers_only_the_modes_an_unattended_run_can_use(capsys):
 
 def test_a_flag_first_means_run(monkeypatch):
     seen = []
-    monkeypatch.setattr(app, "cmd_session", lambda args: seen.append(args) or 0)
+    monkeypatch.setattr("foundry.cli.app.cmd_session", lambda args: seen.append(args) or 0)
     assert app.main(["-m", "m1", "fix it"]) == 0
     assert seen[0].command == "run" and seen[0].model == "m1" and seen[0].task == "fix it"
     assert app.main([]) == 0 and seen[1].command == "run"
@@ -188,7 +193,7 @@ def test_a_bare_word_is_still_a_subcommand(capsys):
 
 def test_a_new_session_keeps_the_flags(repo, tmp_path, monkeypatch):
     calls = []
-    real_build = app.build
+    from foundry.cli.wiring import build as real_build
 
     def build(*args, **kwargs):
         calls.append(kwargs)
@@ -196,12 +201,13 @@ def test_a_new_session_keeps_the_flags(repo, tmp_path, monkeypatch):
                                     "overrides": {**(kwargs.get("overrides") or {}),
                                                   "base_url": "http://127.0.0.1:9/v1"}})
 
-    ends = iter([app.NEW_SESSION, None])
-    monkeypatch.setattr(app, "build", build)
-    monkeypatch.setattr(app, "_repl", lambda wiring, console, first=None: next(ends) or
-                        app.TerminalStatus.CANCELLED)
+    ends = iter([NEW_SESSION, None])
+    monkeypatch.setattr("foundry.cli.session_commands.build", build)
+    monkeypatch.setattr("foundry.cli.session_commands._repl",
+                        lambda wiring, console, first=None: next(ends) or
+                        TerminalStatus.CANCELLED)
     args = _parsed("run", "--workspace", str(repo), "-m", "m1", "-c", "max_tool_rounds=5")
-    assert app.cmd_session(args) == app.EXIT_CODES[app.TerminalStatus.CANCELLED]
+    assert cmd_session(args) == EXIT_CODES[TerminalStatus.CANCELLED]
     assert len(calls) == 2
     for kwargs in calls:
         assert kwargs["overrides"]["model"] == "m1"
@@ -284,14 +290,14 @@ def test_the_last_message_is_scrubbed(tmp_path, monkeypatch):
     secret = "s3cr3t-value-for-the-file-0123"
     redactor = Redactor()
     redactor.register(secret)
-    monkeypatch.setattr(app, "default_redactor", lambda: redactor)
+    monkeypatch.setattr("foundry.cli.unattended.default_redactor", lambda: redactor)
     out = tmp_path / "last.txt"
-    app._write_last_message(out, f"the key was {secret}", Console())
+    _write_last_message(out, f"the key was {secret}", Console())
     assert out.read_text(encoding="utf-8") == "the key was [redacted]"
 
 
 def test_a_last_message_that_cannot_be_written_is_reported(tmp_path, capsys):
     from rich.console import Console
 
-    app._write_last_message(tmp_path / "missing" / "dir" / "last.txt", "x", Console())
+    _write_last_message(tmp_path / "missing" / "dir" / "last.txt", "x", Console())
     assert "could not write" in capsys.readouterr().out

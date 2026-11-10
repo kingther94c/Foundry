@@ -15,9 +15,9 @@ import io
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
 from foundry.cli.render import QUIET_WHEN_OK, Renderer
 from foundry.cli.repl import RunTask, run_task
+from foundry.cli.wiring import _close
 from foundry.core.events import TerminalStatus, ToolBegin, ToolEnd
 from foundry.core.runtime import _tool_end_summary
 from foundry.core.tools.base import Operation, ToolKind, ToolOutput
@@ -143,4 +143,4 @@ def test_a_session_reads_quietly_and_says_what_failed(repo, tmp_path):
     patch_end = [line for line in lines if line.startswith("   failed missing.py")]
     assert patch_end and "file does not exist" in patch_end[0]
     assert "updated a.py (+1 -1)" in "\n".join(lines)            # what landed, as its diff
-    app._close(wiring, TerminalStatus.COMPLETED, "test")
+    _close(wiring, TerminalStatus.COMPLETED, "test")

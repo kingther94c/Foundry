@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from foundry.cli.app import build
+from foundry.cli.wiring import build
 from foundry.core.config import load_config
 from foundry.core.errors import ConfigError
 from foundry.core.events import Notice

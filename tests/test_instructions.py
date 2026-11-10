@@ -12,8 +12,7 @@ import io
 
 from rich.console import Console
 
-from foundry.cli import app
-from foundry.cli.app import build
+from foundry.cli.wiring import _confirm_trust, _remember_trust, build
 from foundry.core.prompts import (
     PROJECT_DOC_MAX_BYTES,
     load_instructions,
@@ -153,7 +152,7 @@ def test_a_file_above_the_working_directory_asks_for_trust(tmp_path):
     top = _repo(tmp_path, "pkg")
     _write(top / "AGENTS.md", "repo wide\n")
     out = io.StringIO()
-    assert app._confirm_trust(Console(file=out, width=200), tmp_path / "home", top / "pkg",
+    assert _confirm_trust(Console(file=out, width=200), tmp_path / "home", top / "pkg",
                               interactive=False) is False
     assert "provides Foundry instructions; not loading them" in out.getvalue()
 
@@ -162,7 +161,7 @@ def test_a_session_carries_both_and_status_names_them(repo, tmp_path):
     home = tmp_path / "home"
     _write(home / "FOUNDRY.md", "Prefer small commits.\n")
     _write(repo / "FOUNDRY.md", "Run tests with pytest.\n")
-    app._remember_trust(home, repo)
+    _remember_trust(home, repo)
 
     wiring = _wire(repo, home, [])
     system = wiring.runtime.context.system_message().text_content

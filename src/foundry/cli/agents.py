@@ -30,7 +30,7 @@ from foundry.core.tools.base import ReadTracker, ToolContext, ToolOutput
 from foundry.core.tools.registry import default_registry
 
 if TYPE_CHECKING:
-    from foundry.cli.app import Wiring
+    from foundry.cli.wiring import Wiring
 
 SUBAGENT_READ_ONLY = ("a read-only sub-agent changes nothing: edits and commands are refused; "
                       "its report says what should change")

@@ -16,8 +16,9 @@ import json
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
 from foundry.cli.render import REASONING_LINES, Renderer
+from foundry.cli.unattended import _event_payload
+from foundry.cli.wiring import _close, build
 from foundry.core.backends.anthropic import AnthropicBackend, build_body as anthropic_body
 from foundry.core.backends.base import (
     ReasoningComplete,
@@ -39,7 +40,7 @@ from foundry.core.conversation import (
     Usage,
 )
 from foundry.core.errors import ConfigError
-from foundry.core.events import MessageDelta, Reasoning
+from foundry.core.events import MessageDelta, Reasoning, TerminalStatus
 from foundry.core.redaction import Redactor
 from foundry.core.resume import read_journal
 from foundry.core.session import EventType, SessionStore
@@ -389,7 +390,7 @@ def test_long_reasoning_is_cut_unless_verbose():
 
 
 def test_exec_json_carries_reasoning():
-    assert app._event_payload(Reasoning("why")) == {"kind": "reasoning", "text": "why"}
+    assert _event_payload(Reasoning("why")) == {"kind": "reasoning", "text": "why"}
 
 
 # --- configuration ------------------------------------------------------------------
@@ -419,10 +420,10 @@ def test_dash_c_reaches_both_settings():
 
 
 def _built(repo, tmp_path, *items):
-    wiring = app.build(repo, home=_home(tmp_path), console=Console(file=io.StringIO()),
+    wiring = build(repo, home=_home(tmp_path), console=Console(file=io.StringIO()),
                        overrides={"base_url": "http://127.0.0.1:9/v1", "model": "fake"},
                        settings=parse_settings(list(items)))
-    app._close(wiring, app.TerminalStatus.CANCELLED, "done")
+    _close(wiring, TerminalStatus.CANCELLED, "done")
     return wiring
 
 

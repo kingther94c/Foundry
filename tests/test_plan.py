@@ -16,6 +16,9 @@ from rich.console import Console
 
 from foundry.cli import app
 from foundry.cli.render import Renderer
+from foundry.cli.repl import repl, with_note
+from foundry.cli.unattended import _event_payload
+from foundry.cli.wiring import _announce_resume, _close
 from foundry.core.errors import InvalidToolCall
 from foundry.core.events import (
     ApprovalChoice,
@@ -285,7 +288,7 @@ def test_the_terminal_draws_a_checklist_of_plain_text():
 
 
 def test_exec_json_streams_the_plan_as_data():
-    payload = app._event_payload(PlanUpdated("u1", STEPS, "why"))
+    payload = _event_payload(PlanUpdated("u1", STEPS, "why"))
     assert json.loads(json.dumps(payload)) == {
         "kind": "plan_updated", "call_id": "u1", "explanation": "why", "steps": [
             {"step": "Reproduce the failure", "status": "completed"},
@@ -333,7 +336,7 @@ def test_slash_plan_shows_the_plan(repo, tmp_path):
     wiring = _wire(repo, tmp_path / "home", [
         turn(call("u1", "update_plan", THREE)), turn(text="working on it")])
     typist = _Typist(["/plan", "fix it", "/plan", "/exit"])
-    app._close(wiring, app._repl(wiring, typist), "session ended")
+    _close(wiring, repl(wiring, typist), "session ended")
     first = typist.printed.index(next(p for p in typist.printed if "no plan" in p))
     later = typist.printed[first + 1:]
     assert any("1/3 done" in line for line in later)
@@ -344,18 +347,18 @@ def test_a_resumed_session_shows_its_plan_again(repo, tmp_path):
     home = tmp_path / "home"
     first = _wire(repo, home, [turn(call("u1", "update_plan", THREE)), turn(text="pausing")])
     first.runtime.run_turn("fix it")
-    app._close(first, TerminalStatus.CANCELLED, "session ended")
+    _close(first, TerminalStatus.CANCELLED, "session ended")
 
     resumed = _wire(repo, home, [finish()], resume="last")
     events: list = []
     resumed.runtime.events.subscribe(events.append)
-    app._announce_resume(resumed)
+    _announce_resume(resumed)
     assert resumed.runtime.plan == STEPS
     (shown,) = [e for e in events if isinstance(e, PlanUpdated)]
     assert shown.call_id == "" and shown.steps == STEPS
 
-    outcome = resumed.runtime.run_turn(app._with_note(resumed, "carry on"))
-    app._close(resumed, outcome.status, "session ended")
+    outcome = resumed.runtime.run_turn(with_note(resumed, "carry on"))
+    _close(resumed, outcome.status, "session ended")
     assert "[pending] Run the tests" in outcome.summary
 
 

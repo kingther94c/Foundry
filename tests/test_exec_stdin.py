@@ -12,6 +12,7 @@ import io
 import pytest
 
 from foundry.cli import app
+from foundry.cli.unattended import MAX_STDIN_TASK_BYTES, _task_from_stdin
 
 from test_cli_flags import _exec_home
 from test_resume import fake_model, repo  # noqa: F401 (fixtures)
@@ -60,7 +61,7 @@ def test_the_task_on_stdin_is_the_task(repo, tmp_path, monkeypatch, capsys, fake
 @pytest.mark.parametrize("data, tty, message", [
     (b"", False, "stdin held no task"),
     (b"  \r\n\n", False, "stdin held no task"),
-    (b"x" * (app.MAX_STDIN_TASK_BYTES + 1), False, "larger than 1 MB"),
+    (b"x" * (MAX_STDIN_TASK_BYTES + 1), False, "larger than 1 MB"),
     (b"typed", True, "pipe it in"),
 ], ids=["empty", "blank", "too-large", "a-terminal"])
 def test_no_task_on_stdin_is_refused(repo, tmp_path, monkeypatch, capsys, data, tty, message):
@@ -70,8 +71,8 @@ def test_no_task_on_stdin_is_refused(repo, tmp_path, monkeypatch, capsys, data, 
 
 
 def test_a_task_of_exactly_the_limit_is_read(monkeypatch):
-    monkeypatch.setattr("sys.stdin", _Pipe(b"y" * app.MAX_STDIN_TASK_BYTES))
-    assert len(app._task_from_stdin()) == app.MAX_STDIN_TASK_BYTES
+    monkeypatch.setattr("sys.stdin", _Pipe(b"y" * MAX_STDIN_TASK_BYTES))
+    assert len(_task_from_stdin()) == MAX_STDIN_TASK_BYTES
 
 
 def test_a_text_stream_without_bytes_is_read_too(monkeypatch):
@@ -83,13 +84,13 @@ def test_a_text_stream_without_bytes_is_read_too(monkeypatch):
             return "from a text stream\n"
 
     monkeypatch.setattr("sys.stdin", TextOnly())
-    assert app._task_from_stdin() == "from a text stream"
+    assert _task_from_stdin() == "from a text stream"
 
 
 def test_no_stdin_at_all_is_refused(monkeypatch):
     monkeypatch.setattr("sys.stdin", None)
     with pytest.raises(ValueError, match="pipe it in"):
-        app._task_from_stdin()
+        _task_from_stdin()
 
 
 def test_a_task_named_on_the_command_line_does_not_read_stdin(repo, tmp_path, monkeypatch,

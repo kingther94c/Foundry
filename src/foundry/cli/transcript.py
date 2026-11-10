@@ -22,7 +22,7 @@ from foundry.core.conversation import ImageBlock, Role, TextBlock, ToolUseBlock
 from foundry.core.errors import FoundryError
 
 if TYPE_CHECKING:
-    from foundry.cli.app import Wiring
+    from foundry.cli.wiring import Wiring
 
 # The last messages shown; a long session's earlier ones are counted.
 MAX_SHOWN = 40

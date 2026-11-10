@@ -16,6 +16,7 @@ import pytest
 
 from foundry.cli import app
 from foundry.cli.repl import REVIEW_AS_ASKED, REVIEW_READ_ONLY, REVIEW_UNCOMMITTED
+from foundry.cli.unattended import REVIEW_FINISH
 from foundry.core.tools.git import run_git
 
 from test_cli_e2e import text_turn, tool_turn
@@ -56,7 +57,7 @@ def test_the_uncommitted_changes_reviewed_read_only(repo, tmp_path, monkeypatch,
     assert REVIEW in captured.out and REVIEW in out.read_text(encoding="utf-8")
     assert "reviewing the uncommitted changes; nothing is changed" in captured.err
     task = _task(httpd)
-    assert task.startswith(REVIEW_UNCOMMITTED) and task.endswith(app.REVIEW_FINISH)
+    assert task.startswith(REVIEW_UNCOMMITTED) and task.endswith(REVIEW_FINISH)
     refused = [m["content"] for m in httpd.requests[3]["messages"] if m["role"] == "tool"]
     assert "+B = 5" in refused[0]
     assert all(REVIEW_READ_ONLY in r for r in refused[1:]) and len(refused) == 3

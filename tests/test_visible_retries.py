@@ -20,6 +20,7 @@ from rich.console import Console
 
 from foundry.cli import app
 from foundry.cli.report import render
+from foundry.cli.wiring import build
 from foundry.core.backends.anthropic import AnthropicBackend
 from foundry.core.backends.openai_compat import OpenAICompatBackend
 from foundry.core.backends.responses import ResponsesBackend
@@ -230,7 +231,7 @@ BUSY = (503, {"Retry-After": "0"}, '{"error": {"message": "the gateway is busy"}
 def test_a_session_says_it_is_retrying_and_journals_it(repo, tmp_path, scripted):
     scripted.script = [BUSY, BUSY, (200, {}, _ok("A is 1"))]
     out = io.StringIO()
-    wiring = app.build(repo, home=_home(tmp_path, scripted),
+    wiring = build(repo, home=_home(tmp_path, scripted),
                        console=Console(file=out, width=200))
     notices = []
     wiring.runtime.events.subscribe(
@@ -259,12 +260,12 @@ def test_a_retried_session_resumes_as_if_it_had_not_been(repo, tmp_path, scripte
     """The record sits between a request and its response; a resume skips it."""
     scripted.script = [BUSY, (200, {}, _ok("A is 1"))]
     home = _home(tmp_path, scripted)
-    first = app.build(repo, home=home, console=Console(file=io.StringIO(), width=100))
+    first = build(repo, home=home, console=Console(file=io.StringIO(), width=100))
     first.runtime.run_turn("what is A?")
     session_id = first.session.path.parent.name
     history = first.runtime.context.history
     first.session.close()
-    again = app.build(repo, home=home, console=Console(file=io.StringIO(), width=100),
+    again = build(repo, home=home, console=Console(file=io.StringIO(), width=100),
                       resume=session_id)
     assert again.runtime.context.history == history
     again.session.close()

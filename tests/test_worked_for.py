@@ -13,9 +13,9 @@ import io
 import pytest
 from rich.console import Console
 
-from foundry.cli import app
 from foundry.cli.render import Renderer
 from foundry.cli.repl import RunTask, run_task
+from foundry.cli.wiring import _close
 from foundry.core.events import (
     TerminalStatus,
     Termination,
@@ -120,4 +120,4 @@ def test_a_session_says_it(repo, tmp_path):
     wiring.renderer.clock = clock
     run_task(wiring, RunTask("go"))
     assert "worked for 42s" in wiring.renderer.console.file.getvalue()
-    app._close(wiring, TerminalStatus.COMPLETED, "test")
+    _close(wiring, TerminalStatus.COMPLETED, "test")
