@@ -1045,8 +1045,10 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         # What the model is told is the user's to say (D-142): a repository's
         # instructions are its AGENTS.md, labelled as the project's.
         if tighten_only:
+            where = ("a repository's instructions go in its AGENTS.md" if layer == "project"
+                     else "a client's instructions go in its prompt")
             raise ConfigError(f"{layer} config may not set {key}; set it in your own "
-                              "config.toml (a repository's instructions go in its AGENTS.md)")
+                              f"config.toml ({where})")
         value = runtime[key]
         if not isinstance(value, str):
             raise ConfigError(f"{key} must be text, got {type(value).__name__} ({value!r})")
@@ -1076,7 +1078,8 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
             ) from exc
         if tighten_only and mode not in (Mode.PLAN, Mode.DONT_ASK):
             raise ConfigError(
-                f"a repository config may only select a more restrictive mode "
+                f"{'a repository' if layer == 'project' else layer} config may only "
+                f"select a more restrictive mode "
                 f"(plan or dont_ask), not {mode.value!r}"
             )
         config.mode = mode
@@ -1285,9 +1288,12 @@ def _add_hooks_file(config: Config, path: Path, layer: str) -> None:
 
 def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | None = None,
                 home: Path | None = None, profile: str | None = None,
-                settings: dict[str, dict[str, Any]] | None = None) -> Config:
+                settings: dict[str, dict[str, Any]] | None = None,
+                client_settings: dict[str, dict[str, Any]] | None = None) -> Config:
     """``profile`` and ``settings`` (from ``-c``) are command-line layers
-    (D-042); ``overrides`` are flat keys, applied last."""
+    (D-042); ``client_settings`` is a ``foundry mcp-server`` client's
+    ``config``, which may only tighten (D-150); ``overrides`` are flat keys,
+    applied last."""
     config = Config()
     root = home or user_dir()
 
@@ -1322,6 +1328,15 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
 
     if settings:
         _apply(config, settings, "cli (-c)", connection_allowed=True, allow_rules_permitted=True)
+
+    if client_settings:
+        # A foundry mcp-server client's config (D-150), after the server's
+        # own -c, with a repository's limits. Applied as -c, it could point
+        # the backend at a host of its choosing with the user's credential,
+        # read any file as a compact prompt, or turn off the user's hooks:
+        # the client gives tasks, and -c's settings are the user's.
+        _apply(config, client_settings, "the client's", connection_allowed=False,
+               allow_rules_permitted=False)
 
     for key, value in (overrides or {}).items():
         if hasattr(config, key):

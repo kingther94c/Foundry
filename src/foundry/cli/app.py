@@ -294,9 +294,12 @@ def build(workspace_path: Path, *, home: Path | None = None,
           overrides: dict | None = None, console: Console | None = None,
           interactive: bool = True, resume: str | None = None,
           profile: str | None = None, settings: dict | None = None,
+          client_settings: dict | None = None,
           ephemeral: bool = False, trust: bool = False, review: bool = False) -> Wiring:
     """``resume`` names a recorded session to continue: an id, or ``last``.
-    ``profile`` and ``settings`` come from ``--profile`` and ``-c`` (D-042).
+    ``profile`` and ``settings`` come from ``--profile`` and ``-c`` (D-042);
+    ``client_settings`` from a foundry mcp-server client, and only tighten
+    (D-150).
     ``ephemeral``: the journal goes in a folder of its own, outside the
     sessions, and is removed as the session closes (D-132). ``trust``: the
     user trusts the workspace by name, as codex's ``--trust`` (D-137).
@@ -327,13 +330,14 @@ def build(workspace_path: Path, *, home: Path | None = None,
     # The user's own settings first: which files are instructions, and so
     # whether there is anything to ask about, is theirs to say (D-086).
     config = load_config(None, overrides=overrides, home=home, profile=profile,
-                         settings=settings)
+                         settings=settings, client_settings=client_settings)
     trusted = _confirm_trust(console, home, workspace.root, interactive=interactive,
                              fallbacks=config.project_doc_fallback_filenames,
                              read_docs=config.project_doc_max_bytes > 0)
     if trusted:
         config = load_config(workspace.root, overrides=overrides, home=home,
-                             profile=profile, settings=settings)
+                             profile=profile, settings=settings,
+                             client_settings=client_settings)
     if review and config.backend.review_model and "model" not in (overrides or {}):
         # codex's review_model (D-143): the review's whole run is on it.
         config.backend.model = config.backend.review_model

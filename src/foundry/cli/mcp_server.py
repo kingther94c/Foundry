@@ -497,12 +497,12 @@ class Server:
             overrides["model"] = task.model
         if task.mode is not None:
             overrides["mode"] = task.mode
-        settings = {section: dict(values) for section, values in self._settings.items()}
-        for section, values in task.settings.items():
-            settings.setdefault(section, {}).update(values)
+        # The call's settings are the client's, after the server's own -c,
+        # and may only tighten them (D-150).
         wiring = build(where, home=self._home, console=self._console(), interactive=False,
                        resume=resume, overrides=overrides,
-                       profile=task.profile or self._profile, settings=settings)
+                       profile=task.profile or self._profile, settings=self._settings,
+                       client_settings=task.settings)
         unattended(wiring)
         announce_start(wiring)
         return wiring
