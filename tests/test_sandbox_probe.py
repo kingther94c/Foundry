@@ -12,11 +12,18 @@ Python that would change the conclusion fails here instead of being assumed:
   decrypts what DPAPI protects for the user.
 
 Everything the probe changes is under a temporary folder it removes.
+
+They measure the machine the research describes -- a desktop session on
+Windows (D-165) -- and are skipped, saying why, where that is not what they
+would measure (D-169): on a CI runner, and where a process does not even
+start under the probe's tokens, as in a service's session, whose window
+station a restricted token cannot use.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -27,11 +34,29 @@ pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="the probe is Wi
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "sandbox_probe.py"
 
 
+def _why_not_here(probe) -> str:
+    """Why the probe's findings cannot be measured on this machine, or ""."""
+    if os.environ.get("CI"):
+        return ("the probe measures a desktop session (D-165); a CI runner is not the "
+                "machine the research describes")
+    for name, (restricted, low) in probe.MODES.items():
+        with probe.Probe(restricted=restricted, low=low) as run:
+            code, _ = run.run([sys.executable, "-I", "-c", "pass"])
+        if code != 0:
+            return (f"no process starts here under the probe's {name} token (exit "
+                    f"{code:#x}): this session or a policy refuses it, so there is "
+                    "nothing to measure")
+    return ""
+
+
 @pytest.fixture(scope="module")
 def probe():
     spec = importlib.util.spec_from_file_location("sandbox_probe_script", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    why = _why_not_here(module)
+    if why:
+        pytest.skip(why)
     return module
 
 
@@ -92,6 +117,50 @@ def test_pytest_runs_at_low_integrity_and_not_write_restricted(probe):
             codes[name], _ = run.run([sys.executable, "-m", "pytest", "-q", "-p",
                                       "no:cacheprovider", "test_probe.py"])
     assert codes == {"write-restricted": 1, "low integrity": 0}
+
+
+# --- where it is measured (D-169) ----------------------------------------------------
+
+
+class _Unmeasured:
+    """A stand-in for the probe module whose processes all exit with ``code``."""
+
+    MODES = {"write-restricted": (True, False), "low integrity": (False, True)}
+
+    def __init__(self, code: int):
+        exit_code = code
+
+        class Probe:
+            def __init__(self, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def run(self, argv):
+                return exit_code, ""
+
+        self.Probe = Probe
+
+
+def test_on_a_ci_runner_it_is_skipped_saying_why(monkeypatch):
+    monkeypatch.setenv("CI", "true")
+    assert "a CI runner is not the machine the research describes" in \
+        _why_not_here(_Unmeasured(0))
+
+
+def test_where_no_process_starts_it_is_skipped_saying_why(monkeypatch):
+    monkeypatch.delenv("CI", raising=False)
+    assert "under the probe's write-restricted token (exit 0xc0000142)" in \
+        _why_not_here(_Unmeasured(0xC0000142))
+
+
+def test_where_a_process_starts_it_is_measured(monkeypatch):
+    monkeypatch.delenv("CI", raising=False)
+    assert _why_not_here(_Unmeasured(0)) == ""
 
 
 def test_the_probe_leaves_nothing_behind(probe):

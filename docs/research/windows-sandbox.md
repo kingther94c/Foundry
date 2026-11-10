@@ -144,6 +144,9 @@ And the tools, each in the workspace:
   non-elevated session differs in what `LUA_TOKEN` removes, and in who owns
   the folders it makes; the probe should be run there before anything relies
   on these results.
+- Its tests (`tests/test_sandbox_probe.py`) take the measurements again on a
+  desktop session, and are skipped, saying why, on a CI runner and where no
+  process starts under the probe's tokens ([D-169](../decision-log.md)).
 
 ## Conclusion
 
