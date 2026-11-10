@@ -19,7 +19,7 @@
 | M3 corporate Gateway | **partial** | unchanged since 2026-09-01: the entry gate (a tool-call streaming fixture from the Gateway) is not passed, and [OQ-6](open-questions.md) is open |
 | M4 packaging hardening + disclosure | **done** | the wheelhouse is not hash-pinned yet ([OQ-20](open-questions.md)) |
 | Codex parity, items 1-106 | **done** | 2026-11-06 to 2026-11-09, D-039 to D-145; the table below |
-| After parity, P0-P3, P6-P8 | **done** | 2026-11-10, D-146 to D-165; what is left waits on others: P8's lock on a download, P4 on the corporate side, P1's rerun and P5 on a model endpoint |
+| After parity, P0-P3, P6-P9 | **done** | 2026-11-10, D-146 to D-168; what is left waits on others: P8's lock on a download, P4 on the corporate side, P1's rerun and P5 on a model endpoint |
 
 4,860 tests pass (one is skipped) on a machine with no network and no credentials. Every
 feature since D-036 has been verified only against scripted backends: the
@@ -377,6 +377,18 @@ endpoint.
   written from a wheelhouse and installed with `--require-hashes`. The lock
   itself is written when the user allows the download from PyPI. The
   tooling is done (2026-11-10, [D-164](decision-log.md)).
+
+[D-166](decision-log.md), once P6-P8 were done:
+
+- **P9 -- a third round with the model played offline.** What landed since
+  the second round, used as a user would: `foundry mcp-server` driven by a
+  client, session retention and `foundry prune`, a repository's skill,
+  what a command sees of the environment, and approvals at the prompt,
+  across the three protocols. Done
+  (2026-11-10): every task completed; two defects, `foundry-reply` sending
+  the first task's `finish` again unanswered ([D-167](decision-log.md)), and
+  the sessions retention removed not heard on `exec --json`
+  ([D-168](decision-log.md)).
 
 Dated, outside Foundry itself: the macro run's scorings fixed in its plan
 (2026-12-07 and 2027-02-08), and, if wanted, weekly forward snapshots under a
