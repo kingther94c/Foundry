@@ -19,8 +19,9 @@
 | M3 corporate Gateway | **partial** | unchanged since 2026-09-01: the entry gate (a tool-call streaming fixture from the Gateway) is not passed, and [OQ-6](open-questions.md) is open |
 | M4 packaging hardening + disclosure | **done** | the wheelhouse is not hash-pinned yet ([OQ-20](open-questions.md)) |
 | Codex parity, items 1-106 | **done** | 2026-11-06 to 2026-11-09, D-039 to D-145; the table below |
+| After parity, P0-P3 | **done** | 2026-11-10, D-146 to D-161; P6-P8 next ([D-162](decision-log.md)) |
 
-4657 tests pass (one is skipped) on a machine with no network and no credentials. Every
+4,808 tests pass (one is skipped) on a machine with no network and no credentials. Every
 feature since D-036 has been verified only against scripted backends: the
 local gateway that served the first live checks has answered nothing since
 2026-11-04, and there is no API key on the development machine. What comes
@@ -331,22 +332,48 @@ the last month went to the last of those. What is owed instead:
 - **P3 -- make the code smaller to read.** `cli/app.py` (2,706 lines),
   `core/runtime.py` (1,710), `cli/repl.py` (1,709) and `core/config.py`
   (1,391) are split along their seams, with no change of behaviour: the suite
-  and a mutation check are the gate. `cli/app.py` is split along its
-  commands ([D-158](decision-log.md)); `core/runtime.py` into the loop and
-  the mixins it calls out to ([D-159](decision-log.md)); `cli/repl.py` into
-  the loop, the commands, what a message attaches and the session's settings
-  ([D-160](decision-log.md)); `core/config.py` into the layers, MCP servers and
-  the smaller sections ([D-161](decision-log.md)).
+  and a mutation check are the gate.
+  Done (2026-11-10): `cli/app.py` to 476 lines, its commands in six modules
+  beside it ([D-158](decision-log.md)); `core/runtime.py` to 1,068, the
+  loop, with hooks, history edits, the goal and how a task ends in mixins
+  ([D-159](decision-log.md)); `cli/repl.py` to 355, the loop, with the slash
+  commands, what a message attaches and the session's settings beside it
+  ([D-160](decision-log.md)); `core/config.py` to 917, the layers, with
+  `[mcp_servers]` and the smaller sections beside it
+  ([D-161](decision-log.md)). Moved as they were, with no re-exports; each
+  split passed the full suite and a mutation check of what it moved.
 - **P4 -- the corporate machine (M3).** A hash-pinned wheelhouse
-  ([OQ-20](open-questions.md)), the managed policy layer
-  ([OQ-15](open-questions.md)), session retention
-  ([OQ-19](open-questions.md)), the Gateway's fixtures and intranet auth
+  ([OQ-20](open-questions.md); its tooling is P8), the managed policy layer
+  ([OQ-15](open-questions.md)), the Gateway's fixtures and intranet auth
   ([OQ-6](open-questions.md)), the canary leak suite on the real credential
   path, and one golden task completed on a clean corporate install. Blocked
   on information from the corporate side.
 - **P5 -- use it.** Further ResearchOS versions built with Foundry, as
   `tools/` and ResearchOS were, so that what Foundry needs next is decided by
   what gets in the way of real work rather than by a list.
+
+[D-162](decision-log.md), once P3 was done: what is left that needs no one
+else. P4 waits on the corporate side, and P1's rerun and P5 on a model
+endpoint.
+
+- **P6 -- session retention ([OQ-19](open-questions.md)).** Requirements
+  §3.5 says the retention period is user-configurable, and
+  `session_retention_days` has been reserved since
+  [D-026](decision-log.md), read by nothing. It becomes the user's setting,
+  off by default: swept as a session starts, oldest by last write; an
+  archived session kept whole; a session in use never swept; `foundry prune`
+  on demand.
+- **P7 -- a restricted-token sandbox, researched.** The last V2 candidate.
+  [D-003](decision-log.md) says V1 claims no sandbox; codex on Windows runs
+  commands under a write-restricted token whose writes reach only the
+  folders granted to it. A prototype, tried against what Foundry's commands
+  run (git, Python, pytest), and an account of what it would and would not
+  stop, in `docs/research/windows-sandbox.md`. The outcome is a decision --
+  an opt-in, or not -- not a shipped default.
+- **P8 -- the wheelhouse hash-pinned ([OQ-20](open-questions.md)).** The
+  tooling first, which needs no download: a lock with each wheel's hash,
+  written from a wheelhouse and installed with `--require-hashes`. The lock
+  itself is written when the user allows the download from PyPI.
 
 Dated, outside Foundry itself: the macro run's scorings fixed in its plan
 (2026-12-07 and 2027-02-08), and, if wanted, weekly forward snapshots under a

@@ -1069,3 +1069,13 @@
 - **Decision**: `core/config.py` keeps what makes a configuration: the layers, their precedence and provenance, `Config` and `BackendConfig`, flags, profiles, the environment and `load_config`. `[mcp_servers]` -- `McpServerConfig`, its checks, and the header patterns it shares with `[backend] headers` -- goes to `core/config_mcp.py`; the shell environment, the terminal title, the project docs' names, memories, skills, `notify` and permission rules to `core/config_sections.py`. Moved as they were, as in D-158; no re-exports.
 - **Rationale**: a section is read on its own and handed back as a value, so each parser moves with its value type, and only `config.py` puts them together; neither new module imports it.
 - **What it may not weaken**: no setting, default, error message or precedence changes; a repository's config still only tightens policy and never sets connection settings; the tests change only in which module they import from.
+
+## D-162 After P3: what is left that needs no one else
+- **Date**: 2026-11-10 · **Status**: confirmed (re-plan, continuing D-146)
+- **Background**: of D-146's phases, P0 to P3 are done: the baseline, two rounds of verification with the model played offline (D-147 to D-149), the review of what arrived after round six (D-150 to D-157), and the four largest modules split (D-158 to D-161). P4 waits on information from the corporate side (OQ-6, OQ-15); P1's rerun against a real endpoint, and P5, wait on a model endpoint.
+- **Decision**: three more phases, each landed as the others were -- a branch, its tests, a mutation check, the full suite:
+  - **P6, session retention (OQ-19).** `session_retention_days` has been reserved since D-026, and requirements §3.5 says the retention period is user-configurable. It becomes the user's setting, off by default.
+  - **P7, a restricted-token sandbox, researched.** The last V2 candidate: a prototype and an account of what it would and would not stop, ending in a decision -- an opt-in, or not -- rather than a shipped default.
+  - **P8, the wheelhouse hash-pinned (OQ-20).** The tooling first, which needs no download; the lock itself once the user allows the download from PyPI.
+- **Rationale**: D-007's order -- auditable, few dependencies, clear, then features. P6 keeps a requirement the configuration claimed and nothing kept, without deleting anything a user did not ask to have deleted. P7 is research because D-003 says V1 claims no sandbox, and an opt-in that did not hold would be worse than none. P8 separates what needs a download, which is the user's to allow, from what does not.
+- **Not in it**: new parity items; anything that needs a model endpoint or the corporate side.
