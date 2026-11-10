@@ -11,7 +11,7 @@ src/foundry/core/   the runtime: runtime.py (the one loop), policy/, tools/,
                     backends/, session.py, workspace.py, winapi.py
 src/foundry/cli/    the terminal UI: an event subscriber, the approval UI, report
 src/foundry/prompts/ versioned system prompts
-tests/              1436 tests; fixtures/ holds the golden-task sample repo
+tests/              4658 tests; fixtures/ holds the golden-task sample repo
 demo/               mini_foundry.py + the notebook: the architecture in one file
 run-foundry.py      run the CLI from this clone, no install (foundry.cmd wraps it)
 scripts/            build_wheelhouse.py; delta.py, which keeps DELTA.md

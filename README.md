@@ -5,10 +5,13 @@ wheel install. It owns all of the code and interfaces for its agent loop,
 tools, policy, providers and sessions; it does not fork, call into, or
 impersonate any existing coding agent.
 
-**Current status: M0-M4 implemented and running**, with 1436 tests passing on a
-machine with no network and no credentials (including the security regressions
-from six rounds of adversarial review, and 780 generated breaker-table
-invariant combinations). After round 6 there was a separate clean-room check:
+**Current status (2026-11-10): M0-M4 implemented and running, the corporate
+Gateway (M3) still partial; the 106 items of the codex-parity list have
+landed.** 4657 tests pass (one is skipped) on a machine with no network and no credentials
+(including the security regressions from six rounds of adversarial review,
+and 780 generated breaker-table invariant combinations). What comes next --
+verifying against a model, a review of the newer attack surface, and the
+corporate machine -- is in [docs/roadmap.md](docs/roadmap.md). After round 6 there was a separate clean-room check:
 rebuild the wheelhouse, install into a fresh venv with `--no-index`, and run a
 real task again (failing tests -> patch -> re-run green -> finish citing the
 event id from its own tool output). All 14 checks passed.
@@ -362,7 +365,7 @@ directory with the most-imported files first, within about 3,000 tokens.
 src/foundry/core/     runtime (the one loop), policy, tools, backends, session, workspace, winapi
 src/foundry/cli/      the terminal UI: event subscriber + approval UI + report
 src/foundry/prompts/  versioned system prompts
-tests/                1436 tests: golden scenarios, attack tables, breaker-table invariants
+tests/                4658 tests: golden scenarios, attack tables, breaker-table invariants
 ```
 
 `foundry.core` imports neither `foundry.cli` nor any third-party package --
