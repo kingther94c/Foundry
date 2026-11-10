@@ -139,7 +139,13 @@ from foundry.core.tools.git import capture_baseline, is_git_repository
 from foundry.core.tools.agent import SpawnAgent
 from foundry.core.tools.registry import default_registry
 from foundry.core.undo import apply_undo, other_changes, plan_undo, read_source, undo_payload
-from foundry.core.winapi import IS_WINDOWS, decode_output, looks_like_credential
+from foundry.core.winapi import (
+    IS_WINDOWS,
+    decode_output,
+    looks_like_credential,
+    register_included_secrets,
+    withhold_variables,
+)
 from foundry.core.workspace import PathRejected, Workspace
 
 TRUST_FILE = "trusted.json"
@@ -351,6 +357,7 @@ def build(workspace_path: Path, *, home: Path | None = None,
     if review and config.backend.review_model and "model" not in (overrides or {}):
         # codex's review_model (D-143): the review's whole run is on it.
         config.backend.model = config.backend.review_model
+    _guard_credentials(config)
 
     current = capture_baseline(workspace.root)
     state: JournalState | None = None
@@ -385,6 +392,19 @@ def build(workspace_path: Path, *, home: Path | None = None,
     # The terminal's title is an interactive session's (D-139).
     wiring.renderer.title_items = config.terminal_title if interactive else ()
     return wiring
+
+
+def _guard_credentials(config: Config) -> None:
+    """Before anything starts a child (D-153): the variables this
+    configuration reads a credential from are kept from every command, hook
+    and server whatever they are called, and the credentials the user passes
+    to commands by name are scrubbed from the first output that shows one."""
+    names = [config.backend.env_key or "", *config.backend.env_http_headers.values()]
+    for server in config.mcp_servers.values():
+        names.append(server.bearer_token_env_var)
+        names.extend(variable for _, variable in server.env_http_headers)
+    withhold_variables(names)
+    register_included_secrets(config.shell_environment)
 
 
 def _discard(folder: Path | None) -> None:

@@ -397,7 +397,13 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   user's `[shell_environment_policy]` ([D-083](decision-log.md)): `inherit`
   (core, all, none), then `include`, `exclude`, `set` and `include_only`; a
   credential-shaped name only by its exact name in `include`, its value then
-  registered with the redactor. `!COMMAND` gets the same.
+  registered with the redactor. `!COMMAND` gets the same. The variables the
+  configuration reads a credential from (`env_key`, `env_http_headers`,
+  `bearer_token_env_var`) count as credential-shaped whatever their names,
+  `include`'s values are registered when the session is built, and every
+  child's PATH keeps only absolute entries, so cmd.exe and PowerShell cannot
+  find a program in the workspace through `bin` or `.`
+  ([D-153](decision-log.md)).
 - `apply_patch`: pure in-process Python (the patch body never passes through
   argv or a subprocess -- codex #15003); **per-file atomic semantics**
   (requirements §5.3): after everything is parsed and located, a file with any

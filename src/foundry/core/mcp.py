@@ -195,6 +195,9 @@ class StdioClient(_Protocol):
         for name in self.server.env_vars:
             if name in self._environ:
                 env[name] = self._environ[name]
+                # What env_vars is for: a secret the server needs, so one it
+                # echoes is scrubbed as a bearer token is (D-153).
+                default_redactor().register(self._environ[name])
         env.update(dict(self.server.env))
         return env
 

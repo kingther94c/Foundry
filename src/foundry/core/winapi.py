@@ -336,6 +336,39 @@ def looks_like_credential(name: str) -> bool:
     return any(fragment in upper for fragment in CREDENTIAL_FRAGMENTS)
 
 
+# The variables Foundry's own configuration reads a credential from -- the
+# backend's env_key and env_http_headers, an MCP server's bearer_token_env_var
+# and env_http_headers -- whatever they are called (D-153). A gateway's key in
+# GATEWAY_AUTH or a header's in CORP_ID does not look like one, and passed to
+# every command and hook with inherit = "all" it was the repository's to read.
+_WITHHELD: set[str] = set()
+
+
+def withhold_variables(names) -> None:
+    """Treat these variables as credentials in every child's environment from
+    now on: passed only when [shell_environment_policy] include names one
+    exactly, and then scrubbed. For the life of the process, as the
+    redactor's values are."""
+    _WITHHELD.update(name.upper() for name in names if name)
+
+
+def _secret(name: str) -> bool:
+    return looks_like_credential(name) or name.upper() in _WITHHELD
+
+
+def register_included_secrets(policy, source: Mapping[str, str] | None = None) -> None:
+    """Register now the values of the credentials ``policy`` passes by name,
+    not when the first command runs: a hook, a file or a tool's output can
+    show one before that (D-153)."""
+    from foundry.core.redaction import default_redactor
+
+    source = source if source is not None else os.environ
+    exact = {name.upper() for name in getattr(policy, "include", ())}
+    for name, value in source.items():
+        if name.upper() in exact and _secret(name):
+            default_redactor().register(value)
+
+
 def _matches(name: str, patterns) -> bool:
     upper = name.upper()   # Windows names are not case-sensitive
     return any(fnmatch.fnmatchcase(upper, pattern.upper()) for pattern in patterns)
@@ -358,8 +391,7 @@ def child_environment(base: dict[str, str] | None = None, *,
     if policy is None:
         return _core_environment(source)
     if policy.inherit == "all":
-        env = {name: value for name, value in source.items()
-               if not looks_like_credential(name)}
+        env = {name: value for name, value in source.items() if not _secret(name)}
     elif policy.inherit == "none":
         env = {}
     else:
@@ -368,14 +400,20 @@ def child_environment(base: dict[str, str] | None = None, *,
     for name, value in source.items():
         if not _matches(name, policy.include):
             continue
-        if looks_like_credential(name):
+        if _secret(name):
             if name.upper() not in exact:
                 continue   # a pattern never carries a secret
             from foundry.core.redaction import default_redactor
             default_redactor().register(value)
         env[name] = value
     env = {name: value for name, value in env.items() if not _matches(name, policy.exclude)}
-    env.update(dict(policy.set))
+    for name, value in policy.set:
+        # Windows names are one variable whatever their case: `set PATH`
+        # left an inherited `Path` beside it, and which one a child read was
+        # the block's order's (D-153).
+        for other in [other for other in env if other.upper() == name.upper()]:
+            del env[other]
+        env[name] = value
     if policy.include_only is not None:
         env = {name: value for name, value in env.items()
                if _matches(name, policy.include_only)}
@@ -407,7 +445,7 @@ def _core_environment(source: Mapping[str, str], *, finish: bool = True) -> dict
     env: dict[str, str] = {}
     for name, value in source.items():
         upper = name.upper()
-        if looks_like_credential(name):
+        if _secret(name):
             continue
         if upper in keep_exact or upper.startswith(keep_prefix):
             env[name] = value
@@ -429,4 +467,23 @@ def _finish(env: dict[str, str]) -> dict[str, str]:
     # can leave working code worse than it started. Reproduced through the real
     # tools; writing no bytecode is the cheap end of the fix.
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+
+    # cmd.exe and PowerShell look for a program in a relative PATH entry --
+    # `.`, `bin`, `C:tools` -- from the current directory, the workspace: a
+    # repository that ships bin\git.cmd was the git a hook or a command ran,
+    # though NoDefaultCurrentDirectoryInExePath keeps the folder itself out
+    # (D-153). Only entries that name a folder wherever one stands are kept.
+    for name in [name for name in env if name.upper() == "PATH"]:
+        env[name] = absolute_path_entries(env[name])
     return env
+
+
+def absolute_path_entries(path: str) -> str:
+    """``path`` without the entries that are relative to the current
+    directory, or to the current drive's."""
+    kept = []
+    for entry in path.split(os.pathsep):
+        bare = entry.strip().strip('"')
+        if os.path.isabs(bare) and (os.path.splitdrive(bare)[0] or not IS_WINDOWS):
+            kept.append(entry)
+    return os.pathsep.join(kept)

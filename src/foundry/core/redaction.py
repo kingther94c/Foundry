@@ -22,6 +22,7 @@ PLACEHOLDER_BYTES = b"[redacted]"
 _PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"sk-[A-Za-z0-9_\-]{16,}"),
     re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),   # a fine-grained token (D-153)
     re.compile(r"\bBearer\s+[A-Za-z0-9._\-]{20,}", re.IGNORECASE),
     re.compile(r"\beyJ[A-Za-z0-9._\-]{20,}"),  # JWT
 )
