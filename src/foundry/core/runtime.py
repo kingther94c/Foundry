@@ -953,7 +953,10 @@ class AgentRuntime:
             tool = self.registry.get(call.name)
             args = call.parse_arguments()
             op = tool.validate(args)
-        except (InvalidToolCall, ValueError) as exc:
+        except (InvalidToolCall, ValueError, TypeError) as exc:
+            # TypeError too: a tool's check that met a type it did not
+            # expect is a call the model is told is malformed, not the end of
+            # the session (D-155).
             # A malformed call never reaches policy or an executor; the model is
             # told why so the loop can continue.
             self._reply(call, f"invalid tool call: {exc}", is_error=True)
@@ -1403,7 +1406,7 @@ class AgentRuntime:
             return op, ""
         try:
             changed = self._canonicalize_paths(self.registry.get(op.tool).validate(args))
-        except (InvalidToolCall, ValueError) as exc:
+        except (InvalidToolCall, ValueError, TypeError) as exc:
             self._emit(Notice(f"{PRE_TOOL_USE} hook's rewrite is not a valid call "
                               f"({clean(str(exc))}); the call runs as the model made it",
                               level="warning"))

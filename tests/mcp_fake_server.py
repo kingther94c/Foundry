@@ -66,8 +66,16 @@ for line in sys.stdin:
         capabilities = {} if MODE == "notools" else {"tools": {}}
         if MODE == "resources":
             capabilities["resources"] = {}
+        name = "fake \ud800" if MODE == "surrogate" else "fake"
         result(mid, {"protocolVersion": "2025-06-18", "capabilities": capabilities,
-                     "serverInfo": {"name": "fake", "version": "1"}})
+                     "serverInfo": {"name": name, "version": "1"}})
+        if MODE == "deaf":
+            time.sleep(120)        # reads nothing more: its input fills
+            sys.exit(0)
+        if MODE == "noinput":
+            os.close(0)            # its input closed, and still running
+            time.sleep(120)
+            sys.exit(0)
     elif method == "resources/list":
         if params.get("cursor") == "page-2":
             result(mid, {"resources": [{"uri": "doc://changelog", "name": "changelog"}]})
@@ -104,6 +112,8 @@ for line in sys.stdin:
             result(mid, {"tools": TOOLS[:2], "nextCursor": "page-2"})
         elif MODE == "paged":
             result(mid, {"tools": TOOLS[2:]})
+        elif MODE == "surrogate":
+            result(mid, {"tools": [{"name": "echo", "description": "half \udc00 a pair"}]})
         else:
             result(mid, {"tools": TOOLS})
     elif method == "tools/call":
@@ -114,6 +124,11 @@ for line in sys.stdin:
             sys.exit(3)
         if MODE == "slow":
             time.sleep(60)
+        if MODE == "flood":
+            for i in range(20_000):      # asks, and never reads an answer
+                send({"jsonrpc": "2.0", "id": f"ping-{i}", "method": "ping"})
+            time.sleep(120)
+            sys.exit(0)
         if MODE == "spawn":
             child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
             text(mid, str(child.pid))

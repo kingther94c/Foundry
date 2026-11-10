@@ -90,6 +90,9 @@ class ResourceTool:
         if extra:
             raise InvalidToolCall(f"{self.name} takes no {extra[0]!r}")
         server = args.get("server")
+        if server is not None and not isinstance(server, str):
+            # `[]` raised a TypeError on the lookup, and ended the session (D-155).
+            raise InvalidToolCall(f"server is a server's name: {', '.join(sorted(self.clients))}")
         if server is not None and server not in self.clients:
             raise InvalidToolCall(f"no MCP server {server!r} offers resources; "
                                   f"{', '.join(sorted(self.clients))} do")

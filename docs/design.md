@@ -490,7 +490,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   codex's own names ([D-110](decision-log.md)): `startup_timeout_sec` and
   `tool_timeout_sec` for the `_s` keys (one of the two given), and `cwd`, an
   absolute folder a started server runs in instead of the workspace, checked
-  when it starts. A url server's `http_headers` and `env_http_headers`
+  when it starts. A started server's input is written by a thread of its own
+  from a queue of 256 messages, so a request waits only for its reply, with
+  its own timeout and Ctrl+C; a url server's DELETE at close is waited for 2 s
+  in all; lone surrogates in what a server sends are U+FFFD; a server's name
+  holds no `__` and does not end in `_` ([D-155](decision-log.md)). A url server's `http_headers` and `env_http_headers`
   ([D-111](decision-log.md)) go with every request to it: no credential-named
   header in the first, the second's values read from their variables at
   start, registered with the redactor and sent only over https or to this

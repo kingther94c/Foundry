@@ -10,6 +10,7 @@ Frozen at M0 (design.md section 2). Additive changes only.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
@@ -51,12 +52,31 @@ class ToolUseBlock:
     def parse_arguments(self) -> dict[str, Any]:
         """Raise ``ValueError`` if the model emitted non-object JSON."""
         try:
-            parsed = json.loads(self.arguments)
+            parsed = without_lone_surrogates(json.loads(self.arguments))
         except json.JSONDecodeError as exc:
             raise ValueError(f"tool arguments are not valid JSON: {exc}") from exc
         if not isinstance(parsed, dict):
             raise ValueError(f"tool arguments must be a JSON object, got {type(parsed).__name__}")
         return parsed
+
+
+# What JSON's \ud800 decodes to when no second half follows: a code point no
+# UTF-8 can carry, so the journal's write or the terminal's print of it
+# raised, and ended the turn (D-155). json pairs every valid pair into one
+# character, so any surrogate left is a lone one.
+_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def without_lone_surrogates(value: Any) -> Any:
+    """``value`` as JSON gave it, each lone surrogate in it U+FFFD."""
+    if isinstance(value, str):
+        return _SURROGATE.sub("\ufffd", value) if _SURROGATE.search(value) else value
+    if isinstance(value, list):
+        return [without_lone_surrogates(item) for item in value]
+    if isinstance(value, dict):
+        return {without_lone_surrogates(key): without_lone_surrogates(item)
+                for key, item in value.items()}
+    return value
 
 
 @dataclass(frozen=True, slots=True)

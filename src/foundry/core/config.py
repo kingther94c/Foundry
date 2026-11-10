@@ -425,6 +425,12 @@ def _parse_mcp_servers(raw: Any) -> dict[str, McpServerConfig]:
         if not _SERVER_NAME.match(name):
             raise ConfigError(f"{where}: a server name is letters, digits, _ and -, "
                               "at most 32 of them")
+        if "__" in name or name.endswith("_"):
+            # mcp__<server>__<tool> must say where the tool's name begins: a
+            # server a__b and a server a with a tool b__c were one name, and a
+            # rule for mcp__a__* matched both (D-155).
+            raise ConfigError(f"{where}: a server name may not hold __ or end in _, "
+                              "which would run into its tools' names")
         if not isinstance(entry, dict):
             raise ConfigError(f"{where} must be a table")
         unknown = sorted(set(entry) - _MCP_KEYS)

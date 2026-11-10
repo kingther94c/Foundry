@@ -22,6 +22,7 @@ import hashlib
 import http.client
 import json
 import os
+import queue
 import re
 import signal
 import socket
@@ -35,7 +36,7 @@ from typing import Any, Callable
 
 from foundry import __version__
 from foundry.core.config import HEADER_VALUE, McpServerConfig
-from foundry.core.conversation import ToolSchema
+from foundry.core.conversation import ToolSchema, without_lone_surrogates
 from foundry.core.errors import (Cancelled, FoundryError, ImageRejected, InvalidToolCall,
                                  ToolError)
 from foundry.core.httpc import HttpClient
@@ -53,6 +54,9 @@ from foundry.core.winapi import (
 
 PROTOCOL_VERSION = "2025-06-18"
 MAX_MESSAGE_BYTES = 8 * 1024 * 1024
+# Messages queued for a server that is not reading them: past these, a request
+# is refused at once, and an answer to the server's own request is dropped.
+MAX_UNREAD_MESSAGES = 256
 MAX_TOOLS_PER_SERVER = 100
 MAX_ARGUMENT_BYTES = 64_000
 MAX_SCHEMA_BYTES = 16_000
@@ -176,7 +180,12 @@ class StdioClient(_Protocol):
         self._environ = dict(os.environ if environ is None else environ)
         self._process: subprocess.Popen | None = None
         self._job: ProcessJob | None = None
-        self._send_lock = threading.Lock()
+        # What is to be written to the server, by a thread of its own: a
+        # server that stops reading fills the pipe, and a write blocked on it
+        # held every request, the reader answering its pings, Ctrl+C and
+        # close (D-155). None asks the writer to close the server's input.
+        self._outbox: queue.Queue[bytes | None] = queue.Queue(maxsize=MAX_UNREAD_MESSAGES)
+        self._write_error = ""
         self._cond = threading.Condition()
         self._pending: set[int] = set()
         self._responses: dict[int, dict] = {}
@@ -225,6 +234,8 @@ class StdioClient(_Protocol):
             raise McpError(f"could not start {self.server.command}: {exc}") from exc
         if IS_WINDOWS and self._job.active:
             self._job.assign(int(self._process._handle))  # type: ignore[attr-defined]
+        threading.Thread(target=self._write_stdin, args=(self._process,), daemon=True,
+                         name=f"mcp-{self.server.name}-in").start()
         threading.Thread(target=self._read_stdout, daemon=True,
                          name=f"mcp-{self.server.name}-out").start()
         threading.Thread(target=self._read_stderr, daemon=True,
@@ -238,16 +249,16 @@ class StdioClient(_Protocol):
         return self._process is not None and self._process.poll() is None
 
     def close(self) -> None:
-        """End the server: its input closed, a moment to exit, then the job
-        object -- which also ends anything it started."""
+        """End the server: its input closed once what was sent is written, a
+        moment to exit, then the job object -- which also ends anything it
+        started, and a writer still blocked on a server that stopped reading."""
         process, self._process = self._process, None
         if process is None:
             return
         try:
-            if process.stdin is not None:
-                process.stdin.close()
-        except OSError:
-            pass
+            self._outbox.put_nowait(None)
+        except queue.Full:
+            pass   # it reads nothing: the job object ends it below
         try:
             process.wait(timeout=2)
         except subprocess.TimeoutExpired:
@@ -282,16 +293,40 @@ class StdioClient(_Protocol):
     # -- messages --------------------------------------------------------------
 
     def _send(self, message: dict) -> None:
+        """Queued for the writer, never waited on: a request waits for its
+        reply, with its own timeout and Ctrl+C, not for the pipe."""
         data = (json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8")
         process = self._process
         if process is None or process.stdin is None:
             raise McpError("the server is not running")
-        with self._send_lock:
+        if self._stopped or self._write_error:
+            reason = self._stopped_reason() if self._stopped else self._write_error
+            raise McpError(f"the server is not running ({reason})")
+        try:
+            self._outbox.put_nowait(data)
+        except queue.Full:
+            raise McpError(f"the server is not reading what it is sent: "
+                           f"{MAX_UNREAD_MESSAGES} messages wait for it") from None
+
+    def _write_stdin(self, process: subprocess.Popen) -> None:
+        stream = process.stdin
+        try:
+            while stream is not None:
+                data = self._outbox.get()
+                if data is None:
+                    break
+                stream.write(data)
+                stream.flush()
+        except (OSError, ValueError) as exc:
+            with self._cond:
+                self._write_error = str(exc) or type(exc).__name__
+                self._cond.notify_all()
+        finally:
             try:
-                process.stdin.write(data)
-                process.stdin.flush()
-            except (OSError, ValueError) as exc:
-                raise McpError(f"the server is not running ({self._stopped_reason() or exc})") from exc
+                if stream is not None:
+                    stream.close()
+            except (OSError, ValueError):
+                pass
 
     def notify(self, method: str, params: dict | None = None) -> None:
         message: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
@@ -324,6 +359,9 @@ class StdioClient(_Protocol):
             while rid not in self._responses:
                 if self._stopped:
                     raise McpError(self._stopped_reason())
+                if self._write_error:
+                    raise McpError(f"the server is not running "
+                                   f"({self._stopped_reason() or self._write_error})")
                 if cancelled is not None and cancelled():
                     break
                 remaining = deadline - time.monotonic()
@@ -394,7 +432,7 @@ class StdioClient(_Protocol):
 
     def _dispatch(self, line: bytes) -> None:
         try:
-            message = json.loads(line.decode("utf-8", errors="replace"))
+            message = without_lone_surrogates(json.loads(line.decode("utf-8", errors="replace")))
         except ValueError:
             return   # a log line printed to stdout: not a message, not ours to act on
         if not isinstance(message, dict):
@@ -531,6 +569,15 @@ class StreamableHttpClient(_Protocol):
         self._closed = True
         if not self._session or self._stopped:
             return
+        # On a thread, waited for QUIET_TIMEOUT in all: the connection's
+        # timeout is each read's, and a server that trickles its answer a
+        # byte at a time held the session's exit as long as it liked (D-155).
+        ending = threading.Thread(target=self._end_session, daemon=True,
+                                  name=f"mcp-{self.server.name}-close")
+        ending.start()
+        ending.join(QUIET_TIMEOUT)
+
+    def _end_session(self) -> None:
         try:
             conn, path, proxy_headers = self._http.connect(self.server.url)
             conn.timeout = QUIET_TIMEOUT
@@ -714,7 +761,7 @@ class StreamableHttpClient(_Protocol):
         if len(data) > MAX_MESSAGE_BYTES:
             raise McpError(f"a reply over {MAX_MESSAGE_BYTES} bytes")
         try:
-            message = json.loads(data.decode("utf-8"))
+            message = without_lone_surrogates(json.loads(data.decode("utf-8")))
         except ValueError as exc:
             raise McpError("its reply was not JSON") from exc
         reply = self._take(message, rid)
@@ -752,7 +799,7 @@ class StreamableHttpClient(_Protocol):
 
     def _event(self, text: str, rid: int) -> dict | None:
         try:
-            message = json.loads(text)
+            message = without_lone_surrogates(json.loads(text))
         except ValueError:
             return None   # not a message: nothing to act on
         return self._take(message, rid)
@@ -846,7 +893,10 @@ class McpTool:
     def validate(self, args: dict[str, Any]) -> Operation:
         if not isinstance(args, dict):
             raise InvalidToolCall(f"{self.name} takes an object of arguments")
-        missing = [k for k in self.parameters.get("required", []) or []
+        required = self.parameters.get("required")
+        # A schema's own word, not checked when it was listed: `"required": 5`
+        # raised a TypeError at every call, and ended the session (D-155).
+        missing = [k for k in (required if isinstance(required, list) else [])
                    if isinstance(k, str) and k not in args]
         if missing:
             raise InvalidToolCall(f"{self.name} needs {', '.join(missing)}")
