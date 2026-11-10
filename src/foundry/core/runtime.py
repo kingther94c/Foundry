@@ -1566,10 +1566,18 @@ class AgentRuntime:
             return ApprovalChoice.DENY  # fail closed
         kind = ApprovalKind.COMMAND if op.tool == "run_command" else (
             ApprovalKind.PATCH if op.tool == "apply_patch" else ApprovalKind.OTHER)
+        detail = op.args.get("patch", "") if kind is ApprovalKind.PATCH else ""
+        if kind is ApprovalKind.OTHER:
+            # What is sent, whole, when the display is a cut of it (D-151):
+            # an MCP call's display stops at 300 characters, and an argument
+            # past them was approved unseen.
+            sent = json.dumps(op.args, sort_keys=True, ensure_ascii=False, default=str)
+            if sent not in op.display:
+                detail = json.dumps(op.args, sort_keys=True, ensure_ascii=False, indent=2,
+                                    default=str)
         request = ApprovalRequest(
             request_id=new_id("apr"), approval_kind=kind, tool=op.tool,
-            display=op.display, reason=decision.reason,
-            detail=op.args.get("patch", "") if op.tool == "apply_patch" else "",
+            display=op.display, reason=decision.reason, detail=detail,
         )
         self._emit(request)
         self._notify_approval(op, decision)

@@ -270,11 +270,17 @@ def test_the_question_shows_no_control_sequences_and_no_secrets():
     assert text.splitlines()[0].endswith("echo red [redacted]")
 
 
-def test_a_long_patch_is_cut_to_fit(monkeypatch):
-    monkeypatch.setattr(mcp_server, "MAX_QUESTION_CHARS", 60)
+def test_a_long_patch_is_cut_to_fit_and_says_so(monkeypatch):
+    """Only the patch's body: what it changes and why it is asked stay whole
+    (D-151)."""
+    monkeypatch.setattr(mcp_server, "MAX_QUESTION_CHARS", 300)
     text = _question(_request("patch a.py", "x" * 500, ApprovalKind.PATCH, "apply_patch"),
                      _WIRING, None)
-    assert len(text) == 60 and text.endswith("...")
+    assert text.startswith("Foundry session s1 in C:/repo asks to change files: patch a.py\n"
+                           "It asks because: no rule allows it\n\nxxxxx")
+    assert len(text) <= 300
+    assert text.endswith("more characters of the patch; the full patch is in the session "
+                         "journal ...]")
 
 
 @pytest.mark.parametrize("reply, choice", [

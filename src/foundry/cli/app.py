@@ -14,6 +14,7 @@ import shutil
 import dataclasses
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -249,6 +250,12 @@ def _confirm_trust(console: Console, home: Path, workspace: Path, *,
     return False
 
 
+def _literal(text: str) -> str:
+    """``text`` as a pattern that matches only itself: fnmatch's wildcards
+    and sets each put in a set of their own."""
+    return re.sub(r"([*?\[])", r"[\1]", text)
+
+
 def _rule_writer(home: Path, policy: PolicyEngine):
     """Append an allow rule to the user's own config when they answer 'always'.
 
@@ -260,7 +267,10 @@ def _rule_writer(home: Path, policy: PolicyEngine):
     def persist(op) -> None:
         from foundry.core.policy.engine import Layer, Rule, Verdict
 
-        pattern = op.target.replace("\\", "/")
+        # The call approved, exactly (D-151): written as it was, a '*' or '?'
+        # in what the model sent became a wildcard, so 'always' for
+        # {"query": "*"} allowed every later call with any arguments.
+        pattern = _literal(op.target.replace("\\", "/"))
         config_path = home / "config.toml"
         home.mkdir(parents=True, exist_ok=True)
         existing = config_path.read_text(encoding="utf-8") if config_path.is_file() else ""

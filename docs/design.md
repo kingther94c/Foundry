@@ -103,7 +103,13 @@ PROTOCOL_VERSION = 1
   options: [once, session, always, deny, abort]}`; the loop suspends on the
   corresponding future until an `ApprovalDecision{request_id, choice}` is
   submitted. **The display string and the object actually executed share one
-  source** (what-you-approve-is-what-runs).
+  source** (what-you-approve-is-what-runs). Where a tool's display is a cut
+  of what it sends (an MCP call's, at 300 characters), `detail` carries the
+  arguments whole; long runs of blanks or empty lines, and carriage returns,
+  are shown counted (`render.visible`), at the terminal and in
+  `foundry mcp-server`'s question, which never cuts what would run and
+  refuses, unasked, a call too long to show ([D-151](decision-log.md)).
+  "always" writes the call's target as a pattern that matches only itself.
 - Approval is an event rather than a blocking `input()`, so an Interrupt can
   arrive during an approval, headless can map ASK->DENY, and a future IDE
   front end comes for free.

@@ -40,7 +40,7 @@ from foundry.cli.app import (
     build,
     unattended,
 )
-from foundry.cli.render import sanitize
+from foundry.cli.render import sanitize, visible
 from foundry.cli.repl import with_note
 from foundry.core.config import load_config, settings_layer, user_dir
 from foundry.core.errors import ConfigError, FoundryError
@@ -48,6 +48,7 @@ from foundry.core.events import (
     ApprovalChoice,
     ApprovalKind,
     ApprovalRequest,
+    Notice,
     TerminalStatus,
     Termination,
     ToolBegin,
@@ -76,6 +77,9 @@ MAX_PROGRESS_CHARS = 200
 MODES = (Mode.DONT_ASK, Mode.PLAN, Mode.ACCEPT_EDITS)
 # The longest question put to the client: a patch is cut to fit.
 MAX_QUESTION_CHARS = 4000
+# What would run, shown whole, at most (D-151): an MCP call's arguments may be
+# 64,000 bytes; past this a call is refused rather than asked about.
+MAX_SHOWN_CHARS = 70_000
 # The answers a client is offered, as codex's: yes once, yes for the session,
 # no, or no and stop the task. Not "always": that writes a rule into the
 # user's own config, which is for the user to do at the terminal.
@@ -442,12 +446,20 @@ class Server:
         with self._lock:
             if self._closing:
                 return ApprovalChoice.ABORT
+        message = _question(request, entry.wiring, runtime.scrub)
+        if message is None:
+            runtime.events.emit(Notice(
+                f"not asked: {request.tool}'s call is too long to show in full "
+                f"(over {MAX_SHOWN_CHARS:,} characters), so it is refused", level="warning"))
+            return ApprovalChoice.DENY
+        with self._lock:
+            if self._closing:
+                return ApprovalChoice.ABORT
             self._asked += 1
             qid = f"foundry-ask-{self._asked}"
             self._questions[qid] = None
         self._send({"jsonrpc": "2.0", "id": qid, "method": "elicitation/create", "params": {
-            "message": _question(request, entry.wiring, runtime.scrub),
-            "requestedSchema": ANSWER_SCHEMA}})
+            "message": message, "requestedSchema": ANSWER_SCHEMA}})
         with self._answers:
             try:
                 # The client's going cancels every task at work, this one too.
@@ -624,20 +636,37 @@ def _place(path: Path) -> str:
     return os.path.normcase(os.path.realpath(top))
 
 
-def _question(request: ApprovalRequest, wiring: Wiring, scrub: Callable[[str], str] | None) -> str:
+def _question(request: ApprovalRequest, wiring: Wiring,
+              scrub: Callable[[str], str] | None) -> str | None:
     """What the client's user is asked: what would run, and why it is asked
     -- its display, as the terminal shows it, stripped of control sequences
-    and scrubbed of registered secrets."""
+    and scrubbed of registered secrets.
+
+    What would run is never cut (D-151): cut at 4,000 characters with the
+    rest, a command padded past them was approved without its tail. Only a
+    patch's body is shortened to fit, as the terminal shortens its preview;
+    a call too long to show whole is not asked about at all (None)."""
+    def clean(text: str) -> str:
+        text = sanitize(text)
+        return scrub(text) if scrub is not None else text
+
     what = _ASKING.get(request.approval_kind, f"use {request.tool}")
     lines = [f"Foundry session {wiring.session.session_id} in {wiring.workspace.root} asks to "
-             f"{what}: {request.display}", f"It asks because: {request.reason}"]
-    if request.detail:
-        lines += ["", request.detail]
-    text = sanitize("\n".join(lines))
-    if scrub is not None:
-        text = scrub(text)
-    if len(text) > MAX_QUESTION_CHARS:
-        text = text[:MAX_QUESTION_CHARS - 3] + "..."
+             f"{what}: {visible(request.display)}", f"It asks because: {visible(request.reason)}"]
+    patch = request.detail if request.approval_kind is ApprovalKind.PATCH else ""
+    if request.detail and not patch:
+        lines += ["", "With these arguments:", visible(request.detail)]
+    text = clean("\n".join(lines))
+    if len(text) > MAX_SHOWN_CHARS:
+        return None
+    if patch:
+        body = clean(patch)
+        room = max(MAX_QUESTION_CHARS - len(text) - 2, 0)
+        if len(body) > room:
+            note = (f"\n[... {len(body) - room:,} more characters of the patch; the full "
+                    "patch is in the session journal ...]")
+            body = body[:max(room - len(note), 0)] + note
+        text += "\n\n" + body
     return text
 
 

@@ -87,6 +87,22 @@ _STATUS_STYLE = {
 }
 
 
+# What a display may not use to keep what runs out of sight (D-151): a
+# command padded with thousands of blanks showed its tail far below the
+# fold, or past a cut, not at all.
+_BLANKS = re.compile(r"[ \t]{16,}")
+_BLANK_LINES = re.compile(r"\n(?:[ \t]*\n){2,}")
+
+
+def visible(text: str) -> str:
+    """``text`` with nothing hidden in its layout, for an approval: carriage
+    returns made line ends, and a long run of blanks or of empty lines
+    counted in place of itself."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = _BLANKS.sub(lambda m: f" [{len(m.group())} blanks] ", text)
+    return _BLANK_LINES.sub(lambda m: f"\n[{m.group().count(chr(10)) - 1} empty lines]\n", text)
+
+
 def sanitize(text: str) -> str:
     """Strip terminal control sequences from untrusted text."""
     text = _OSC.sub("", text)
@@ -494,7 +510,7 @@ class Renderer:
             # The summary first: a large envelope used to scroll the file list
             # off the screen, leaving the reader to approve a patch whose
             # targets they could no longer see.
-            self.console.print(f"[bold]{safe(request.display)}[/bold]")
+            self.console.print(f"[bold]{safe(visible(request.display))}[/bold]")
             body = sanitize(request.detail)
             lines = body.splitlines()
             if len(lines) > PATCH_PREVIEW_LINES:
@@ -507,10 +523,16 @@ class Renderer:
             ))
         else:
             self.console.print(Panel(
-                Text(sanitize(request.display), style="bold"),
+                Text(sanitize(visible(request.display)), style="bold"),
                 title=f"[bold]{request.tool}[/bold]", border_style="cyan",
             ))
-        self.console.print(f"[dim]{safe(request.reason)}[/dim]")
+            if request.detail:
+                # All of what is sent, when the display is a cut of it.
+                self.console.print(Panel(
+                    Text(sanitize(visible(request.detail))),
+                    title="[bold]with these arguments[/bold]", border_style="cyan",
+                ))
+        self.console.print(f"[dim]{safe(visible(request.reason))}[/dim]")
 
         prompts = {
             "y": ApprovalChoice.ONCE,
