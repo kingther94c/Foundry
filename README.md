@@ -79,10 +79,18 @@ build it first:
 python scripts/build_wheelhouse.py
 ```
 
-Then install offline:
+`requirements.lock` pins each dependency to a version and its wheel's sha256
+([D-164](docs/decision-log.md)). Until it is committed, the wheelhouse is not
+pinned: `python scripts/build_wheelhouse.py --lock` writes it from the wheels
+just downloaded, to be read and committed; from then on the download and the
+install are checked against it, and `--verify` fails on any wheel that differs.
+
+Then install offline: with the lock, the dependencies by hash and foundry's
+own wheel after them (without one, the second command without `--no-deps`):
 
 ```bash
-python -m pip install --no-index --find-links wheelhouse foundry
+python -m pip install --no-index --find-links wheelhouse --require-hashes -r requirements.lock
+python -m pip install --no-index --find-links wheelhouse --no-deps foundry
 foundry doctor
 foundry login
 foundry

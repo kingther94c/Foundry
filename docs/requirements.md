@@ -651,10 +651,14 @@ compensating control for a no-sandbox V1.
     ctypes directly, and its backend has a 2560-byte ceiling), psutil (Job
     Objects through ctypes), pydantic (dataclasses + handwritten validation),
     textual, tree-sitter.
-- Pinning: `requirements.in -> pip-compile --generate-hashes -> the wheelhouse
-  (pip download --only-binary :all:)`; installation is `pip install --no-index
-  --find-links wheelhouse --require-hashes foundry`; CI checks the wheelhouse
-  is complete for cp312/win_amd64 (or pure py3).
+- Pinning: `requirements.in -> the wheelhouse (pip download --only-binary
+  :all:) -> requirements.lock`, each dependency's version and wheel sha256,
+  written from the wheels downloaded and committed; later downloads use
+  `--require-hashes -r requirements.lock`; installation is `pip install
+  --no-index --find-links wheelhouse --require-hashes -r requirements.lock`,
+  then foundry's own wheel with `--no-deps` ([D-164](decision-log.md)); CI
+  checks the wheelhouse is complete for cp312/win_amd64 (or pure py3) and,
+  with a lock, that every wheel is the one it pins.
 - Code layering: a single wheel, but `foundry.core` must not import
   `foundry.cli` (CI-enforced), so a future split costs nothing.
 - Every `open()` passes `encoding='utf-8'` explicitly; CI runs with

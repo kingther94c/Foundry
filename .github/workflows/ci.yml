@@ -144,8 +144,18 @@ jobs:
       - name: Install from the wheelhouse with no index
         # The real target machine has no package index. A single sdist-only
         # transitive dependency would only fail there, so it fails here first.
+        # With requirements.lock, every dependency is installed only if its
+        # wheel has the hash the lock pins (D-164); foundry's own wheel, built
+        # in this job, after them.
         run: |
           python -m venv fresh
-          fresh\Scripts\python.exe -m pip install --no-index --find-links wheelhouse foundry
+          if (Test-Path requirements.lock) {
+            fresh\Scripts\python.exe -m pip install --no-index --find-links wheelhouse --require-hashes -r requirements.lock
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            fresh\Scripts\python.exe -m pip install --no-index --find-links wheelhouse --no-deps foundry
+          } else {
+            fresh\Scripts\python.exe -m pip install --no-index --find-links wheelhouse foundry
+          }
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           fresh\Scripts\python.exe -m foundry --version
           fresh\Scripts\python.exe -m foundry doctor

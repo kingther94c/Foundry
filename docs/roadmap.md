@@ -373,7 +373,8 @@ endpoint.
 - **P8 -- the wheelhouse hash-pinned ([OQ-20](open-questions.md)).** The
   tooling first, which needs no download: a lock with each wheel's hash,
   written from a wheelhouse and installed with `--require-hashes`. The lock
-  itself is written when the user allows the download from PyPI.
+  itself is written when the user allows the download from PyPI. The
+  tooling is done (2026-11-10, [D-164](decision-log.md)).
 
 Dated, outside Foundry itself: the macro run's scorings fixed in its plan
 (2026-12-07 and 2027-02-08), and, if wanted, weekly forward snapshots under a

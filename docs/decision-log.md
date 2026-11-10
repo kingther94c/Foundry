@@ -1093,3 +1093,15 @@
   - No size ceiling, and no promise of encryption at rest. A ceiling removes sessions by a measure the user cannot predict from a date; the artifacts are as protected as the folder's permissions and the disk's encryption make them, which are Windows', not Foundry's.
 - **Rationale**: D-026's reason holds for a default: nothing is deleted unless the user said so. A repository lowering the setting would be the one setting through which a cloned repository deletes the user's files.
 - **What it may not weaken**: a repository's config still never loosens anything; nothing outside `~/.foundry/sessions/` is removed; failing to remove one session never stops a session from starting.
+
+## D-164 The wheelhouse pinned by hash: the tooling now, the lock once the download is allowed (OQ-20)
+- **Date**: 2026-11-10 · **Status**: confirmed (P8, D-162); OQ-20 answered (in part)
+- **Background**: D-002 and requirements §7 promise dependencies pinned with hashes and an install with `--require-hashes`. There was no lock, and neither `build_wheelhouse.py` nor CI pinned anything (OQ-20, found with D-033). A lock needs the wheels, and downloading them from PyPI is the user's to allow.
+- **Decision**:
+  - `requirements.lock` holds each dependency as `name==version --hash=sha256:...`, pip's hash-checking format. `python scripts/build_wheelhouse.py --lock` writes it from the dependency wheels in the wheelhouse -- the wheels that will ship -- and refuses an empty wheelhouse or two versions of one project. A person reads it and commits it.
+  - With a lock: the download is `pip download -r requirements.lock --require-hashes`, so a wheel that changed on the index fails, and so does a dependency the lock does not pin; `--verify` fails on a wheel the lock does not pin, a wheel whose sha256 differs from the pin, and a pin with no wheel; the install is `pip install --no-index --find-links wheelhouse --require-hashes -r requirements.lock`, then foundry's own wheel with `--no-deps`, and CI installs that way.
+  - Without one, everything works as before, and the download and `--verify` say the wheelhouse is not pinned.
+  - Not pip-compile: it is one more tool on the build machine, and hashing the wheels that were downloaded pins exactly the wheels that ship.
+  - The lock itself is not in this change: it needs the download, which waits on the user.
+- **Rationale**: the download is the only part that needs the user; the rest -- writing, checking and installing from a lock -- can be built and tested now with wheels made up for the tests, so that pinning, when allowed, is one command and a review.
+- **What it may not weaken**: an install without a lock works as it did; nothing in this change downloads anything.
