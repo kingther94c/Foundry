@@ -383,7 +383,7 @@ def test_a_session_starts_with_the_summary_and_reads_the_notes(repo, tmp_path):
                    approve=None)
     _repl(wiring, "hello")
     system = _system(wiring)
-    assert MEMORY_HEADING + "Run pytest -q." in system
+    assert MEMORY_HEADING + "<memories>\nRun pytest -q.\n</memories>" in system
     assert system.index(MEMORY_HEADING) < system.index(wiring.runtime.context.environment)
     reply = [b for b in wiring.runtime.backend.seen[1].messages[-1].blocks][0]
     assert not reply.is_error and reply.content == "# Notes\n- pytest -q"

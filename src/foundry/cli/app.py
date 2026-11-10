@@ -31,7 +31,7 @@ from foundry import __version__
 from foundry.cli.codex_flags import hints as codex_hints
 from foundry.cli.completion import SHELLS
 from foundry.cli.completion import script as completion_script
-from foundry.cli.render import Renderer, safe
+from foundry.cli.render import Renderer, safe, sanitize
 from foundry.cli.transcript import show_conversation
 from foundry.cli.agents import Spawner
 from foundry.cli.repl import ARCHIVE_SESSION, DELETE_SESSION, FORK_SESSION, NEW_SESSION
@@ -405,6 +405,14 @@ def _guard_credentials(config: Config) -> None:
         names.extend(variable for _, variable in server.env_http_headers)
     withhold_variables(names)
     register_included_secrets(config.shell_environment)
+    # Their values, and an MCP server's env_vars', are scrubbed from the
+    # first record on, before a server starts or a header is sent: the
+    # memory pass's own process reads journals with only what it registers
+    # here and the model's key (D-154).
+    servers = config.mcp_servers.values()
+    for name in [*names, *(name for server in servers for name in server.env_vars)]:
+        if name:
+            default_redactor().register(os.environ.get(name))
 
 
 def _discard(folder: Path | None) -> None:
@@ -1902,7 +1910,13 @@ def cmd_memories(args: argparse.Namespace) -> int:
     action = getattr(args, "memories_command", None) or "show"
     folder = memories_folder(home, root)
     if action == "reset":
-        if forget(home, root):
+        forgotten = forget(home, root)
+        if forgotten is None:
+            console.print(f"[yellow]a pass is updating the memories of {escape(str(root))}; "
+                          "nothing was forgotten: reset them once it is done[/yellow]",
+                          soft_wrap=True)
+            return EXIT_CODES[TerminalStatus.FAILED]
+        if forgotten:
             console.print(f"forgot the memories of {escape(str(root))}; sessions from now on "
                           "are read for them", soft_wrap=True)
         else:
@@ -1920,12 +1934,14 @@ def cmd_memories(args: argparse.Namespace) -> int:
                               ("notes", memory_notes(folder))):
             if text:
                 console.print(f"\n[bold]{heading}[/bold]")
-                console.print(text, markup=False, highlight=False, soft_wrap=True)
+                # A model wrote them: no escape sequence reaches the terminal.
+                console.print(sanitize(text), markup=False, highlight=False, soft_wrap=True)
         return 0
     if str(root) not in _trusted_paths(home):
         raise ConfigError(f"memories are kept only for a workspace you trust; {root} is not "
                           "(a session there asks, and exec --trust trusts it)")
     config = load_config(root, home=home, profile=getattr(args, "profile", None))
+    _guard_credentials(config)
     api_key = _credential_source(config, CredentialVault(home / "auth.json")).acquire().reveal()
     result = run_pass(home=home, root=root, settings=config.memory_settings,
                       backend=make_backend(config, api_key), model=config.backend.model,
