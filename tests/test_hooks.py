@@ -391,7 +391,7 @@ def test_a_matcher_takes_codexs_names_and_foundrys(matcher, tool, matched):
 
 
 def test_a_hook_sees_codexs_input_for_a_command_and_a_patch():
-    assert hook_tool_input("apply_patch", {"patch": "P"}) == {"command": "P"}
+    assert hook_tool_input("apply_patch", {"patch": "P"}) == {"command": "P", "paths": []}
     assert hook_tool_input("run_command", {"command": "ls", "cwd": "", "timeout_s": 120}) == {
         "command": "ls", "cwd": "", "timeout_s": 120}
     assert hook_tool_input("read_file", {"path": "a"}) == {"path": "a"}
@@ -793,7 +793,7 @@ def test_a_patch_is_matched_as_edit_and_sent_as_codexs_command(repo, home, tmp_p
     wiring.runtime.run_turn("edit")
     (seen,) = hook.calls()   # read_file is not an edit
     assert (seen["stdin"]["tool_name"], seen["stdin"]["tool_input"]) == (
-        "apply_patch", {"command": patch})
+        "apply_patch", {"command": patch, "paths": ["a.py"]})
     assert seen["stdin"]["permission_mode"] == "acceptEdits"
     assert (repo / "a.py").read_text(encoding="utf-8") == "A = 2\n"
 

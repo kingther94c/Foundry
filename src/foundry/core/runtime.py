@@ -1423,9 +1423,15 @@ class AgentRuntime:
         if self.hooks is None or self.approval is None:
             return False, ""
         tool_input = hook_tool_input(op.tool, op.args)
-        tool_input.setdefault("description", decision.reason)
+        if not op.tool.startswith("mcp__"):
+            # codex's place for policy's reason: none of Foundry's own tools
+            # takes a description, so none can be spoofed through it.
+            tool_input["description"] = decision.reason
+        # And where no call can reach (D-152): an MCP tool takes any argument,
+        # so `description` was the model's to write, read by a hook as policy's.
         verdict = self._run_hooks(PERMISSION_REQUEST, matcher_names(op.tool), call.call_id,
-                                  tool_name=hook_tool_name(op.tool), tool_input=tool_input)
+                                  tool_name=hook_tool_name(op.tool), tool_input=tool_input,
+                                  permission_reason=decision.reason)
         if verdict is None:
             return False, ""
         if verdict.block:

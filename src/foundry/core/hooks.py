@@ -172,9 +172,14 @@ def matcher_names(tool: str) -> tuple[str, ...]:
 
 def hook_tool_input(tool: str, args: dict[str, Any]) -> dict[str, Any]:
     """A call's input as a hook sees it: codex's ``command`` for a patch, as
-    for a shell command; the arguments themselves otherwise."""
+    for a shell command, with the files it touches as policy names them; the
+    arguments themselves otherwise."""
     if tool == "apply_patch":
-        return {"command": args.get("patch", "")}
+        # The patch's own spelling may be an 8.3 alias, another case, a `./`
+        # or a `..` of the file a hook guards; `paths` is the one the runtime
+        # resolved through the workspace, the filesystem's own, as policy and
+        # the dirty-file guard see it (D-152).
+        return {"command": args.get("patch", ""), "paths": list(args.get("paths", ()))}
     return dict(args)
 
 

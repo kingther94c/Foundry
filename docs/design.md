@@ -287,11 +287,13 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
     2. DENY rules (merged across every layer; a hit ends it -- no ALLOW can flip it);
        then plan mode and read-only tasks (/review) refuse every mutator, before any ASK (D-039)
        (a rule's tool may be a pattern, such as mcp__docs__*, matched case-sensitively; D-043)
-    3. ASK rules
+    3. ASK rules, the dirty-file guard and a command that cannot be parsed;
+       in dont_ask an ASK here is refused where it is found: nobody is asked (D-152)
     4. the mode baseline (default/accept_edits/plan/dont_ask)
     5. ALLOW rules
     6. interactive approval (headless: DENY); the user's PermissionRequest hooks may answer
-       it first, allowing the call once or denying it (D-119)
+       it first, allowing the call once or denying it (D-119), told policy's reason as
+       permission_reason, which no call's arguments can write (D-152)
 ```
 
 - A read-only task sets `PolicyEngine.read_only` for its turn (`/review`,

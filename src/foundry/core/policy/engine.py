@@ -466,6 +466,15 @@ class PolicyEngine:
             f"{op.tool}\x00{op.target}".encode("utf-8")).hexdigest()[:16]
 
         def finish(verdict: Verdict, reason: str, rule_id: str, step: int) -> tuple[Decision, Operation]:
+            if verdict is Verdict.ASK and self.mode is Mode.DONT_ASK:
+                # dont_ask asks nobody (D-152): an ASK rule, the dirty-file
+                # guard or an unparseable command is refused where it is
+                # found. Left an ASK, it was put to the user at the REPL and
+                # to a client that answers approvals, and a PermissionRequest
+                # hook could allow it -- so a repository's ask rule turned the
+                # refusals of step 6 into a hook's approvals.
+                verdict = Verdict.DENY
+                reason = f"{reason} (dont_ask: nobody is asked, so it is refused)"
             return Decision(verdict=verdict, reason=reason, rule_id=rule_id, step=step,
                             policy_digest=self.policy_digest(), operation_digest=digest), op
 

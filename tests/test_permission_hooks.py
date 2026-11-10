@@ -201,6 +201,7 @@ def test_a_hook_is_told_what_codexs_permission_request_is(repo, home, tmp_path):
     assert Path(told.pop("cwd")) == Path(wiring.workspace.root)
     description = told["tool_input"].pop("description")
     assert description and description == wiring.asked[0].reason
+    assert told.pop("permission_reason") == description
     assert told == {
         "session_id": wiring.session.session_id,
         "transcript_path": str(wiring.session.path),
