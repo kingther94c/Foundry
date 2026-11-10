@@ -87,6 +87,9 @@ class EventType:
     # Whether the session may be read for memories (D-145): "disabled" by
     # generate_memories = false or /memories, "enabled" by /memories again.
     MEMORY_MODE = "memory_mode"
+    # The sessions the user's session_retention_days removed as this one
+    # started (D-163), and those it left because they were in use.
+    SESSIONS_PRUNED = "sessions_pruned"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced

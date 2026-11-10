@@ -224,9 +224,11 @@ class Config:
     # clamps every request to this. Shipping it at the tool's own maximum leaves
     # stock behaviour unchanged while giving an operator a knob that bites.
     command_timeout_s: int = 600
-    # Reserved (OQ-19): nothing prunes sessions yet. Deleting a developer's
-    # journals on a default they never chose is not a change to make quietly.
-    session_retention_days: int = 30
+    # How many days a session is kept after it was last written (OQ-19,
+    # D-163); 0 keeps every one. The user's to set, never a repository's:
+    # deleting a developer's journals on a default they never chose is not a
+    # change to make quietly.
+    session_retention_days: int = 0
     # Summary compaction before the context fills (D-040); off, a long task
     # ends partial(context window exhausted) as before.
     auto_compact: bool = True
@@ -471,7 +473,7 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
     runtime = data.get("runtime", {})
 
     for key in ("max_tool_rounds", "max_tool_calls", "max_output_bytes",
-                "command_timeout_s", "session_retention_days"):
+                "command_timeout_s"):
         if key not in runtime:
             continue
         value = runtime[key]
@@ -497,6 +499,19 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
             )
         setattr(config, key, value)
         config.record(key, value, layer)
+
+    if "session_retention_days" in runtime:
+        value = runtime["session_retention_days"]
+        # Lowering it deletes more: what a repository or a client lowers is
+        # the user's journals, so only the user's own layers set it (D-163).
+        if tighten_only:
+            raise ConfigError(f"{layer} config may not set session_retention_days: how long "
+                              "your sessions are kept is yours to say")
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ConfigError("session_retention_days must be a whole number of days, 0 to "
+                              f"keep every session, got {value!r}")
+        config.session_retention_days = value
+        config.record("session_retention_days", value, layer)
 
     if "project_doc_max_bytes" in runtime:
         value = runtime["project_doc_max_bytes"]

@@ -362,7 +362,7 @@ endpoint.
   [D-026](decision-log.md), read by nothing. It becomes the user's setting,
   off by default: swept as a session starts, oldest by last write; an
   archived session kept whole; a session in use never swept; `foundry prune`
-  on demand.
+  on demand. Done (2026-11-10, [D-163](decision-log.md)).
 - **P7 -- a restricted-token sandbox, researched.** The last V2 candidate.
   [D-003](decision-log.md) says V1 claims no sandbox; codex on Windows runs
   commands under a write-restricted token whose writes reach only the

@@ -28,7 +28,7 @@ from foundry.cli.slash_commands import show_undo_plan as _show_plan
 from foundry.cli.repl import with_note as _with_note
 from foundry.cli.setup_commands import start_memory_pass
 from foundry.cli.wiring import Wiring, _announce_resume, _close, _config_args, _say_farewell, build
-from foundry.core.config import user_dir
+from foundry.core.config import load_config, user_dir
 from foundry.core.errors import FoundryError, ResumeError, SessionLocked, UndoError
 from foundry.core.events import EXIT_CODES, TerminalStatus
 from foundry.core.redaction import default_redactor
@@ -47,6 +47,7 @@ from foundry.core.resume import (
 )
 from foundry.core.resume import delete_session as _delete_session
 from foundry.core.resume import move_session as _move_session
+from foundry.core.retention import expired, remove
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.git import capture_baseline, is_git_repository
 from foundry.core.undo import apply_undo, other_changes, plan_undo, read_source, undo_payload
@@ -357,6 +358,50 @@ def cmd_delete(args: argparse.Namespace) -> int:
                       soft_wrap=True)
         return 1
     console.print(f"deleted session {session_id}")
+    return 0
+
+
+def cmd_prune(args: argparse.Namespace) -> int:
+    """`foundry prune` (D-163): the sessions last written more than N days
+    ago, removed now -- N from --days, else session_retention_days. Listed
+    and asked first, as foundry delete asks; --dry-run only lists them, and
+    --force does not ask. Archived sessions are not among them."""
+    console = Console()
+    days = args.days
+    if days is None:
+        try:
+            days = load_config(home=user_dir()).session_retention_days
+        except FoundryError as exc:
+            console.print(f"[red]{escape(str(exc))}[/red]", soft_wrap=True)
+            return 1
+        if days == 0:
+            console.print("[dim]session_retention_days is 0: every session is kept. "
+                          "foundry prune --days N removes those last written more than N "
+                          "days ago[/dim]", soft_wrap=True)
+            return 0
+    if days < 1:
+        console.print("[red]--days takes a whole number of days, at least 1[/red]")
+        return 2
+    folders = expired(user_dir() / "sessions", days)
+    if not folders:
+        console.print(f"[dim]no session was last written more than {days} day(s) ago[/dim]")
+        return 0
+    for folder in folders:
+        console.print(_session_line(summarize(folder)), soft_wrap=True)
+    if args.dry_run:
+        console.print(f"[dim]{len(folders)} session(s) would be removed; nothing was[/dim]")
+        return 0
+    if not args.force and not _confirm(
+            console, f"delete these {len(folders)} session(s) for good, their journals and "
+                     "artifacts?"):
+        console.print("[dim]nothing was deleted[/dim]")
+        return 1
+    swept = remove(folders)
+    console.print(f"deleted {len(swept.removed)} session(s)")
+    if swept.left:
+        console.print(f"[yellow]left {len(swept.left)}, in use or not removable: "
+                      f"{', '.join(swept.left)}[/yellow]", soft_wrap=True)
+        return 1
     return 0
 
 

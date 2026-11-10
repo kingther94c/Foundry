@@ -549,7 +549,8 @@ candidate, is the tenth ([D-037](decision-log.md)).
   and truncation state, and an artifact cannot be fetched by an arbitrary
   path); never inside the workspace, and the file tools have a built-in DENY
   for that directory; appends are atomic; the retention period is
-  user-configurable.
+  user-configurable (`session_retention_days`, every session kept unless
+  the user sets it; [D-163](decision-log.md)).
 - The line envelope is frozen from day one: `{ts, ordinal, type, v, payload}`;
   a first-line header records `{schema_version, foundry_version, session_id,
   workspace, profile, model}`. The evolution rule: add only, never change or

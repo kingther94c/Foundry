@@ -41,6 +41,8 @@ foundry/
 │   ├── backends/            # the ModelBackend protocol + adapters (openai_compat / responses / replay)
 │   ├── auth.py              # AuthProvider + DPAPI storage
 │   ├── session.py           # SessionStore (JSONL) + the audit log
+│   ├── retention.py         # session_retention_days: the sessions last written more than
+│                            #   N days ago, removed as a session starts (D-163)
 │   ├── httpc.py             # a stdlib HTTP/SSE client (~300 lines)
 │   └── winapi.py            # ctypes: DPAPI, Job Objects, reparse tags
 ├── cli/                     # the terminal UI: event subscriber + approval UI (rich); repl.py, the
@@ -650,7 +652,9 @@ class ModelBackend(Protocol):
   session's goal, the whole goal after it and who changed it, and the
   messages its turns and its budget add as `user_input` shown as "(the goal
   went on)" and "(the goal reached its token budget)",
-  [D-127](decision-log.md)).
+  [D-127](decision-log.md); `sessions_pruned` for the sessions the user's
+  `session_retention_days` removed as this one started, and those it left,
+  [D-163](decision-log.md)).
   An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).

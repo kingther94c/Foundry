@@ -1079,3 +1079,17 @@
   - **P8, the wheelhouse hash-pinned (OQ-20).** The tooling first, which needs no download; the lock itself once the user allows the download from PyPI.
 - **Rationale**: D-007's order -- auditable, few dependencies, clear, then features. P6 keeps a requirement the configuration claimed and nothing kept, without deleting anything a user did not ask to have deleted. P7 is research because D-003 says V1 claims no sandbox, and an opt-in that did not hold would be worse than none. P8 separates what needs a download, which is the user's to allow, from what does not.
 - **Not in it**: new parity items; anything that needs a model endpoint or the corporate side.
+
+## D-163 Session retention: the user's to set, every session kept unless they do (OQ-19)
+- **Date**: 2026-11-10 · **Status**: confirmed (P6, D-162); OQ-19 answered[provisional]
+- **Background**: requirements §3.5 says the retention period is user-configurable. `runtime.session_retention_days` has been read, type-checked and given provenance since M0, defaulting to 30, with nothing acting on it; D-026 left it reserved because deleting a developer's journals on a default they never chose is not a change to make quietly. OQ-19 leaned towards 30 days and a size ceiling.
+- **Decision**:
+  - The default is 0, which keeps every session. N removes, as a session starts -- once its own journal is held -- each recorded session whose journal was last written more than N days ago, oldest first. The new session's journal records what went as `sessions_pruned` (the ids removed, and those left for next time), and the user is told.
+  - Only the user's own layers set it: the managed policy, the user's config and its profiles, `-c`. A repository's config or a `foundry mcp-server` client's that sets it is refused, even lower: here lower deletes more.
+  - Never removed: an archived session (D-128), which lives outside `sessions/` and which archiving said to keep; a session a store holds, in this process or another; a folder whose name is not a session id, or that has no journal; anything reached through a symbolic link or a junction.
+  - A session's age is its journal's last write, not its folder's: opening a store, or `foundry sessions` asking whether one is open, writes the folder's lock file, and a listing would otherwise make every session it showed look new.
+  - `foundry prune [--days N] [--dry-run] [--force]` does the same on demand: N from `--days`, else the setting. The sessions are listed and the user asked first, as `foundry delete` asks.
+  - `foundry doctor` says what the setting will do.
+  - No size ceiling, and no promise of encryption at rest. A ceiling removes sessions by a measure the user cannot predict from a date; the artifacts are as protected as the folder's permissions and the disk's encryption make them, which are Windows', not Foundry's.
+- **Rationale**: D-026's reason holds for a default: nothing is deleted unless the user said so. A repository lowering the setting would be the one setting through which a cloned repository deletes the user's files.
+- **What it may not weaken**: a repository's config still never loosens anything; nothing outside `~/.foundry/sessions/` is removed; failing to remove one session never stops a session from starting.

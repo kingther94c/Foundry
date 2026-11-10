@@ -3,7 +3,8 @@ module.
 
 - cli/wiring.py builds a session: the runtime and what it needs.
 - cli/session_commands.py: ``run``, ``resume``, ``fork``, ``undo``,
-  ``sessions``, ``archive``, ``delete``; the interactive prompt is cli/repl.py.
+  ``sessions``, ``archive``, ``delete``, ``prune``; the interactive prompt is
+  cli/repl.py.
 - cli/unattended.py: ``exec``, ``review``, ``record``.
 - cli/login.py: ``login``, ``logout``.
 - cli/mcp_commands.py: ``mcp``, ``mcp-server``.
@@ -28,6 +29,7 @@ from foundry.cli.mcp_commands import cmd_mcp, cmd_mcp_server
 from foundry.cli.session_commands import (
     cmd_archive,
     cmd_delete,
+    cmd_prune,
     cmd_session,
     cmd_sessions,
     cmd_undo,
@@ -274,6 +276,15 @@ def build_parser() -> argparse.ArgumentParser:
     delete.add_argument("--force", action="store_true",
                         help="do not ask first (takes only an id)")
     delete.set_defaults(func=cmd_delete)
+
+    prune = sub.add_parser("prune", help="delete the sessions last written more than N days "
+                                         "ago (session_retention_days)")
+    prune.add_argument("--days", type=int,
+                       help="N; session_retention_days in your config if not given")
+    prune.add_argument("--dry-run", action="store_true",
+                       help="list them; delete nothing")
+    prune.add_argument("--force", action="store_true", help="do not ask first")
+    prune.set_defaults(func=cmd_prune)
 
     report = sub.add_parser("report", help="summarize recorded sessions")
     report.add_argument("--json", action="store_true")

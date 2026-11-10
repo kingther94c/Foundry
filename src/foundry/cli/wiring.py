@@ -63,6 +63,7 @@ from foundry.core.resume import (
     resume_note,
     same_path,
 )
+from foundry.core.retention import sweep
 from foundry.core.runtime import AgentRuntime, Budget
 from foundry.core.session import AuditLog, EventType, SessionStore
 from foundry.core.skills import (
@@ -322,9 +323,28 @@ def build(workspace_path: Path, *, home: Path | None = None,
         _discard(discard)
         raise
     wiring.ephemeral = discard
+    _prune_sessions(wiring, home / "sessions")
     # The terminal's title is an interactive session's (D-139).
     wiring.renderer.title_items = config.terminal_title if interactive else ()
     return wiring
+
+
+def _prune_sessions(wiring: Wiring, sessions: Path) -> None:
+    """The user's session_retention_days (OQ-19, D-163), as a session
+    starts, once its own journal is held: what went is journaled and said."""
+    days = wiring.config.session_retention_days
+    if days <= 0:
+        return
+    swept = sweep(sessions, days)
+    if not swept.removed and not swept.left:
+        return
+    wiring.session.append(EventType.SESSIONS_PRUNED, {
+        "retention_days": days, "removed": list(swept.removed), "left": list(swept.left)})
+    said = (f"removed {len(swept.removed)} session(s) last written more than {days} "
+            "day(s) ago (session_retention_days)")
+    if swept.left:
+        said += f"; {len(swept.left)} in use or not removable, left for next time"
+    wiring.runtime.events.emit(Notice(said, level="info"))
 
 
 def _guard_credentials(config: Config) -> None:

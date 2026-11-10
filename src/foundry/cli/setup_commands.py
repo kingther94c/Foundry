@@ -295,6 +295,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             ok = False
         else:
             console.print(f"protocol  {config.backend.protocol}")
+        days = config.session_retention_days
+        # What the sweep at each session's start will do (D-163).
+        console.print("sessions  " + ("every one kept" if days == 0 else
+                                      f"kept {days} day(s) after their last write")
+                      + " (session_retention_days)")
     except FoundryError as exc:
         console.print(f"[red]config  {exc}[/red]")
         ok = False
