@@ -9,12 +9,55 @@ Frozen at M0 (design.md section 8).
 
 from __future__ import annotations
 
+import json
+import re
 import urllib.parse
 from dataclasses import dataclass
-from typing import Iterator, Literal, Mapping, Protocol, runtime_checkable
+from typing import Any, Iterator, Literal, Mapping, NoReturn, Protocol, runtime_checkable
 
 from foundry.core.conversation import Capabilities, ModelTurn, ToolUseBlock, TurnRequest, Usage
-from foundry.core.errors import ProtocolError
+from foundry.core.errors import FatalError, ProtocolError, QuotaExceeded, StreamDropped
+
+# Codes an OpenAI-family provider reports inside an answer that asking again
+# cannot fix (D-147). Every other code -- server_error, rate_limit_exceeded,
+# an overload, one Foundry has never seen -- has the turn asked again, as
+# codex does.
+PERMANENT_ERROR_CODES = frozenset({"context_length_exceeded", "invalid_prompt",
+                                   "invalid_request_error", "usage_not_included"})
+_TRY_AGAIN = re.compile(r"try again in (\d+(?:\.\d+)?)\s*(ms|s)\b", re.IGNORECASE)
+
+
+def raise_reported_error(error: Any, *, where: str) -> NoReturn:
+    """A failure the provider reported inside a successful HTTP answer: an
+    error event or chunk part-way through a stream, or a response whose
+    status is failed (D-147).
+
+    Taken for the end of the turn, a cut answer was kept as the model's whole
+    one; taken for a protocol fault, a passing server error ended the run.
+    It is asked again, as a cut stream is (D-099), unless its code says
+    waiting cannot help.
+    """
+    if not isinstance(error, dict):
+        error = {"message": str(error)} if error else {}
+    code = error.get("code") or error.get("type") or "an unnamed error"
+    message = str(error.get("message") or "no message")
+    detail = json.dumps(error, default=str)[:500]
+    text = f"the provider reported {code} {where}: {message}"
+    if "insufficient_quota" in (code, error.get("type")):
+        raise QuotaExceeded(f"the account's quota is used up ({text}); waiting will "
+                            "not help, so check its plan and billing", payload=detail)
+    if isinstance(code, int):
+        # vLLM puts the HTTP status there.
+        permanent = code < 500 and code != 429
+    else:
+        permanent = bool({code, error.get("type")} & PERMANENT_ERROR_CODES)
+    if permanent:
+        raise FatalError(text, payload=detail)
+    hint = _TRY_AGAIN.search(message)
+    wait = None
+    if hint:
+        wait = float(hint.group(1)) / (1000.0 if hint.group(2).lower() == "ms" else 1.0)
+    raise StreamDropped(text, payload=detail, retry_after=wait)
 
 # The model list (D-067): asked for only when the user types /model, so it
 # waits less than a turn would, and is never retried.

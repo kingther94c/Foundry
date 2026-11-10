@@ -25,7 +25,7 @@ from foundry.core.conversation import (
     ToolUseBlock,
     TurnRequest,
 )
-from foundry.core.errors import ProtocolError, TransientError
+from foundry.core.errors import StreamDropped, TransientError
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -201,12 +201,14 @@ def test_streaming_falls_back_to_terminal_output(server):
     assert collect_turn(iter(backend.stream_turn(request_with_history()))).text == "ok"
 
 
-def test_provider_failure_becomes_a_protocol_error(server):
+def test_a_reported_failure_is_asked_again(server):
+    """Not a protocol fault: the provider said the turn failed, and a failure
+    with no code that says waiting cannot help is asked again (D-147)."""
     _Handler.script = {"sse": [
         {"type": "response.failed", "response": {"error": {"message": "model overloaded"}}},
     ]}
     backend = ResponsesBackend(base_url=base_url(server), model="gpt-5")
-    with pytest.raises(ProtocolError, match="model overloaded"):
+    with pytest.raises(StreamDropped, match="model overloaded"):
         collect_turn(iter(backend.stream_turn(request_with_history())))
 
 

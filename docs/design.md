@@ -191,7 +191,12 @@ async def run_turn(user_input):
   blocked ([D-085](decision-log.md)). A stream that breaks after it began is a
   `StreamDropped`: the runtime sends the same request again, up to
   `backend.stream_max_retries` times, since nothing of a turn is acted on
-  before it finishes ([D-099](decision-log.md)); an AuthError triggers a
+  before it finishes ([D-099](decision-log.md)). So is a failure the provider
+  reports inside a 200 answer -- the Responses API's `error` event or
+  `response.failed`, an error chunk or a `finish_reason` of `error` in Chat
+  Completions -- unless its code says waiting cannot help (a used-up quota, a
+  context that is too long, a refused request), and a wait it names is
+  waited ([D-147](decision-log.md)); an AuthError triggers a
   single-flight refresh (a process lock plus a file lock against multi-instance
   races) and one retry. A policy denial is not an error: the call is answered
   with a tool result the model reads, and a `tool_rejected` event records it.

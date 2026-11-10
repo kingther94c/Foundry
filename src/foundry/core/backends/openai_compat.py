@@ -17,6 +17,7 @@ from foundry.core.backends.base import (
     MODELS_MAX_BYTES,
     MODELS_TIMEOUT_S,
     model_ids,
+    raise_reported_error,
     ReasoningComplete,
     RequestRecord,
     StreamEvent,
@@ -232,8 +233,12 @@ class OpenAICompatBackend:
         )
         payload = response.json()
         choices = payload.get("choices") or []
+        if isinstance(payload.get("error"), dict):
+            raise_reported_error(payload["error"], where="in its answer")
         if not choices:
             raise ProtocolError("response contained no choices")
+        if choices[0].get("finish_reason") == "error":
+            raise StreamDropped("the provider ended its answer with an error and said no more")
         message = choices[0].get("message", {})
 
         text = message.get("content") or ""
@@ -304,6 +309,14 @@ class OpenAICompatBackend:
 
         for chunk in chunks:
             saw_chunk = True
+            # An error reported in the stream (D-147): OpenRouter's beside a
+            # finish_reason of "error", vLLM's as the chunk itself. The stream
+            # may still close with [DONE], and what came before it is not the
+            # model's whole answer.
+            if isinstance(chunk.get("error"), dict):
+                raise_reported_error(chunk["error"], where="mid-turn")
+            if chunk.get("object") == "error":
+                raise_reported_error(chunk, where="mid-turn")
             if chunk.get("usage"):
                 usage = _usage_from(chunk["usage"])
             model = chunk.get("model", model)
@@ -311,6 +324,9 @@ class OpenAICompatBackend:
                 delta = choice.get("delta") or {}
                 if choice.get("finish_reason"):
                     finish_reason = choice["finish_reason"]
+                if finish_reason == "error":
+                    raise StreamDropped("the provider ended the turn with an error part-way "
+                                        "and said no more")
 
                 piece = _reasoning_text(delta)
                 if piece:

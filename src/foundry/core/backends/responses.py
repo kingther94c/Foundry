@@ -28,6 +28,7 @@ from foundry.core.backends.base import (
     MODELS_MAX_BYTES,
     MODELS_TIMEOUT_S,
     model_ids,
+    raise_reported_error,
     ReasoningComplete,
     RequestRecord,
     StreamEvent,
@@ -51,7 +52,7 @@ from foundry.core.conversation import (
     TurnRequest,
     Usage,
 )
-from foundry.core.errors import ProtocolError, StreamDropped, TransientError
+from foundry.core.errors import StreamDropped, TransientError
 from foundry.core.images import data_url
 from foundry.core.httpc import (HttpClient, NotStreaming, open_retrying_stream,
                                 retry_with_backoff)
@@ -328,6 +329,9 @@ class ResponsesBackend:
             attempts=self.max_retries, on_retry=self.on_retry,
         )
         payload = response.json()
+        if payload.get("status") == "failed" or isinstance(payload.get("error"), dict):
+            # A failed response answers 200 too (D-147).
+            raise_reported_error(payload.get("error"), where="in its answer")
         text, calls = _parse_output(payload.get("output", []))
         usage = _usage_from(payload.get("usage"))
         self.reasons = self.reasons or _has_reasoning(payload.get("output"))
@@ -430,9 +434,17 @@ class ResponsesBackend:
                         yield TextDelta(text)
                     calls.extend(parsed)
 
-            elif kind == "response.failed" or kind == "error":
-                detail = (event.get("response") or event).get("error") or {}
-                raise ProtocolError(f"provider reported a failure: {detail}")
+            elif kind == "response.failed":
+                raise_reported_error((event.get("response") or {}).get("error"),
+                                     where="mid-turn")
+            elif kind == "error":
+                # The API's own error event has its code and message at the
+                # top level; some gateways nest them under "error" (D-147).
+                nested = event.get("error")
+                raise_reported_error(
+                    nested if isinstance(nested, dict) else
+                    {k: event[k] for k in ("code", "message", "param") if event.get(k)},
+                    where="mid-turn")
 
         # Any call whose 'done' event never arrived still has its fragments.
         for slot in partial.values():

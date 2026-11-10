@@ -300,6 +300,12 @@ the last month went to the last of those. What is owed instead:
   inject failures (429s, cut streams, error events). What it finds becomes a
   fix with a test, and every recorded stream that shows a defect becomes a
   fixture. A real endpoint, when there is one, repeats the same scenarios.
+  First round (2026-11-10): the golden fix, a feature in `tools/`, a run
+  stopped by its budget and resumed, compaction, a sub-agent with
+  `--output-schema`, and a review, across the three protocols, all completed
+  with their evidence accepted and the credential in no file; injected 429s
+  and cut streams were recovered. One defect: a failure reported inside a
+  stream ([D-147](decision-log.md)).
 - **P2 -- review the new attack surface.** Hooks, the MCP server and client
   (HTTP, elicitation, resources), memories, sub-agents and skills arrived
   after the last adversarial review (round six, 2026-09). Each gets the same

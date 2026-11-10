@@ -804,7 +804,8 @@ class AgentRuntime:
             except StreamDropped as exc:
                 if attempt == attempts:
                     raise
-                delay = min(2.0 ** (attempt - 1), 60.0)
+                # A provider that said how long to wait is waited for (D-147).
+                delay = min(max(2.0 ** (attempt - 1), exc.retry_after or 0.0), 60.0)
                 self._retrying(exc, attempt + 1, attempts, delay, cut=True,
                                shown=bool(getattr(exc, "shown", "")))
                 self.sleep(delay)
