@@ -638,7 +638,7 @@ def run_shell(wiring: "Wiring", console: Console, command: str) -> None:
                        "timed_out": result.timed_out, "stopped": False,
                        "duration_ms": result.duration_ms})
     scrub = wiring.runtime.context.redactor.scrub
-    printed = combined_output(result).replace("\r\n", "\n")
+    printed = combined_output(result)
     output, _ = truncate_middle(scrub(printed).rstrip(),
                                 context.max_output_bytes)
     header = (f"timed out after {timeout_s}s, process tree terminated" if result.timed_out

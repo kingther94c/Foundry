@@ -344,9 +344,11 @@ def output_tail(text: str) -> str:
 
 
 def combined_output(result: CommandResult) -> str:
-    """What a command printed, stdout then stderr, as the model reads it."""
-    stdout = decode_output(result.stdout).text
-    stderr = decode_output(result.stderr).text
+    """What a command printed, stdout then stderr, as the model reads it:
+    with Windows line ends made plain ones, which the model was sent as they
+    came, a stray character on every line (D-149)."""
+    stdout = decode_output(result.stdout).text.replace("\r\n", "\n")
+    stderr = decode_output(result.stderr).text.replace("\r\n", "\n")
     if not stderr.strip():
         return stdout
     return f"{stdout}\n[stderr]\n{stderr}" if stdout.strip() else f"[stderr]\n{stderr}"

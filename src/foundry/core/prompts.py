@@ -105,10 +105,18 @@ def permissions_paragraph(policy: PolicyEngine) -> str:
     lines.extend(f"- {item}" for item in categorical_denials())
     if policy.dirty_files:
         listed = ", ".join(sorted(policy.dirty_files)[:10])
-        lines.append(
-            f"These files had uncommitted changes before this session and need explicit "
-            f"approval to edit: {listed}"
-        )
+        if policy.interactive and policy.mode is not Mode.DONT_ASK:
+            lines.append(
+                f"These files had uncommitted changes before this session and need explicit "
+                f"approval to edit: {listed}"
+            )
+        else:
+            # The guard asks whatever the rules allow, and nobody is here to
+            # answer: "need explicit approval" read as a way through (D-149).
+            lines.append(
+                f"These files had uncommitted changes before this session, and an edit to "
+                f"them needs approval nobody can give in this run, so it is refused: {listed}"
+            )
     return "\n".join(lines)
 
 

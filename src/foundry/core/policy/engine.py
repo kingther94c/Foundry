@@ -417,6 +417,30 @@ class PolicyEngine:
     def _grant_key(op: Operation) -> str:
         return f"{op.tool}\x00{op.target}\x00{op.digest}"
 
+    def may_allow(self, tool: str, kind: ToolKind) -> bool:
+        """Whether some call to ``tool`` could be allowed as things stand: what
+        a request offers the model (D-148, D-149).
+
+        False for a mutator in a read-only task, and, where nobody can approve
+        (dont_ask, or a run nobody watches), for a tool that no allow rule
+        names, no grant covers and the mode does not allow -- an MCP server's
+        tool with no rule, say: every call to it ends at step 6, refused.
+        True whenever the answer turns on the arguments, which only a call
+        has: an allow rule naming the tool may not match this one, and a
+        DENY or ASK rule may still refuse it.
+        """
+        if self.read_only and kind is ToolKind.MUTATOR:
+            return False
+        if self.interactive and self.mode is not Mode.DONT_ASK:
+            return True
+        if self.mode is Mode.ACCEPT_EDITS and tool == "apply_patch":
+            return True
+        if any(key.split("\x00", 1)[0] == tool for key in self.session_grants):
+            return True
+        return any(r.verdict is Verdict.ALLOW
+                   and (r.tool == tool or fnmatch.fnmatchcase(tool, r.tool))
+                   for r in self.rules)
+
     def policy_digest(self) -> str:
         joined = "|".join(sorted(r.identity() for r in self.rules))
         return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]

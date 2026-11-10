@@ -295,6 +295,16 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   invited to spend a turn on a refusal; a call to one anyway is still
   refused by the policy ([D-148](decision-log.md)). Plan mode is still
   offered them: it plans the changes it will make once approved.
+- Where nobody can approve (`dont_ask`, or a run nobody watches: `exec`,
+  `foundry mcp-server` until its client can be asked), a request offers
+  only the tools some call to could be allowed: those an allow rule names
+  (by name or pattern), a session grant covers, or the mode allows
+  (`accept_edits`, for patches). An MCP server's tool with no rule, or
+  `apply_patch` with none, is left out rather than offered and refused at
+  step 6 every time; a call to one anyway is refused as before
+  (`PolicyEngine.may_allow`, [D-149](decision-log.md)). Its permissions
+  paragraph says files with uncommitted changes are refused, not that they
+  need approval.
   `/review --base REV` and `/review --commit REV` ([D-066](decision-log.md))
   review a branch or one commit the same way.
 - The mode changes only when the user says so at the session's prompt:

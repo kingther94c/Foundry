@@ -306,6 +306,12 @@ the last month went to the last of those. What is owed instead:
   with their evidence accepted and the credential in no file; injected 429s
   and cut streams were recovered. One defect: a failure reported inside a
   stream ([D-147](decision-log.md)).
+  Second round: a REPL session with `/compact` and `/undo`, a refactor
+  under injected 429s, overloads, a cut stream and an error event, an MCP
+  tool with PostToolUse and Stop hooks, and memories written, merged and
+  given to the next session -- all completed. Defects: a read-only task and
+  an unattended run offered tools they could only have refused, and four
+  small ones ([D-148](decision-log.md), [D-149](decision-log.md)).
 - **P2 -- review the new attack surface.** Hooks, the MCP server and client
   (HTTP, elicitation, resources), memories, sub-agents and skills arrived
   after the last adversarial review (round six, 2026-09). Each gets the same

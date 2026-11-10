@@ -156,7 +156,9 @@ class ListFiles:
 
     def validate(self, args: dict[str, Any]) -> Operation:
         _reject_unknown(args, {"path", "pattern", "max_entries"})
-        path = _require_str(args, "path", ".")
+        # An empty path is the root, as leaving it out is: the schema says it
+        # defaults to the root, and a model that sent "" for it was refused.
+        path = _require_str(args, "path", ".") or "."
         pattern = _require_str(args, "pattern", "*")
         limit = _require_int(args, "max_entries", MAX_LIST_ENTRIES)
         if limit < 1:
@@ -234,7 +236,7 @@ class SearchText:
     def validate(self, args: dict[str, Any]) -> Operation:
         _reject_unknown(args, {"query", "path", "glob", "ignore_case"})
         query = _require_str(args, "query")
-        path = _require_str(args, "path", ".")
+        path = _require_str(args, "path", ".") or "."
         glob = _require_str(args, "glob", "*")
         ignore_case = args.get("ignore_case", False)
         if not isinstance(ignore_case, bool):
@@ -328,7 +330,12 @@ class SearchText:
                     if regex.search(line):
                         total += 1
                         if len(matches) < MAX_SEARCH_MATCHES:
-                            matches.append(f"{rel}:{lineno}: {line.strip()[:200]}")
+                            # Indentation kept: a patch's context lines
+                            # must match it, and a model given stripped lines
+                            # read the file again to learn it (D-149).
+                            text = line.rstrip()
+                            indent = len(text) - len(text.lstrip())
+                            matches.append(f"{rel}:{lineno}: {text[:indent + 200]}")
                 if timed_out:
                     break
             if timed_out:

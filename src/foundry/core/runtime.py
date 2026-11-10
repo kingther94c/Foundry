@@ -850,16 +850,14 @@ class AgentRuntime:
                         **fields)
 
     def _offered_tools(self) -> tuple[ToolSchema, ...]:
-        """The tools a request offers. A read-only task -- a review, /side,
-        /recap, a read-only sub-agent -- is not offered the ones its policy
-        refuses whatever their arguments (D-148): offered, they invited a
-        model to spend a turn on an edit or a test run that could only be
-        refused. A call to one is still refused, not unknown."""
-        schemas = self.registry.schemas()
-        if not self.policy.read_only:
-            return schemas
-        return tuple(s for s in schemas
-                     if self.registry.get(s.name).kind is not ToolKind.MUTATOR)
+        """The tools a request offers: those the policy could allow some call
+        to. A read-only task -- a review, /side, /recap, a read-only sub-agent
+        -- is not offered a mutator (D-148), and a run nobody can approve for
+        is not offered a tool no rule allows (D-149): offered, they invited a
+        model to spend a turn on a call that could only be refused. A call to
+        one is still refused by the policy, not taken for an unknown tool."""
+        return tuple(s for s in self.registry.schemas()
+                     if self.policy.may_allow(s.name, self.registry.get(s.name).kind))
 
     def _attempt(self, messages: tuple[Message, ...] | None, purpose: str):
         request = TurnRequest(

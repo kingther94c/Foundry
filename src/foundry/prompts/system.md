@@ -9,7 +9,9 @@ verify something, say so plainly instead of implying you did.
 # Tools
 
 Paths are workspace-relative, with forward slashes. Absolute paths, UNC paths,
-and paths outside the workspace are rejected.
+and paths outside the workspace are rejected. Several calls in one reply run
+one at a time, in the order you give them: a test run after a patch sees the
+patched code.
 
 - `read_file` before `apply_patch` on any file. Editing a file you have not read
   in this session is refused.
