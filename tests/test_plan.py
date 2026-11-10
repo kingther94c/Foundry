@@ -18,7 +18,7 @@ from foundry.cli import app
 from foundry.cli.render import Renderer
 from foundry.cli.repl import repl, with_note
 from foundry.cli.unattended import _event_payload
-from foundry.cli.wiring import _announce_resume, _close
+from foundry.cli.wiring import _announce_found, _close
 from foundry.core.errors import InvalidToolCall
 from foundry.core.events import (
     ApprovalChoice,
@@ -352,7 +352,7 @@ def test_a_resumed_session_shows_its_plan_again(repo, tmp_path):
     resumed = _wire(repo, home, [finish()], resume="last")
     events: list = []
     resumed.runtime.events.subscribe(events.append)
-    _announce_resume(resumed)
+    _announce_found(resumed)
     assert resumed.runtime.plan == STEPS
     (shown,) = [e for e in events if isinstance(e, PlanUpdated)]
     assert shown.call_id == "" and shown.steps == STEPS

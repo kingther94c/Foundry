@@ -21,7 +21,7 @@ from foundry.cli.attachments import attach as _attach
 from foundry.cli.attachments import take_images as _take_images
 from foundry.cli.repl import with_note as _with_note
 from foundry.cli.session_commands import _forget, _fork
-from foundry.cli.wiring import Wiring, _announce_resume, _close, _config_args, build
+from foundry.cli.wiring import Wiring, _announce_found, _close, _config_args, build
 from foundry.core.backends.recording import RecordingBackend
 from foundry.core.config import user_dir
 from foundry.core.errors import FoundryError, ToolError
@@ -94,7 +94,7 @@ def announce_start(wiring: Wiring) -> None:
         mode=wiring.runtime.policy.mode.value, effort=backend.effort,
         reasoning_summary=backend.reasoning_summary, verbosity=backend.verbosity,
         ephemeral=wiring.ephemeral is not None))
-    _announce_resume(wiring)
+    _announce_found(wiring)
 
 
 def _run_unattended(runtime: AgentRuntime, task: str, images: tuple = ()):
@@ -384,6 +384,7 @@ def cmd_record(args: argparse.Namespace) -> int:
     wiring.runtime.backend = recorder
     wiring.renderer.show_disclosure(str(wiring.workspace.root),
                                     wiring.config.backend.model, wiring.config.mode.value)
+    _announce_found(wiring)
     try:
         wiring.runtime.run_turn(args.task)
     finally:

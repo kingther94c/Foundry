@@ -27,7 +27,7 @@ from foundry.cli.slash_commands import show_outcome as _show_outcome
 from foundry.cli.slash_commands import show_undo_plan as _show_plan
 from foundry.cli.repl import with_note as _with_note
 from foundry.cli.setup_commands import start_memory_pass
-from foundry.cli.wiring import Wiring, _announce_resume, _close, _config_args, _say_farewell, build
+from foundry.cli.wiring import Wiring, _announce_found, _close, _config_args, _say_farewell, build
 from foundry.core.config import load_config, user_dir
 from foundry.core.errors import FoundryError, ResumeError, SessionLocked, UndoError
 from foundry.core.events import EXIT_CODES, TerminalStatus
@@ -212,7 +212,7 @@ def cmd_session(args: argparse.Namespace) -> int:
     if _interactive():
         # Where the conversation was, as codex's resume shows it (D-108).
         show_conversation(wiring)
-    _announce_resume(wiring)
+    _announce_found(wiring)
     for raw in getattr(args, "image", None) or []:
         if not _attach(wiring, console, raw):
             _close(wiring, TerminalStatus.CANCELLED, "an image could not be attached")
@@ -260,6 +260,7 @@ def cmd_session(args: argparse.Namespace) -> int:
                     console.print(f"[red]{exc}[/red]")
                     return EXIT_CODES[TerminalStatus.FAILED]
                 console.print(f"[dim]new session {wiring.session.session_id}[/dim]")
+                _announce_found(wiring)
             if ended in (ARCHIVE_SESSION, DELETE_SESSION):
                 put_away, ended = ended, TerminalStatus.CANCELLED
                 reason = ("the user archived this session" if put_away == ARCHIVE_SESSION
@@ -422,7 +423,7 @@ def _switch_to_fork(wiring: Wiring, console, flags: dict) -> Wiring:
     _close(wiring, TerminalStatus.CANCELLED, f"the user forked this session into {forked}")
     _say_farewell(console, wiring)
     fork.chosen = dict(wiring.chosen)
-    _announce_resume(fork)
+    _announce_found(fork)
     console.print(f"[dim]now in {forked}, a fork of {source}, which is kept as it "
                   "was[/dim]", soft_wrap=True)
     return fork
@@ -463,7 +464,7 @@ def _switch_to_resumed(wiring: Wiring, console, flags: dict) -> Wiring:
     if _interactive():
         # Where its conversation was, as `foundry resume` shows it (D-108).
         show_conversation(resumed)
-    _announce_resume(resumed)
+    _announce_found(resumed)
     console.print(f"[dim]now in {resumed.session.session_id}; {this} is kept, and can be "
                   "resumed[/dim]", soft_wrap=True)
     return resumed

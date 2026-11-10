@@ -18,7 +18,7 @@ from rich.console import Console
 
 from foundry.cli import app
 from foundry.cli.repl import repl, with_note
-from foundry.cli.wiring import _announce_resume, _close, build
+from foundry.cli.wiring import _announce_found, _close, build
 from foundry.core.backends.anthropic import build_body
 from foundry.core.backends.replay import ScriptedBackend
 from foundry.core.context import MASK_NOTICE, ContextManager
@@ -680,7 +680,7 @@ def test_a_change_of_model_is_announced(repo, tmp_path):
                    overrides={"model": "another"})
     heard = []
     wiring.runtime.events.subscribe(heard.append)
-    _announce_resume(wiring)
+    _announce_found(wiring)
     _close(wiring, TerminalStatus.CANCELLED, "session ended")
     texts = [e.text for e in heard if isinstance(e, Notice)]
     assert any(t.startswith(f"resumed session {session.session_id}") for t in texts)

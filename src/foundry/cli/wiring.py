@@ -125,6 +125,9 @@ class Wiring:
     # instructions carry their summary.
     memory_folder: Path | None = None
     memories_used: bool = False
+    # What session_retention_days removed as this session started (D-163),
+    # said once the front end listens (D-168); "" when nothing went.
+    swept: str = ""
 
 
 def _trusted_paths(home: Path) -> set[str]:
@@ -331,7 +334,9 @@ def build(workspace_path: Path, *, home: Path | None = None,
 
 def _prune_sessions(wiring: Wiring, sessions: Path) -> None:
     """The user's session_retention_days (OQ-19, D-163), as a session
-    starts, once its own journal is held: what went is journaled and said."""
+    starts, once its own journal is held: what went is journaled here, and
+    said by _announce_found, once the front end listens -- said here, it went
+    out before exec --json was listening (D-168)."""
     days = wiring.config.session_retention_days
     if days <= 0:
         return
@@ -340,11 +345,10 @@ def _prune_sessions(wiring: Wiring, sessions: Path) -> None:
         return
     wiring.session.append(EventType.SESSIONS_PRUNED, {
         "retention_days": days, "removed": list(swept.removed), "left": list(swept.left)})
-    said = (f"removed {len(swept.removed)} session(s) last written more than {days} "
-            "day(s) ago (session_retention_days)")
+    wiring.swept = (f"removed {len(swept.removed)} session(s) last written more than {days} "
+                    "day(s) ago (session_retention_days)")
     if swept.left:
-        said += f"; {len(swept.left)} in use or not removable, left for next time"
-    wiring.runtime.events.emit(Notice(said, level="info"))
+        wiring.swept += f"; {len(swept.left)} in use or not removable, left for next time"
 
 
 def _guard_credentials(config: Config) -> None:
@@ -649,12 +653,17 @@ def _announce_mcp(mcp: McpServers, session: SessionStore, sink: EventSink) -> No
         sink.emit(Notice(f"MCP tool not offered: {skipped}", level="warning"))
 
 
-def _announce_resume(wiring: Wiring) -> None:
-    """Said through the event stream, so a --json consumer hears it too."""
+def _announce_found(wiring: Wiring) -> None:
+    """What the session's start found -- the sessions session_retention_days
+    removed (D-168), and what a resume found -- said through the event
+    stream once the front end listens, so a --json consumer hears it too.
+    Every front end calls it once a session is built."""
+    events = wiring.runtime.events
+    if wiring.swept:
+        events.emit(Notice(wiring.swept, level="info"))
     state = wiring.resumed
     if state is None:
         return
-    events = wiring.runtime.events
     ended = state.status.value + (f" ({state.reason})" if state.reason else "")
     task = state.first_task.splitlines()[0][:80] if state.first_task else "?"
     events.emit(Notice(

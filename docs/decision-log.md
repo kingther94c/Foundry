@@ -1131,3 +1131,10 @@
 - **Decision**: as each task the server runs ends, the calls it left are answered -- `runtime.answer_left_calls()`, as the REPL calls it -- and journaled, so a session later resumed from its journal finds nothing to repair.
 - **Rationale**: a session held open for a reply is a conversation that goes on, which is what D-063 answers the calls for; answering as the task ends, not as the reply begins, keeps the journal the same whichever way the session is continued.
 - **What it may not weaken**: the answer the client gets is unchanged; a task's `finish` is still the gate it was; nothing is answered for a call that ran.
+
+## D-168 The sessions retention removed are said once the front end listens
+- **Date**: 2026-11-10 · **Status**: confirmed (P9, D-166); amends D-163
+- **Background**: found in P9's round over session retention. D-163 says the sessions a session's start removes are journaled and said. They were said from inside `build()`, before `exec --json` subscribes to the event stream: the terminal's stderr had the line, the JSON stream did not, so a script running `foundry exec --json` never heard that sessions were deleted. What a resume finds was already said by the front end, through the event stream, for that reason.
+- **Decision**: the sweep is journaled in `build()`, as before, and said by `_announce_found` -- what was `_announce_resume`, now what a session's start found: the sessions removed, then what a resume found. Every front end calls it once it listens: `exec` (after `session_started`), `foundry mcp-server`, `run`, `resume`, `fork`, `/new` and `record`.
+- **Rationale**: one place says what a session's start found, after the front end is listening, so whatever else a start comes to find is heard the same way.
+- **What it may not weaken**: what is removed, and when, is unchanged; the journal record is written as the sweep happens, before anything is said.

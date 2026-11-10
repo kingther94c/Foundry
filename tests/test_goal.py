@@ -17,7 +17,7 @@ import pytest
 from foundry.cli.exporting import conversation_markdown
 from foundry.cli.goals import IDLE_TURNS
 from foundry.cli.repl import STOPPED_NOTE
-from foundry.cli.wiring import _announce_resume, _close
+from foundry.cli.wiring import _announce_found, _close
 from foundry.core.conversation import ModelTurn, StopReason, Usage
 from foundry.core.errors import ToolError, TransientError
 from foundry.core.events import Notice, TerminalStatus
@@ -436,7 +436,7 @@ def test_a_resumed_session_has_its_goal_back_paused(repo, tmp_path):
                                         tokens_used=30)
     assert "update_goal" in resumed.runtime.registry.tools
     assert _records(resumed, EventType.GOAL) == _records(wiring, EventType.GOAL)
-    _announce_resume(resumed)
+    _announce_found(resumed)
     assert ("its goal is paused (30 of 1,000 tokens, 0s); /goal resume goes on with it"
             in said)
 

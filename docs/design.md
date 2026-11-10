@@ -655,7 +655,8 @@ class ModelBackend(Protocol):
   went on)" and "(the goal reached its token budget)",
   [D-127](decision-log.md); `sessions_pruned` for the sessions the user's
   `session_retention_days` removed as this one started, and those it left,
-  [D-163](decision-log.md)).
+  [D-163](decision-log.md); said once the front end listens,
+  [D-168](decision-log.md)).
   An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).

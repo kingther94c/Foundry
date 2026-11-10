@@ -11,7 +11,7 @@ from __future__ import annotations
 import dataclasses
 
 from foundry.cli.repl import repl
-from foundry.cli.wiring import _announce_resume, _close
+from foundry.cli.wiring import _announce_found, _close
 from foundry.core.events import ApprovalChoice, Notice, PlanStep, StepStatus, TerminalStatus
 from foundry.core.policy.engine import Mode, PolicyEngine
 from foundry.core.prompts import (
@@ -146,7 +146,7 @@ def test_an_approval_does_not_carry_over_a_resume(repo, tmp_path):
     resumed = _wire(repo, home, [], resume="last", overrides={"mode": Mode.PLAN})
     events: list = []
     resumed.runtime.events.subscribe(events.append)
-    _announce_resume(resumed)
+    _announce_found(resumed)
     assert resumed.runtime.policy.mode is Mode.PLAN
     assert resumed.runtime.plan == (PlanStep("Change A to 2", StepStatus.PENDING),)
     assert ("the user had switched this session to default mode. That does not carry "

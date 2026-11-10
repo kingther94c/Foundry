@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import builtins
 import io
+import json
 import os
 import sys
 import time
@@ -21,16 +22,18 @@ import pytest
 from rich.console import Console
 
 from foundry.cli import app
-from foundry.cli.wiring import _close, build
+from foundry.cli.wiring import _announce_found, _close, build
 from foundry.core.config import load_config
 from foundry.core.errors import ConfigError
-from foundry.core.events import TerminalStatus
+from foundry.core.events import Notice, TerminalStatus
 from foundry.core.resume import ARCHIVED, summarize
 from foundry.core.retention import DAY_S, expired, sweep
 from foundry.core.session import EventType, SessionStore
 
+from test_cli_e2e import tool_turn
+from test_cli_flags import _exec_home
 from test_rename import _session
-from test_resume import OVERRIDES, repo  # noqa: F401  (fixture)
+from test_resume import OVERRIDES, _wire, fake_model, repo, turn  # noqa: F401  (fixtures)
 from test_resume_picker import home  # noqa: F401  (fixture)
 
 NOW = time.time()
@@ -227,10 +230,85 @@ def test_a_session_starting_removes_what_has_expired_and_says_so(home, repo):
     try:
         assert _pruned(wiring) == [{"retention_days": 30, "removed": [old], "left": []}]
         assert sorted(_ids(home / "sessions")) == sorted([recent, wiring.session.session_id])
+        # Said once the front end listens (D-168), as what a resume found is.
+        assert "session_retention_days" not in console.file.getvalue()
+        _announce_found(wiring)
         assert ("removed 1 session(s) last written more than 30 day(s) ago "
                 "(session_retention_days)") in console.file.getvalue()
     finally:
         _close(wiring, TerminalStatus.CANCELLED, "session ended")
+
+
+def test_exec_json_hears_what_went_once_the_session_has_started(repo, tmp_path, monkeypatch,
+                                                                capsys, fake_model):
+    """Found in P9 (D-168): said as the session was built, before exec --json
+    was listening, so a script never heard that sessions were deleted."""
+    httpd, handler = fake_model
+    home = _exec_home(tmp_path, httpd, monkeypatch)
+    with open(home / "config.toml", "a", encoding="utf-8") as config:
+        config.write("[runtime]\nsession_retention_days = 30\n")
+    old = _aged(home, 1, 40)
+    handler.turns, handler.index = [tool_turn("finish", {"status": "completed",
+                                                         "summary": "done", "claims": []},
+                                              "f1")], 0
+    assert app.main(["exec", "--json", "fix it", "-C", str(repo)]) == 0
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line]
+    assert events[0]["kind"] == "session_started"
+    assert [e["text"] for e in events if e["kind"] == "notice"][:1] == [
+        "removed 1 session(s) last written more than 30 day(s) ago (session_retention_days)"]
+    assert old not in _ids(home / "sessions")
+
+
+def test_what_is_left_for_next_time_is_said_and_journaled(home, repo):
+    _user_config(home, "[runtime]\nsession_retention_days = 30\n")
+    held = _aged(home, 1, 90)
+    store = SessionStore(home / "sessions", session_id=held, resume=True)
+    try:
+        os.utime(store.path, (NOW - 90 * DAY_S,) * 2)
+        wiring, console = _start(repo, home)
+        try:
+            assert _pruned(wiring) == [{"retention_days": 30, "removed": [], "left": [held]}]
+            _announce_found(wiring)
+            assert ("removed 0 session(s) last written more than 30 day(s) ago "
+                    "(session_retention_days); 1 in use or not removable, left for next "
+                    "time") in console.file.getvalue()
+        finally:
+            _close(wiring, TerminalStatus.CANCELLED, "session ended")
+    finally:
+        store.close()
+
+
+SWEPT = "removed 2 session(s) last written more than 30 day(s) ago (session_retention_days)"
+
+
+def _notices(wiring) -> list[str]:
+    heard: list[str] = []
+    wiring.runtime.events.subscribe(
+        lambda event: heard.append(event.text) if isinstance(event, Notice) else None)
+    return heard
+
+
+def test_new_says_what_its_session_s_start_removed(repo, tmp_path, monkeypatch):
+    monkeypatch.setattr("foundry.cli.session_commands._interactive", lambda: True)
+    first = _wire(repo, tmp_path / "home", [])
+    second = _wire(repo, tmp_path / "home", [])
+    second.swept = SWEPT
+    heard = _notices(second)
+    built = iter([first, second])
+    monkeypatch.setattr("foundry.cli.session_commands.build", lambda *a, **k: next(built))
+    _typed(monkeypatch, "/new", "/exit")
+    app.main(["run", "--workspace", str(repo)])
+    assert heard == [SWEPT]
+
+
+def test_record_says_what_its_session_s_start_removed(repo, tmp_path, monkeypatch):
+    wiring = _wire(repo, tmp_path / "home", [turn(text="done")])
+    wiring.swept = SWEPT
+    heard = _notices(wiring)
+    monkeypatch.setattr("foundry.cli.unattended.build", lambda *a, **k: wiring)
+    app.main(["record", "a task", "--output", str(tmp_path / "f.json"),
+              "--workspace", str(repo)])
+    assert heard[:1] == [SWEPT]
 
 
 def test_by_default_a_session_starting_removes_nothing(home, repo):
