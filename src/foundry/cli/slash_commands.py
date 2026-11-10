@@ -37,7 +37,7 @@ from foundry.cli.session_settings import (
     tell_model,
 )
 from foundry.core.commands import PROMPTS, builtin_prompt, expand, usage_hint
-from foundry.core.config import TERMINAL_TITLE_ITEMS, title_items
+from foundry.core.config_sections import TERMINAL_TITLE_ITEMS, title_items
 from foundry.core.context import SUMMARY_PREFIX
 from foundry.core.conversation import Message, Role, TextBlock
 from foundry.core.errors import Cancelled, ConfigError, FoundryError, PromptError, ToolError

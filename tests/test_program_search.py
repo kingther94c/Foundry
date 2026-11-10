@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from foundry.core.config import McpServerConfig
+from foundry.core.config_mcp import McpServerConfig
 from foundry.core.mcp import start_servers
 from foundry.core.tools.command import run_process
 from foundry.core.tools.git import run_git

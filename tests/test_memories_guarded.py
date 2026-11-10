@@ -25,7 +25,7 @@ import time
 import pytest
 
 from foundry.cli import app
-from foundry.core.config import MemorySettings
+from foundry.core.config_sections import MemorySettings
 from foundry.core.memories import (
     MEMORY_HEADING,
     NOTES_FILE,

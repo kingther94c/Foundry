@@ -27,7 +27,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from foundry.core.config import McpServerConfig, load_config
+from foundry.core.config import load_config
+from foundry.core.config_mcp import McpServerConfig
 from foundry.core.conversation import ToolUseBlock, without_lone_surrogates
 from foundry.core.errors import ConfigError, InvalidToolCall
 from foundry.core.mcp import (

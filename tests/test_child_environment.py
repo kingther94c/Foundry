@@ -23,7 +23,9 @@ import pytest
 
 from foundry.cli.wiring import _guard_credentials, build
 from foundry.core import winapi
-from foundry.core.config import McpServerConfig, ShellEnvironmentPolicy, load_config
+from foundry.core.config import load_config
+from foundry.core.config_mcp import McpServerConfig
+from foundry.core.config_sections import ShellEnvironmentPolicy
 from foundry.core.hooks import Hook, HookSet
 from foundry.core.mcp import StdioClient
 from foundry.core.redaction import Redactor

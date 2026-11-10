@@ -26,7 +26,7 @@ from foundry.cli import mcp_server
 from foundry.cli.unattended import NO_FINISH, unattended
 from foundry.cli.wiring import build
 from foundry.cli.mcp_server import Server
-from foundry.core.config import McpServerConfig
+from foundry.core.config_mcp import McpServerConfig
 from foundry.core.conversation import ModelTurn, StopReason, ToolUseBlock, Usage
 from foundry.core.backends.base import Capabilities
 from foundry.core.backends.replay import _emit

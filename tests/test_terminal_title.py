@@ -15,7 +15,8 @@ from foundry.cli.render import Renderer
 from foundry.cli.title import ACTION_REQUIRED, MAX_TITLE, clean, compose
 from foundry.cli.wiring import _close, build
 from foundry.core.events import ApprovalChoice, ApprovalKind, ApprovalRequest, TerminalStatus
-from foundry.core.config import DEFAULT_TERMINAL_TITLE, load_config
+from foundry.core.config import load_config
+from foundry.core.config_sections import DEFAULT_TERMINAL_TITLE
 from foundry.core.errors import ConfigError
 
 from test_resume import OVERRIDES, _wire, repo  # noqa: F401  (fixtures)

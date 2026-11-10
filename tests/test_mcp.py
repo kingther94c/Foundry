@@ -20,7 +20,8 @@ import pytest
 from rich.console import Console
 
 from foundry.cli.wiring import _close, build
-from foundry.core.config import McpServerConfig, load_config
+from foundry.core.config import load_config
+from foundry.core.config_mcp import McpServerConfig
 from foundry.core.errors import Cancelled, ConfigError, InvalidToolCall, ToolError
 from foundry.core.events import ApprovalChoice, TerminalStatus
 from foundry.core.mcp import (

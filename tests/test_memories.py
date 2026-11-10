@@ -16,7 +16,8 @@ from foundry.cli import app
 from foundry.cli.memories import NOT_TRUSTED, TURN_ON, USAGE
 from foundry.cli.setup_commands import start_memory_pass
 from foundry.cli.wiring import _remember_trust
-from foundry.core.config import MemorySettings, load_config, parse_settings
+from foundry.core.config import load_config, parse_settings
+from foundry.core.config_sections import MemorySettings
 from foundry.core.errors import ConfigError
 from foundry.core.events import TerminalStatus
 from foundry.core.memories import (

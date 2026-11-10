@@ -32,7 +32,7 @@ from typing import Any, Callable
 
 from foundry.core.backends.base import collect_turn
 from foundry.core.commands import builtin_prompt
-from foundry.core.config import MemorySettings
+from foundry.core.config_sections import MemorySettings
 from foundry.core.conversation import (
     Message,
     Role,

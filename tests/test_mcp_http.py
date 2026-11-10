@@ -22,7 +22,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from foundry.core import mcp as mcp_module
-from foundry.core.config import McpServerConfig, load_config
+from foundry.core.config import load_config
+from foundry.core.config_mcp import McpServerConfig
 from foundry.core.errors import Cancelled, ConfigError, ToolError
 from foundry.core.mcp import McpError, StreamableHttpClient, start_servers
 from foundry.core.redaction import Redactor

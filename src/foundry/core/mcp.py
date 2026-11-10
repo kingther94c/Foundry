@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from foundry import __version__
-from foundry.core.config import HEADER_VALUE, McpServerConfig
+from foundry.core.config_mcp import HEADER_VALUE, McpServerConfig
 from foundry.core.conversation import ToolSchema, without_lone_surrogates
 from foundry.core.errors import (Cancelled, FoundryError, ImageRejected, InvalidToolCall,
                                  ToolError)

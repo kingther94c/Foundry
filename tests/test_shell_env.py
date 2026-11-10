@@ -14,7 +14,8 @@ from __future__ import annotations
 import pytest
 
 from foundry.cli.wiring import _close
-from foundry.core.config import ShellEnvironmentPolicy, load_config
+from foundry.core.config import load_config
+from foundry.core.config_sections import ShellEnvironmentPolicy
 from foundry.core.errors import ConfigError
 from foundry.core.redaction import Redactor
 from foundry.core.winapi import child_environment

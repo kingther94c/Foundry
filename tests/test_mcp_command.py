@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from foundry.cli.session_settings import MCP_DESCRIPTION_SHOWN, NO_MCP
-from foundry.core.config import McpServerConfig
+from foundry.core.config_mcp import McpServerConfig
 from foundry.core.mcp import McpServers, McpTool
 from foundry.core.tools.base import ToolKind
 

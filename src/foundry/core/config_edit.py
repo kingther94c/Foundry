@@ -24,7 +24,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from foundry.core.config import _parse_mcp_servers
+from foundry.core.config_mcp import _parse_mcp_servers
 from foundry.core.errors import ConfigError
 
 _BARE_KEY = re.compile(r"[A-Za-z0-9_-]+\Z")

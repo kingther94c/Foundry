@@ -17,7 +17,8 @@ import json
 import pytest
 
 from foundry.cli import app
-from foundry.core.config import McpServerConfig, load_config
+from foundry.core.config import load_config
+from foundry.core.config_mcp import McpServerConfig
 from foundry.core.errors import ConfigError
 from foundry.core.mcp import StreamableHttpClient
 from foundry.core.redaction import Redactor, default_redactor
