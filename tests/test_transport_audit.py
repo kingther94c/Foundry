@@ -105,24 +105,24 @@ def test_the_error_body_is_not_thrown_away():
     """raise_for_status keeps 500 bytes of the body on `payload` and nothing
     read it, so a 400 surfaced as "request rejected (HTTP 400)" while the body
     said exactly which field was wrong."""
-    from foundry.core.runtime import _explain
+    from foundry.core.errors import explain
 
     body = json.dumps({"error": {"message": "Missing user message in `messages`.",
                                  "type": "invalid_request_error"}}).encode()
     with pytest.raises(FatalError) as caught:
         raise_for_status(_response(400, body=body))
 
-    explained = _explain(caught.value)
+    explained = explain(caught.value)
     assert "HTTP 400" in explained
     assert "Missing user message" in explained
 
 
 def test_an_error_without_a_body_reads_cleanly():
-    from foundry.core.runtime import _explain
+    from foundry.core.errors import explain
 
     with pytest.raises(FatalError) as caught:
         raise_for_status(_response(418))
-    assert _explain(caught.value) == str(caught.value)
+    assert explain(caught.value) == str(caught.value)
 
 
 # --- a bad CA bundle is a config error, not a traceback -------------------

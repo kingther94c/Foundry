@@ -113,3 +113,17 @@ class UndoError(FoundryError):
     """A session's changes cannot be undone from here; nothing was changed."""
 
     category = "undo"
+
+
+def explain(exc: Exception) -> str:
+    """The error, plus the provider's own words about it.
+
+    raise_for_status carefully keeps 500 bytes of the response body on
+    ``payload`` and nothing ever read it, so every HTTP failure reached the user
+    as a bare status line -- "request rejected (HTTP 400)" -- while the body
+    sitting unused said exactly which field was wrong.
+    """
+    detail = (getattr(exc, "payload", "") or "").strip()
+    if not detail:
+        return str(exc)
+    return f"{exc}: {detail[:300]}"

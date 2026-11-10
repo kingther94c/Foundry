@@ -15,7 +15,10 @@ foundry/
 ├── core/                    # must not import foundry.cli (CI-enforced)
 │   ├── events.py            # event and submission (op) types, the protocol version
 │   ├── conversation.py      # the provider-agnostic intermediate representation (IR)
-│   ├── runtime.py           # AgentRuntime: the one loop
+│   ├── runtime.py           # AgentRuntime: the one loop; what it calls out to is in mixins
+│                            #   it is made of (D-159): runtime_hooks.py, runtime_history.py
+│                            #   (compaction, rewind, a side question), runtime_goal.py (the
+│                            #   goal, the notifier), runtime_ending.py (how a task ends)
 │   ├── context.py           # ContextManager: projection / truncation / masking / token accounting
 │   ├── policy/              # PolicyEngine: rules, modes, the six-step pipeline, the command segmenter
 │   ├── tools/               # ToolExecutor + the tool implementations + the workspace boundary

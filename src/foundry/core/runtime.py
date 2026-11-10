@@ -10,6 +10,12 @@ behaviour by accident.
 Approval is a request event answered by a later op. The runtime asks its
 approval callback, which the CLI wires to a prompt and headless mode wires to
 DENY; no tool ever blocks on input itself.
+
+The loop is here. What it calls out to is in the mixins AgentRuntime is made
+of, each in a module of its own: the user's hooks (runtime_hooks.py), edits
+to the history -- compaction, rewind, a side question -- (runtime_history.py),
+the goal and the notifier (runtime_goal.py), and how a task ends
+(runtime_ending.py).
 """
 
 from __future__ import annotations
@@ -17,15 +23,19 @@ from __future__ import annotations
 import base64
 import json
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from foundry.core.backends.base import (ModelBackend, ReasoningComplete, TextDelta,
                                         TurnFinished, UsageUpdate)
-from foundry.core.commands import builtin_prompt
 from foundry.core.context import ContextManager
-from foundry.core.conversation import (Message, Role, ToolSchema, ToolUseBlock, TurnRequest,
-                                       Usage)
+from foundry.core.conversation import (
+    Message,
+    ToolSchema,
+    ToolUseBlock,
+    TurnRequest,
+    Usage,
+)
 from foundry.core.errors import (
     AuthError,
     Cancelled,
@@ -36,12 +46,12 @@ from foundry.core.errors import (
     StreamDropped,
     ToolError,
     TransientError,
+    explain,
 )
 from foundry.core.events import (
     ApprovalChoice,
     ApprovalKind,
     ApprovalRequest,
-    Compacted,
     ErrorEvent,
     EventSink,
     MessageDelta,
@@ -49,9 +59,7 @@ from foundry.core.events import (
     PlanStep,
     PlanUpdated,
     Reasoning,
-    StepStatus,
     TerminalStatus,
-    Termination,
     TokenCount,
     ToolBegin,
     ToolEnd,
@@ -62,51 +70,26 @@ from foundry.core.events import (
     new_id,
 )
 from foundry.core.goal import (
-    ACTIVE,
-    BUDGET_LIMITED,
     BUDGET_TURN,
-    COMPLETE,
     Goal,
     budget_prompt,
-    spent,
 )
-from foundry.core.goal import BLOCKED as BLOCKED_GOAL
-from foundry.core.goal import notice as goal_notice
-from foundry.core.goal import view as goal_view
 from foundry.core.hooks import (
-    INTERRUPT,
-    PERMISSION_MODES,
     PERMISSION_REQUEST,
-    POST_COMPACT,
     POST_MODEL_REQUEST,
-    POST_TOOL_USE,
-    PRE_COMPACT,
     PRE_MODEL_REQUEST,
-    PRE_TOOL_USE,
-    READERS,
-    SESSION_END,
-    SESSION_END_REASON,
     SESSION_START,
     STOP,
-    USER_PROMPT_SUBMIT,
-    HookVerdict,
-    hook_tool_input,
-    hook_tool_name,
-    matcher_names,
-    rewritten_args,
-    scrubbed,
 )
-from foundry.core.notify import APPROVAL_TYPE as NOTIFY_APPROVAL
-from foundry.core.notify import EVENT_TYPE as NOTIFY_TURN
-from foundry.core.notify import approval_payload
-from foundry.core.notify import payload as notify_payload
 from foundry.core.policy.engine import POLICY_VERSION, Decision, PolicyEngine, Verdict
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.base import Operation, ToolContext, ToolKind, ToolOutput
-from foundry.core.tools.finish import ValidationClaim, verify_claims
-from foundry.core.tools.goal import offer_goal_tools
 from foundry.core.tools.plan import plan_payload
 from foundry.core.tools.registry import ToolRegistry
+from foundry.core.runtime_hooks import HookCalls
+from foundry.core.runtime_history import HistoryEditing
+from foundry.core.runtime_goal import GoalAndNotices
+from foundry.core.runtime_ending import TaskEnding, TurnOutcome
 
 ApprovalCallback = Callable[[ApprovalRequest], ApprovalChoice]
 
@@ -137,20 +120,6 @@ def _tool_end_summary(op: Operation, output: ToolOutput, content: str) -> str:
         first, *rest = output.metadata["rejections"]
         return f"{first} (and {len(rest)} more)" if rest else first
     return content.splitlines()[0] if content else ""
-
-
-def _explain(exc: Exception) -> str:
-    """The error, plus the provider's own words about it.
-
-    raise_for_status carefully keeps 500 bytes of the response body on
-    ``payload`` and nothing ever read it, so every HTTP failure reached the user
-    as a bare status line -- "request rejected (HTTP 400)" -- while the body
-    sitting unused said exactly which field was wrong.
-    """
-    detail = (getattr(exc, "payload", "") or "").strip()
-    if not detail:
-        return str(exc)
-    return f"{exc}: {detail[:300]}"
 
 
 def _seconds(delay: float) -> str:
@@ -214,19 +183,8 @@ class FailureTracker:
             del self.counts[key]
 
 
-@dataclass(frozen=True, slots=True)
-class TurnOutcome:
-    status: TerminalStatus | None
-    text: str
-    summary: str = ""
-    claims: tuple[ValidationClaim, ...] = ()
-    # finish's `result` as JSON text under exec --output-schema (D-051);
-    # None when there is none.
-    result_json: str | None = None
-
-
 @dataclass(slots=True)
-class AgentRuntime:
+class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
     backend: ModelBackend
     registry: ToolRegistry
     policy: PolicyEngine
@@ -344,7 +302,7 @@ class AgentRuntime:
         ``cut``: the turn's stream broke part-way and the turn is asked again
         (D-099); ``shown``: some of its answer was already on screen."""
         payload = {"attempt": attempt, "attempts": attempts, "delay": round(delay, 3),
-                   "reason": _explain(exc)}
+                   "reason": explain(exc)}
         if cut:
             payload["cut"] = True
         self._journal(EventType.MODEL_RETRY, payload)
@@ -355,7 +313,7 @@ class AgentRuntime:
         if not cut:
             # The backend tries again within one request: to the user's
             # hooks each try is an attempt, as codex's (D-122).
-            self._model_hooks(POST_MODEL_REQUEST, status="failed", error=_explain(exc))
+            self._model_hooks(POST_MODEL_REQUEST, status="failed", error=explain(exc))
             self._model_hooks(PRE_MODEL_REQUEST)
 
     def interrupted(self) -> TurnOutcome:
@@ -379,64 +337,6 @@ class AgentRuntime:
         for path in paths:
             self.tool_ctx.read_tracker.forget(path)
 
-    # -- the goal (D-127) ---------------------------------------------------
-
-    def goal_now(self) -> Goal | None:
-        """The goal, with the time spent on it up to now."""
-        if self.goal is None or self._goal_since is None:
-            return self.goal
-        return replace(self.goal, seconds_used=self.goal.seconds_used
-                       + int(self.clock() - self._goal_since))
-
-    def change_goal(self, goal: Goal | None, *, by: str, reason: str = "") -> None:
-        """The goal set, changed or cleared (None) -- by the user, the model,
-        the runtime or its budget: journaled whole, told to the user, and its
-        tools offered to the model. Build ``goal`` from goal_now(), so the time
-        spent so far is kept."""
-        self.goal = goal
-        self._goal_since = self.clock() if goal is not None and goal.status == ACTIVE else None
-        payload = goal.payload() if goal is not None else {"cleared": True}
-        payload["by"] = by
-        if reason:
-            payload["reason"] = reason
-        self._journal(EventType.GOAL, payload)
-        if goal is not None:
-            offer_goal_tools(self.registry, self)
-        warn = goal is not None and goal.status in (BLOCKED_GOAL, BUDGET_LIMITED)
-        self._emit(Notice(goal_notice(goal, reason), level="warning" if warn else "info"))
-
-    def restore_goal(self, goal: Goal) -> None:
-        """A resumed session's goal, as its journal has it: not journaled again."""
-        self.goal = goal
-        self._goal_since = self.clock() if goal.status == ACTIVE else None
-        offer_goal_tools(self.registry, self)
-
-    def goal_update(self, status: str) -> str:
-        """update_goal: the model marks the goal complete, blocked or paused.
-        Only an active goal goes to blocked or paused -- a spent budget comes
-        before a pause, as codex's -- and any unfinished one to complete."""
-        goal = self.goal_now()
-        if goal is None:
-            raise ToolError("there is no goal; the user sets one with /goal")
-        if goal.status == COMPLETE:
-            raise ToolError("the goal is already complete")
-        if status != COMPLETE and goal.status != ACTIVE:
-            raise ToolError(f"the goal is {goal.status}, not active; resuming it is the "
-                            "user's")
-        self.change_goal(replace(goal, status=status), by="model")
-        return goal_view(self.goal_now(), completed=status == COMPLETE)
-
-    def _goal_spent(self, usage: Usage) -> None:
-        """A response's tokens, counted toward an active goal; past its budget
-        the goal stops, and the model is told to wrap up."""
-        goal = self.goal
-        if goal is None or goal.status != ACTIVE:
-            return
-        self.goal = replace(goal, tokens_used=goal.tokens_used + spent(usage))
-        if self.goal.over_budget:
-            self.change_goal(replace(self.goal_now(), status=BUDGET_LIMITED), by="budget")
-            self._goal_wrap_up = True
-
     def _journal(self, event_type: str, payload: dict) -> int:
         return self.session.append(event_type, payload) if self.session else 0
 
@@ -453,43 +353,6 @@ class AgentRuntime:
         outcome = self._run_turn(user_input, images, typed)
         self._notify(user_input, outcome)
         return outcome
-
-    def _notify(self, user_input: str, outcome: TurnOutcome) -> None:
-        """Tell the user's program the turn has ended (D-050). Not when the
-        user stopped it: they are at the keyboard."""
-        if self.notifier is None or outcome.status is TerminalStatus.CANCELLED:
-            return
-        self._send_notification(NOTIFY_TURN, notify_payload(
-            session_id=self.session.session_id if self.session is not None else "",
-            cwd=str(self.tool_ctx.workspace.root),
-            status=outcome.status.value if outcome.status is not None else None,
-            user_input=user_input, last_message=outcome.text, scrub=self.scrub))
-
-    def _notify_approval(self, op: Operation, decision: Decision) -> None:
-        """Tell the user's program a question waits for them (D-079), before
-        it blocks: a session left running stops at a question nobody sees."""
-        if self.notifier is None:
-            return
-        self._send_notification(NOTIFY_APPROVAL, approval_payload(
-            session_id=self.session.session_id if self.session is not None else "",
-            cwd=str(self.tool_ctx.workspace.root), tool=op.tool, display=op.display,
-            reason=decision.reason, scrub=self.scrub))
-
-    def _send_notification(self, kind: str, data: str) -> None:
-        """Start the program and journal it; a program that cannot start is
-        a warning the first time and a record each time, never a failure."""
-        program = self.notifier.argv[0]
-        try:
-            pid = self.notifier.send(data)
-        except (OSError, ValueError) as exc:
-            self._journal(EventType.NOTIFIED, {"type": kind, "program": program,
-                                               "error": str(exc)})
-            if not self._notify_failed:
-                self._notify_failed = True
-                self._emit(Notice(f"notify: could not start {program}: {exc}",
-                                  level="warning"))
-            return
-        self._journal(EventType.NOTIFIED, {"type": kind, "program": program, "pid": pid})
 
     def _run_turn(self, user_input: str, images: tuple, typed: str | None) -> TurnOutcome:
         self._finish = None
@@ -597,26 +460,26 @@ class AgentRuntime:
                     try:
                         turn = self._sample()
                     except AuthError as retry_exc:
-                        self._emit(ErrorEvent(_explain(retry_exc),
+                        self._emit(ErrorEvent(explain(retry_exc),
                                               category=retry_exc.category, fatal=True))
                         return self._terminate(TerminalStatus.BLOCKED,
-                                               f"authentication: {_explain(retry_exc)}")
+                                               f"authentication: {explain(retry_exc)}")
                 else:
-                    self._emit(ErrorEvent(_explain(exc), category=exc.category, fatal=True))
+                    self._emit(ErrorEvent(explain(exc), category=exc.category, fatal=True))
                     return self._terminate(TerminalStatus.BLOCKED,
-                                           f"authentication: {_explain(exc)}")
+                                           f"authentication: {explain(exc)}")
             except TransientError as exc:
-                self._emit(ErrorEvent(_explain(exc), category=exc.category, fatal=True))
+                self._emit(ErrorEvent(explain(exc), category=exc.category, fatal=True))
                 return self._terminate(TerminalStatus.BLOCKED,
-                                       f"provider unavailable: {_explain(exc)}")
+                                       f"provider unavailable: {explain(exc)}")
             except QuotaExceeded as exc:
                 # Blocked, not failed: nothing about the task went wrong, and
                 # the same task goes on once the account has quota again.
-                self._emit(ErrorEvent(_explain(exc), category=exc.category, fatal=True))
-                return self._terminate(TerminalStatus.BLOCKED, _explain(exc))
+                self._emit(ErrorEvent(explain(exc), category=exc.category, fatal=True))
+                return self._terminate(TerminalStatus.BLOCKED, explain(exc))
             except FatalError as exc:
-                self._emit(ErrorEvent(_explain(exc), category=exc.category, fatal=True))
-                return self._terminate(TerminalStatus.FAILED, _explain(exc))
+                self._emit(ErrorEvent(explain(exc), category=exc.category, fatal=True))
+                return self._terminate(TerminalStatus.FAILED, explain(exc))
             except Cancelled:
                 return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
 
@@ -668,131 +531,6 @@ class AgentRuntime:
                     self._reply(call, f"finish was not accepted: a {STOP} hook sent the task "
                                 f"on:\n{again}", is_error=True)
 
-    def compact(self, *, auto: bool, focus: str = "") -> str:
-        """Replace the history with the user's messages and the model's summary
-        of the work (D-040). Returns why it did not, or "" when it did.
-
-        The summary request carries the same tools as any other, since a
-        history holding tool calls is refused without them, and says not to
-        use them; a call it makes anyway is ignored. Files read before are
-        read again before a patch: their contents are no longer in context.
-        """
-        self._compact_stop = ""
-        if not self.context.compactable():
-            return "nothing to compact yet"
-        trigger = "auto" if auto else "manual"
-        verdict = self._compact_hooks(PRE_COMPACT, trigger)
-        if verdict is not None and verdict.stops:
-            self._compact_stop = self._said("a PreCompact hook stopped compaction",
-                                            verdict.stops)
-            return self._compact_stop
-        before = self.context.estimated_context_tokens()
-        self._emit(Notice("compacting the conversation to free context", level="info"))
-        prompt = (self.compact_prompt or builtin_prompt("compact")).strip()
-        if focus:
-            prompt += f"\n\nThe user asks the summary to give particular attention to: {focus}"
-        messages = (*self.context.project(), Message.text(Role.USER, prompt))
-        try:
-            turn = self._sample(messages, purpose="compact")
-        except Cancelled:
-            raise
-        except FoundryError as exc:
-            return f"compaction failed: {_explain(exc)}"
-        self.context.record_usage(turn.usage)
-        self._emit(TokenCount(turn.usage, self.context.session_usage))
-        self._journal(EventType.TOKEN_USAGE, {
-            "input_tokens": turn.usage.input_tokens,
-            "output_tokens": turn.usage.output_tokens,
-            "cached_input_tokens": turn.usage.cached_input_tokens,
-            "purpose": "compact",
-        })
-        self._goal_spent(turn.usage)
-        summary = turn.text.strip()
-        if not summary:
-            return "compaction failed: the model wrote no summary"
-        if self.plan:
-            summary += "\n\nYour plan, as update_plan last set it:\n" + "\n".join(
-                f"- [{step.status.value}] {step.step}" for step in self.plan)
-        replaced = len(self.context.history)
-        self.context.replace_history(self.context.compacted_history(summary))
-        self.tool_ctx.read_tracker.clear()
-        # Positions in the old history mean nothing in the new one.
-        self._patched_at = []
-        after = self.context.estimated_context_tokens()
-        self._journal(EventType.COMPACTED, {
-            "reason": "auto" if auto else "user",
-            "turn": self.context.turn,
-            "replaced": replaced,
-            "tokens_before": before,
-            "tokens_after": after,
-            "messages": self._history_payload(),
-        })
-        self._emit(Compacted(tokens_before=before, tokens_after=after, auto=auto))
-        if self.hooks is not None:
-            # Owed before the next request, whatever PostCompact says.
-            self.start_sources.append("compact")
-        verdict = self._compact_hooks(POST_COMPACT, trigger)
-        if verdict is not None and verdict.stops:
-            self._compact_stop = self._said(
-                "a PostCompact hook stopped the task after compaction", verdict.stops)
-            if not auto:
-                self._emit(Notice(self._compact_stop, level="warning"))
-        return ""
-
-    def _compact_hooks(self, event: str, trigger: str) -> HookVerdict | None:
-        """PreCompact or PostCompact hooks (D-118), told what started the
-        compaction and not the permission mode, as codex's."""
-        if self.hooks is None:
-            return None
-        return self._run_hooks(event, (trigger,), omit=("permission_mode",), trigger=trigger)
-
-    def rewind(self, length: int) -> list[str]:
-        """Go back to the conversation's first ``length`` messages (/rewind,
-        D-056) and return the files changed after that point.
-
-        Nothing in the workspace is reverted. The model no longer sees what
-        it read after the point, so every file is read again before it is
-        patched, as after a compaction. The history kept is journaled whole,
-        as a compaction's is, so a resume rebuilds it exactly.
-        """
-        removed = len(self.context.history) - length
-        self.context.truncate(length)
-        self.tool_ctx.read_tracker.clear()
-        changed = list(dict.fromkeys(path for at, path in self._patched_at if at > length))
-        # Those changes now come before the next message, which tells of them:
-        # going back past that message again forgets it too.
-        self._patched_at = [(min(at, length + 1), path) for at, path in self._patched_at]
-        self._journal(EventType.REWOUND, {
-            "keep": length,
-            "removed": removed,
-            "turn": self.context.turn,
-            "turns": list(self.context._turn_of_message),
-            "messages": self._history_payload(),
-        })
-        return changed
-
-    def aside(self) -> tuple:
-        """Where the conversation is before a side question (/side, D-129):
-        what going back to it restores."""
-        return (len(self.context.history), self.tool_ctx.read_tracker.snapshot(),
-                self.plan, self.plan_explanation)
-
-    def back_from_aside(self, point: tuple) -> None:
-        """Back where the conversation was before the side question: the
-        question and its answer dropped, journaled as a rewind is, and what
-        the model had read, and its plan, as they were."""
-        length, read, plan, explanation = point
-        self.rewind(length)
-        self.tool_ctx.read_tracker.restore(read)
-        self.plan, self.plan_explanation = plan, explanation
-
-    def _history_payload(self) -> list[dict[str, Any]]:
-        return [
-            {"role": m.role.value,
-             "blocks": [self._block_payload(b, self._store_image) for b in m.blocks]}
-            for m in self.context.history
-        ]
-
     def _sample(self, messages: tuple[Message, ...] | None = None, purpose: str = ""):
         """One turn of the model's, asked again whole while its stream breaks
         part-way (D-099): nothing of a turn is acted on before it finishes, so
@@ -825,29 +563,10 @@ class AgentRuntime:
             self._model_hooks(POST_MODEL_REQUEST, status="cancelled")
             raise
         except Exception as exc:
-            self._model_hooks(POST_MODEL_REQUEST, status="failed", error=_explain(exc))
+            self._model_hooks(POST_MODEL_REQUEST, status="failed", error=explain(exc))
             raise
         self._model_hooks(POST_MODEL_REQUEST, status="completed", usage=finished.usage)
         return finished
-
-    def _model_hooks(self, event: str, *, status: str = "", error: str | None = None,
-                     usage: Usage | None = None) -> None:
-        """The PreModelRequest or PostModelRequest hooks (D-122): told, never
-        asked, with codex's fields. After a try, they run to their end even
-        when a cancel ended it."""
-        if self.hooks is None:
-            return
-        fields: dict[str, Any] = {}
-        if event == POST_MODEL_REQUEST:
-            fields = {"status": status, "error": error, "token_usage": None if usage is None else {
-                "input_tokens": usage.input_tokens,
-                "cached_input_tokens": usage.cached_input_tokens,
-                "output_tokens": usage.output_tokens,
-                # Not counted apart from the output here.
-                "reasoning_output_tokens": 0,
-                "total_tokens": usage.total}}
-        self._run_hooks(event, omit=("permission_mode",), stoppable=event == PRE_MODEL_REQUEST,
-                        **fields)
 
     def _offered_tools(self) -> tuple[ToolSchema, ...]:
         """The tools a request offers: those the policy could allow some call
@@ -1202,256 +921,7 @@ class AgentRuntime:
                            output=(output.metadata.get("output_tail", "")
                                    or output.metadata.get("diff", ""))))
 
-    # -- hooks (D-115) -----------------------------------------------------
-
-    def _hook_payload(self, event: str, omit: tuple[str, ...] = (),
-                      **fields: Any) -> dict[str, Any]:
-        """What every hook is told, codex's names, then the event's own;
-        less ``omit``, the common fields codex does not tell this event."""
-        payload = {
-            "session_id": self.session.session_id if self.session is not None else "",
-            "transcript_path": str(self.session.path) if self.session is not None else None,
-            "cwd": str(self.tool_ctx.workspace.root),
-            "hook_event_name": event,
-            "model": self.model,
-            "turn_id": self._turn_id or str(self.context.turn),
-            "permission_mode": PERMISSION_MODES.get(self.policy.mode.value,
-                                                    self.policy.mode.value),
-            **fields,
-        }
-        for name in omit:
-            payload.pop(name)
-        return payload
-
-    def _run_hooks(self, event: str, names: tuple[str, ...] = (), call_id: str | None = None,
-                   *, omit: tuple[str, ...] = (), stoppable: bool = True,
-                   **fields: Any) -> HookVerdict | None:
-        """Run the hooks of ``event`` whose matcher takes one of ``names``,
-        and say what they said: to the user, the warnings and messages; to
-        the journal, each run. What a hook said for the model comes back
-        scrubbed, in the verdict's notes; at a call, ``call_id``, they are
-        kept for its reply too. None when no hook matches. ``stoppable``
-        False: a cancel already honoured does not end them as they start."""
-        hooks = self.hooks.matching(event, names)
-        if not hooks:
-            return None
-        for hook in hooks:
-            if hook.status_message:
-                self._emit(Notice(f"{event} hook: {hook.status_message}"))
-        payload = self._hook_payload(event, omit, **fields)
-        runs = self.hooks.run(hooks, scrubbed(payload, self.scrub),
-                              cancelled=(lambda: self._cancelled) if stoppable else None)
-        if not runs:
-            # Each runs in the background: heard from later (D-120).
-            return None
-        verdict = READERS[event](runs)
-        self._heard(event, verdict, call_id)
-        return verdict
-
-    def _heard(self, event: str, verdict: HookVerdict, call_id: str | None = None, *,
-               background: bool = False) -> None:
-        """Say what ``event``'s hooks said: to the user, the warnings and
-        messages; to the journal, each run. Their notes are scrubbed in
-        place and, at a call, kept for its reply."""
-        clean = self.scrub or (lambda text: text)
-        for message in verdict.messages:
-            self._emit(Notice(f"{event} hook: {clean(message)}", level="warning"))
-        for failure in verdict.failures:
-            self._emit(Notice(f"{event} hook {clean(failure)}", level="warning"))
-        verdict.context = [clean(note) for note in verdict.context]
-        record: dict[str, Any] = {"event": event}
-        if call_id is not None:
-            self._hook_notes.setdefault(call_id, []).extend(
-                (event, note) for note in verdict.context)
-            record["call_id"] = call_id
-        if background:
-            record["async"] = True
-        record["runs"] = scrubbed(verdict.records, self.scrub)
-        self._journal(EventType.HOOK, record)
-
-    def _background_notes(self) -> list[tuple[str, str]]:
-        """What the background hooks that ended since said (D-120), heard
-        now, at a safe point, as codex delivers it: their warnings to the
-        user and their runs to the journal; their notes returned, by event."""
-        if self.hooks is None:
-            return []
-        runs = self.hooks.finished()
-        notes: list[tuple[str, str]] = []
-        for event in dict.fromkeys(run.hook.event for run in runs):
-            verdict = READERS[event]([run for run in runs if run.hook.event == event])
-            self._heard(event, verdict, background=True)
-            notes += [(event, note) for note in verdict.context]
-        return notes
-
-    def _hook_message(self, event: str, note: str) -> None:
-        """A hook's note for the work in hand, as a message of its own."""
-        message = f"From a {event} hook: {note}"
-        self._journal(EventType.USER_INPUT, {"text": message, "hook": event})
-        self.context.append_user(message, ())
-
-    def _tool_hooks(self, event: str, call: ToolUseBlock, op: Operation,
-                    **fields: Any) -> HookVerdict | None:
-        """The hooks of a tool call's event, told of the call as codex
-        tells them."""
-        return self._run_hooks(event, matcher_names(op.tool), call.call_id,
-                               tool_name=hook_tool_name(op.tool), tool_use_id=call.call_id,
-                               tool_input=hook_tool_input(op.tool, op.args), **fields)
-
-    def _said(self, what: str, reasons: list[str]) -> str:
-        """``what`` a hook did, with the reasons it gave, scrubbed."""
-        clean = self.scrub or (lambda text: text)
-        given = [clean(reason) for reason in reasons if reason]
-        return what + (": " + "; ".join(given) if given else "")
-
-    def _start_hooks(self) -> tuple[list[str], list[str] | None]:
-        """The SessionStart hooks owed (D-117, D-118), each source once, as
-        codex's pending starts: their notes, and the reasons one stopped
-        with, or None. A source is spent whatever its hooks said."""
-        notes: list[str] = []
-        while self.start_sources:
-            source = self.start_sources.pop(0)
-            verdict = self._run_hooks(SESSION_START, (source,), omit=("turn_id",),
-                                      source=source)
-            if verdict is None:
-                continue
-            if verdict.stops:
-                return notes, verdict.stops
-            notes += verdict.context
-        return notes, None
-
-    def _prompt_hooks(self, prompt: str) -> tuple[list[tuple[str, str]], str]:
-        """The hooks a prompt meets before it is sent: the SessionStart
-        hooks owed (D-117), then UserPromptSubmit's (D-116). Their notes, by
-        event, and why one stopped it, or ""."""
-        started, stops = self._start_hooks()
-        if stops is not None:
-            return [], self._said("a SessionStart hook stopped this prompt, so it was not sent",
-                                  stops)
-        notes = [(SESSION_START, note) for note in started]
-        verdict = self._run_hooks(USER_PROMPT_SUBMIT, prompt=prompt)
-        if verdict is None:
-            return notes, ""
-        if verdict.block or verdict.stops:
-            return [], self._said("a UserPromptSubmit hook stopped this prompt, so it was not "
-                                  "sent", verdict.block + verdict.stops)
-        return notes + [(USER_PROMPT_SUBMIT, note) for note in verdict.context], ""
-
-    def interrupt_hooks(self) -> None:
-        """The Interrupt hooks (D-117): the task was stopped. Told, never
-        asked; a cancel already honoured does not cut them short."""
-        if self.hooks is not None:
-            self._run_hooks(INTERRUPT, stoppable=False)
-
-    def end_hooks(self) -> None:
-        """The SessionEnd hooks (D-117), as the session closes, before its
-        journal does. Told, never asked; a Ctrl+C meanwhile ends them, not
-        the close."""
-        if self.hooks is None:
-            return
-        try:
-            self._run_hooks(SESSION_END, (SESSION_END_REASON,), stoppable=False,
-                            omit=("model", "turn_id", "permission_mode"),
-                            reason=SESSION_END_REASON)
-        except KeyboardInterrupt:
-            self._emit(Notice(f"{SESSION_END} hooks stopped", level="warning"))
-        finally:
-            # Background hooks still running have no one left to tell (D-120).
-            self.hooks.close()
-
-    def _stop_hooks(self, last_message: str, active: bool) -> str:
-        """The Stop hooks (D-116), as the model is done: what the task goes
-        on with, when one sends it on, or "". A ``continue: false`` ends it
-        whatever another asked, as codex has it."""
-        verdict = self._run_hooks(STOP, stop_hook_active=active,
-                                  last_assistant_message=last_message or None)
-        if verdict is None:
-            return ""
-        clean = self.scrub or (lambda text: text)
-        if verdict.stops:
-            for reason in verdict.stops:
-                if reason:
-                    self._emit(Notice(f"{STOP} hook: {clean(reason)}"))
-            return ""
-        if not verdict.block:
-            return ""
-        again = clean("\n\n".join(verdict.block))
-        self._emit(Notice(f"a {STOP} hook sent the task on: {again}"))
-        return again
-
-    def _pre_tool_use(self, call: ToolUseBlock, op: Operation) -> tuple[Operation, str]:
-        """The call the PreToolUse hooks leave, and why they refuse it, or
-        "". A rewrite is validated as the model's call was and then goes
-        through policy like any call: a hook can refuse or change a call,
-        never let one skip a rule or a question."""
-        verdict = self._tool_hooks(PRE_TOOL_USE, call, op)
-        if verdict is None:
-            return op, ""
-        clean = self.scrub or (lambda text: text)
-        if verdict.block:
-            return op, clean("; ".join(verdict.block))
-        rewrites = []
-        for rewrite in verdict.rewrites:
-            if rewrite not in rewrites:
-                rewrites.append(rewrite)
-        if len(rewrites) > 1:
-            return op, "two PreToolUse hooks rewrote this call differently, so it was not run"
-        if not rewrites:
-            return op, ""
-        args = rewritten_args(op.tool, op.args, rewrites[0])
-        if args is None:
-            self._emit(Notice(f"{PRE_TOOL_USE} hook returned an updatedInput that is not "
-                              "this tool's input (an object; a string command for a command "
-                              "or a patch); the call runs as the model made it",
-                              level="warning"))
-            return op, ""
-        try:
-            changed = self._canonicalize_paths(self.registry.get(op.tool).validate(args))
-        except (InvalidToolCall, ValueError, TypeError) as exc:
-            self._emit(Notice(f"{PRE_TOOL_USE} hook's rewrite is not a valid call "
-                              f"({clean(str(exc))}); the call runs as the model made it",
-                              level="warning"))
-            return op, ""
-        if changed == op:
-            return op, ""
-        self._hook_notes.setdefault(call.call_id, []).append(
-            (PRE_TOOL_USE, f"this call was changed before it ran; it ran as: {changed.display}"))
-        return changed, ""
-
-    def _permission_request(self, call: ToolUseBlock, op: Operation,
-                            decision: Decision) -> tuple[bool, str]:
-        """What the PermissionRequest hooks (D-119) say of a call policy
-        would ask the user about: whether one allowed it, and why one denied
-        it, which wins, or "". Neither: the user is asked. They run only
-        where someone would be asked; an unattended run asks no one."""
-        if self.hooks is None or self.approval is None:
-            return False, ""
-        tool_input = hook_tool_input(op.tool, op.args)
-        if not op.tool.startswith("mcp__"):
-            # codex's place for policy's reason: none of Foundry's own tools
-            # takes a description, so none can be spoofed through it.
-            tool_input["description"] = decision.reason
-        # And where no call can reach (D-152): an MCP tool takes any argument,
-        # so `description` was the model's to write, read by a hook as policy's.
-        verdict = self._run_hooks(PERMISSION_REQUEST, matcher_names(op.tool), call.call_id,
-                                  tool_name=hook_tool_name(op.tool), tool_input=tool_input,
-                                  permission_reason=decision.reason)
-        if verdict is None:
-            return False, ""
-        if verdict.block:
-            # Scrubbed where it goes: the reply, the journal, the event.
-            return False, "; ".join(verdict.block)
-        return verdict.allow, ""
-
-    def _post_tool_use(self, call: ToolUseBlock, op: Operation, content: str,
-                       images: tuple) -> tuple[str, tuple]:
-        """The result the model is given once the PostToolUse hooks have
-        seen it: their feedback in its place when one blocks it."""
-        verdict = self._tool_hooks(POST_TOOL_USE, call, op, tool_response=content)
-        if verdict is None or not verdict.block:
-            return content, images
-        clean = self.scrub or (lambda text: text)
-        return (f"The call ran; a {POST_TOOL_USE} hook gave this in place of its result:\n"
-                + clean("\n\n".join(verdict.block))), ()
+    # -- a call's paths, reply, approval and audit ------------------------
 
     def _canonicalize_paths(self, op: Operation) -> Operation:
         """Give policy the spelling the filesystem agrees with.
@@ -1596,144 +1066,3 @@ class AgentRuntime:
         if self.audit is not None:
             self.audit.record(workspace=str(self.tool_ctx.workspace.root), tool=op.tool,
                               target=op.target, decision=decision, outcome=outcome)
-
-    # -- termination ------------------------------------------------------
-
-    def _finalize(self, outcome: TurnOutcome) -> TurnOutcome:
-        """The gate: a claimed ``completed`` must survive the journal and Git."""
-        run_command = self.registry.tools.get("run_command")
-        history = getattr(run_command, "history", [])
-        result = verify_claims(list(outcome.claims), history, outcome.status.value,
-                               last_mutation_ordinal=self._last_mutation)
-
-        for claim in outcome.claims:
-            self._journal(EventType.VALIDATION_CLAIM, claim.as_payload())
-
-        rejected = list(result.rejected)
-        status, reason = result.status, result.reason
-        summary = outcome.summary
-
-        # Fresh Git evidence at finish. A model that moved HEAD -- committing
-        # through a wrapper the breaker's argv scan cannot see -- would leave a
-        # clean-looking diff, so the baseline comparison is what catches it.
-        evidence = self._collect_git_evidence()
-        if evidence is not None:
-            self._journal(EventType.GIT_BASELINE, {
-                "phase": "final",
-                "head_now": evidence.head_now,
-                "head_moved": evidence.head_moved,
-                "session_changed": sorted(evidence.session_changed),
-                "preexisting_changed": sorted(evidence.preexisting_changed),
-            })
-            if evidence.head_moved:
-                rejected.append(
-                    f"HEAD moved during the session ({self.git_baseline.head[:12]} -> "
-                    f"{evidence.head_now[:12]}); the diff no longer reflects what changed"
-                )
-                status = TerminalStatus.PARTIAL
-                reason = "HEAD moved during the session"
-            if evidence.session_changed or evidence.preexisting_changed:
-                summary += "\n\nFiles changed by this session:\n" + (
-                    "\n".join(f"  - {p}" for p in sorted(evidence.session_changed))
-                    or "  (none)")
-                if evidence.preexisting_changed:
-                    summary += ("\nAlready modified before this session (not claimed):\n"
-                                + "\n".join(f"  - {p}" for p in sorted(evidence.preexisting_changed)))
-
-        for problem in rejected:
-            self._emit(Notice(f"claim rejected: {problem}", level="warning"))
-        if rejected:
-            summary += "\n\nRejected claims:\n" + "\n".join(f"  - {r}" for r in rejected)
-
-        # The plan is the model's own account, so it decides nothing: a step it
-        # forgot to tick is not a failed task, and ticking every step proves
-        # nothing was done. What it can do is show where the account and the
-        # outcome disagree.
-        unfinished = [s for s in self.plan if s.status is not StepStatus.COMPLETED]
-        if unfinished:
-            summary += "\n\nPlan steps not marked completed:\n" + "\n".join(
-                f"  - [{s.status.value.replace('_', ' ')}] {s.step}" for s in unfinished)
-            if status is TerminalStatus.COMPLETED:
-                self._emit(Notice(f"finish reported completed with {len(unfinished)} plan "
-                                  "step(s) not marked completed", level="warning"))
-
-        return self._terminate(status, reason, summary, result_json=outcome.result_json)
-
-    def _refresh_credentials(self) -> bool:
-        """Re-acquire once per session, and only retry if the value changed.
-
-        Never invalidates first: for the gateway source that clears the stored
-        credential, and nothing can re-acquire it yet -- one expired token would
-        log the user out permanently. Re-acquiring is harmless for both sources
-        and picks up a token refreshed out of band.
-        """
-        if self.credentials is None or self._refreshed:
-            return False
-        self._refreshed = True
-        if not hasattr(self.backend, "api_key"):
-            return False
-        try:
-            handle = self.credentials.acquire()
-        except FoundryError:
-            return False
-        fresh = handle.reveal()
-        if fresh == self.backend.api_key:
-            return False  # same credential: a second request would fail identically
-        self.backend.api_key = fresh
-        return True
-
-    def _collect_git_evidence(self):
-        if self.git_baseline is None:
-            return None
-        from foundry.core.tools.git import collect_evidence
-
-        try:
-            return collect_evidence(self.tool_ctx.workspace.root, self.git_baseline)
-        except FoundryError as exc:
-            self._emit(Notice(f"could not collect final Git evidence: {exc}", level="warning"))
-            return None
-
-    def _terminate(self, status: TerminalStatus, reason: str, summary: str = "",
-                   result_json: str | None = None) -> TurnOutcome:
-        if status is TerminalStatus.CANCELLED:
-            self._answer_left()
-            # Honoured, so spent (D-062): a Ctrl+C or an abort stops the task
-            # it came in, and the next one starts afresh.
-            self._cancelled = False
-            # A second Ctrl+C while they run still ends the session (D-062).
-            self.interrupt_hooks()
-        # The sink holds a tail of streamed text so a credential cannot straddle
-        # two deltas unseen. Every path here is followed by an event that would
-        # release it anyway; flushing first makes that independent of ordering.
-        flush = getattr(self.events, "flush", None)
-        if callable(flush):
-            flush()
-
-        # A journal that could not be written means the evidence for this run is
-        # incomplete; the report must say so rather than reading as a clean
-        # record of what happened.
-        degraded = getattr(self.session, "degraded", "") if self.session else ""
-        if degraded:
-            summary += (f"\n\nThe session journal could not be written ({degraded}); "
-                        "this run's recorded evidence is incomplete.")
-            self._emit(Notice(f"session journal degraded: {degraded}", level="warning"))
-
-        audit_degraded = getattr(self.audit, "degraded", "") if self.audit else ""
-        if audit_degraded:
-            summary += (f"\n\nThe audit log could not be written ({audit_degraded}); "
-                        "the record of what was allowed and denied is incomplete.")
-            self._emit(Notice(f"audit log degraded: {audit_degraded}", level="warning"))
-
-        record: dict[str, Any] = {"status": status.value, "reason": reason, "summary": summary}
-        result = json.loads(result_json) if result_json is not None else None
-        if result_json is not None:
-            record["result"] = result
-        self._journal(EventType.TERMINATION, record)
-        self._ended = (status, reason)
-        if self.session is not None:
-            self.session._terminated = True
-        self._emit(Termination(status, reason, summary, result=result))
-        # A budget or context termination has no model summary; the reason is
-        # the only explanation the caller gets, so it must survive.
-        text = summary or reason
-        return TurnOutcome(status=status, text=text, summary=text, result_json=result_json)

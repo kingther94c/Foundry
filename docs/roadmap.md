@@ -332,7 +332,8 @@ the last month went to the last of those. What is owed instead:
   `core/runtime.py` (1,710), `cli/repl.py` (1,709) and `core/config.py`
   (1,391) are split along their seams, with no change of behaviour: the suite
   and a mutation check are the gate. `cli/app.py` is split along its
-  commands ([D-158](decision-log.md)).
+  commands ([D-158](decision-log.md)); `core/runtime.py` into the loop and
+  the mixins it calls out to ([D-159](decision-log.md)).
 - **P4 -- the corporate machine (M3).** A hash-pinned wheelhouse
   ([OQ-20](open-questions.md)), the managed policy layer
   ([OQ-15](open-questions.md)), session retention
