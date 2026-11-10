@@ -21,7 +21,7 @@
 | Codex parity, items 1-106 | **done** | 2026-11-06 to 2026-11-09, D-039 to D-145; the table below |
 | After parity, P0-P3, P6-P9 | **done** | 2026-11-10, D-146 to D-168; what is left waits on others: P8's lock on a download, P4 on the corporate side, P1's rerun and P5 on a model endpoint |
 
-4,865 tests pass (one is skipped) on a machine with no network and no credentials. Every
+4,868 tests pass (one is skipped) on a machine with no network and no credentials. Every
 feature since D-036 has been verified only against scripted backends: the
 local gateway that served the first live checks has answered nothing since
 2026-11-04, and there is no API key on the development machine. What comes
