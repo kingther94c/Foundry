@@ -20,6 +20,8 @@ a name both have. Nothing in a skill grants anything: its scripts run through
 from __future__ import annotations
 
 import hashlib
+import itertools
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -41,6 +43,9 @@ MAX_DESCRIPTION = 1024
 SHORT_DESCRIPTION = 160
 MAX_READ_BYTES = 1_000_000
 MAX_LISTED_FILES = 200
+# Entries looked at when a skill's files are listed: a folder of a skill is
+# small, and one that is not is not walked to its end (D-157).
+MAX_WALKED = 5_000
 YOURS, REPOSITORY = "yours", "repository"
 
 LIST_HEADER = (
@@ -119,6 +124,10 @@ def _same_file(given: Path, path: Path) -> bool:
 def load_skills(home: Path, workspace: Path | None, *, trusted: bool,
                 switches=()) -> Skills:
     skills = Skills()
+    # What a repository's skill must be in: the repository, wherever its
+    # .agents leads -- not the folder it was found in, which may itself be a
+    # link out of it (D-157).
+    inside = _resolved(repository_top(workspace)) if workspace is not None else None
     for root, source in skill_roots(home, workspace, trusted=trusted):
         if not root.is_dir():
             continue
@@ -130,7 +139,7 @@ def load_skills(home: Path, workspace: Path | None, *, trusted: bool,
             if not (folder / SKILL_FILE).is_file():
                 continue   # not a skill: a folder of something else
             try:
-                skill = _read_skill(folder, root, source)
+                skill = _read_skill(folder, inside, source)
             except _NotASkill as exc:
                 skills.skipped.append((folder, str(exc)))
                 continue
@@ -147,10 +156,17 @@ class _NotASkill(Exception):
     pass
 
 
-def _read_skill(folder: Path, root: Path, source: str) -> Skill:
+def _resolved(path: Path) -> Path | None:
+    try:
+        return path.resolve()
+    except OSError:
+        return None
+
+
+def _read_skill(folder: Path, inside: Path | None, source: str) -> Skill:
     try:
         resolved = folder.resolve()
-        if source == REPOSITORY and not resolved.is_relative_to(root.resolve()):
+        if source == REPOSITORY and (inside is None or not resolved.is_relative_to(inside)):
             # A link out of the repository: what it reads is not the
             # repository's to offer.
             raise _NotASkill("it leads outside the repository")
@@ -345,20 +361,36 @@ def _text(path: Path, shown: str) -> str:
 
 def _files(folder: Path) -> list[str]:
     """The skill's files but its SKILL.md, by their paths in it; hidden ones
-    left out."""
+    left out, and no link or junction followed: what one leads to is not the
+    skill's, and load_skill would not read it (D-157)."""
     found: list[str] = []
-    try:
-        for path in sorted(folder.rglob("*")):
-            relative = path.relative_to(folder)
-            if any(part.startswith(".") for part in relative.parts):
-                continue
-            if path.is_file() and relative.as_posix() != SKILL_FILE:
-                found.append(relative.as_posix())
+    pending = [(folder, "")]
+    walked = 0
+    while pending and len(found) <= MAX_LISTED_FILES * 2 and walked < MAX_WALKED:
+        directory, prefix = pending.pop(0)
+        try:
+            with os.scandir(directory) as listing:
+                entries = sorted(itertools.islice(listing, MAX_WALKED - walked),
+                                 key=lambda entry: entry.name.casefold())
+        except OSError:
+            continue
+        for entry in entries:
+            walked += 1
             if len(found) > MAX_LISTED_FILES * 2:
                 break
-    except OSError:
-        pass
-    return found
+            if entry.name.startswith("."):
+                continue
+            relative = prefix + entry.name
+            try:
+                if entry.is_symlink() or entry.is_junction():
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append((Path(entry.path), relative + "/"))
+                elif entry.is_file(follow_symlinks=False) and relative != SKILL_FILE:
+                    found.append(relative)
+            except OSError:
+                continue
+    return sorted(found, key=lambda path: [part.casefold() for part in path.split("/")])
 
 
 def register(skills: Skills, registry) -> bool:

@@ -453,7 +453,10 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   started from the session's system prompt and a brief, run to its end while
   the call waits; the result is its report. Read-only ones are allowed by a
   built-in rule and refuse every mutator while they run; `read_only: false`
-  is a mutator, put to the rules and the user. Its journal is
+  is a mutator, put to the rules and the user. Its budget is the task's
+  remainder: the calls not yet made and, under a limit, the tokens left; its
+  calls are added to the task's when it ends, and after a writer the
+  session's reads are cleared, however it ended ([D-157](decision-log.md)). Its journal is
   `<session>/agents/<id>/events.jsonl`; its tokens are journaled in the
   session's as `token_usage` with `agent`. Not offered to a sub-agent, nor
   the goal tools.

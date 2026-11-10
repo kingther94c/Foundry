@@ -78,6 +78,14 @@ class Spawner:
         finally:
             policy.read_only = before
             parent.child = None
+            # Its tool calls are the task's: what it may make is what the
+            # task had left, and what it made is spent (D-157).
+            parent.budget.calls += child.budget.calls
+            if not read_only:
+                # It may have changed any file, by a patch or a command --
+                # also when it was stopped part-way: each is read again
+                # before the session patches it.
+                ctx.read_tracker.clear()
             # The backend is the session's: its retries are told as the
             # session's again (D-085).
             if hasattr(parent.backend, "on_retry"):
@@ -87,10 +95,6 @@ class Spawner:
                 store.record_termination(TerminalStatus.CANCELLED,
                                          "the session's task was stopped")
             store.close()
-        if not read_only:
-            # It may have changed any file, by a patch or a command: each is
-            # read again before the session patches it.
-            ctx.read_tracker.clear()
         status = outcome.status.value if outcome.status is not None else "answered"
         report = (outcome.summary or outcome.text or "").strip() or "(no report)"
         kind = "read-only" if read_only else "may change files"
@@ -149,13 +153,19 @@ class Spawner:
                 return ask(dataclasses.replace(request,
                                                display=f"agent {number}: {request.display}"))
 
+        # Not a budget of its own: what the session's task has left. Each
+        # sub-agent with a fresh one, started unasked, made the task's limits
+        # as many times over as the model liked (D-157).
         budget = parent.budget
+        tokens = (None if budget.max_tokens is None
+                  else max(0, budget.max_tokens - parent.context.session_usage.total))
         return AgentRuntime(
             backend=parent.backend, registry=registry, policy=parent.policy,
             context=context, tool_ctx=tool_ctx, session=store, events=sink,
             approval=approval,
             budget=Budget(max_tool_rounds=budget.max_tool_rounds,
-                          max_tool_calls=budget.max_tool_calls, max_tokens=budget.max_tokens,
+                          max_tool_calls=max(0, budget.max_tool_calls - budget.calls),
+                          max_tokens=tokens,
                           max_consecutive_failures=budget.max_consecutive_failures),
             model=parent.model, max_output_tokens=parent.max_output_tokens,
             stream_max_retries=parent.stream_max_retries, audit=parent.audit,

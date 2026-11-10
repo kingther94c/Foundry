@@ -317,6 +317,17 @@ the last month went to the last of those. What is owed instead:
   after the last adversarial review (round six, 2026-09). Each gets the same
   treatment the policy pipeline had, and the threat model is brought up to
   date.
+  Done (2026-11-10): four reviewers, each proving what it found, covered
+  hooks and approvals, the MCP client, `foundry mcp-server`, and memories,
+  skills and sub-agents. Fixed: a client's `config` that could loosen the
+  server's ([D-150](decision-log.md)), approvals that did not show what would
+  run ([D-151](decision-log.md)), `dont_ask` asking and hooks not told the
+  policy's reason ([D-152](decision-log.md)), what a child process is given
+  ([D-153](decision-log.md)), memories ([D-154](decision-log.md)), an MCP
+  server hanging or ending a session ([D-155](decision-log.md)), the
+  server's one task to a repository ([D-156](decision-log.md)), and skills
+  and sub-agents ([D-157](decision-log.md)); each brought its threat-model
+  row up to date.
 - **P3 -- make the code smaller to read.** `cli/app.py` (2,706 lines),
   `core/runtime.py` (1,710), `cli/repl.py` (1,709) and `core/config.py`
   (1,391) are split along their seams, with no change of behaviour: the suite
