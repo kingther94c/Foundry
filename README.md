@@ -8,7 +8,7 @@ impersonate any existing coding agent.
 **Current status (2026-11-10): M0-M4 implemented and running, the corporate
 Gateway (M3) still partial; the 106 items of the codex-parity list have
 landed, and so has the work after them that needs no one else (D-146 to
-D-165).** 4,860 tests pass (one is skipped) on a machine with no network and
+D-168).** 4,865 tests pass (one is skipped) on a machine with no network and
 no credentials (including the security regressions from six rounds of
 adversarial review, and 780 generated breaker-table invariant combinations).
 What is left waits on others -- a model endpoint to verify against, the
