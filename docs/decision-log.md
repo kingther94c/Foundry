@@ -1145,3 +1145,10 @@
 - **Decision**: the six measuring tests are skipped, with the reason said, on a CI runner (`CI` set) and wherever a process does not start under each of the probe's tokens; everywhere else they run as before. Three tests of that decision run everywhere.
 - **Rationale**: the tests keep the research reproducible on the machine it is about; on a machine it is not about they measure something else, and a failure there says nothing about the conclusion. The probe is research: nothing in Foundry runs it.
 - **What it may not weaken**: on a desktop session, every measurement D-165 rests on is still taken and still asserted.
+
+## D-171 The MCP client's tests start the interpreter, not a virtual environment's launcher
+- **Date**: 2026-11-11 · **Status**: confirmed (P8, found with D-170)
+- **Background**: the full suite, run in a virtual environment with the versions D-170 locks, failed one test every time: `test_a_server_whose_input_is_closed_fails_a_call_at_once`, whose call timed out instead of failing at once. It passes with the system interpreter, which CI uses. On Windows a virtual environment's `python.exe` is a launcher: it starts the interpreter as its child and holds its own copy of the child's standard handles while it waits. The fake server closed its input, the launcher still held the pipe's other end, and the client's write waited.
+- **Decision**: `tests/test_mcp_robust.py` starts its fake server with `sys._base_executable`, the interpreter itself, and a test checks that the process the tests start is the interpreter: its child's parent is the test process.
+- **Rationale**: the test is about a server that closes its input; started through a launcher, it measured the launcher.
+- **What it may not weaken**: the client is unchanged. A server started through a launcher that closes its input still fails the call -- after the call's timeout rather than at once, since the client cannot see past the launcher.

@@ -19,7 +19,9 @@ P2's review of the MCP client found:
 from __future__ import annotations
 
 import json
+import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -77,8 +79,23 @@ def _within(seconds, action):
     return outcome
 
 
+# The interpreter itself, not a virtual environment's python.exe: on Windows
+# that is a launcher, which starts the interpreter as its child and holds its
+# own copy of the child's standard handles while it waits. A server that
+# closes its input would still have a reader -- the launcher -- and a write to
+# it would wait instead of failing (D-171). The fake server needs only the
+# standard library.
+PYTHON = sys._base_executable
+
+
+def test_the_fake_server_is_the_process_the_client_starts():
+    child = subprocess.run([PYTHON, "-c", "import os; print(os.getppid())"],
+                           capture_output=True, text=True, check=True, timeout=60)
+    assert int(child.stdout) == os.getpid()
+
+
 def _stdio(tmp_path, mode, **extra):
-    server = McpServerConfig(name="fake", command=sys.executable, args=(SERVER, mode),
+    server = McpServerConfig(name="fake", command=PYTHON, args=(SERVER, mode),
                              startup_timeout_s=10, tool_timeout_s=1, **extra)
     client = StdioClient(server, tmp_path)
     client.start()
