@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import pytest
 
+from foundry.cli.agents import SUBAGENT_READ_ONLY
 from foundry.core.commands import builtin_prompt
 from foundry.core.config import load_config
 from foundry.core.errors import ConfigError
+from foundry.core.prompts import read_only_line
 
 from test_resume import _wire, call, repo, turn  # noqa: F401  (fixture)
 from test_slash_commands import _repl
@@ -71,7 +73,12 @@ def test_a_sub_agent_is_told_them_too(repo, tmp_path):
     _repl(wiring, "use a sub-agent")
     seen = wiring.runtime.backend.seen
     assert SAID in seen[1].messages[0].blocks[0].text
-    assert seen[1].messages[0] == seen[0].messages[0]
+    # The session's system message, but for the line that tells a read-only
+    # sub-agent so (D-173).
+    read_only = read_only_line(SUBAGENT_READ_ONLY) + "\n"
+    child = seen[1].messages[0].text_content
+    assert read_only in child
+    assert child.replace(read_only, "") == seen[0].messages[0].text_content
 
 
 @pytest.mark.parametrize("value", ["1", "true", '["a"]'])

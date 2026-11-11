@@ -11,12 +11,15 @@ anything is sent.
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 import pytest
 
 from foundry.cli import app
 from foundry.cli.slash_commands import REVIEW_AS_ASKED, REVIEW_READ_ONLY, REVIEW_UNCOMMITTED
 from foundry.cli.unattended import REVIEW_FINISH
+from foundry.core.prompts import read_only_line
 from foundry.core.tools.git import run_git
 
 from test_cli_e2e import text_turn, tool_turn
@@ -62,6 +65,28 @@ def test_the_uncommitted_changes_reviewed_read_only(repo, tmp_path, monkeypatch,
     assert "+B = 5" in refused[0]
     assert all(REVIEW_READ_ONLY in r for r in refused[1:]) and len(refused) == 3
     assert (repo / "a.py").read_text(encoding="utf-8") == "A = 1\n"
+
+
+def test_a_review_is_told_only_of_the_tools_it_has(repo, tmp_path, monkeypatch, capsys,
+                                                   fake_model):
+    # The user's allowances for edits and commands are not a review's: it is
+    # offered neither (D-148), and is not told it may use them (D-173).
+    (repo / "b.py").write_text("B = 5\n", encoding="utf-8")
+    httpd = _model(tmp_path, monkeypatch, fake_model)
+    config = Path(os.environ["FOUNDRY_HOME"]) / "config.toml"
+    with config.open("a", encoding="utf-8") as out:
+        out.write('[[permissions]]\ntool = "apply_patch"\npattern = "*"\ndecision = "allow"\n'
+                  '[[permissions]]\ntool = "run_command"\npattern = "python -m pytest*"\n'
+                  'decision = "allow"\n'
+                  '[[permissions]]\ntool = "read_file"\npattern = "*"\ndecision = "allow"\n')
+    assert _review(repo, "--uncommitted") == 0
+    request = httpd.requests[0]
+    system = request["messages"][0]["content"]
+    assert read_only_line(REVIEW_READ_ONLY) in system
+    assert "apply_patch (*)" not in system and "python -m pytest*" not in system
+    assert "  - read_file (*)" in system, "an allowance it can use is still said"
+    offered = {t["function"]["name"] for t in request["tools"]}
+    assert not offered & {"apply_patch", "run_command"}
 
 
 def test_a_branch_since_it_left_its_base(repo, tmp_path, monkeypatch, capsys, fake_model):

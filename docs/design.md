@@ -317,6 +317,13 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   invited to spend a turn on a refusal; a call to one anyway is still
   refused by the policy ([D-148](decision-log.md)). Plan mode is still
   offered them: it plans the changes it will make once approved.
+  A conversation that is read-only from its start -- `foundry review`, a
+  read-only sub-agent -- is told so in its permissions paragraph, which
+  names only the allow rules for tools it is offered
+  ([D-173](decision-log.md)). A read-only task inside a conversation
+  (`/review`, `/side`, `/recap`) keeps the conversation's system prompt,
+  so the reasoning bound to it stays valid; its own message says it is
+  read-only.
 - Where nobody can approve (`dont_ask`, or a run nobody watches: `exec`,
   `foundry mcp-server` until its client can be asked), a request offers
   only the tools some call to could be allowed: those an allow rule names

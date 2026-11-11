@@ -8,19 +8,26 @@ of trying blocked things and improvising around the refusals.
 
 from __future__ import annotations
 
+import fnmatch
 import platform
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from foundry.core.policy.engine import (
     Mode,
     PolicyEngine,
+    Rule,
     Verdict,
     categorical_denials,
 )
+from foundry.core.tools.base import ToolKind
 from foundry.core.tools.git import GitBaseline
 from foundry.core.winapi import IS_WINDOWS
+
+if TYPE_CHECKING:
+    from foundry.core.tools.registry import ToolRegistry
 
 # In each directory the first of these that exists (D-086): a local
 # AGENTS.override.md over the shared files, as codex reads it, then the
@@ -60,20 +67,44 @@ def mode_line(mode: Mode) -> str:
     return _MODE_TEXT[mode]
 
 
-def system_prompt(policy: PolicyEngine) -> str:
+def system_prompt(policy: PolicyEngine, tools: "ToolRegistry | None" = None) -> str:
     """The base prompt and the permissions paragraph, as a session sends them.
     Built again whenever the policy's mode changes (D-038), so the model is never
-    told rules that no longer hold."""
-    return base_system_prompt() + "\n\n" + permissions_paragraph(policy)
+    told rules that no longer hold. ``tools``, the run's registry, says which
+    tools a read-only run is offered (D-173)."""
+    return base_system_prompt() + "\n\n" + permissions_paragraph(policy, tools)
 
 
-def permissions_paragraph(policy: PolicyEngine) -> str:
+def read_only_line(reason: str) -> str:
+    """What a conversation that is read-only from its start is told (D-173)."""
+    return (f"This run is read-only -- {reason.rstrip('.')}. It is offered no tool that "
+            "edits a file or runs a command, so what the notes above say of apply_patch "
+            "and run_command does not apply to it.")
+
+
+def _offered(rule: Rule, policy: PolicyEngine, tools: "ToolRegistry | None") -> bool:
+    """Whether an allow rule names a tool the model is offered. A read-only
+    run is offered no mutator (D-148): told that apply_patch and pytest were
+    allowed without asking, a review's model was told of tools it did not
+    have (D-173)."""
+    if not policy.read_only:
+        return True
+    if tools is None:
+        return False
+    return any(tools.get(name).kind is not ToolKind.MUTATOR
+               and (name == rule.tool or fnmatch.fnmatchcase(name, rule.tool))
+               for name in tools.names())
+
+
+def permissions_paragraph(policy: PolicyEngine, tools: "ToolRegistry | None" = None) -> str:
     lines = ["# What is allowed right now"]
     lines.append(mode_line(policy.mode))
     if not policy.interactive and policy.mode is not Mode.DONT_ASK:
         # An unattended run in another mode (exec --mode, D-042): the mode's
         # own line speaks of approval nobody is there to give.
         lines.append(UNATTENDED_LINE)
+    if policy.read_only:
+        lines.append(read_only_line(policy.read_only))
 
     def one_line(text: str, limit: int = 120) -> str:
         """Rule text is repository-supplied. Rendering it raw let a deny rule's
@@ -84,7 +115,8 @@ def permissions_paragraph(policy: PolicyEngine) -> str:
         return flattened[:limit] + ("..." if len(flattened) > limit else "")
 
     allow = [f"  - {one_line(r.tool)} ({one_line(r.pattern)})" for r in policy.rules
-             if r.verdict is Verdict.ALLOW and r.layer.value != "builtin"]
+             if r.verdict is Verdict.ALLOW and r.layer.value != "builtin"
+             and _offered(r, policy, tools)]
     deny = [f"  - {one_line(r.tool)} ({one_line(r.pattern)})"
             + (f": {one_line(r.reason)}" if r.reason else "")
             for r in policy.rules if r.verdict is Verdict.DENY]

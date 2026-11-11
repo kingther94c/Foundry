@@ -12,7 +12,8 @@ import pytest
 from foundry.cli.agents import BRIEF, READ_ONLY_BRIEF, SUBAGENT_READ_ONLY
 from foundry.core.errors import InvalidToolCall
 from foundry.core.events import ApprovalChoice
-from foundry.core.policy.engine import Mode, PolicyEngine
+from foundry.core.policy.engine import Mode, PolicyEngine, Rule, Verdict
+from foundry.core.prompts import permissions_paragraph, read_only_line
 from foundry.core.session import EventType, SessionStore
 from foundry.core.tools.agent import MAX_TASK_CHARS, SpawnAgent
 
@@ -99,9 +100,13 @@ def test_it_works_apart_and_only_its_report_comes_back(repo, tmp_path):
     _repl(wiring, "use a sub-agent to find A")
     seen = wiring.runtime.backend.seen
     child_first = seen[1]
-    # Its own conversation: the session's system prompt, then its task alone.
+    # Its own conversation: the session's system prompt -- told it is
+    # read-only (D-173) -- then its task alone.
     assert child_first.messages[0].role.value == "system"
-    assert child_first.messages[0] == seen[0].messages[0]
+    read_only = read_only_line(SUBAGENT_READ_ONLY) + "\n"
+    child_system = child_first.messages[0].text_content
+    assert read_only in child_system
+    assert child_system.replace(read_only, "") == seen[0].messages[0].text_content
     [asked] = child_first.messages[1:]
     text = asked.blocks[0].text
     assert text.startswith(BRIEF + READ_ONLY_BRIEF)
@@ -115,6 +120,33 @@ def test_it_works_apart_and_only_its_report_comes_back(repo, tmp_path):
     assert "r1" not in _replies(seen[3])
     # Its tokens are the session's too: two turns of its own, two of the session's.
     assert wiring.runtime.context.session_usage.total == 4 * 15
+
+
+def test_a_read_only_one_is_told_only_of_the_allowances_it_can_use(repo, tmp_path):
+    # Offered no mutator (D-148), it is not told the user allows one (D-173);
+    # an allowance for a tool it has is still said.
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(
+        '[[permissions]]\ntool = "apply_patch"\npattern = "*"\ndecision = "allow"\n'
+        '[[permissions]]\ntool = "read_file"\npattern = "*"\ndecision = "allow"\n',
+        encoding="utf-8")
+    wiring = _wire(repo, home, [_spawn(), _report(), turn(text="A is 1.")])
+    _repl(wiring, "use a sub-agent to find A")
+    seen = wiring.runtime.backend.seen
+    session, child = seen[0].messages[0].text_content, seen[1].messages[0].text_content
+    assert "  - apply_patch (*)" in session and "  - read_file (*)" in session
+    assert "  - apply_patch (*)" not in child and "  - read_file (*)" in child
+    assert "apply_patch" not in [t.name for t in seen[1].tools]
+
+
+def test_a_read_only_paragraph_that_does_not_know_the_tools_claims_no_allowance():
+    policy = PolicyEngine(rules=[Rule("apply_patch", "*", Verdict.ALLOW)])
+    assert "  - apply_patch (*)" in permissions_paragraph(policy)
+    policy.read_only = SUBAGENT_READ_ONLY
+    told = permissions_paragraph(policy)
+    assert "Also allowed without asking" not in told
+    assert read_only_line(SUBAGENT_READ_ONLY) in told
 
 
 def test_it_changes_nothing(repo, tmp_path):

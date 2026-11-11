@@ -80,8 +80,10 @@ def unattended(wiring: Wiring) -> None:
     wiring.runtime.approval = None  # nobody to ask
     wiring.runtime.policy.interactive = False
     # The permissions paragraph says so, in a mode whose own line speaks of
-    # approval.
-    wiring.runtime.context.system_prompt = system_prompt(wiring.runtime.policy)
+    # approval -- and, in a read-only run, names only tools it is offered
+    # (D-173).
+    wiring.runtime.context.system_prompt = system_prompt(wiring.runtime.policy,
+                                                         wiring.runtime.registry)
 
 
 def announce_start(wiring: Wiring) -> None:
@@ -238,8 +240,10 @@ def cmd_exec(args: argparse.Namespace, read_only: str = "") -> int:
         console.print(f"[red]{exc}[/red]")
         return EXIT_CODES[TerminalStatus.FAILED]
 
-    unattended(wiring)
+    # Read-only before the permissions paragraph is written, so it tells a
+    # review only of tools a review is offered (D-173).
     wiring.runtime.policy.read_only = read_only
+    unattended(wiring)
     if schema is not None:
         wiring.runtime.registry.get("finish").result_schema = schema
 

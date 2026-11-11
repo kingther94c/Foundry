@@ -23,6 +23,7 @@ from foundry.core.events import (
     ErrorEvent, EventSink, Notice, TerminalStatus, ToolBegin, ToolEnd, ToolOutputDelta,
     ToolRejected,
 )
+from foundry.core.prompts import system_prompt
 from foundry.core.redaction import default_redactor
 from foundry.core.runtime import AgentRuntime, Budget
 from foundry.core.session import SessionStore
@@ -70,6 +71,10 @@ class Spawner:
         before = policy.read_only
         if read_only and not before:
             policy.read_only = SUBAGENT_READ_ONLY
+        if policy.read_only:
+            # Its conversation starts here, so its permissions paragraph can
+            # name only the tools it is offered (D-173).
+            child.context.system_prompt = system_prompt(policy, child.registry)
         parent.child = child
         outcome = None
         try:
