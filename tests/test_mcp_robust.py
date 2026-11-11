@@ -90,7 +90,7 @@ PYTHON = sys._base_executable
 
 def test_the_fake_server_is_the_process_the_client_starts():
     child = subprocess.run([PYTHON, "-c", "import os; print(os.getppid())"],
-                           capture_output=True, text=True, check=True, timeout=60)
+                           capture_output=True, encoding="ascii", check=True, timeout=60)
     assert int(child.stdout) == os.getpid()
 
 
