@@ -343,6 +343,20 @@ def output_tail(text: str) -> str:
     return tail[-OUTPUT_TAIL_CHARS:]
 
 
+# What a rule can allow (D-183): the policy never auto-allows a command its
+# segmenter cannot read (segmenter._STRUCTURAL and a lone &), and an allow rule
+# must cover every command of a list or pipeline. A real model's first command
+# was `$env:PYTHONPATH="src"; python -m pytest tests -q 2>&1 | Select-Object
+# -Last 30`, refused unattended though `python -m pytest*` was allowed.
+PLAIN_COMMANDS = (
+    "Keep commands plain: a rule never allows one with <, >, a backtick (`) or a lone & "
+    "anywhere in it, or a variable ($), ^ or # outside quotes ($ inside double quotes "
+    "too), so it needs approval each time, and where nobody can approve it is refused; "
+    "a list or a pipeline is allowed only when each command in it is. Both output "
+    "streams come back to you, so there is no need for 2>&1 or a pipe to Select-Object."
+)
+
+
 def combined_output(result: CommandResult) -> str:
     """What a command printed, stdout then stderr, as the model reads it:
     with Windows line ends made plain ones, which the model was sent as they
@@ -367,6 +381,7 @@ class RunCommand:
             description=(
                 "Run one command in the workspace with Windows PowerShell 5.1. "
                 "PowerShell 5.1 has no '&&' or '||': separate commands with ';'. "
+                + PLAIN_COMMANDS + " "
                 "Runs from the workspace root unless cwd is given; every run is a "
                 "fresh process, so directory changes do not persist. "
                 "Example: {\"command\": \"python -m pytest -q\"}"

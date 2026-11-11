@@ -1244,3 +1244,10 @@
 - **Rationale**: the configuration may be written after the login, or changed between runs; asking for both stores what the user has whichever it names, and the error at use is unchanged.
 - **What it may not weaken**: no key is shown; each provider's key goes only to its own field (D-087's separation); getpass is still never reached without a terminal.
 - **Not changed**: `--with-api-key` stores the key the configured source reads, one per pipe.
+
+## D-183 run_command says which commands a rule can allow
+- **Date**: 2026-11-11 · **Status**: confirmed (P1 rerun against the real endpoint)
+- **Background**: run against Claude for the first time, a model's first command of a fix was `$env:PYTHONPATH="src"; python -m pytest tests -q 2>&1 | Select-Object -Last 30`. The run allowed `python -m pytest*`, but the policy never auto-allows a command its segmenter cannot read (a variable, a redirection, a backtick...), and an allow rule must cover every command of a list or pipeline; unattended, the command was refused, and at a terminal it would have asked the user. Nothing had told the model: the description of `run_command` named PowerShell 5.1 and `;`, nothing more. The offline stand-ins had always written plain commands.
+- **Decision**: the description says to keep commands plain: a rule never allows one with `<`, `>`, a backtick or a lone `&` anywhere in it, or a variable (`$`), `^` or `#` outside quotes (`$` inside double quotes too), so it needs approval each time, and is refused where nobody can approve; a list or a pipeline is allowed only when each command in it is; both output streams come back, so `2>&1` and a pipe to `Select-Object` are not needed.
+- **Rationale**: what the policy already does, said where the model chooses a command; a refused or asked command costs a round and, at a terminal, the user's attention.
+- **What it may not weaken**: the segmenter and the policy are unchanged. The tests hold each clause to them: every character the segmenter treats as structure is named, each named form is asked at a terminal and refused unattended, the quoted forms are allowed as said, and a pipeline is asked.

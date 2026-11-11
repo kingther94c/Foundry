@@ -378,7 +378,9 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   set is `;` and the pipe `|` (**5.1 has no `&&`/`||`**, so a model that
   misuses them gets a parse error, which the prompt warns about in advance);
   `$( )`, backticks, the `&` call operator, redirection and env prefixes all
-  produce an untrusted segmentation -> ASK. The segmenter is its own module
+  produce an untrusted segmentation -> ASK; `run_command`'s description says
+  so, and that a list or a pipeline is allowed only when each command in it
+  is ([D-183](decision-log.md)). The segmenter is its own module
   with table-driven tests (these are the 300 most security-sensitive lines in
   the project).
 - Programs Foundry starts ([D-049](decision-log.md)) -- git, PowerShell for
