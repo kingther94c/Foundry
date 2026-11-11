@@ -13,6 +13,7 @@ from foundry.core.session import ArtifactStore, SessionStore
 from foundry.core.tools.base import ReadTracker, ToolContext
 from foundry.core.tools.command import RunCommand, run_process
 from foundry.core.tools.git import (
+    CRLF_NOTE,
     GitBaseline,
     capture_baseline,
     collect_evidence,
@@ -260,6 +261,39 @@ def test_git_diff_tool(git_repo, tmp_path):
     tool = GitDiff()
     out = tool.execute(tool.validate({}), ctx)
     assert "A = 5" in out.content
+
+
+def _diff_of(repo, tmp_path, before: bytes, after: bytes, **args) -> str:
+    run_git(["config", "core.autocrlf", "false"], repo)
+    (repo / "crlf.py").write_bytes(before)
+    run_git(["add", "crlf.py"], repo)
+    run_git(["commit", "-m", "crlf"], repo)
+    (repo / "crlf.py").write_bytes(after)
+    ctx = ToolContext(workspace=Workspace(repo),
+                      artifacts=ArtifactStore(tmp_path / "a"), read_tracker=ReadTracker())
+    tool = GitDiff()
+    return tool.execute(tool.validate(args), ctx).content
+
+
+def test_git_diff_shows_crlf_lines_as_read_file_does(git_repo, tmp_path):
+    # Each line's carriage return, shown, read as a blank line after it (D-174).
+    out = _diff_of(git_repo, tmp_path, b"A = 1\r\nB = 2\r\n", b"A = 1\r\nB = 3\r\n",
+                   path="crlf.py")
+    assert "\r" not in out
+    assert " A = 1\n-B = 2\n+B = 3\n" in out
+    assert out.endswith(CRLF_NOTE)
+
+
+def test_git_diff_of_a_commit_too(git_repo, tmp_path):
+    _diff_of(git_repo, tmp_path, b"A = 1\r\n", b"A = 2\r\n")
+    run_git(["commit", "-am", "two"], git_repo)
+    out = _diff_of(git_repo, tmp_path, b"C = 1\r\n", b"C = 1\r\n", commit="HEAD~1")
+    assert "\r" not in out and "+A = 2\n" in out and out.endswith(CRLF_NOTE)
+
+
+def test_git_diff_of_lf_lines_says_nothing_of_line_endings(git_repo, tmp_path):
+    out = _diff_of(git_repo, tmp_path, b"A = 1\nB = 2\n", b"A = 1\nB = 3\n", path="crlf.py")
+    assert "-B = 2\n+B = 3\n" in out and CRLF_NOTE not in out
 
 
 def test_git_tools_reject_unknown_arguments():

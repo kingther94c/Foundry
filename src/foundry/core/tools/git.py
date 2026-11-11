@@ -243,6 +243,10 @@ class GitStatus:
 # (--output= writes a file), and never one with a space or a control in it.
 _REVISION = re.compile(r"[^-\s\x00-\x1f\x7f][^\s\x00-\x1f\x7f]{0,199}")
 _COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+# Said under a diff whose lines end in CRLF, which git_diff shows as plain
+# line breaks, as read_file does (D-174).
+CRLF_NOTE = ("\n[lines here end in CRLF; the carriage returns are not shown, so a line "
+             "whose only change is its line ending shows as removed and added unchanged]")
 
 
 def resolve_commit(revision: str, cwd: Path) -> str:
@@ -331,6 +335,11 @@ class GitDiff:
         code, out, err = run_git(args, root)
         if code != 0:
             raise ToolError(f"git {args[0]} failed: {err.strip()}")
+        if "\r\n" in out:
+            # read_file and run_command show a CRLF file's lines without
+            # their carriage returns; the diff showed them, and a model read
+            # a blank line after every line of it (D-174).
+            out = out.replace("\r\n", "\n") + CRLF_NOTE
         body, truncated = truncate_middle(out or "(no changes)", ctx.max_output_bytes)
         artifact_id = ""
         if truncated and ctx.artifacts is not None:

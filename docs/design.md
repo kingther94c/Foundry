@@ -444,7 +444,9 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   changed since it left a branch or commit (from their merge base, uncommitted
   work included), or with `commit` one commit's message and patch
   ([D-066](decision-log.md)); a revision is resolved to a full commit id
-  first, and one that starts with `-` never reaches git.
+  first, and one that starts with `-` never reaches git. Lines that end in
+  CRLF are shown without the carriage return, as `read_file` shows them,
+  and a line under the diff says so ([D-174](decision-log.md)).
 - `read_artifact(artifact_id, offset?)`: artifact_id is an opaque token,
   resolved only through an in-memory index for the current session (all path
   semantics are refused), limited to this session's products; its output goes
