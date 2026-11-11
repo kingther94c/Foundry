@@ -159,7 +159,8 @@ def _status(monkeypatch, capsys):
 def test_status_names_the_variable_and_not_the_key(home, monkeypatch, capsys):
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
     code, out = _status(monkeypatch, capsys)
-    assert (code, out) == (0, "OpenAI API key: from OPENAI_API_KEY")
+    assert (code, out) == (0, "OpenAI API key: from OPENAI_API_KEY Anthropic API key, "
+                              "which this configuration does not use: none")
 
 
 def test_status_names_the_store(home, monkeypatch, capsys):
@@ -171,7 +172,8 @@ def test_status_names_the_store(home, monkeypatch, capsys):
 
 def test_status_says_there_is_none(home, monkeypatch, capsys):
     assert _status(monkeypatch, capsys) == (
-        1, "no OpenAI API key: set OPENAI_API_KEY, or run foundry login")
+        1, "no OpenAI API key: set OPENAI_API_KEY, or run foundry login Anthropic API key, "
+        "which this configuration does not use: none")
 
 
 def test_status_reads_the_field_the_configured_source_reads(home, monkeypatch, capsys):
@@ -179,8 +181,11 @@ def test_status_reads_the_field_the_configured_source_reads(home, monkeypatch, c
     CredentialVault(home / "auth.json", redactor=Redactor()).save({"api_key": KEY})
     (home / "config.toml").write_text('[backend]\nprotocol = "anthropic_messages"\n',
                                       encoding="utf-8")
-    assert _status(monkeypatch, capsys) == (
-        1, "no Anthropic API key: set ANTHROPIC_API_KEY, or run foundry login")
+    code, out = _status(monkeypatch, capsys)
+    assert code == 1 and out.startswith(
+        "no Anthropic API key: set ANTHROPIC_API_KEY, or run foundry login OpenAI API key, "
+        "which this configuration does not use: stored by foundry login (")
+    assert KEY not in out
     (home / "config.toml").write_text('[backend]\ncredential_source = "gateway_token"\n',
                                       encoding="utf-8")
     CredentialVault(home / "auth.json", redactor=Redactor()).save({"token": KEY})

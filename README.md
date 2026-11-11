@@ -111,9 +111,10 @@ protocol = "anthropic_messages"
 # max_context_tokens = 1000000  # the model's window; masking starts at half of it
 ```
 
-and set `ANTHROPIC_API_KEY` (or run `foundry login`, which stores it apart from
-any OpenAI key). The base URL defaults to `https://api.anthropic.com/v1` for
-this protocol, so the key is never sent to the OpenAI default host. Rounds read
+and set `ANTHROPIC_API_KEY` (or run `foundry login`, which asks for the OpenAI
+and the Anthropic key, Enter skipping one, and stores each apart). The base URL
+defaults to `https://api.anthropic.com/v1` for this protocol, so the key is
+never sent to the OpenAI default host. Rounds read
 the previous round's prompt from the cache, and safety-classifier declines are
 retried on Anthropic's fallback model (`fallbacks = "off"` disables that).
 
@@ -165,7 +166,7 @@ project_doc_max_bytes = 32768      # characters; 0 reads none of the repository'
 | `foundry sessions [id]` | list sessions with each one's first message (and which are in use), or show one |
 | `foundry archive SESSION` / `foundry unarchive SESSION` / `foundry delete SESSION [--force]` | move a session, by id or name, out of every list (`foundry sessions --archived` lists them) and back, or delete one for good -- asked first; `--force` takes only an id, as codex's |
 | `foundry report [--json]` | patch first-try success rate, command failures, denials, model retries, token stats |
-| `foundry login [--with-api-key]` / `login status` / `logout` | credential management (DPAPI encrypted): `--with-api-key` reads the key from a pipe, as `printenv OPENAI_API_KEY \| foundry login --with-api-key`; `status` says where it comes from, never what it is |
+| `foundry login [--with-api-key]` / `login status` / `logout` | credential management (DPAPI encrypted): at a terminal it asks for the OpenAI and the Anthropic key, the configured one first, Enter skipping one (a gateway profile, for its token); `--with-api-key` reads the configured key from a pipe, as `printenv OPENAI_API_KEY \| foundry login --with-api-key`; `status` says where each comes from, never what it is |
 | `foundry features [list]` / `enable FEATURE` / `disable FEATURE` | codex's feature flags, as `codex features`: each one codex documents, whether it is on, and what it is here; `enable` and `disable` write it under `[features]` in your config.toml (comments kept), for later sessions. A feature Foundry has is a switch -- `multi_agent` (sub-agents), `hooks` (or `codex_hooks`; your own, the machine policy's always run), `shell_tool` (off, every command the model asks for is refused), `view_image`, `goals` (`/goal`), `memories` (off by default; `foundry memories`); one it has no counterpart for, such as `web_search_request`, is off, and turning it on is refused with what Foundry has instead. `--enable FEATURE` and `--disable FEATURE` turn one on or off for a run, as `-c features.FEATURE=true` does |
 | `foundry memories [show]` / `update` / `reset` | codex's memories, once `foundry features enable memories` turns them on: a model reads this workspace's sessions once they have been idle (6 hours) and keeps what a later session here should know, merged into notes and a summary a session starts with -- in a workspace you trust, and for that workspace only. They are written in the background as an interactive session starts; `update` writes them now, `show` prints them, and `reset` forgets them (the sessions before it are not read again). `[memories]` tunes it as codex's does (`generate_memories`, `use_memories`, `max_rollout_age_days`, `min_rollout_idle_hours`, `extract_model`, ...). In a session, `/memories` says what this one uses, and `/memories use off` or `generate off` decides it for this session |
 | `foundry mcp list [--json]` / `get NAME [--json]` / `add NAME -- COMMAND [ARGS...]` / `add NAME --url URL` / `remove NAME` | the MCP servers in your config.toml, as `codex mcp`: `get` shows one in full -- its arguments, environment and address, a value a credential's name marks hidden; `add` takes `--env KEY=VALUE`, `--env-var NAME` (a secret, passed through by name), `--bearer-token-env-var VAR` and `--read-only`; the file is edited in place, comments kept |

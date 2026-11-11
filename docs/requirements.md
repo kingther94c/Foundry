@@ -135,7 +135,8 @@ Responses, `api.openai.com`). ChatGPT login is marked
 **blocked-with-evidence**: not implemented, not impersonated.
 
 Hard requirements:
-- `foundry login` guides entry of an API key (or reads one from an environment
+- `foundry login` guides entry of the API keys -- OpenAI's and Anthropic's,
+  each skippable, [D-182](decision-log.md) -- (or reads one from an environment
   variable, or from a pipe with `--with-api-key`, and `login status` says
   where it comes from, [D-087](decision-log.md)); the credential is encrypted with **DPAPI (ctypes
   CryptProtectData)** and stored at `~/.foundry/auth.json`, written

@@ -213,7 +213,9 @@ def test_login_stores_to_the_anthropic_field(tmp_path, monkeypatch, capsys):
     CredentialVault(home / "auth.json", redactor=Redactor()).save({"api_key": OPENAI_KEY})
     monkeypatch.setattr(sys, "stdin", _Stdin(True))
     import getpass
-    monkeypatch.setattr(getpass, "getpass", lambda prompt="": ANTHROPIC_KEY)
+    # The OpenAI prompt is skipped, and the key already stored stays.
+    monkeypatch.setattr(getpass, "getpass",
+                        lambda prompt="": ANTHROPIC_KEY if "anthropic" in prompt else "")
     assert cmd_login(argparse.Namespace()) == 0
     stored = CredentialVault(home / "auth.json", redactor=Redactor()).load()
     assert stored["anthropic_api_key"] == ANTHROPIC_KEY

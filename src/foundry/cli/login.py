@@ -11,7 +11,7 @@ import sys
 from rich.console import Console
 
 from foundry.cli.wiring import _credential_source
-from foundry.core.auth import CredentialVault, EnvKeySource, StaticTokenSource
+from foundry.core.auth import ApiKeySource, CredentialVault, EnvKeySource, StaticTokenSource
 from foundry.core.config import load_config, user_dir
 
 
@@ -31,10 +31,8 @@ def cmd_login(args: argparse.Namespace) -> int:
         label = "gateway token"
     elif isinstance(source, EnvKeySource):
         label = "key"
-    elif source.vault_field == "anthropic_api_key":
-        label = "Anthropic API key"
     else:
-        label = "OpenAI API key"
+        label = _key_label(source)
     if getattr(args, "action", None) == "status":
         if getattr(args, "with_api_key", False):
             console.print("[red]login status reads no key[/red]: run it without --with-api-key")
@@ -53,10 +51,26 @@ def cmd_login(args: argparse.Namespace) -> int:
         console.print(f"[green]saved[/green] {home / 'auth.json'} ({label})")
         return 0
 
-    console.print(
-        f"Paste a{'n' if label[0] in 'AEIOU' else ''} {label}. Foundry stores it "
-        "encrypted for your Windows account (DPAPI) and never puts it in prompts or logs."
-    )
+    # Both providers' keys, each skippable: which one a run reads is the
+    # configuration's choice, made when it runs, and a key it lacks is an error
+    # then. Asking only for the configured one meant a login made before the
+    # configuration was written stored the other provider's key. A gateway
+    # profile reads its token and nothing else.
+    asked = [(source, label)]
+    if not gateway:
+        other = _other_key(source, vault)
+        asked.append((other, _key_label(other)))
+    if gateway:
+        console.print(
+            f"Paste a {label}. Foundry stores it encrypted for your Windows account "
+            "(DPAPI) and never puts it in prompts or logs."
+        )
+    else:
+        console.print(
+            f"Paste the keys you have; Enter skips one. This configuration uses the "
+            f"{label}. Foundry stores them encrypted for your Windows account (DPAPI) "
+            "and never puts them in prompts or logs."
+        )
 
     # getpass.win_getpass reads the console directly through msvcrt and ignores
     # stdin entirely, so the EOFError handler below could never fire and a
@@ -70,23 +84,59 @@ def cmd_login(args: argparse.Namespace) -> int:
         )
         return 1
 
+    # Every answer first, then stored: a cancel part-way stores nothing.
+    entered = []
     try:
         import getpass
 
-        secret = getpass.getpass(f"{label.lower()}: ").strip()
+        for each, name in asked:
+            skip = " (Enter to skip)" if len(asked) > 1 else ""
+            secret = getpass.getpass(f"{name.lower()}{skip}: ").strip()
+            if secret:
+                entered.append((each, name, secret))
     except (EOFError, KeyboardInterrupt):
-        console.print("\n[yellow]cancelled[/yellow]")
+        console.print("\n[yellow]cancelled[/yellow]: nothing stored")
         return 1
     except OSError as exc:                       # no console attached at all
         console.print(f"[red]cannot read from the console:[/red] {exc}")
         return 1
-    if not secret:
+    if not entered:
         console.print("[red]nothing entered[/red]")
         return 1
+    if len(entered) == 2 and entered[0][2] == entered[1][2]:
+        # Pasted twice: one provider's key would be sent to the other.
+        console.print("[red]the same key at both prompts[/red]: each provider has its "
+                      "own; nothing stored")
+        return 1
 
-    source.store(secret)
-    console.print(f"[green]saved[/green] {home / 'auth.json'} ({label})")
+    for each, _, secret in entered:
+        each.store(secret)
+    console.print(f"[green]saved[/green] {home / 'auth.json'} "
+                  f"({', '.join(name for _, name, _ in entered)})")
+    if not gateway and _key_state(source, vault) is None:
+        console.print(f"[yellow]this configuration uses the {label}[/yellow], which is "
+                      f"not stored: set {source.env_var}, or run foundry login again")
     return 0
+
+
+def _key_label(source: ApiKeySource) -> str:
+    return ("Anthropic API key" if source.vault_field == "anthropic_api_key"
+            else "OpenAI API key")
+
+
+def _other_key(source: ApiKeySource, vault: CredentialVault) -> ApiKeySource:
+    """The provider key this configuration does not read."""
+    return (ApiKeySource(vault) if source.vault_field == "anthropic_api_key"
+            else ApiKeySource.anthropic(vault))
+
+
+def _key_state(source: ApiKeySource, vault: CredentialVault) -> str | None:
+    """Where a provider key comes from -- never any of it -- or None."""
+    if os.environ.get(source.env_var):
+        return f"from {source.env_var}"
+    if (vault.load() or {}).get(source.vault_field):
+        return f"stored by foundry login ({vault.path})"
+    return None
 
 
 # More than any key or token is long: what was piped in is something else.
@@ -140,7 +190,17 @@ def _secret_from_stdin(console: Console, label: str) -> str | None:
 
 def _login_status(console: Console, source, vault: CredentialVault, label: str) -> int:
     """``foundry login status`` (D-087): where this configuration's credential
-    comes from -- never any of it. 0 when there is one, 1 when not."""
+    comes from -- never any of it. 0 when there is one, 1 when not. The other
+    provider's key is named too, as login asks for both."""
+    code = _configured_status(console, source, vault, label)
+    if isinstance(source, ApiKeySource):
+        other = _other_key(source, vault)
+        console.print(f"{_key_label(other)}, which this configuration does not use: "
+                      f"{_key_state(other, vault) or 'none'}")
+    return code
+
+
+def _configured_status(console: Console, source, vault: CredentialVault, label: str) -> int:
     env_var = source.env_var
     if os.environ.get(env_var):
         console.print(f"{label}: from {env_var}")
