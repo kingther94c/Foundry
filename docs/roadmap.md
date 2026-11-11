@@ -19,9 +19,9 @@
 | M3 corporate Gateway | **partial** | unchanged since 2026-09-01: the entry gate (a tool-call streaming fixture from the Gateway) is not passed, and [OQ-6](open-questions.md) is open |
 | M4 packaging hardening + disclosure | **done** | the wheelhouse hash-pinned since 2026-11-11 ([D-170](decision-log.md)) |
 | Codex parity, items 1-106 | **done** | 2026-11-06 to 2026-11-09, D-039 to D-145; the table below |
-| After parity, P0-P3, P6-P10 | **done** | 2026-11-10 and 11, D-146 to D-176; what is left waits on others: P4 on the corporate side, P1's rerun and P5 on a model endpoint |
+| After parity, P0-P3, P6-P11 | **done** | 2026-11-10 and 11, D-146 to D-181; what is left waits on others: P4 on the corporate side, P1's rerun and P5 on a model endpoint |
 
-4,879 tests pass (one is skipped) on a machine with no network and no credentials. Every
+4,891 tests pass (one is skipped) on a machine with no network and no credentials. Every
 feature since D-036 has been verified only against scripted backends: the
 local gateway that served the first live checks has answered nothing since
 2026-11-04, and there is no API key on the development machine. What comes
@@ -406,6 +406,21 @@ endpoint.
   showing a CRLF file's carriage returns ([D-174](decision-log.md)), and
   `update_goal` asking for a report its description does not
   ([D-175](decision-log.md)).
+
+[D-181](decision-log.md), once P10 was done:
+
+- **P11 -- a fifth round with the model played offline.** The commands no
+  round had used: at the prompt, `/init`, `/model`, `/effort`, `/review`,
+  `/btw`, `/plan`, `/rename`, `/export`, `/new` and `/resume NAME`; `/title`,
+  `/image`, `/hooks`, `/memories`, `/warnings`, `/rollout` and `/archive`;
+  and `foundry run`, `report`, `undo`, `fork`, `policy check` and
+  `features list` -- across the three protocols. Done (2026-11-11): every
+  task completed; three defects, a resumed session claiming a file changed
+  outside it ([D-177](decision-log.md)), a resume warning of a model change
+  there was none of ([D-178](decision-log.md)), and a review not told that
+  a new file is not in `git_diff` ([D-179](decision-log.md)); and the
+  system prompt now says a question is answered in the reply
+  ([D-180](decision-log.md)).
 
 Dated, outside Foundry itself: the macro run's scorings fixed in its plan
 (2026-12-07 and 2027-02-08), and, if wanted, weekly forward snapshots under a
