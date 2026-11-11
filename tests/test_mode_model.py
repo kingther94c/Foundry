@@ -232,6 +232,35 @@ def test_a_resume_on_the_switched_model_says_nothing_of_it(repo, tmp_path):
     _announce_found(resumed)
     assert not any(isinstance(e, Notice) and "had been switched to the model" in e.text
                    for e in events)
+    # Nor that it ran on another: it last ran on this one (D-178).
+    assert not any(isinstance(e, Notice) and "this session ran on" in e.text for e in events)
+    _close(resumed, TerminalStatus.CANCELLED, "session ended")
+
+
+def test_a_resume_on_another_model_is_warned_of_it(repo, tmp_path):
+    home = tmp_path / "home"
+    wiring = _wire(repo, home, [turn(text="hi")])
+    _session(wiring, "hello")
+    resumed = _wire(repo, home, [], resume="last", overrides={"model": "second"})
+    events: list = []
+    resumed.runtime.events.subscribe(events.append)
+    _announce_found(resumed)
+    [said] = [e.text for e in events if isinstance(e, Notice) and "ran on" in e.text]
+    assert "(fake); it continues on " in said and said.endswith("(second)")
+    _close(resumed, TerminalStatus.CANCELLED, "session ended")
+
+
+def test_a_resume_on_another_profile_names_the_model_it_last_ran_on(repo, tmp_path):
+    home = tmp_path / "home"
+    wiring = _wire(repo, home, [turn(text="hi")])
+    _session(wiring, "/model second", "hello")
+    resumed = _wire(repo, home, [], resume="last", overrides={"model": "second"})
+    resumed.config.backend.name = "work"
+    events: list = []
+    resumed.runtime.events.subscribe(events.append)
+    _announce_found(resumed)
+    [said] = [e.text for e in events if isinstance(e, Notice) and "ran on" in e.text]
+    assert said.endswith("(second); it continues on work (second)")
     _close(resumed, TerminalStatus.CANCELLED, "session ended")
 
 

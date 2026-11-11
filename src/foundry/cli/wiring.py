@@ -673,10 +673,14 @@ def _announce_found(wiring: Wiring) -> None:
          f"resumed session {state.session_id} ({task!r}); it had ended {ended}. ") +
         f"{len(state.repairs)} tool call(s) without a recorded result were given one; "
         f"{len(wiring.outside)} file(s) changed outside it since it started.", level="info"))
-    if (state.profile, state.model) != (wiring.config.backend.name, wiring.config.backend.model):
+    profile, model = wiring.config.backend.name, wiring.config.backend.model
+    # The model it last ran on, not the one it started on: resumed on the
+    # model /model had switched it to, it was warned of a change there was
+    # none of (D-178). A switch it does not go on with is said below.
+    if state.profile != profile or (not state.switched_model and state.model != model):
         events.emit(Notice(
-            f"this session ran on {state.profile} ({state.model}); it continues on "
-            f"{wiring.config.backend.name} ({wiring.config.backend.model})", level="warning"))
+            f"this session ran on {state.profile} ({state.switched_model or state.model}); "
+            f"it continues on {profile} ({model})", level="warning"))
     if state.legacy:
         events.emit(Notice(
             "this session was recorded before resume existed: the output of the calls it "

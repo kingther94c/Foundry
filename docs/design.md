@@ -721,7 +721,9 @@ class ModelBackend(Protocol):
   its own -- the finish summary, `/diff` and `/status` name them as changed
   outside it ([D-177](decision-log.md)); starts the evidence over (no command history, no
   files read, no grants); writes `resumed`; and puts a note before the first
-  task saying all of that to the model.
+  task saying all of that to the model. The user is warned when it goes on
+  with another profile or model than the one it last ran on, a `/model`
+  switch included ([D-178](decision-log.md)).
 - **Undo** ([D-036](decision-log.md), `core/undo.py`). `apply_patch` puts
   `changes` in its `tool_result`: per file, `before` (an artifact holding the
   exact earlier bytes, or null if the file did not exist or its content held a

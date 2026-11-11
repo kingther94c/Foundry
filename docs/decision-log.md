@@ -1207,3 +1207,10 @@
 - **Decision**: the baseline a resume works from carries the files changed outside the session since it started (not journaled; a resume works them out again). They are not the session's: the finish summary lists them under "Changed outside this session since it started (not claimed)", the final evidence record has `outside_changed`, `/diff` labels them "outside this session", and `/status` counts them. The permissions paragraph says the guarded files "have uncommitted changes this session did not make -- from before it started, or made outside it since"; accept-edits mode's line says the same.
 - **Rationale**: the session's claims are what the finish gate and the user rely on; a change it did not make cannot be one of them, whenever it was made. The engine's refusal already said "this session did not make"; the prompt now agrees with it.
 - **What it may not weaken**: the guard itself, and a fresh session's account, are unchanged; a file the session patches after a resume is still guarded as one it did not change first.
+
+## D-178 A resume names the model the session last ran on
+- **Date**: 2026-11-11 · **Status**: confirmed (P11, the fifth round with the model played offline)
+- **Background**: a resume warned "this session ran on PROFILE (MODEL); it continues on ..." whenever the model it started on was not the one it continues on. A session switched with `/model`, then resumed on that model -- `/resume` at the prompt carries the user's choice -- was warned of a change there was none of, naming the model it had left.
+- **Decision**: the warning compares the profile, and the model the session last ran on: the one `/model` switched it to, if it was switched. A switch it does not go on with is said as before ("it had been switched to the model ... -m ... goes on with the other"); the warning is left to a profile that differs, or a model that differs from one it was never switched from.
+- **Rationale**: the warning is there so the user knows the conversation changes hands; it should name the hands it was in.
+- **What it may not weaken**: a resume on another profile or model is still said.
