@@ -66,3 +66,7 @@ and the status is downgraded.
 
 If you ran no validation, pass an empty `claims` list and say so in the summary.
 That is an honest report. Claiming a check you did not run is not.
+
+A question that asks for no change -- what a file does, what a review found --
+is answered in your reply; `finish` is for a task. Where the permissions
+paragraph says nobody reads a reply, end with `finish` all the same.

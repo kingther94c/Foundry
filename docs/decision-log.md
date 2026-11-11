@@ -1221,3 +1221,10 @@
 - **Decision**: each review scope says what each tool shows: `git_status` every changed file, new ones included; `git_diff` the changes to the files git tracks, so a new file is read with `read_file`. `git_diff`'s own description says a new file git does not track is not in it, and that `git_status` lists those.
 - **Rationale**: the model can only review what it looks at; telling it where new files are costs a sentence, where changing `git_diff` to show untracked files would change what every other use of it shows.
 - **What it may not weaken**: `git_diff`'s output is unchanged.
+
+## D-180 A question is answered in the reply; finish is for a task
+- **Date**: 2026-11-11 · **Status**: confirmed (P11, the fifth round with the model played offline)
+- **Background**: the system prompt says "Call `finish` when the task is done or you are blocked", and nothing of a question. In P9 a stand-in model answered a question in prose and again in `finish`'s summary; in the fifth round one answered two questions at the prompt in its reply and said it could not tell whether `finish` was wanted. The interactive prompt takes a reply as the end of the turn (D-063); an unattended run's permissions paragraph says nobody reads one and to end with `finish`.
+- **Decision**: the base prompt's Finishing section says a question that asks for no change is answered in the reply, `finish` being for a task, and that where the permissions paragraph says nobody reads a reply, the run ends with `finish` all the same.
+- **Rationale**: what the program already does, said where the model looks; a model that guessed wrong either repeated its answer or left an unattended run without an ending.
+- **What it may not weaken**: the finish gate and an unattended run's ending are unchanged.

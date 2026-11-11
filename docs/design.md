@@ -702,7 +702,10 @@ class ModelBackend(Protocol):
   check by the runtime, (b) every `validation_claim` cross-verified against
   `command_exec` events (the event_id exists and the exit code matches), and
   (c) HEAD not having moved; otherwise it is downgraded to `partial`.
-  Read-only tasks take the `completed(no_changes)` path. A journal holds one
+  Read-only tasks take the `completed(no_changes)` path. A question that asks
+  for no change is answered in the reply, the system prompt says; `finish`
+  is for a task, and an unattended run ends with it all the same
+  ([D-180](decision-log.md)). A journal holds one
   termination per run, plus one for each task an interactive session went on
   past -- every one, since only the user ends such a session
   ([D-063](decision-log.md)); its status is the last one's unless a later
