@@ -434,9 +434,12 @@ class Renderer:
             print_plan(self.console, event.steps, event.explanation)
         elif isinstance(event, Compacted):
             how = "automatically" if event.auto else "on request"
-            self.console.print(
-                f"[dim]context compacted {how}: about {event.tokens_before:,} tokens "
-                f"down to {event.tokens_after:,}[/dim]")
+            before, after = event.tokens_before, event.tokens_after
+            # A short conversation's summary can be as long as the conversation.
+            size = (f"about {before:,} tokens down to {after:,}" if after < before else
+                    f"about {before:,} tokens, {after:,} after: no smaller, as there "
+                    "was little to compact")
+            self.console.print(f"[dim]context compacted {how}: {size}[/dim]")
         elif isinstance(event, SessionStarted):
             again = "resumed " if event.resumed else ""
             kept = " (ephemeral: not kept)" if event.ephemeral else ""

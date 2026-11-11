@@ -1251,3 +1251,9 @@
 - **Decision**: the description says to keep commands plain: a rule never allows one with `<`, `>`, a backtick or a lone `&` anywhere in it, or a variable (`$`), `^` or `#` outside quotes (`$` inside double quotes too), so it needs approval each time, and is refused where nobody can approve; a list or a pipeline is allowed only when each command in it is; both output streams come back, so `2>&1` and a pipe to `Select-Object` are not needed.
 - **Rationale**: what the policy already does, said where the model chooses a command; a refused or asked command costs a round and, at a terminal, the user's attention.
 - **What it may not weaken**: the segmenter and the policy are unchanged. The tests hold each clause to them: every character the segmenter treats as structure is named, each named form is asked at a terminal and refused unattended, the quoted forms are allowed as said, and a pipeline is asked.
+
+## D-184 A compaction no smaller is not "down to"
+- **Date**: 2026-11-11 · **Status**: confirmed (P1 rerun against the real endpoint)
+- **Background**: against Claude, `/compact` of a short conversation printed "context compacted on request: about 1,767 tokens down to 1,782". A summary of a short conversation can be as long as the conversation it replaces; "down to" a larger number misreads.
+- **Decision**: the line says "down to" only when the context is smaller after; otherwise "about N tokens, M after: no smaller, as there was little to compact".
+- **Not changed**: when a compaction runs, and what it keeps; the `compacted` event and record carry the same figures.
