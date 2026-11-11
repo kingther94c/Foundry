@@ -335,7 +335,8 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   four. Either builds the system prompt's permissions paragraph again, writes
   `mode_change`, and tells the model with the next message. Each
   `policy_decision` records the `mode` it was made in. A resume starts in the
-  configured mode; `/new` keeps what `/mode` chose.
+  configured mode; `/new`, `/fork` and `/resume` at the prompt keep what the
+  user last chose there, with `/mode` or `/approve` ([D-172](decision-log.md)).
 - `/model NAME` ([D-047](decision-log.md)) sends the following requests to
   another model behind the same endpoint, writes `model_change`, and tells the
   model with the next message; the system prompt is not rebuilt, so the

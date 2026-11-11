@@ -1164,3 +1164,10 @@
   - A version changes only by a new lock, written the same way and read before it is committed.
 - **Rationale**: D-002's promise -- dependencies pinned by hash, installed with `--require-hashes` -- now holds for the wheelhouse that ships, and a wheel that changes on the index after today fails the download, `--verify` and the install instead of being installed.
 - **What it may not weaken**: `requirements.in` still says what Foundry needs; the lock says which wheels satisfy it, and nothing outside it is installed with the dependencies.
+
+## D-172 An approval is the user's choice of mode, as /mode's is
+- **Date**: 2026-11-11 · **Status**: confirmed (P10, the fourth round with the model played offline)
+- **Background**: a REPL session switched to plan mode with `/mode plan`, approved its plan with `/approve` (default mode), then went on with `/fork`. The fork was back in plan mode: told "it had been switched to default mode before it stopped; a resume starts in plan mode, as configured; type /approve to approve its plan again", when nothing had configured plan mode -- the user's `/mode plan` had. `/mode` records the user's choice in what `/new`, `/fork` and `/resume` at the prompt start with (D-047); `/approve` changed the mode without recording it. The model, asked for more work in the fork, could only plan again. The same model asked whether a fork's edits reach the other session's files.
+- **Decision**: `/approve` records the mode it switches to as the user's choice, as `/mode` does, so `/new`, `/fork` and `/resume` at the prompt start in it. A fork's note to the model says the files are the workspace's as they are now: a fork copies the conversation, not the files.
+- **Rationale**: both are the user's word at the prompt; only one was remembered.
+- **What it may not weaken**: a resume from the command line still starts in the configured mode (D-038), and only the user's typing changes the mode.

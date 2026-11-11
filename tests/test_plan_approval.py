@@ -9,7 +9,11 @@ without carrying over a resume.
 from __future__ import annotations
 
 import dataclasses
+import re
 
+import pytest
+
+from foundry.cli import app
 from foundry.cli.repl import repl
 from foundry.cli.wiring import _announce_found, _close
 from foundry.core.events import ApprovalChoice, Notice, PlanStep, StepStatus, TerminalStatus
@@ -24,7 +28,15 @@ from foundry.core.resume import read_journal, resume_note
 from foundry.core.session import EventType, SessionStore
 
 from test_plan import plan
-from test_resume import PATCH_A, _core, _wire, call, repo, turn  # noqa: F401  (repo is a fixture)
+from test_resume import (  # noqa: F401  (repo and fake_model are fixtures)
+    PATCH_A,
+    _core,
+    _wire,
+    call,
+    fake_model,
+    repo,
+    turn,
+)
 from test_undo import _Typist
 
 
@@ -116,6 +128,29 @@ def test_declining_or_no_answer_keeps_planning_and_changes_nothing(repo, tmp_pat
         assert not _records(wiring, EventType.MODE_CHANGE)
         assert mode_line(Mode.PLAN) in wiring.runtime.context.system_message().text_content
         assert (repo / "a.py").read_text(encoding="utf-8") == "A = 1\n"
+        assert wiring.chosen == {}, "nothing chosen for /new, /fork or /resume"
+
+
+@pytest.mark.parametrize("answer, mode", [("y", Mode.DEFAULT), ("e", Mode.ACCEPT_EDITS)])
+def test_an_approval_is_the_users_choice_of_mode(repo, tmp_path, answer, mode):
+    # What /new, /fork and /resume at the prompt start in, as /mode's choice is
+    # (D-172).
+    wiring, _ = _planning(repo, tmp_path / "home", [turn(text="done")])
+    _close(wiring, repl(wiring, _Keys(["plan it", "/approve", answer, "/exit"])),
+           "session ended")
+    assert wiring.chosen == {"mode": mode}
+
+
+def test_a_fork_of_an_approved_session_is_not_back_in_plan_mode(
+        repo, tmp_path, monkeypatch, capsys, fake_model):
+    from test_fork import _model, _typed
+
+    _model(tmp_path, monkeypatch, fake_model, "The plan: change A to 2.", "Done.")
+    _typed(monkeypatch, "/mode plan", "plan it", "/approve", "y", "/fork", "/status", "/exit")
+    assert app.main(["run", "--workspace", str(repo)]) == 13
+    after = capsys.readouterr().out.split("now in ")[-1]
+    assert re.search(r"mode\s+default", after), after
+    assert "plan mode" not in after and "/approve" not in after
 
 
 def test_outside_plan_mode_there_is_nothing_to_approve(repo, tmp_path):

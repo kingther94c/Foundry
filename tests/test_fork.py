@@ -169,6 +169,8 @@ def test_fork_goes_on_in_a_copy_and_keeps_this_one(repo, tmp_path, monkeypatch, 
     said = _said(journals["fork"])
     assert said[:2] == ["what is A?", "A is 1"] and said[-1] == "B is 1"
     assert said[2].startswith(FORK_NOTE.format(source)) and said[2].endswith("and B?")
+    # The working tree is not copied with the conversation (D-172).
+    assert "a fork copies the conversation, not the files" in said[2]
     assert read_journal(journals["source"]).reason == \
         f"the user forked this session into {fork}"
     # The model was sent the conversation so far, from the fork.

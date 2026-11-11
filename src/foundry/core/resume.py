@@ -850,8 +850,12 @@ def resume_note(state: JournalState, outside: frozenset[str], mode: str = "") ->
     lines = [f"This session was resumed. When it stopped, its status was {ended}."]
     if state.fork_of:
         # A fork's first run (D-126): the conversation is another session's.
+        # A fork copies the conversation, not the files (D-172): a model asked
+        # whether its edits would reach the other session's working tree.
         lines = [f"This session is a fork of session {state.fork_of}: the conversation so "
-                 "far is that session's, and it goes on here apart from it."]
+                 "far is that session's, and it goes on here apart from it. The files are "
+                 "the workspace's, as they are now: a fork copies the conversation, not "
+                 "the files."]
     if outside:
         shown = _names(sorted(outside))
         lines.append("These files have changes this session did not make with apply_patch "

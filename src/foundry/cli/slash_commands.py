@@ -684,6 +684,11 @@ def approve_plan(wiring: "Wiring", console: Console, arguments: str = "") -> Run
     wiring.session.append(EventType.MODE_CHANGE, {"from": Mode.PLAN.value, "to": mode.value,
                                                   "by": "repl",
                                                   "reason": "the user approved the plan"})
+    # The user's choice, as /mode's is: /new, /fork and /resume start in it.
+    # Left out, a fork of an approved session went back to plan mode, said
+    # to be "as configured" when only the user's /mode plan had chosen it
+    # (D-172).
+    wiring.chosen["mode"] = mode
     runtime.events.emit(Notice(f"plan approved: this session is in {mode.value} mode now"))
     # Approved, the work starts at once: what the user approved is the plan,
     # so the next turn carries it out.
