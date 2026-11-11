@@ -577,15 +577,20 @@ def _init(wiring: "Wiring", console: Console, arguments: str) -> RunTask | None:
     return RunTask(builtin_prompt("init"))
 
 
+# git_diff shows the files git tracks: told the two "show what changed", a
+# review's model found a new file only because git_status listed it (D-179).
 REVIEW_UNCOMMITTED = ("Review the uncommitted changes in this repository, as a careful "
-                      "code reviewer would. `git_status` and `git_diff` show what changed.")
+                      "code reviewer would. `git_status` lists every changed file, new ones "
+                      "included; `git_diff` shows the changes to the files git tracks, not a "
+                      "new file's contents -- read those with `read_file`.")
 
 REVIEW_USAGE = "usage: /review [--base REV | --commit REV] [focus]"
 
 REVIEW_AS_ASKED = ("Review this repository as the user asks below, as a careful code reviewer "
-                   "would. `git_status` and `git_diff` show what is not committed, and "
-                   '`git_diff` with {"base": REV} or {"commit": REV} what a branch or a '
-                   "commit changed.")
+                   "would. `git_status` lists what is not committed, new files included, and "
+                   "`git_diff` shows those changes to the files git tracks (read a new file "
+                   'with `read_file`); `git_diff` with {"base": REV} or {"commit": REV} shows '
+                   "what a branch or a commit changed.")
 
 
 def review_task(root: Path, *, base: str | None = None, commit: str | None = None,
@@ -604,7 +609,8 @@ def review_task(root: Path, *, base: str | None = None, commit: str | None = Non
                  f"{sha}): the commits since their merge base, and anything not yet "
                  "committed -- as a careful code reviewer would. `git_diff` with "
                  f'{{"base": "{sha}"}} shows them, and `git_status` what is not '
-                 "committed.")
+                 "committed; a new file not yet committed is not in the diff -- read it "
+                 "with `read_file`.")
         what = f"the changes since {base} ({sha[:12]})"
     elif commit is not None:
         sha = resolve_commit(commit, root)

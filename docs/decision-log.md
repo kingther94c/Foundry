@@ -1214,3 +1214,10 @@
 - **Decision**: the warning compares the profile, and the model the session last ran on: the one `/model` switched it to, if it was switched. A switch it does not go on with is said as before ("it had been switched to the model ... -m ... goes on with the other"); the warning is left to a profile that differs, or a model that differs from one it was never switched from.
 - **Rationale**: the warning is there so the user knows the conversation changes hands; it should name the hands it was in.
 - **What it may not weaken**: a resume on another profile or model is still said.
+
+## D-179 A review is told a new file is not in git_diff
+- **Date**: 2026-11-11 · **Status**: confirmed (P11, the fifth round with the model played offline)
+- **Background**: a review of the uncommitted changes was told "`git_status` and `git_diff` show what changed". `git_diff` is git's diff, which leaves out a file git does not track yet; in the fifth round the model reviewing found the new `FOUNDRY.md` only because `git_status` listed it as `??`, and said a model relying on the diff would have missed it.
+- **Decision**: each review scope says what each tool shows: `git_status` every changed file, new ones included; `git_diff` the changes to the files git tracks, so a new file is read with `read_file`. `git_diff`'s own description says a new file git does not track is not in it, and that `git_status` lists those.
+- **Rationale**: the model can only review what it looks at; telling it where new files are costs a sentence, where changing `git_diff` to show untracked files would change what every other use of it shows.
+- **What it may not weaken**: `git_diff`'s output is unchanged.

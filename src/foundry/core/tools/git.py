@@ -273,10 +273,13 @@ class GitDiff:
     def schema(self) -> ToolSchema:
         return ToolSchema(
             name=self.name,
+            # A new, untracked file is not in git's diff: said, so a model does
+            # not take the diff for every change (D-179).
             description=(
                 "Show uncommitted changes in the workspace repository; with base, what "
                 "changed since this branch left that branch or commit; with commit, what one "
-                "commit changed. Example: {\"path\": \"src/app.py\", \"staged\": false}"
+                "commit changed. A new file git does not track yet is not in it: git_status "
+                "lists those. Example: {\"path\": \"src/app.py\", \"staged\": false}"
             ),
             parameters={
                 "type": "object",

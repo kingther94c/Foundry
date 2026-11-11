@@ -296,6 +296,18 @@ def test_git_diff_of_lf_lines_says_nothing_of_line_endings(git_repo, tmp_path):
     assert "-B = 2\n+B = 3\n" in out and CRLF_NOTE not in out
 
 
+def test_git_diff_says_a_new_file_is_not_in_it_and_it_is_not(git_repo, tmp_path):
+    # What its description says, and what git does (D-179).
+    tool = GitDiff()
+    assert "A new file git does not track yet is not in it: git_status lists those" in (
+        tool.schema().description)
+    (git_repo / "fresh.py").write_text("NEW = 1\n", encoding="utf-8")
+    ctx = ToolContext(workspace=Workspace(git_repo),
+                      artifacts=ArtifactStore(tmp_path / "a"), read_tracker=ReadTracker())
+    assert "NEW = 1" not in tool.execute(tool.validate({}), ctx).content
+    assert "?? fresh.py" in GitStatus().execute(GitStatus().validate({}), ctx).content
+
+
 def test_git_tools_reject_unknown_arguments():
     with pytest.raises(InvalidToolCall):
         GitStatus().validate({"all": True})

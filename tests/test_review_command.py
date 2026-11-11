@@ -206,3 +206,15 @@ def test_review_reaches_the_review_from_slash_review_too(repo, tmp_path):
     assert text.startswith(REVIEW_UNCOMMITTED) and text.endswith(
         "The user asks you to focus on: naming")
     assert what == "the uncommitted changes"
+
+
+@pytest.mark.parametrize("scope", [{}, {"instructions": "look at a.py"}, {"base": "HEAD"}],
+                         ids=["uncommitted", "as-asked", "base"])
+def test_a_review_is_told_a_new_file_is_not_in_the_diff(repo, scope):
+    # git_diff shows the files git tracks: a review's model, told the diff
+    # showed what changed, found a new file only through git_status (D-179).
+    from foundry.cli.slash_commands import review_task
+
+    text, _ = review_task(repo, **scope)
+    first = text.split("\n\n")[0]
+    assert "new file" in first and "read_file" in first

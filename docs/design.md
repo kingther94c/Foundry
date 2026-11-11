@@ -335,7 +335,10 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   paragraph says files with uncommitted changes are refused, not that they
   need approval.
   `/review --base REV` and `/review --commit REV` ([D-066](decision-log.md))
-  review a branch or one commit the same way.
+  review a branch or one commit the same way. A review is told that a new
+  file git does not track is not in `git_diff` -- `git_status` lists it,
+  `read_file` shows it -- and so is `git_diff`'s description
+  ([D-179](decision-log.md)).
 - The mode changes only when the user says so at the session's prompt:
   `/approve` in plan mode ([D-038](decision-log.md)) switches it to `default`
   or `accept_edits`, and `/mode NAME` ([D-047](decision-log.md)) to any of the
