@@ -8,11 +8,12 @@ impersonate any existing coding agent.
 **Current status (2026-11-11): M0-M4 implemented and running, the corporate
 Gateway (M3) still partial; the 106 items of the codex-parity list have
 landed, and so has the work after them that needs no one else (D-146 to
-D-181).** 4,891 tests pass (one is skipped) on a machine with no network and
+D-185).** 4,925 tests pass (one is skipped) on a machine with no network and
 no credentials (including the security regressions from six rounds of
 adversarial review, and 780 generated breaker-table invariant combinations).
-What is left waits on others -- a model endpoint to verify against, and the
-corporate machine -- and is in [docs/roadmap.md](docs/roadmap.md). After round 6 there was a separate clean-room check:
+P1's scenarios have run against Claude ([D-185](docs/decision-log.md)); what
+is left waits on others -- an endpoint for the Chat Completions and Responses
+protocols, and the corporate machine -- and is in [docs/roadmap.md](docs/roadmap.md). After round 6 there was a separate clean-room check:
 rebuild the wheelhouse, install into a fresh venv with `--no-index`, and run a
 real task again (failing tests -> patch -> re-run green -> finish citing the
 event id from its own tool output). All 14 checks passed.

@@ -19,12 +19,14 @@
 | M3 corporate Gateway | **partial** | unchanged since 2026-09-01: the entry gate (a tool-call streaming fixture from the Gateway) is not passed, and [OQ-6](open-questions.md) is open |
 | M4 packaging hardening + disclosure | **done** | the wheelhouse hash-pinned since 2026-11-11 ([D-170](decision-log.md)) |
 | Codex parity, items 1-106 | **done** | 2026-11-06 to 2026-11-09, D-039 to D-145; the table below |
-| After parity, P0-P3, P6-P11 | **done** | 2026-11-10 and 11, D-146 to D-181; what is left waits on others: P4 on the corporate side, P1's rerun and P5 on a model endpoint |
+| After parity, P0-P3, P6-P11, P1's rerun against Claude | **done** | 2026-11-10 and 11, D-146 to D-185; what is left: P4 waits on the corporate side, the rerun on the other two protocols on an endpoint for them, and P5 on work to do with Foundry |
 
-4,891 tests pass (one is skipped) on a machine with no network and no credentials. Every
-feature since D-036 has been verified only against scripted backends: the
+4,925 tests pass (one is skipped) on a machine with no network and no credentials. From
+D-036 to D-181 every feature was verified only against scripted backends: the
 local gateway that served the first live checks has answered nothing since
-2026-11-04, and there is no API key on the development machine. What comes
+2026-11-04. On 2026-11-11 P1's scenarios ran against Claude over the
+Anthropic Messages API ([D-185](decision-log.md)); Chat Completions and
+Responses still have no real endpoint. What comes
 next is in [After parity](#after-parity-2026-11-10-prove-it-then-ship-it).
 
 ### Status as of 2026-09-01, after the first live endpoint check
@@ -313,6 +315,13 @@ the last month went to the last of those. What is owed instead:
   given to the next session -- all completed. Defects: a read-only task and
   an unattended run offered tools they could only have refused, and four
   small ones ([D-148](decision-log.md), [D-149](decision-log.md)).
+  Against Claude (2026-11-11, [D-185](decision-log.md)): the ten scenarios
+  again over Anthropic Messages, all completed, for about US$0.53. Two
+  defects: a model not told which commands a rule can allow
+  ([D-183](decision-log.md)), and `/compact` saying "down to" a larger
+  number ([D-184](decision-log.md)); and `foundry login` now asks for both
+  providers' keys ([D-182](decision-log.md)). Chat Completions and
+  Responses wait on an endpoint.
 - **P2 -- review the new attack surface.** Hooks, the MCP server and client
   (HTTP, elicitation, resources), memories, sub-agents and skills arrived
   after the last adversarial review (round six, 2026-09). Each gets the same
