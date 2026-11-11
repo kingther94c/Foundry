@@ -11,6 +11,7 @@ counts it, and a resumed session has it back, paused.
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -95,6 +96,7 @@ def test_a_goal_goes_on_until_the_model_marks_it_complete(repo, tmp_path):
         turn(text="the goal is done"),
         turn(text="never asked"),
     ])
+    said = _notices(wiring)
     shown = _shown(_repl(wiring, "/goal make A 2"))
     seen = wiring.runtime.backend.seen
     assert len(seen) == 4
@@ -106,7 +108,9 @@ def test_a_goal_goes_on_until_the_model_marks_it_complete(repo, tmp_path):
     assert [p.get("typed") for p in _records(wiring, EventType.USER_INPUT)] == [
         "/goal make A 2", GOAL_TURN]
     reply = json.loads(seen[3].messages[-1].blocks[0].content)
-    assert reply["goal"]["status"] == "complete" and "report" in reply
+    # No budget: the user is told its usage, not asked of the model (D-175).
+    assert reply["goal"]["status"] == "complete" and "report" not in reply
+    assert any(re.fullmatch(r"goal complete \(\d+ tokens, \d+s\)", s) for s in said)
     assert "the goal goes on (30 tokens, 0s); Ctrl+C pauses it" in shown
     exported = conversation_markdown(SessionStore.read_records(wiring.session.path))
     assert "/goal make A 2" in exported and GOAL_TURN in exported
@@ -567,3 +571,12 @@ def test_the_view():
     assert json.loads(view(None)) == {"goal": None}
     said = json.loads(view(Goal("x", token_budget=10, tokens_used=12), completed=True))
     assert said["remaining_tokens"] == 0 and "report" in said
+
+
+def test_a_goal_without_a_budget_is_reported_to_the_user_not_by_the_model():
+    # update_goal's description asks for the tokens only of a goal with a
+    # budget; the user is told every goal's usage as it completes (D-175).
+    said = json.loads(view(Goal("x", status="complete", tokens_used=12), completed=True))
+    assert "report" not in said and said["goal"]["tokens_used"] == 12
+    assert "goal complete (12 tokens, 0s)" == notice(Goal("x", status="complete",
+                                                          tokens_used=12))

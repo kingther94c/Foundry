@@ -468,6 +468,9 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   offered once the session has a goal. The first answers with the goal as
   JSON; the second marks it `complete` (unless it already is), or, while it
   is active, `blocked` or `paused`. Read-only; the runtime journals the change.
+  The user is told every change with the goal's tokens and time; a goal with
+  a token budget marked complete also asks the model to report them
+  ([D-175](decision-log.md)).
 - The system message is assembled in a fixed order: Foundry's instructions
   and the permissions paragraph, the user's `developer_instructions`
   ([D-142](decision-log.md)), the notes (`FOUNDRY.md`, the repository's),

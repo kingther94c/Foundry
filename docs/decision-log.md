@@ -1185,3 +1185,10 @@
 - **Decision**: when git's output has CRLF line endings, `git_diff` shows them as LF and adds a line under the diff: the lines end in CRLF, the carriage returns are not shown, so a line whose only change is its line ending shows as removed and added unchanged. A diff with LF endings is shown as before. The full diff saved when the output is cut is the one shown.
 - **Rationale**: the model reads the diff for its lines; it does not write line endings -- `apply_patch` matches lines whatever their ending and keeps the file's own. The note keeps the one case where the endings are the change from looking like a change that changed nothing.
 - **What it may not weaken**: what git is asked, and every other part of the output, are unchanged; an LF diff carries no note.
+
+## D-175 update_goal asks for a report only of a goal with a budget
+- **Date**: 2026-11-11 · **Status**: confirmed (P10, the fourth round with the model played offline)
+- **Background**: `update_goal`'s description says to tell the user the tokens used when it marks a goal *with a budget* complete; its answer asked for that report of every completed goal. In the fourth round a goal without a budget was completed, the model was asked to report its tokens and time, and Foundry had already shown the user "goal complete (N tokens, time)".
+- **Decision**: `update_goal`'s answer carries `report` only when the completed goal has a token budget, as its description says.
+- **Rationale**: the user is told every goal's usage as it completes; where a budget was set, how much of it the work took is worth the model's word as well, and it is what the description promises.
+- **What it may not weaken**: a budgeted goal's report and the notice the user is shown are unchanged; `get_goal` never carried one.

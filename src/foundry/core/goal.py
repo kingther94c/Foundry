@@ -192,7 +192,10 @@ def view(goal: Goal | None, *, completed: bool = False) -> str:
     if goal is None:
         return json.dumps({"goal": None})
     out: dict[str, Any] = {"goal": goal.payload(), "remaining_tokens": goal.remaining}
-    if completed:
+    if completed and goal.token_budget is not None:
+        # As update_goal's description says, and codex's budget report: only
+        # a goal with a budget. Without one the user is told the goal's usage
+        # as it completes, and the model was asked to tell it again (D-175).
         out["report"] = ("The goal is complete: tell the user, with the tokens and time it "
                          "took (goal.tokens_used, goal.token_budget, goal.seconds_used).")
     return json.dumps(out, ensure_ascii=False)
