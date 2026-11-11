@@ -751,6 +751,44 @@ def test_a_change_of_model_is_announced(repo, tmp_path):
     assert any("continues on" in t and "another" in t for t in texts)
 
 
+def _resumed_notice(repo, home, session_id) -> str:
+    wiring = _wire(repo, home, [], resume=session_id)
+    heard = []
+    wiring.runtime.events.subscribe(heard.append)
+    _announce_found(wiring)
+    _close(wiring, TerminalStatus.CANCELLED, "session ended")
+    return next(e.text for e in heard if isinstance(e, Notice)
+                and e.text.startswith(f"resumed session {session_id}"))
+
+
+def test_a_finished_task_is_not_announced_as_a_lost_call(repo, tmp_path):
+    """Live runs (D-186): every resume after a task that called finish said a
+    call had no recorded result -- the finish, which the ending answers."""
+    home = tmp_path / "home"
+    wiring = _wire(repo, home, [finish()])
+    assert wiring.runtime.run_turn("do it").status is TerminalStatus.COMPLETED
+    _close(wiring, TerminalStatus.COMPLETED, "reported by the agent")
+    assert [r.outcome for r in read_journal(wiring.session.path).repairs] == ["finish_accepted"]
+
+    text = _resumed_notice(repo, home, wiring.session.session_id)
+    assert "without a recorded result" not in text
+    assert text.endswith("it had ended completed (reported by the agent). "
+                         "0 file(s) changed outside it since it started.")
+
+
+def test_a_call_a_budget_skipped_is_still_announced(repo, tmp_path):
+    home = tmp_path / "home"
+    wiring = _wire(repo, home, [turn(call("c1", "read_file", {"path": "a.py"}),
+                                     call("c2", "read_file", {"path": "b.py"}))])
+    wiring.runtime.budget = Budget(max_tool_calls=1)
+    assert wiring.runtime.run_turn("read both").status is TerminalStatus.PARTIAL
+    _close(wiring, TerminalStatus.PARTIAL, "budget")
+    assert [r.outcome for r in read_journal(wiring.session.path).repairs] == ["not_run"]
+
+    text = _resumed_notice(repo, home, wiring.session.session_id)
+    assert "1 tool call(s) without a recorded result were given one; 0 file(s)" in text
+
+
 # --- the commands ---------------------------------------------------------------------
 
 

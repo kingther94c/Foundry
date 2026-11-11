@@ -667,11 +667,14 @@ def _announce_found(wiring: Wiring) -> None:
         return
     ended = state.status.value + (f" ({state.reason})" if state.reason else "")
     task = state.first_task.splitlines()[0][:80] if state.first_task else "?"
+    # The finish a task ended with is answered by that ending: it is how every
+    # finished task looks, not a call whose result went missing (D-186).
+    lost = sum(r.outcome != "finish_accepted" for r in state.repairs)
     events.emit(Notice(
         (f"forked session {state.fork_of} into {state.session_id} ({task!r}); it goes on "
          "apart from it. " if state.fork_of else
          f"resumed session {state.session_id} ({task!r}); it had ended {ended}. ") +
-        f"{len(state.repairs)} tool call(s) without a recorded result were given one; "
+        (f"{lost} tool call(s) without a recorded result were given one; " if lost else "") +
         f"{len(wiring.outside)} file(s) changed outside it since it started.", level="info"))
     profile, model = wiring.config.backend.name, wiring.config.backend.model
     # The model it last ran on, not the one it started on: resumed on the

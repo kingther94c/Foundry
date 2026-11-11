@@ -705,7 +705,9 @@ class ModelBackend(Protocol):
 - The termination state machine: `completed` requires (a) an automatic git
   check by the runtime, (b) every `validation_claim` cross-verified against
   `command_exec` events (the event_id exists and the exit code matches), and
-  (c) HEAD not having moved; otherwise it is downgraded to `partial`.
+  (c) HEAD not having moved; otherwise it is downgraded to `partial`. The
+  ids are for the claims: the summary is the user's, and `finish` says so
+  ([D-186](decision-log.md)).
   Read-only tasks take the `completed(no_changes)` path. A question that asks
   for no change is answered in the reply, the system prompt says; `finish`
   is for a task, and an unattended run ends with it all the same
@@ -724,7 +726,9 @@ class ModelBackend(Protocol):
   come from `model_request.turn` (older journals: one more than the responses
   so far). Every tool call without a result is given one, in call order, before
   any user text: an accepted finish with its status, a call not run with the
-  reason, or an outcome unknown. The CLI then refuses a moved HEAD, another
+  reason, or an outcome unknown; the user's notice counts all but the accepted
+  finish, which is how every finished task ends ([D-186](decision-log.md)).
+  The CLI then refuses a moved HEAD, another
   workspace, a newer schema or a full context; reuses the original baseline
   (so the system prompt is unchanged); adds files changed outside the session
   to the dirty-file guard, and keeps them out of what the session claims as

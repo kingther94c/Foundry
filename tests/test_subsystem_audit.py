@@ -226,6 +226,17 @@ def test_the_model_is_told_about_the_ordering_rule():
         assert "reproduction in the summary" in flattened, flattened
 
 
+def test_the_model_is_told_the_summary_is_for_the_user():
+    """Live runs (D-186): each command's result carries its event_id, for
+    finish's claims, and a real model wrote "(event 30)" into the summary --
+    shown to a user who never sees one."""
+    from foundry.core.tools.finish import Finish
+
+    flattened = " ".join(Finish().schema().description.split())
+    assert "The summary is for the user, who never sees event ids" in flattened
+    assert "name the command, not its event_id" in flattened
+
+
 # --- the environment paragraph describes the machine it runs on -----------
 
 
