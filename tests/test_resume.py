@@ -401,6 +401,12 @@ def test_files_changed_while_stopped_are_guarded(repo, tmp_path):
 
     assert second.outside == frozenset({"b.py"})
     assert "patching them asks first: b.py." in second.note
+    # Not "before this session": b.py was written while it was stopped (D-177).
+    system = second.runtime.context.system_prompt
+    assert ("These files have uncommitted changes this session did not make -- from before "
+            "it started, or made outside it since -- and need explicit approval to edit: "
+            "b.py") in system
+    assert "before this session" not in system
     patch = second.runtime.registry.tools["apply_patch"]
     decision, _ = second.runtime.policy.evaluate(patch.validate({"patch": PATCH_B}))
     assert decision.rule_id == "builtin.dirty_file"
@@ -410,6 +416,64 @@ def test_files_changed_while_stopped_are_guarded(repo, tmp_path):
     # Read again before patching: what was read before the resume may be stale.
     assert not second.runtime.tool_ctx.read_tracker.has_read(
         str((repo / "a.py").resolve())) and not second.runtime.tool_ctx.read_tracker._read
+
+
+def test_what_changed_while_stopped_is_not_claimed(repo, tmp_path):
+    # b.py, written by the user between runs, was listed as changed by the
+    # session when the resumed session finished (D-177).
+    home = tmp_path / "home"
+    first = _wire(repo, home, [turn(text="hello")])
+    first.runtime.run_turn("hi")
+    _close(first, TerminalStatus.CANCELLED, "session ended")
+    (repo / "b.py").write_text("B = 5\n", encoding="utf-8")  # the user, between runs
+    second = _wire(repo, home, [turn(call("c1", "read_file", {"path": "a.py"})),
+                                turn(call("c2", "apply_patch", {"patch": PATCH_A})),
+                                finish("f2")], resume="last")
+    outcome = second.runtime.run_turn("change A")
+    _close(second, TerminalStatus.CANCELLED, "session ended")
+    assert outcome.summary.endswith(
+        "Files changed by this session:\n  - a.py\n"
+        "Changed outside this session since it started (not claimed):\n  - b.py")
+    [final] = [r.payload for r in SessionStore.read_records(second.session.path)
+               if r.type == EventType.GIT_BASELINE and r.payload.get("phase") == "final"]
+    assert final["session_changed"] == ["a.py"] and final["outside_changed"] == ["b.py"]
+
+
+def test_slash_diff_and_status_say_whose_a_change_is_after_a_resume(repo, tmp_path):
+    from test_slash_commands import _repl, _shown
+
+    home = tmp_path / "home"
+    first = _wire(repo, home, [turn(call("c1", "read_file", {"path": "a.py"})),
+                               turn(call("c2", "apply_patch", {"patch": PATCH_A})),
+                               turn(text="patched")])
+    first.runtime.run_turn("change A")
+    _close(first, TerminalStatus.CANCELLED, "session ended")
+    (repo / "b.py").write_text("B = 5\n", encoding="utf-8")  # the user, between runs
+    shown = _shown(_repl(_wire(repo, home, [], resume="last"), "/diff", "/status"))
+    assert "a.py [dim](this session)" in shown
+    assert "b.py [dim](outside this session)" in shown
+    assert "1 file(s) since the session started, 0 already changed before it, 1 changed " \
+           "outside it since" in shown
+
+
+def test_accept_edits_mode_says_whose_changes_still_ask():
+    from foundry.core.prompts import mode_line
+
+    said = mode_line(Mode.ACCEPT_EDITS)
+    assert "files with uncommitted changes this session did not make" in said
+    assert "when this session started" not in said
+
+
+def test_the_evidence_tells_the_three_apart():
+    from foundry.core.tools.git import GitEvidence
+
+    baseline = GitBaseline(head="h", branch="main", dirty_paths=frozenset({"old.py"}),
+                           outside=frozenset({"theirs.py", "old.py"}))
+    evidence = GitEvidence(baseline=baseline, head_now="h",
+                           changed=frozenset({"mine.py", "theirs.py", "old.py"}))
+    assert evidence.session_changed == {"mine.py"}
+    assert evidence.outside_changed == {"theirs.py"}
+    assert evidence.preexisting_changed == {"old.py"}
 
 
 def test_a_moved_head_is_refused_and_nothing_is_written(repo, tmp_path):

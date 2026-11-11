@@ -56,6 +56,7 @@ class TaskEnding:
                 "head_moved": evidence.head_moved,
                 "session_changed": sorted(evidence.session_changed),
                 "preexisting_changed": sorted(evidence.preexisting_changed),
+                "outside_changed": sorted(evidence.outside_changed),
             })
             if evidence.head_moved:
                 rejected.append(
@@ -64,13 +65,18 @@ class TaskEnding:
                 )
                 status = TerminalStatus.PARTIAL
                 reason = "HEAD moved during the session"
-            if evidence.session_changed or evidence.preexisting_changed:
+            outside = evidence.outside_changed
+            if evidence.session_changed or evidence.preexisting_changed or outside:
                 summary += "\n\nFiles changed by this session:\n" + (
                     "\n".join(f"  - {p}" for p in sorted(evidence.session_changed))
                     or "  (none)")
                 if evidence.preexisting_changed:
                     summary += ("\nAlready modified before this session (not claimed):\n"
                                 + "\n".join(f"  - {p}" for p in sorted(evidence.preexisting_changed)))
+                if outside:
+                    # D-177: the user's, written while the session was stopped.
+                    summary += ("\nChanged outside this session since it started (not "
+                                "claimed):\n" + "\n".join(f"  - {p}" for p in sorted(outside)))
 
         for problem in rejected:
             self._emit(Notice(f"claim rejected: {problem}", level="warning"))

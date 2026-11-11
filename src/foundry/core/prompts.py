@@ -44,8 +44,8 @@ def base_system_prompt() -> str:
 _MODE_TEXT = {
     Mode.DEFAULT: "Edits and commands need approval each time unless a rule allows them.",
     Mode.ACCEPT_EDITS: ("Patches inside the workspace apply without asking. Commands still "
-                        "need approval, and files that already had uncommitted changes when "
-                        "this session started still need approval."),
+                        "need approval, and so do files with uncommitted changes this session "
+                        "did not make."),
     Mode.PLAN: ("Plan mode: you may read and search, but edits and commands are refused "
                 "until the user approves your plan, which they do by typing /approve. Lay "
                 "the plan out with update_plan and explain it in your reply; do not try to "
@@ -136,18 +136,24 @@ def permissions_paragraph(policy: PolicyEngine, tools: "ToolRegistry | None" = N
     lines.append("These are always refused and cannot be approved:")
     lines.extend(f"- {item}" for item in categorical_denials())
     if policy.dirty_files:
+        # The files changed before the session, and on a resume those changed
+        # outside it since: "before this session" named a file the user wrote
+        # mid-session as older than the session, beside a working tree said to
+        # be clean when it started (D-177).
         listed = ", ".join(sorted(policy.dirty_files)[:10])
         if policy.interactive and policy.mode is not Mode.DONT_ASK:
             lines.append(
-                f"These files had uncommitted changes before this session and need explicit "
+                f"These files have uncommitted changes this session did not make -- from "
+                f"before it started, or made outside it since -- and need explicit "
                 f"approval to edit: {listed}"
             )
         else:
             # The guard asks whatever the rules allow, and nobody is here to
             # answer: "need explicit approval" read as a way through (D-149).
             lines.append(
-                f"These files had uncommitted changes before this session, and an edit to "
-                f"them needs approval nobody can give in this run, so it is refused: {listed}"
+                f"These files have uncommitted changes this session did not make, and an "
+                f"edit to them needs approval nobody can give in this run, so it is "
+                f"refused: {listed}"
             )
     return "\n".join(lines)
 

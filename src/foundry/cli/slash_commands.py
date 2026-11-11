@@ -387,6 +387,9 @@ def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
             evidence = collect_evidence(wiring.workspace.root, runtime.git_baseline)
             changed = (f"{len(evidence.session_changed)} file(s) since the session started, "
                        f"{len(evidence.preexisting_changed)} already changed before it")
+            if evidence.outside_changed:
+                # A resumed session's, written while it was stopped (D-177).
+                changed += f", {len(evidence.outside_changed)} changed outside it since"
             if evidence.head_moved:
                 changed += "; HEAD has moved"
         except FoundryError as exc:
@@ -427,7 +430,9 @@ def _diff(wiring: "Wiring", console: Console, arguments: str) -> None:
     if evidence.head_moved:
         console.print("[yellow]HEAD has moved since the session started[/yellow]")
     for path in sorted(evidence.changed):
-        whose = "this session" if path in evidence.session_changed else "before this session"
+        whose = ("this session" if path in evidence.session_changed
+                 else "outside this session" if path in evidence.outside_changed
+                 else "before this session")
         console.print(f"  {escape(path)} [dim]({whose})[/dim]", soft_wrap=True)
 
     code, out, err = run_git(["diff", "HEAD"] if evidence.head_now else ["diff"], root)

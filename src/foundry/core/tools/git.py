@@ -113,6 +113,10 @@ class GitBaseline:
     branch: str
     dirty_paths: frozenset[str] = frozenset()
     untracked_paths: frozenset[str] = frozenset()
+    # On a resume, the files changed outside the session since it started,
+    # which it did not patch (D-177): not its work, though they were clean
+    # when it began. Not journaled: a resume works them out again.
+    outside: frozenset[str] = frozenset()
 
     def as_payload(self) -> dict[str, Any]:
         return {
@@ -367,8 +371,17 @@ class GitEvidence:
 
     @property
     def session_changed(self) -> frozenset[str]:
-        """Files changed that were clean at baseline: attributable to this run."""
-        return frozenset(self.changed - self.baseline.dirty_paths - self.baseline.untracked_paths)
+        """Files changed that were clean at baseline: attributable to this run.
+        Not those changed outside it while it was stopped: a resumed session
+        claimed the user's own edits as its work (D-177)."""
+        return frozenset(self.changed - self.baseline.dirty_paths - self.baseline.untracked_paths
+                         - self.baseline.outside)
+
+    @property
+    def outside_changed(self) -> frozenset[str]:
+        """Files clean when the session started, changed outside it since (D-177)."""
+        return frozenset((self.changed & self.baseline.outside) - self.baseline.dirty_paths
+                         - self.baseline.untracked_paths)
 
     @property
     def preexisting_changed(self) -> frozenset[str]:

@@ -717,7 +717,9 @@ class ModelBackend(Protocol):
   reason, or an outcome unknown. The CLI then refuses a moved HEAD, another
   workspace, a newer schema or a full context; reuses the original baseline
   (so the system prompt is unchanged); adds files changed outside the session
-  to the dirty-file guard; starts the evidence over (no command history, no
+  to the dirty-file guard, and keeps them out of what the session claims as
+  its own -- the finish summary, `/diff` and `/status` name them as changed
+  outside it ([D-177](decision-log.md)); starts the evidence over (no command history, no
   files read, no grants); writes `resumed`; and puts a note before the first
   task saying all of that to the model.
 - **Undo** ([D-036](decision-log.md), `core/undo.py`). `apply_patch` puts

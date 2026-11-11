@@ -316,8 +316,9 @@ def build(workspace_path: Path, *, home: Path | None = None,
     else:
         session, state, outside = _reopen(home / "sessions", resume, workspace.root, current)
         # The baseline the session started from, not a fresh one: its account of
-        # what it changed, and its system prompt, are relative to that.
-        baseline = state.baseline
+        # what it changed, and its system prompt, are relative to that. With the
+        # files changed outside it since, which are not its work (D-177).
+        baseline = dataclasses.replace(state.baseline, outside=outside)
     try:
         wiring = _assemble(workspace, config, trusted, baseline, session, state, outside,
                            home=home, console=console)
