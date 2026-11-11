@@ -19,9 +19,9 @@
 | M3 corporate Gateway | **partial** | unchanged since 2026-09-01: the entry gate (a tool-call streaming fixture from the Gateway) is not passed, and [OQ-6](open-questions.md) is open |
 | M4 packaging hardening + disclosure | **done** | the wheelhouse hash-pinned since 2026-11-11 ([D-170](decision-log.md)) |
 | Codex parity, items 1-106 | **done** | 2026-11-06 to 2026-11-09, D-039 to D-145; the table below |
-| After parity, P0-P3, P6-P9 | **done** | 2026-11-10 and 11, D-146 to D-171; what is left waits on others: P4 on the corporate side, P1's rerun and P5 on a model endpoint |
+| After parity, P0-P3, P6-P10 | **done** | 2026-11-10 and 11, D-146 to D-176; what is left waits on others: P4 on the corporate side, P1's rerun and P5 on a model endpoint |
 
-4,869 tests pass (one is skipped) on a machine with no network and no credentials. Every
+4,879 tests pass (one is skipped) on a machine with no network and no credentials. Every
 feature since D-036 has been verified only against scripted backends: the
 local gateway that served the first live checks has answered nothing since
 2026-11-04, and there is no API key on the development machine. What comes
@@ -390,6 +390,22 @@ endpoint.
   the first task's `finish` again unanswered ([D-167](decision-log.md)), and
   the sessions retention removed not heard on `exec --json`
   ([D-168](decision-log.md)).
+
+[D-176](decision-log.md), once P9 was done:
+
+- **P10 -- a fourth round with the model played offline.** What no round
+  had used as a user would: a goal at the prompt with `/side`, `/recap`,
+  `!command` and `@path`; plan mode, `/approve`, `/diff`, `/fork`, `/undo`
+  and `/rewind`; `exec --ephemeral`, `--resume` and `foundry review` with a
+  review model, developer instructions and a compaction prompt; an MCP
+  server over HTTP with a bearer token and `notify`; and `/compact` at the
+  prompt -- across the three protocols. Done (2026-11-11): every task
+  completed; four defects, an approved plan's mode not carried into
+  `/fork` ([D-172](decision-log.md)), a read-only run told of allowances
+  for tools it was not offered ([D-173](decision-log.md)), `git_diff`
+  showing a CRLF file's carriage returns ([D-174](decision-log.md)), and
+  `update_goal` asking for a report its description does not
+  ([D-175](decision-log.md)).
 
 Dated, outside Foundry itself: the macro run's scorings fixed in its plan
 (2026-12-07 and 2027-02-08), and, if wanted, weekly forward snapshots under a
