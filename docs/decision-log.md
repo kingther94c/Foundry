@@ -1095,7 +1095,7 @@
 - **What it may not weaken**: a repository's config still never loosens anything; nothing outside `~/.foundry/sessions/` is removed; failing to remove one session never stops a session from starting.
 
 ## D-164 The wheelhouse pinned by hash: the tooling now, the lock once the download is allowed (OQ-20)
-- **Date**: 2026-11-10 · **Status**: confirmed (P8, D-162); OQ-20 answered (in part)
+- **Date**: 2026-11-10 · **Status**: confirmed (P8, D-162); OQ-20 answered (in part); the lock is D-170
 - **Background**: D-002 and requirements §7 promise dependencies pinned with hashes and an install with `--require-hashes`. There was no lock, and neither `build_wheelhouse.py` nor CI pinned anything (OQ-20, found with D-033). A lock needs the wheels, and downloading them from PyPI is the user's to allow.
 - **Decision**:
   - `requirements.lock` holds each dependency as `name==version --hash=sha256:...`, pip's hash-checking format. `python scripts/build_wheelhouse.py --lock` writes it from the dependency wheels in the wheelhouse -- the wheels that will ship -- and refuses an empty wheelhouse or two versions of one project. A person reads it and commits it.
@@ -1152,3 +1152,14 @@
 - **Decision**: `tests/test_mcp_robust.py` starts its fake server with `sys._base_executable`, the interpreter itself, and a test checks that the process the tests start is the interpreter: its child's parent is the test process.
 - **Rationale**: the test is about a server that closes its input; started through a launcher, it measured the launcher.
 - **What it may not weaken**: the client is unchanged. A server started through a launcher that closes its input still fails the call -- after the call's timeout rather than at once, since the client cannot see past the launcher.
+
+## D-170 The wheelhouse pinned: requirements.lock (OQ-20)
+- **Date**: 2026-11-11 · **Status**: confirmed (P8, D-162); OQ-20 answered
+- **Background**: D-164 built the tooling and left the lock itself for the download from PyPI, which was the user's to allow. The user allowed it on 2026-11-11.
+- **Decision**: `requirements.lock` is committed, written by `python scripts/build_wheelhouse.py --lock` from the wheels pip chose for `requirements.in` that day: rich 14.3.4, markdown-it-py 4.3.0, mdurl 0.1.2, Pygments 2.21.0 -- each `py3-none-any`, each pinned to the sha256 of its wheel.
+  - Each pinned sha256 is the one PyPI publishes for that file.
+  - The wheelhouse was then downloaded again from the lock, with `--require-hashes`, and installed offline into a fresh virtual environment -- the dependencies by hash, then foundry's own wheel with `--no-deps` -- where `foundry --version` and `foundry doctor` ran.
+  - The suite ran against the locked versions, in a virtual environment; the development environment had markdown-it-py 4.2.0 and Pygments 2.20.0. The one test that failed there measured the environment's launcher, not the versions (D-171).
+  - A version changes only by a new lock, written the same way and read before it is committed.
+- **Rationale**: D-002's promise -- dependencies pinned by hash, installed with `--require-hashes` -- now holds for the wheelhouse that ships, and a wheel that changes on the index after today fails the download, `--verify` and the install instead of being installed.
+- **What it may not weaken**: `requirements.in` still says what Foundry needs; the lock says which wheels satisfy it, and nothing outside it is installed with the dependencies.

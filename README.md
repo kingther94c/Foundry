@@ -5,15 +5,14 @@ wheel install. It owns all of the code and interfaces for its agent loop,
 tools, policy, providers and sessions; it does not fork, call into, or
 impersonate any existing coding agent.
 
-**Current status (2026-11-10): M0-M4 implemented and running, the corporate
+**Current status (2026-11-11): M0-M4 implemented and running, the corporate
 Gateway (M3) still partial; the 106 items of the codex-parity list have
 landed, and so has the work after them that needs no one else (D-146 to
-D-169).** 4,868 tests pass (one is skipped) on a machine with no network and
+D-171).** 4,869 tests pass (one is skipped) on a machine with no network and
 no credentials (including the security regressions from six rounds of
 adversarial review, and 780 generated breaker-table invariant combinations).
-What is left waits on others -- a model endpoint to verify against, the
-corporate machine, and the download that pins the wheelhouse's hashes -- and
-is in [docs/roadmap.md](docs/roadmap.md). After round 6 there was a separate clean-room check:
+What is left waits on others -- a model endpoint to verify against, and the
+corporate machine -- and is in [docs/roadmap.md](docs/roadmap.md). After round 6 there was a separate clean-room check:
 rebuild the wheelhouse, install into a fresh venv with `--no-index`, and run a
 real task again (failing tests -> patch -> re-run green -> finish citing the
 event id from its own tool output). All 14 checks passed.
@@ -82,10 +81,10 @@ python scripts/build_wheelhouse.py
 ```
 
 `requirements.lock` pins each dependency to a version and its wheel's sha256
-([D-164](docs/decision-log.md)). Until it is committed, the wheelhouse is not
-pinned: `python scripts/build_wheelhouse.py --lock` writes it from the wheels
-just downloaded, to be read and committed; from then on the download and the
-install are checked against it, and `--verify` fails on any wheel that differs.
+([D-164](docs/decision-log.md), [D-170](docs/decision-log.md)): the download and
+the install are checked against it, and `--verify` fails on any wheel that
+differs. To move a dependency, `python scripts/build_wheelhouse.py --lock`
+writes a new lock from the wheels just downloaded, to be read and committed.
 
 Then install offline: with the lock, the dependencies by hash and foundry's
 own wheel after them (without one, the second command without `--no-deps`):
