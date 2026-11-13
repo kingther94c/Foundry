@@ -19,7 +19,8 @@
 | M3 corporate Gateway | **partial** | unchanged since 2026-09-01: the entry gate (a tool-call streaming fixture from the Gateway) is not passed, and [OQ-6](open-questions.md) is open |
 | M4 packaging hardening + disclosure | **done** | the wheelhouse hash-pinned since 2026-11-11 ([D-170](decision-log.md)) |
 | Codex parity, items 1-106 | **done** | 2026-11-06 to 2026-11-09, D-039 to D-145; the table below |
-| After parity, P0-P3, P6-P11, P1's rerun against Claude | **done** | 2026-11-10 and 11, D-146 to D-185; what is left: P4 waits on the corporate side, the rerun on the other two protocols on an endpoint for them, and P5 on work to do with Foundry |
+| After parity, P0-P3, P6-P11, the reruns against Claude | **done** | 2026-11-10 to 13, D-146 to D-187; what is left: P4 waits on the corporate side, and the rerun on the other two protocols on an endpoint for them |
+| P5, Foundry at work | **under way** | ResearchOS v32 built on the real API ([D-187](decision-log.md)); each further version is chosen from what the work needs |
 
 4,925 tests pass (one is skipped) on a machine with no network and no credentials. From
 D-036 to D-181 every feature was verified only against scripted backends: the
@@ -359,7 +360,9 @@ the last month went to the last of those. What is owed instead:
   on information from the corporate side.
 - **P5 -- use it.** Further ResearchOS versions built with Foundry, as
   `tools/` and ResearchOS were, so that what Foundry needs next is decided by
-  what gets in the way of real work rather than by a list.
+  what gets in the way of real work rather than by a list. Under way: v32,
+  resampling whole snapshots in `compare`, built against the Anthropic API
+  ([D-187](decision-log.md)).
 
 [D-162](decision-log.md), once P3 was done: what is left that needs no one
 else. P4 waits on the corporate side, and P1's rerun and P5 on a model

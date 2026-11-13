@@ -31,8 +31,7 @@ A change counts as accepted when all of these hold:
 
 | Change | Hidden tests | Rounds | Tokens (~$) | Review |
 |---|---|---|---|---|
-| ResearchOS v7 compare | 92/92 | 10 | 0.72 | as written |
-| v8 JSON as Windows writes it | 112/112 | 19 | 2.48 | as written |
+| ResearchOS v8 JSON as Windows writes it | 112/112 | 19 | 2.48 | as written |
 | v9 several files a side | 135/135 | 11 | 1.09 | as written; the reference broke the old `A.json B.json` form |
 | v10 walk-forward without look-ahead | 146/146 | 18 | 2.94 | as written; the reference mishandled a padded date |
 | v11 combination rules | 166/166 | 15 | 2.06 | as written |
@@ -56,6 +55,7 @@ A change counts as accepted when all of these hold:
 | v29 blend and agreement over the macro perspectives | 1014/1014 | 8 | 1.57 | as written; 16,000 fuzzed calls, no mismatch |
 | v30 walk forward by resolution date | 1067/1067 | 12 | 3.17 | as written; one hidden test asked for more than the spec (that the refusal of another domain's playbook not begin `train refused: `, which the spec leaves open) and was corrected, not the code; 2,400 fuzzed runs of `train`, no mismatch |
 | v31 the main text of a fetched page | 1130/1130 | 9 | 1.23 | as written; 40,000 fuzzed pages, no mismatch, and on every one the whole text was unchanged |
+| v32 resampling whole cases (real API) | 1179/1179 | 15 | 0.27 | as written; 20,000 fuzzed calls, no mismatch |
 | tools v2 | 111/111 | 10 | 0.63 | as written |
 | tools v3 | 135/135 | 6 | 0.31 | as written; 20,000 fuzzed inputs, no mismatch |
 | tools v4 | 177/177 | 7 | 0.49 | as written; 30,000 fuzzed inputs, no mismatch |
@@ -63,13 +63,15 @@ A change counts as accepted when all of these hold:
 | tools v6 horizons, level changes | 478/478 | 5 | 0.55 | as written; 20,000 fuzzed calls, no mismatch |
 
 Hidden-test counts were re-run against each attempt's workspace for this
-table. v7-v17 and tools v2-v4 ran with a subagent playing the model behind
+table. v8-v17 and tools v2-v4 ran with a subagent playing the model behind
 a local relay while the API key had no credit, and v21-v31 and tools v6 the
 same way on a machine with no API key; their costs are what those
 tokens would cost on the API without caching. v18, v19, v20 and tools v5
 ran on the real API and cost $0.89, $0.50, $0.94 and $0.32, the prompt
 cache serving 82-94% of the input (about $3.60, $1.32, $4.88 and $0.77
-uncached).
+uncached); v32 ran on it too, through the Anthropic Messages API
+([D-187](decision-log.md)), and cost $0.27, 89% of the input cached
+(about $0.95 uncached).
 The leak audit at exit was clean for twenty-nine. In v8 it found compiled
 copies of the scaffold's own modules (`__pycache__` left by a test run on
 the spec directory; nothing from the hidden tests or the reference), and

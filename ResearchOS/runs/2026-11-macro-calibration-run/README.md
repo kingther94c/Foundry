@@ -130,6 +130,8 @@ playbook's equal weights is the uniform one.
 - `compare --metric brier_judge`, isolated against holistic: -0.0037, with an
   interval of -0.0076 to +0.0003. That interval resamples keys, not
   snapshots, so it is narrower than it should be. Even so it crosses zero.
+  From the 2026-12-07 scoring on, the interval that resamples whole
+  snapshots (`--resample cases`, v32) is given beside it.
 - The combination rules replayed (`blend --perspectives macro`):
 
   | | uniform | median | hedge | leader | pool |

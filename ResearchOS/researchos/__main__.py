@@ -10,9 +10,10 @@
                                [--expectations-url URL] [--user-agent TEXT]
                                [--out FILE]
     python -m researchos compare A.json B.json [--metric NAME] [--resamples N] [--seed S]
-                                 [--out FILE]
+                                 [--resample {records,cases}] [--out FILE]
     python -m researchos compare -a FILE [-a FILE ...] -b FILE [-b FILE ...] [--metric NAME]
-                                 [--resamples N] [--seed S] [--out FILE]
+                                 [--resamples N] [--seed S] [--resample {records,cases}]
+                                 [--out FILE]
     python -m researchos blend FILE [FILE ...] [--rule NAME] [--eta X]
                                [--perspectives {earnings,macro}] [--out FILE]
     python -m researchos agreement FILE [FILE ...] [--perspectives {earnings,macro}]
@@ -279,6 +280,9 @@ def _parser() -> argparse.ArgumentParser:
                    help="per-case Brier score to compare (default brier_judge)")
     p.add_argument("--resamples", type=_resamples, default=10000,
                    help="bootstrap resamples (default 10000)")
+    p.add_argument("--resample", choices=["records", "cases"], default="records",
+                   help="resample single records (default) or whole cases (all the records "
+                        "of a case together) in the bootstrap")
     p.add_argument("--seed", type=int, default=0)
     _add_out(p)
     p = sub.add_parser("blend", help="replay a rule for combining the perspectives "
@@ -488,7 +492,8 @@ def _compare(args) -> int:
     try:
         a = merge_reports([load_report(path) for path in files_a])
         b = merge_reports([load_report(path) for path in files_b])
-        result = compare(a, b, metric=args.metric, resamples=args.resamples, seed=args.seed)
+        result = compare(a, b, metric=args.metric, resamples=args.resamples, seed=args.seed,
+                         resample=args.resample)
     except OSError as exc:  # missing file, a directory, unreadable
         print(f"error: cannot read report: {exc}", file=sys.stderr)
         return 1

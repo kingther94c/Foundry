@@ -14,7 +14,9 @@ What it writes to secondary-<today>.json holds no level and is committed:
   uniform forecast, and of three baselines: a coin (0.25); trend, 0.6 when the key's
   trailing change over the same horizon is above 0, 0.4 when below, 0.5 when it is 0 or
   unknown; mean reversion, the mirror of trend;
-- compare --metric brier_judge, holistic (a) against isolated (b), without its per-key rows;
+- compare --metric brier_judge, holistic (a) against isolated (b), without its per-key rows,
+  once resampling keys and once resampling whole snapshots (--resample cases; the PLAN's
+  amendment of 2026-11-13);
 - every blend rule with --perspectives macro on each arm, without its per-key rows;
 - agreement --perspectives macro on each arm;
 - the snapshots any of whose calls was served by another model (forecast_arm.py).
@@ -134,6 +136,10 @@ def main() -> int:
                      "--metric", "brier_judge"])
     summary["compare_brier_judge_holistic_a_isolated_b"] = {k: v for k, v in compared.items()
                                                             if k != "cases"}
+    by_snapshot = _cli(["compare", "-a", str(scores["holistic"]), "-b", str(scores["isolated"]),
+                        "--metric", "brier_judge", "--resample", "cases"])
+    summary["compare_brier_judge_holistic_a_isolated_b_by_snapshot"] = {
+        k: v for k, v in by_snapshot.items() if k != "cases"}
     path = HERE / f"secondary-{today.isoformat()}.json"
     path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8", newline="\n")
     counts = [f"{arm} {entry['score']['n']} keys" for arm, entry in summary["arms"].items()]

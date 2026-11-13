@@ -132,21 +132,72 @@ def bootstrap_ci(diffs, resamples=10000, seed=0, level=0.95) -> tuple[float, flo
     return (quantile(means, (1 - level) / 2), quantile(means, 1 - (1 - level) / 2))
 
 
+def bootstrap_ci_grouped(groups, resamples=10000, seed=0, level=0.95) -> tuple[float, float] | None:
+    """Percentile bootstrap interval for the mean over groups of values, resampled whole.
+
+    `groups` is a list of non-empty lists of numbers; None when there are no groups.
+    """
+    if resamples < 1:
+        raise ValueError(f"resamples must be at least 1, got {resamples!r}")
+    if not 0 < level < 1:  # also rejects nan
+        raise ValueError(f"level must be within (0, 1), got {level!r}")
+    groups = list(groups)
+    for i, group in enumerate(groups):
+        if len(group) == 0:
+            raise ValueError(f"group {i} is empty")
+    if not groups:
+        return None
+    rng = random.Random(seed)
+    k = len(groups)
+    means = []
+    for _ in range(resamples):
+        chosen = rng.choices(groups, k=k)
+        values = [v for group in chosen for v in group]
+        means.append(sum(values) / len(values))
+    return (quantile(means, (1 - level) / 2), quantile(means, 1 - (1 - level) / 2))
+
+
 def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
+def _case_of_pairs(a: dict, metric: str, pairs) -> list[str]:
+    """The case each pair belongs to: its record's `case` in `a` if a non-empty string, else its id."""
+    records: dict[str, dict] = {}
+    for record in a["cases"]:
+        if isinstance(record, dict) and is_number(record.get(metric)):
+            records[record["case_id"]] = record
+    cases = []
+    for case_id, _, _ in pairs:
+        case = records[case_id].get("case")
+        cases.append(case if isinstance(case, str) and case else case_id)
+    return cases
+
+
 def compare(a: dict, b: dict, metric: str = "brier_judge", resamples: int = 10000,
-            seed: int = 0) -> dict:
-    """Compare report `b` with report `a` case by case on a Brier metric (lower is better)."""
+            seed: int = 0, *, resample: str = "records") -> dict:
+    """Compare report `b` with report `a` case by case on a Brier metric (lower is better).
+
+    resample="records" bootstraps the per-pair diffs one at a time; "cases" resamples
+    whole cases (the pairs sharing a record `case`, e.g. a macro snapshot) together.
+    """
     if not isinstance(metric, str) or not metric.startswith("brier_"):
         raise ValueError(f"metric must be a Brier score (start with 'brier_'), got {metric!r}")
+    if resample not in ("records", "cases"):
+        raise ValueError(f"resample must be 'records' or 'cases', got {resample!r}")
     pairs = paired(a, b, metric)
     cases = [{"case_id": case_id, "a": va, "b": vb, "diff": vb - va}
              for case_id, va, vb in pairs]
     diffs = [c["diff"] for c in cases]
-    ci = bootstrap_ci(diffs, resamples=resamples, seed=seed)
-    return {
+    grouped: dict[str, list[float]] = {}
+    if resample == "cases":
+        for group, entry in zip(_case_of_pairs(a, metric, pairs), cases):
+            entry["group"] = group
+            grouped.setdefault(group, []).append(entry["diff"])
+        ci = bootstrap_ci_grouped(list(grouped.values()), resamples=resamples, seed=seed)
+    else:
+        ci = bootstrap_ci(diffs, resamples=resamples, seed=seed)
+    result = {
         "metric": metric,
         "n": len(cases),
         "mean_a": _mean([c["a"] for c in cases]),
@@ -159,3 +210,7 @@ def compare(a: dict, b: dict, metric: str = "brier_judge", resamples: int = 1000
         "ties": sum(1 for d in diffs if d == 0),
         "cases": cases,
     }
+    if resample == "cases":
+        result["resample"] = "cases"
+        result["groups"] = len(grouped)
+    return result

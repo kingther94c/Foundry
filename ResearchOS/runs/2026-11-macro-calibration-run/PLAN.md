@@ -263,3 +263,14 @@ gives the steps.
   - The first scoring is made once both arms are finished, and not before
     2026-11-02; it gives its date. The later two are on 2026-12-07 and
     2027-02-08, or the first day after that the run can be reached.
+
+## Amendment, 2026-11-13, before the 2026-12-07 scoring
+
+- The keys of a snapshot move together, and `compare` resampled them one
+  at a time, so the interval of secondary endpoint 2 is narrower than it
+  should be (the README of the first scoring says so).
+- ResearchOS v32 adds `compare --resample cases`, which resamples whole
+  snapshots. From the 2026-12-07 scoring on, `secondary.py` gives endpoint
+  2 both ways: as fixed above, and with `--resample cases`. Neither
+  replaces the other.
+- The 2026-11-02 scoring is not redone; it keeps the one interval it gave.

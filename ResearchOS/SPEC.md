@@ -2493,3 +2493,54 @@ A snapshot built before v31 holds each page's whole text, so the same
 snapshot built again now has other bytes. A run uses its snapshots as they
 were built; `runs/2026-11-macro-calibration-run` hashed its own in
 `inputs.sha256`.
+
+## Resampling whole cases (v32)
+
+The keys of one macro snapshot are scored against the same weeks of the
+same markets, so they move together: when the dollar rallies, every key that
+leans on it is right or wrong at once. `compare` resamples records one at a
+time, which counts 540 keys of eighteen snapshots as 540 independent pieces
+of evidence, and the macro run's interval came out narrower than it should
+be. `compare` can now resample whole cases instead: the records of a case go
+into a resample together, or not at all. For an earnings report, where each
+case is one record, the two agree.
+
+### In `researchos.compare`
+
+- `bootstrap_ci_grouped(groups, resamples=10000, seed=0, level=0.95) ->
+  tuple[float, float] | None`: a percentile bootstrap of the mean over
+  groups of values. `groups` is a list of non-empty lists of numbers. With
+  `rng = random.Random(seed)`, each of `resamples` resamples is
+  `chosen = rng.choices(groups, k=len(groups))`; its values are those of the
+  chosen groups concatenated in the order chosen (a group chosen twice gives
+  its values twice), and its mean is `sum(values) / len(values)`. The result
+  is `(tools.stats.quantile(means, (1 - level) / 2),
+  tools.stats.quantile(means, 1 - (1 - level) / 2))`; `None` for no groups.
+  These raise ValueError, checked in this order and before any resampling:
+  `resamples < 1`; `level` outside `(0, 1)`; an empty group, the message
+  naming its index (the first one). The groups passed in are not modified.
+  With one value per group the result is exactly `bootstrap_ci` of those
+  values with the same `resamples`, `seed` and `level`.
+- `compare(a, b, metric="brier_judge", resamples=10000, seed=0, *,
+  resample="records") -> dict`:
+  - `resample="records"` is what `compare` did before: the result is exactly
+    what it was, with no new key.
+  - `resample="cases"`: the pairs and `diff` are the same, and so are `n`,
+    the means and the counts. Each pair belongs to a case: the `case` of the
+    pair's record in `a` (the record scored on `metric`) when that is a
+    non-empty string, otherwise the pair's `case_id`. A macro record's `case`
+    is its snapshot (v27); an earnings record has none, so each of its cases
+    is a group of one. The groups are taken in the order of their first pair,
+    each holding the diffs of its pairs in pair order, and the CI is
+    `bootstrap_ci_grouped` of them with the same `resamples` and `seed`.
+    The result has two more keys at its end, `"resample": "cases"` and
+    `"groups"`, the number of groups (0 with no pairs, when the CI bounds are
+    None); and each entry of `"cases"` has a fifth key, `"group"`, its case.
+  - Any other `resample` raises ValueError naming it. The metric is checked
+    first, then `resample`, both before the reports are paired: a bad
+    `resample` is reported even when a report scores a case twice.
+
+CLI: `compare` takes `--resample {records,cases}` (default `records`), in
+both its forms (`A.json B.json` and `-a ... -b ...`), and passes it to
+`compare`. Any other value exits 2 (argparse rejects it). Without the
+option, the output is unchanged.

@@ -290,3 +290,14 @@ snapshot's documents shrink from 58,004 characters to 41,366, the
 tables unchanged. Foundry made it in 9 rounds; it passed all 1130
 hidden tests and agreed with the hand-written version on 40,000 fuzzed
 pages, on every one of which the whole text was what it had been.
+
+`compare --resample cases` (v32) resamples whole cases: every record of a
+case goes into a bootstrap resample together, or not at all. A macro
+snapshot's keys move together, and resampling them one at a time made the
+macro run's interval narrower than it should be. For an earnings report,
+where a case is one record, the two agree, and without the option every
+result is what it was. `--resample` is now an option of its own, so it no
+longer abbreviates `--resamples`. Foundry made it in 15 rounds, the first
+version built on the real API since v20 (about $0.27, most of the input
+read from the prompt cache); it passed all 1179 hidden tests and agreed
+with the hand-written version on 20,000 fuzzed calls.
