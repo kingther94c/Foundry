@@ -18,6 +18,8 @@ from foundry.core.policy.engine import Mode, PolicyEngine
 from foundry.core.prompts import UNATTENDED_WORK, base_system_prompt, permissions_paragraph
 from foundry.core.tools.finish import Finish
 
+from test_headless import repo  # noqa: F401 (fixture)
+
 
 def _said(text: str) -> str:
     return " ".join(text.split())
@@ -100,3 +102,20 @@ def test_finish_asks_for_a_summary_a_stranger_can_follow():
             "and where, what you checked, what you could not do, and what you noticed but left "
             "alone.") in description
     json.dumps(Finish().schema().parameters)  # still a plain schema
+
+
+def test_a_prose_reply_is_reminded_of_the_plan_s_open_steps(repo, tmp_path):  # noqa: F811
+    from test_headless import _finished, _unattended
+    from test_headless import _said as _prose
+    from test_plan import THREE
+    from test_resume import call, turn
+
+    from foundry.cli.unattended import _run_unattended
+
+    wiring = _unattended(repo, tmp_path, [turn(call("u1", "update_plan", THREE)),
+                                          _prose("Fixed add(); tests next."), _finished()])
+    _run_unattended(wiring.runtime, "fix add")
+    wiring.session.close()
+    reminder = wiring.runtime.backend.seen[2].messages[-1].blocks[0].text
+    assert reminder.startswith(FINISH_REMINDER)
+    assert "Your plan has steps not marked completed: Fix add(); Run the tests." in reminder
