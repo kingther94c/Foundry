@@ -51,14 +51,26 @@ _MODE_TEXT = {
                 "the plan out with update_plan and explain it in your reply; do not try to "
                 "work around the restriction."),
     Mode.DONT_ASK: ("Unattended: anything not explicitly allowed by a rule is denied. "
-                    "Nobody is available to approve, or to read a reply: end the "
-                    "task by calling `finish`, whatever the outcome."),
+                    "Nobody is available to approve, or to read a reply."),
 }
 
 
 UNATTENDED_LINE = ("This run is unattended: nobody is available to approve, so anything "
-                   "that would need approval is refused, and nobody reads a reply: end the "
-                   "task by calling `finish`, whatever the outcome.")
+                   "that would need approval is refused, and nobody reads a reply.")
+
+# What a run nobody watches is told to do with what it cannot ask about (D-192),
+# after the line above or dont_ask's own. From Anthropic's guidance for
+# unattended runs ("finish the whole task"), codex's autonomy section and
+# Cline's yolo prompt.
+UNATTENDED_WORK = (
+    "Nobody answers questions either. Where the task leaves something open, look "
+    "in the code for the answer; failing that, take the most reasonable reading "
+    "and state it in `finish`'s summary. Errors, timeouts, failing commands and "
+    "empty results are ordinary obstacles: find the cause and work through them. "
+    "You are blocked only when nothing can move without a person, or the obstacle "
+    "is deliberate -- a refused command, a protected file. A reply with no tool "
+    "call ends nothing: end the task with `finish`, once the work is done and "
+    "checked, or when you are blocked.")
 
 
 def mode_line(mode: Mode) -> str:
@@ -103,6 +115,8 @@ def permissions_paragraph(policy: PolicyEngine, tools: "ToolRegistry | None" = N
         # An unattended run in another mode (exec --mode, D-042): the mode's
         # own line speaks of approval nobody is there to give.
         lines.append(UNATTENDED_LINE)
+    if not policy.interactive or policy.mode is Mode.DONT_ASK:
+        lines.append(UNATTENDED_WORK)
     if policy.read_only:
         lines.append(read_only_line(policy.read_only))
 

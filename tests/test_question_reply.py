@@ -29,5 +29,5 @@ def test_the_exception_it_names_is_what_an_unattended_run_is_told():
     for policy in (unattended, PolicyEngine(mode=Mode.DONT_ASK)):
         told = _said(permissions_paragraph(policy))
         assert "read a reply" in told or "reads a reply" in told
-        assert "end the task by calling `finish`" in told
+        assert "end the task with `finish`" in told
     assert "reads a reply" not in _said(permissions_paragraph(PolicyEngine(mode=Mode.DEFAULT)))

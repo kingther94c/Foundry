@@ -25,7 +25,8 @@ from foundry.cli.wiring import Wiring, _announce_found, _close, _config_args, bu
 from foundry.core.backends.recording import RecordingBackend
 from foundry.core.config import user_dir
 from foundry.core.errors import FoundryError, ToolError
-from foundry.core.events import EXIT_CODES, SessionStarted, TerminalStatus, Termination
+from foundry.core.events import (EXIT_CODES, SessionStarted, StepStatus, TerminalStatus,
+                                  Termination)
 from foundry.core.json_schema import check_schema
 from foundry.core.policy.engine import Mode
 from foundry.core.prompts import system_prompt
@@ -61,9 +62,14 @@ def _event_payload(event) -> dict:
     return payload
 
 
+# Not "call finish now" (D-192): a reply in prose is as often a stop part-way
+# through as a report, and that wording turned the stop into an early finish.
+# Anthropic's guidance for unattended runs treats such a reply as a report on
+# work that goes on.
 FINISH_REMINDER = (
-    "This run is unattended: nobody will read a reply. Call finish now to report "
-    "the outcome, citing the event_id of each command that supports it."
+    "This run is unattended: nobody will read a reply. If work you were asked for "
+    "remains, carry on with it now. When it is done and checked, or you are "
+    "blocked, call finish, citing the event_id of each command that supports it."
 )
 
 RESULT_REMINDER = " Pass the result it asks for as `result`, matching the schema given for it."
@@ -110,9 +116,17 @@ def _run_unattended(runtime: AgentRuntime, task: str, images: tuple = ()):
     outcome = runtime.run_turn(task, images)
     if outcome.status is None:
         asks_result = getattr(runtime.registry.tools.get("finish"), "result_schema", None)
-        outcome = runtime.run_turn(FINISH_REMINDER + (RESULT_REMINDER if asks_result is not None
-                                                      else ""))
+        outcome = runtime.run_turn(FINISH_REMINDER + _open_steps(runtime)
+                                   + (RESULT_REMINDER if asks_result is not None else ""))
     return outcome
+
+
+def _open_steps(runtime: AgentRuntime) -> str:
+    """The plan's steps not yet marked completed, named in the reminder: work
+    the model's own account says remains."""
+    steps = [s.step for s in runtime.plan if s.status is not StepStatus.COMPLETED]
+    return (" Your plan has steps not marked completed: " + "; ".join(steps) + "."
+            if steps else "")
 
 
 # The most a schema file may hold: it goes into every request, in finish.
