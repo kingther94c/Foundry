@@ -267,6 +267,11 @@ async def run_turn(user_input):
   leaves those blocks out of this and every later request (text and tool
   calls stay); blocks before the difference, and replies made after it, are
   sent. The history itself keeps every reply as received.
+- **Sizing the context** ([D-190](decision-log.md)): four characters to a
+  token until a request has been answered; from then on, the provider's
+  count of the last request plus the estimate of what changed since, never
+  less than the estimate alone. Masking, compaction and the overflow check
+  use it; a compaction or a rewind drops the count until the next request.
 - **Compaction by summary** ([D-040](decision-log.md)): masking cannot touch
   the last rounds, so once the projection is still past 80% of the window, the
   runtime asks the model for a handoff summary and the history becomes the
@@ -330,7 +335,8 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   `foundry mcp-server` until its client can be asked), a request offers
   only the tools some call to could be allowed: those an allow rule names
   (by name or pattern), a session grant covers, or the mode allows
-  (`accept_edits`, for patches). An MCP server's tool with no rule, or
+  (`accept_edits`, for patches, which is `exec`'s default,
+  [D-188](decision-log.md)). An MCP server's tool with no rule, or
   `apply_patch` with none, is left out rather than offered and refused at
   step 6 every time; a call to one anyway is refused as before
   (`PolicyEngine.may_allow`, [D-149](decision-log.md)). Its permissions
@@ -444,7 +450,9 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   EOL style are preserved; an optional post-edit `compile()` check. The patch
   format description is generated from the parser's constants into prompts/
   (one source, so it cannot drift; the application semantics are described in
-  the same text).
+  the same text). What Claude writes unasked is read as what it means:
+  codex's `@@` hunks, a bare patch without its end line, an added file's
+  blank lines without '+' ([D-189](decision-log.md)).
 - `git_status/git_diff`: hardened arguments + stripping `GIT_*` from the
   environment (against the fsmonitor/hooks/pager code execution surface).
   `git_diff` shows what is not committed, or with `base` what this branch
@@ -454,6 +462,9 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   first, and one that starts with `-` never reaches git. Lines that end in
   CRLF are shown without the carriage return, as `read_file` shows them,
   and a line under the diff says so ([D-174](decision-log.md)).
+  `read_file`'s first line names what its lines cannot show -- CRLF or
+  mixed endings, a byte order mark, bytes that are not UTF-8 -- and what
+  `apply_patch` does with each ([D-191](decision-log.md)).
 - `read_artifact(artifact_id, offset?)`: artifact_id is an opaque token,
   resolved only through an in-memory index for the current session (all path
   semantics are refused), limited to this session's products; its output goes

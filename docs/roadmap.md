@@ -20,6 +20,7 @@
 | M4 packaging hardening + disclosure | **done** | the wheelhouse hash-pinned since 2026-11-11 ([D-170](decision-log.md)) |
 | Codex parity, items 1-106 | **done** | 2026-11-06 to 2026-11-09, D-039 to D-145; the table below |
 | After parity, P0-P3, P6-P11, the reruns against Claude | **done** | 2026-11-10 to 13, D-146 to D-187; what is left: P4 waits on the corporate side, and the rerun on the other two protocols on an endpoint for them |
+| Auto mode on small projects | **done** | 2026-11-13, D-188 to D-191: six projects aimed at editing unattended; `exec` now patches by default |
 | P5, Foundry at work | **under way** | ResearchOS v32 built on the real API ([D-187](decision-log.md)); each further version is chosen from what the work needs |
 
 4,925 tests pass (one is skipped) on a machine with no network and no credentials. From
@@ -433,6 +434,18 @@ endpoint.
   a new file is not in `git_diff` ([D-179](decision-log.md)); and the
   system prompt now says a question is answered in the reply
   ([D-180](decision-log.md)).
+
+- **Auto mode on small projects.** Asked for by the user on 2026-11-13:
+  small projects, each aimed at one thing Foundry must do unattended --
+  write a package from a spec, change two functions of forty and nothing
+  else, fix a bug beside a decoy, move a function across modules, edit
+  files with a byte order mark and CRLF, build in five steps under a small
+  compaction limit -- each one `foundry exec`, checked by tests the model
+  never saw. Done: `exec` patches by default ([D-188](decision-log.md)),
+  `apply_patch` reads what Claude wrote unasked ([D-189](decision-log.md)),
+  the context is sized by the provider's count ([D-190](decision-log.md)),
+  and `read_file` names line endings and a byte order mark
+  ([D-191](decision-log.md)).
 
 Dated, outside Foundry itself: the macro run's scorings fixed in its plan
 (2026-12-07 and 2027-02-08), and, if wanted, weekly forward snapshots under a

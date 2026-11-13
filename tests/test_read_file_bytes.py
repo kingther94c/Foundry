@@ -1,8 +1,8 @@
 """read_file says what its numbered lines cannot show (D-191).
 
-Probing auto mode, a model spent three rounds on shell commands working out
-whether a file's lines ended in CRLF and whether it began with a byte order
-mark, before patching it -- things read_file knew and did not say.
+Probing auto mode, a model twice tried a shell command to learn whether a
+file's lines ended in CRLF and whether it began with a byte order mark before
+patching it -- both refused -- when read_file knew and did not say.
 """
 
 from __future__ import annotations

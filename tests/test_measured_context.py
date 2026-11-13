@@ -49,6 +49,10 @@ def test_no_count_is_no_measurement():
     context = _context()
     context.measured(0)
     assert context.estimated_context_tokens() == _plain(context)
+    # Nor does it wipe out the count of an earlier request.
+    context.measured(_plain(context) + 7_000)
+    context.measured(0)
+    assert context.estimated_context_tokens() == _plain(context) + 7_000
 
 
 def test_the_limit_the_probe_set_now_fires():
@@ -117,3 +121,16 @@ def test_a_session_compacts_on_the_provider_s_count(tmp_path):
     assert _summary_requests(model) == [1]
     # The count kept is the last work request's, not the summary request's.
     assert runtime.context._measured[0] == 10
+
+
+def test_the_count_is_of_what_was_sent_not_of_the_reply_too(tmp_path):
+    """The reply is not in the request it answers: it is added on top of the count."""
+    from dataclasses import replace
+
+    from test_compaction import _Model, _core, turn
+
+    model = _Model([replace(turn(text="y" * 40_000), usage=Usage(30_000, 10_000))])
+    runtime, session, repo = _core(tmp_path, [], max_context=200_000, reserve=0)
+    runtime.backend = model
+    runtime.run_turn("say y")
+    assert runtime.context.estimated_context_tokens() >= 30_000 + 9_000
