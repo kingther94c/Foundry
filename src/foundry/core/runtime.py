@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -181,6 +182,36 @@ class FailureTracker:
         prefix = f"{op.tool}\x00{op.target}"
         for key in [k for k in self.counts if k[0] == prefix]:
             del self.counts[key]
+
+    # A command that fails is a result, not a ToolError, so the counts above
+    # never saw one run again and again with nothing changed (D-195).
+    commands: dict[str, tuple[str, int]] = field(default_factory=dict)
+
+    def failed_again(self, command: str, exit_code: Any, tail: str) -> int:
+        """How many times running ``command`` has now failed the same way, in a
+        row: the same exit code and the same end of its output, timings aside.
+        A different outcome starts the count again."""
+        same = f"{exit_code}\x00{_TIMING.sub('#', tail)}"
+        before, count = self.commands.get(command, ("", 0))
+        count = count + 1 if before == same else 1
+        self.commands[command] = (same, count)
+        return count
+
+    def passed(self, command: str) -> None:
+        self.commands.pop(command, None)
+
+
+# What changes between two runs that fail the same way: "in 0.23s", "12ms".
+_TIMING = re.compile(r"\d+(?:\.\d+)?\s*(?:ms|s|sec|secs|seconds)\b")
+
+# From the third time a command fails the same way (D-195), after OpenHands'
+# stuck detector (the same action and error three times) and opencode's doom
+# loop (three identical calls).
+SAME_FAILURE_AFTER = 3
+SAME_FAILURE_NOTE = (
+    "\n[This command has now failed the same way {count} times. Running it again "
+    "will not change that: test your assumption with a focused check or a small "
+    "reproduction, then change approach.]")
 
 
 @dataclass(slots=True)
@@ -882,6 +913,15 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
         content = output.content
         if output.metadata.get("event_ordinal"):
             content += f"\n[event_id={output.metadata['event_ordinal']}]"
+        if op.tool == "run_command":
+            command = str(op.args.get("command", ""))
+            if output.is_error:
+                count = self.failures.failed_again(command, output.metadata.get("exit_code"),
+                                                   output.metadata.get("output_tail", ""))
+                if count >= SAME_FAILURE_AFTER:
+                    content += SAME_FAILURE_NOTE.format(count=count)
+            else:
+                self.failures.passed(command)
 
         result: dict[str, Any] = {
             "call_id": call.call_id, "tool": op.tool, "is_error": output.is_error,
