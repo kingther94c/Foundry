@@ -268,6 +268,7 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
             i += 1
             body: list[str] = []
             blanks = 0  # empty lines written without their '+', not yet known to be the file's
+            bare: str | None = None  # the first line written without its '+'
             while i < last and not lines[i].startswith("*** "):
                 if not lines[i].strip():
                     # Real models leave the '+' off a blank line (D-189); a
@@ -276,13 +277,19 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
                     blanks += 1
                     i += 1
                     continue
-                if not lines[i].startswith("+"):
+                if bare is None and not lines[i].startswith("+"):
+                    # Real models, past a blank line, dropped the '+' from every
+                    # line after it (D-193). Written that way to the end, the
+                    # rest is the file as written; a '+' line after it could be
+                    # either, and is refused below.
+                    bare = lines[i]
+                if bare is not None and lines[i].startswith("+"):
                     raise PatchParseError(
-                        f"line in 'Add File: {path}' must start with '+': {lines[i]!r}"
+                        f"line in 'Add File: {path}' must start with '+': {bare!r}"
                     )
                 body.extend([""] * blanks)
                 blanks = 0
-                body.append(lines[i][1:])
+                body.append(lines[i] if bare is not None else lines[i][1:])
                 i += 1
             # Each '+' line is a line, so the file ends with a newline. Joining
             # alone left every file Foundry created without one; a model that

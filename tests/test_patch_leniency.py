@@ -132,9 +132,10 @@ def test_blank_lines_before_the_next_operation_are_not_the_files():
     assert [op.content for op in ops] == ["a\n", "b\n"]
 
 
-def test_other_lines_in_an_added_file_still_need_their_plus():
-    with pytest.raises(InvalidToolCall, match="must start with '\\+'"):
-        parse_patch("*** Begin Patch\n*** Add File: a.py\n+a\nb\n*** End Patch")
+def test_a_plus_line_after_a_bare_one_is_refused():
+    # Bare to the end reads one way (D-193); a '+' after it could be a marker or text.
+    with pytest.raises(InvalidToolCall, match="must start with '\\+': 'b'"):
+        parse_patch("*** Begin Patch\n*** Add File: a.py\n+a\nb\n+c\n*** End Patch")
 
 
 # --- what a refusal says ---------------------------------------------------------------------------
@@ -144,3 +145,24 @@ def test_an_update_with_no_hunk_is_told_the_format():
     with pytest.raises(InvalidToolCall) as info:
         parse_patch("*** Begin Patch\n*** Update File: a.py\n*** End Patch")
     assert "<<<<<<< SEARCH, the exact lines to find, =======" in str(info.value)
+
+
+# --- an added file whose lines lost their '+' (D-193) -------------------------------------
+
+
+def test_lines_that_lost_their_plus_after_a_blank_line_are_the_file_as_written():
+    """g-checklist's test file, as the model sent it: '+' up to a blank line, none after."""
+    ops = parse_patch("*** Begin Patch\n*** Add File: tests/test_cli.py\n+import sys\n\n\n"
+                      "def run(*args):\n    return args\n\n\n*** Add File: b.py\n+b\n*** End Patch")
+    assert ops[0].content == "import sys\n\n\ndef run(*args):\n    return args\n"
+    assert ops[1].content == "b\n"
+
+
+def test_a_file_written_with_no_plus_at_all_is_the_file_as_written():
+    ops = parse_patch("*** Begin Patch\n*** Add File: a.md\n# Title\n\n- item\n*** End Patch")
+    assert ops[0].content == "# Title\n\n- item\n"
+
+
+def test_text_after_the_switch_keeps_what_it_starts_with():
+    ops = parse_patch("*** Begin Patch\n*** Add File: a.txt\n+one\nx = 1\n-y\n*** End Patch")
+    assert ops[0].content == "one\nx = 1\n-y\n"
