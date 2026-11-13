@@ -224,7 +224,7 @@ def test_an_end_line_written_with_a_plus_closes_the_patch():
 @pytest.mark.parametrize("bad", [
     "```\n*** Begin Patch\n*** Add File: a.py\n+x\n*** End Patch\n```",
     "Here is the patch:\n*** Add File: a.py\n+x\n*** End Patch",
-    "*** Add File: a.py\n+x",                      # the end line is still required
+    "Here is the patch:\n*** Add File: a.py\n+x",  # prose first, end line or not (D-189)
 ])
 def test_only_a_file_operation_may_stand_in_for_the_begin_line(bad):
     with pytest.raises(InvalidToolCall):

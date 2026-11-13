@@ -106,6 +106,56 @@ class PatchParseError(InvalidToolCall):
     """The patch envelope itself is malformed."""
 
 
+AT_AT = "@@"
+END_OF_FILE = "*** End of File"
+
+
+def _at_at_hunk(lines: list[str], i: int, last: int, path: str) -> tuple["Hunk", int]:
+    """A codex-style hunk under an Update, from its ``@@`` line: context lines
+    start with a space, removed ones with '-', added ones with '+'. It is the
+    anchored hunk it means -- SEARCH the context and removed lines, REPLACE the
+    context and added ones, in order -- and is located like any other, so the
+    text after ``@@`` is not needed. Real models wrote these unasked and lost
+    two rounds to being told the format (D-189)."""
+    i += 1
+    old: list[str] = []
+    new: list[str] = []
+    blanks = 0
+    changed = False
+    while (i < last and not lines[i].startswith((AT_AT, "*** "))
+           and lines[i].strip() != SEARCH_OPEN):
+        line = lines[i]
+        i += 1
+        if not line.strip() and not line.startswith(("-", "+")):
+            blanks += 1  # an empty context line, its space dropped; or the gap after the hunk
+            continue
+        old.extend([""] * blanks)
+        new.extend([""] * blanks)
+        blanks = 0
+        mark, text = line[0], line[1:]
+        if mark == " ":
+            old.append(text)
+            new.append(text)
+        elif mark == "-":
+            old.append(text)
+            changed = True
+        elif mark == "+":
+            new.append(text)
+            changed = True
+        else:
+            raise PatchParseError(
+                f"line in an @@ hunk for {path} must start with ' ', '-' or '+': {line!r}")
+    if i < last and lines[i].strip() == END_OF_FILE:
+        i += 1
+    if not changed:
+        raise PatchParseError(f"an @@ hunk for {path} changes nothing")
+    if not any(line.strip() for line in old):
+        raise PatchParseError(
+            f"an @@ hunk for {path} has no context or removed line to find its place by; "
+            "give the lines around the change")
+    return Hunk("\n".join(old), "\n".join(new)), i
+
+
 @dataclass(frozen=True, slots=True)
 class Hunk:
     search: str
@@ -131,7 +181,8 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
     # missing Begin line is supplied rather than refused: refusing cost a real
     # model a round and a re-send of an 11 KB patch. Anything else -- a code
     # fence, prose -- is still refused.
-    if lines and lines[0].startswith((UPDATE, ADD, DELETE)):
+    bare = bool(lines) and lines[0].startswith((UPDATE, ADD, DELETE))
+    if bare:
         lines.insert(0, BEGIN)
     if not lines or lines[0].strip() != BEGIN:
         raise PatchParseError(f"patch must start with {BEGIN!r}")
@@ -140,6 +191,11 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
     # the end line cannot misread a well-formed patch.
     if lines[-1].strip() == "+" + END:
         lines[-1] = END
+    # The bare form's end line goes the way its begin line went: real models
+    # wrote neither (D-189). A patch that opened with the begin line and lost
+    # its end may have been cut short, and is still refused.
+    if bare and lines[-1].strip() != END:
+        lines.append(END)
     if lines[-1].strip() != END:
         raise PatchParseError(f"patch must end with {END!r}")
 
@@ -157,7 +213,11 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
                 move_to = lines[i][len(MOVE):].strip()
                 i += 1
             hunks: list[Hunk] = []
-            while i < last and lines[i].strip() == SEARCH_OPEN:
+            while i < last and (lines[i].strip() == SEARCH_OPEN or lines[i].startswith(AT_AT)):
+                if lines[i].startswith(AT_AT):
+                    hunk, i = _at_at_hunk(lines, i, last, path)
+                    hunks.append(hunk)
+                    continue
                 i += 1
                 start = i
                 # Find the hunk's end first, then require exactly one divider
@@ -197,18 +257,31 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
                 i = close + 1
                 hunks.append(Hunk("\n".join(search), "\n".join(replace)))
             if not hunks:
-                raise PatchParseError(f"update of {path} has no {SEARCH_OPEN} hunk")
+                raise PatchParseError(
+                    f"update of {path} has no {SEARCH_OPEN} hunk. Each change is "
+                    f"{SEARCH_OPEN}, the exact lines to find, {DIVIDER}, the lines to put "
+                    f"in their place, {REPLACE_CLOSE}")
             ops.append(FileOp("update", path, tuple(hunks), move_to=move_to))
 
         elif line.startswith(ADD):
             path = line[len(ADD):].strip()
             i += 1
             body: list[str] = []
+            blanks = 0  # empty lines written without their '+', not yet known to be the file's
             while i < last and not lines[i].startswith("*** "):
+                if not lines[i].strip():
+                    # Real models leave the '+' off a blank line (D-189); a
+                    # blank line can only mean one. Those at the end are the
+                    # gap before the next operation, not the file's.
+                    blanks += 1
+                    i += 1
+                    continue
                 if not lines[i].startswith("+"):
                     raise PatchParseError(
                         f"line in 'Add File: {path}' must start with '+': {lines[i]!r}"
                     )
+                body.extend([""] * blanks)
+                blanks = 0
                 body.append(lines[i][1:])
                 i += 1
             # Each '+' line is a line, so the file ends with a newline. Joining
