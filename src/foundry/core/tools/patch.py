@@ -30,6 +30,7 @@ rest of that file's edits.
 
 from __future__ import annotations
 
+import ast
 import difflib
 import hashlib
 import os
@@ -452,6 +453,43 @@ def _near_misses(haystack: str, needle: str) -> list[str]:
     return [f"{i}: {line}" for ratio, i, line in scored[:3] if ratio > 0.5]
 
 
+# --- a Python file left unparseable ------------------------------------------
+
+
+def _parse_error(text: str, relative: str) -> SyntaxError | None:
+    try:
+        ast.parse(text, filename=relative)
+    except SyntaxError as exc:
+        return exc
+    except ValueError:  # a NUL byte: not for a patch to be judged on
+        return None
+    return None
+
+
+def _refuse_broken_python(relative: str, before: str | None, after: str) -> None:
+    """Refuse a patch that leaves a Python file unable to parse, as a hunk that
+    cannot be placed is refused: nothing is written, and the error says where.
+
+    SWE-agent refuses such an edit, and its ablation measured it: 18.0% of
+    SWE-bench Lite solved with the check, 15.0% without -- once one edit has
+    failed, an agent recovers far less often (D-194). A file that did not
+    parse before, written for another Python or broken already, is not judged.
+    """
+    if not relative.lower().endswith((".py", ".pyi")):
+        return
+    if before is not None and _parse_error(before, relative) is not None:
+        return
+    error = _parse_error(after, relative)
+    if error is None:
+        return
+    line = (error.text or "").strip()
+    where = f"line {error.lineno}" + (f": {line!r}" if line else "")
+    raise ToolError(
+        f"the patched file would not parse as Python ({error.msg}, {where}), so it was "
+        "left as it was. Fix the patch and send this file's hunks again."
+    )
+
+
 # --- file writing ---------------------------------------------------------
 
 
@@ -789,6 +827,7 @@ class ApplyPatch:
         if file_op.action == "add":
             if path.exists():
                 raise ToolError("file already exists; use Update File instead")
+            _refuse_broken_python(resolved.relative, None, file_op.content)
             return _Planned(file_op, path, resolved.relative, file_op.content, "\n", False,
                             move_target=move_target, move_relative=move_relative)
 
@@ -837,6 +876,7 @@ class ApplyPatch:
             working = working[:result.start] + replacement + working[result.end:]
             rungs.append(result.rung)
 
+        _refuse_broken_python(move_relative or resolved.relative, text, working)
         return _Planned(file_op, path, resolved.relative, working, line_ending, had_bom,
                         rungs, move_target, move_relative, notes,
                         old_text=text)
