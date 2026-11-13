@@ -21,7 +21,7 @@
 | Codex parity, items 1-106 | **done** | 2026-11-06 to 2026-11-09, D-039 to D-145; the table below |
 | After parity, P0-P3, P6-P11, the reruns against Claude | **done** | 2026-11-10 to 13, D-146 to D-187; what is left: P4 waits on the corporate side, and the rerun on the other two protocols on an endpoint for them |
 | Auto mode on small projects | **done** | 2026-11-13, D-188 to D-191: six projects aimed at editing unattended; `exec` now patches by default |
-| Learning from other agents | **done** | 2026-11-13, D-192 to D-196: the prompt's working rules, edit-time syntax check, repeated-failure note and patch readings, each taken from codex, opencode, Cline, OpenHands, SWE-agent, aider or Anthropic's guidance |
+| Learning from other agents | **done** | 2026-11-13, D-192 to D-196: the prompt's working rules, edit-time syntax check, repeated-failure note and patch readings, each taken from codex, opencode, Cline, OpenHands, SWE-agent, aider or Anthropic's guidance; D-197, opencode's last turn when a budget runs out |
 | P5, Foundry at work | **under way** | ResearchOS v32 built on the real API ([D-187](decision-log.md)); each further version is chosen from what the work needs |
 
 4,925 tests pass (one is skipped) on a machine with no network and no credentials. From

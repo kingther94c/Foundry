@@ -136,8 +136,11 @@ def test_a_sub_agent_makes_only_the_calls_the_task_has_left(repo, tmp_path):
     assert (end["status"], end["reason"]) == ("partial", "tool calls exceeded (3)")
     # What it made is the task's: the session has none left.
     assert _ending(wiring.session.path)["reason"] == "tool calls exceeded (4)"
-    # Stopped before it asks the model again.
-    assert "r9" not in _results(wiring) and len(wiring.runtime.backend.seen) == 5
+    # Each asks once more, offered only its way to end (D-197): the sub-agent's
+    # r9 is not run, and the task's own last request ends it.
+    assert "r9" not in _results(wiring) and len(wiring.runtime.backend.seen) == 7
+    assert "Not run: the task's budget is spent" in (folder / "events.jsonl").read_text(
+        encoding="utf-8")
 
 
 def test_a_turn_of_spawns_does_not_multiply_the_budget(repo, tmp_path):
@@ -149,7 +152,9 @@ def test_a_turn_of_spawns_does_not_multiply_the_budget(repo, tmp_path):
     wiring.runtime.budget.max_tool_calls = 3
     wiring.runtime.run_turn("go")
     assert len(_agents(wiring)) == 2
-    assert _ending(wiring.session.path)["reason"] == "tool calls exceeded (3)"
+    # The spawns left are not run; the task's last request (D-197) is told why.
+    assert ("This task has used its budget (tool calls exceeded (3))"
+            in wiring.session.path.read_text(encoding="utf-8"))
 
 
 def test_a_sub_agent_has_the_tokens_the_task_has_left(repo, tmp_path):

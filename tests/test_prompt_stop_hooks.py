@@ -552,7 +552,8 @@ def test_two_hooks_send_the_task_on_with_both_reasons(repo, home, tmp_path):
     wiring = _wire(repo, home, [turn(text="done"), turn(text="ok")],
                    overrides={"max_tool_rounds": 1})
     wiring.runtime.run_turn("go")
-    assert _records(wiring, EventType.USER_INPUT)[-1] == {
+    # The prompt, the hooks' reasons, then the budget's last turn (D-197).
+    assert _records(wiring, EventType.USER_INPUT)[1] == {
         "text": "From a Stop hook: lint\n\ntest", "hook": "Stop"}
 
 
@@ -595,8 +596,10 @@ def test_the_budget_still_bounds_a_stop_hook_that_never_lets_go(repo, home, tmp_
                    overrides={"max_tool_rounds": 2})
     outcome = wiring.runtime.run_turn("go")
     assert outcome.status is TerminalStatus.PARTIAL
-    assert "rounds exceeded (2)" in outcome.text
-    assert len(wiring.runtime.backend.seen) == 2
+    assert _records(wiring, EventType.TERMINATION)[-1]["reason"] == "tool-call rounds exceeded (2)"
+    # The last turn (D-197) is not sent on by the hook: what it wrote ends it.
+    assert (outcome.text, len(wiring.runtime.backend.seen)) == ("c", 3)
+    assert len(_told(hook)) == 2
 
 
 def test_a_failing_stop_hook_lets_the_task_end(repo, home, tmp_path):
@@ -641,7 +644,9 @@ def test_each_hook_of_a_task_is_told_its_turn_id(repo, home, tmp_path):
 def test_a_stop_hooks_prompt_never_sent_is_kept_for_a_resume(repo, home, tmp_path):
     hook = StopOnce(tmp_path / "s")
     _hooks_json(home, {"Stop": [_group(hook.command)]})
-    wiring = _wire(repo, home, [turn(text="first")], overrides={"max_tool_rounds": 1})
+    wiring = _wire(repo, home, [turn(text="first")])
+    # A token ceiling ends the task with no last turn (D-197).
+    wiring.runtime.budget.max_tokens = 1
     outcome = wiring.runtime.run_turn("go")
     assert outcome.status is TerminalStatus.PARTIAL
     wiring.session.close()

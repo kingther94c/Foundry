@@ -57,14 +57,20 @@ def test_calls_after_finish_are_answered_as_not_run(repo, tmp_path):
 def test_a_budget_ends_the_task_and_says_why(repo, tmp_path):
     wiring = _wire(repo, tmp_path / "home", [
         turn(call("c1", "read_file", {"path": "a.py"}), call("c2", "read_file", {"path": "b.py"})),
+        turn(text="I read a.py; b.py is left"),
         turn(text="again, then"),
     ])
     wiring.runtime.budget = Budget(max_tool_calls=1)
     typist = _session(wiring, "read both", "go on")
     assert TASK_ENDED in typist.printed
-    answers = _results(wiring.runtime.backend.seen[1])
+    # The call past the limit is answered before the task's last request
+    # (D-197), which is told why and ends it.
+    last = wiring.runtime.backend.seen[1]
+    answers = _results(last)
     assert [(a.call_id, a.is_error) for a in answers] == [("c1", False), ("c2", True)]
-    assert "the task ended (partial: tool calls exceeded (1))" in answers[1].content
+    assert "the task's budget is spent (tool calls exceeded (1))" in answers[1].content
+    assert [t.name for t in last.tools] == ["finish"]
+    assert _user_text(wiring.runtime.backend.seen[2]) == "go on"
     endings = [e["status"] for e in _records(wiring, EventType.TERMINATION)]
     assert endings == ["partial", "cancelled"]
 

@@ -373,11 +373,13 @@ def test_a_call_that_cannot_run_says_why(client, model, monkeypatch, name, argum
 
 def test_settings_from_config_reach_the_session(client, model, home):
     model.turns = [tool_turn("read_file", {"path": "a.py"}, "c1"),
-                   tool_turn("read_file", {"path": "b.py"}, "c2"), _finish("never")]
+                   tool_turn("read_file", {"path": "b.py"}, "c2"),
+                   # The last turn (D-197) asks for more than finish: not run.
+                   tool_turn("read_file", {"path": "a.py"}, "c3")]
     said = client.call(1, "foundry", prompt="read both",
                        config={"runtime.max_tool_calls": 1})["structuredContent"]
     assert (said["status"], said["text"]) == ("partial", "tool calls exceeded (1)")
-    assert len(model.requests) == 2
+    assert len(model.requests) == 3
 
 
 # --- foundry-reply -------------------------------------------------------------------------
@@ -808,7 +810,9 @@ def test_the_model_and_profile_asked_for_are_used(home, model, client, other):
 def test_settings_are_the_server_s_then_the_call_s(home, model, repo, served, given):
     made = _Client(home, repo, {"settings": served})
     model.turns = [tool_turn("read_file", {"path": "a.py"}, "c1"),
-                   tool_turn("read_file", {"path": "b.py"}, "c2"), _finish("never")]
+                   tool_turn("read_file", {"path": "b.py"}, "c2"),
+                   # The last turn (D-197) asks for more than finish: not run.
+                   tool_turn("read_file", {"path": "a.py"}, "c3")]
     said = made.call(1, "foundry", prompt="read both", config=given)["structuredContent"]
     made.server.close()
     assert said["text"] == "tool calls exceeded (1)"

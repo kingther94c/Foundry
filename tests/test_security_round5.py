@@ -150,9 +150,10 @@ def test_tool_call_budget_is_checked_per_call():
                          arguments=json.dumps({"path": "a.py"}))
             for i in range(200)
         )
+        # Twice: the last turn (D-197) asks for all of them again, and none runs.
         backend = ScriptedBackend([ModelTurn(text="", tool_calls=calls,
                                              usage=Usage(1, 1),
-                                             stop_reason=StopReason.TOOL_USE)])
+                                             stop_reason=StopReason.TOOL_USE)] * 2)
         runtime = AgentRuntime(
             backend=backend, registry=default_registry(),
             policy=PolicyEngine(), context=ContextManager(),

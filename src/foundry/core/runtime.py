@@ -158,6 +158,11 @@ class Budget:
             return f"tool-call rounds exceeded ({self.max_tool_rounds})"
         if self.calls > self.max_tool_calls:
             return f"tool calls exceeded ({self.max_tool_calls})"
+        return self.over_tokens(usage_total)
+
+    def over_tokens(self, usage_total: int) -> str | None:
+        """The token ceiling alone: a limit on what is spent, which a last turn
+        to wind up (D-197) would go past, so it has none."""
         if self.max_tokens is not None and usage_total > self.max_tokens:
             return f"token budget exceeded ({self.max_tokens})"
         return None
@@ -212,6 +217,18 @@ SAME_FAILURE_NOTE = (
     "\n[This command has now failed the same way {count} times. Running it again "
     "will not change that: test your assumption with a focused check or a small "
     "reproduction, then change approach.]")
+
+# When a task's rounds or calls run out, the model gets one more request, with
+# only finish offered, to say where the work stands (D-197) -- opencode's
+# max-steps prompt, which disables tools and asks for a summary.
+LAST_TURN = (
+    "This task has used its budget ({reason}), so no more tools will run. Call "
+    "finish now: status completed only if the work is done and checked, partial "
+    "otherwise; the summary says what was done, what was checked, and what is "
+    "left, for someone to pick up.")
+LAST_TURN_TYPED = "(the task's budget ran out)"
+LAST_TURN_NOT_RUN = ("Not run: the task's budget is spent ({reason}), so only finish is "
+                     "accepted now. Nothing was changed by this call.")
 
 
 @dataclass(slots=True)
@@ -297,6 +314,9 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
     # The goal's budget ran out in this task: the model is told so before its
     # next request.
     _goal_wrap_up: bool = False
+    # Why this task's rounds or calls ran out, once they have: its last
+    # request offers only finish (D-197). None before.
+    _last_turn: str | None = None
     # The sub-agent running for this runtime's spawn_agent call (D-141), None
     # otherwise: a cancel reaches it too.
     child: "AgentRuntime | None" = None
@@ -398,6 +418,7 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
         self.budget.reset()
         self._compact_failed = False
         self._goal_wrap_up = False
+        self._last_turn = None
         self._turn_id = str(self.context.turn + 1)
 
         message = user_input
@@ -434,9 +455,13 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
             self.budget.rounds += 1
             self._emit(TurnStarted(turn_index))
 
-            reason = self.budget.check(self.context.session_usage.total)
+            total = self.context.session_usage.total
+            reason = (self.budget.check(total) if self._last_turn is None
+                      else self.budget.over_tokens(total))
             if reason:
-                return self._terminate(TerminalStatus.PARTIAL, reason)
+                ended = self._wind_up(reason)
+                if ended is not None:
+                    return ended
 
             if (self.auto_compact and not self._compact_failed
                     and self.context.needs_compaction()):
@@ -529,6 +554,11 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
 
             if not turn.tool_calls:
                 self._emit(TurnComplete(turn_index, turn.text))
+                if self._last_turn is not None:
+                    # Not sent on, by a Stop hook or the unattended reminder:
+                    # with the budget spent, what it wrote is all there is.
+                    return self._terminate(TerminalStatus.PARTIAL, self._last_turn,
+                                           summary=turn.text.strip())
                 again = self._stop_hooks(turn.text, continued) if self.hooks is not None else ""
                 if not again:
                     return TurnOutcome(status=None, text=turn.text)
@@ -538,19 +568,31 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
                 self.context.append_user(message, ())
                 continue
 
-            for call in turn.tool_calls:
+            last = self._last_turn is not None
+            calls = list(turn.tool_calls)
+            while calls:
+                call = calls.pop(0)
                 # Before each call, not only after one: a cancel that came
                 # while the model was answering (from foundry mcp-server's
                 # client, D-103) stops the task before its first call runs.
                 if self._cancelled:
                     return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
-                self.budget.calls += 1
-                # Checked per call, not once per round: a backend returning
-                # thousands of tool calls in a single turn executed all of them
-                # while the limit was only inspected at the top of the loop.
-                over = self.budget.check(self.context.session_usage.total)
-                if over:
-                    return self._terminate(TerminalStatus.PARTIAL, over)
+                if self._last_turn is not None and call.name != "finish":
+                    self._reply(call, LAST_TURN_NOT_RUN.format(reason=self._last_turn),
+                                is_error=True)
+                    continue
+                if self._last_turn is None:
+                    self.budget.calls += 1
+                    # Checked per call, not once per round: a backend returning
+                    # thousands of tool calls in a single turn executed all of
+                    # them while the limit was only inspected at the top of the
+                    # loop.
+                    over = self.budget.check(self.context.session_usage.total)
+                    if over:
+                        ended = self._wind_up(over, (call, *calls))
+                        if ended is not None:
+                            return ended
+                        break
                 self._dispatch(call)
                 if self._finish is not None:
                     again = (self._stop_hooks(self._finish.summary or turn.text, continued)
@@ -562,6 +604,33 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
                     self._finish = None
                     self._reply(call, f"finish was not accepted: a {STOP} hook sent the task "
                                 f"on:\n{again}", is_error=True)
+            if last:
+                # The last request, and no finish came of it.
+                return self._terminate(TerminalStatus.PARTIAL, self._last_turn,
+                                       summary=turn.text.strip())
+
+    def _wind_up(self, reason: str, unrun: tuple[ToolUseBlock, ...] = ()) -> TurnOutcome | None:
+        """The budget has run out for ``reason``. The task ends partial --
+        unless its rounds or calls ran out and finish can be called: then the
+        calls not run are answered, the model is told, and its next request,
+        offering only finish, is its last (D-197). Ending at once left a
+        summary that said only which limit was reached, and nothing of where
+        the work stood."""
+        if (self._last_turn is not None or self.budget.over_tokens(
+                self.context.session_usage.total) or not self._finish_offered()):
+            return self._terminate(TerminalStatus.PARTIAL, reason)
+        for call in unrun:
+            self._reply(call, LAST_TURN_NOT_RUN.format(reason=reason), is_error=True)
+        self._last_turn = reason
+        message = LAST_TURN.format(reason=reason)
+        self._journal(EventType.USER_INPUT, {"text": message, "typed": LAST_TURN_TYPED})
+        self.context.append_user(message, ())
+        self._emit(Notice(f"{reason}; asking the model to wind up", level="warning"))
+        return None
+
+    def _finish_offered(self) -> bool:
+        return ("finish" in self.registry.names() and self.policy.may_allow(
+            "finish", self.registry.get("finish").kind))
 
     def _sample(self, messages: tuple[Message, ...] | None = None, purpose: str = ""):
         """One turn of the model's, asked again whole while its stream breaks
@@ -608,7 +677,9 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
         model to spend a turn on a call that could only be refused. A call to
         one is still refused by the policy, not taken for an unknown tool."""
         return tuple(s for s in self.registry.schemas()
-                     if self.policy.may_allow(s.name, self.registry.get(s.name).kind))
+                     if self.policy.may_allow(s.name, self.registry.get(s.name).kind)
+                     # The last request of a task whose budget ran out (D-197).
+                     and (self._last_turn is None or s.name == "finish"))
 
     def _attempt(self, messages: tuple[Message, ...] | None, purpose: str):
         request = TurnRequest(

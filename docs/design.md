@@ -198,7 +198,9 @@ async def run_turn(user_input):
         # a command failing the same way a third time in a row is told
         # running it again will not change it (D-195);
         # soft ceilings: consecutive tool rounds, a per-task token ceiling;
-        # tripping one means a clean partial/blocked termination
+        # tripping one means a clean partial/blocked termination -- after
+        # rounds or calls, one last request offering only finish, for the
+        # summary (D-197)
 ```
 
 - User input arriving mid-turn is queued and merged at the next `project()`

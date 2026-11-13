@@ -69,7 +69,9 @@ def test_in_a_trusted_workspace_too(client, model, home, repo):
     assert model.requests == []
     # And what it may set still holds there.
     model.turns = [tool_turn("read_file", {"path": "a.py"}, "c1"),
-                   tool_turn("read_file", {"path": "b.py"}, "c2"), _finish("never")]
+                   tool_turn("read_file", {"path": "b.py"}, "c2"),
+                   # The last turn (D-197) asks for more than finish: not run.
+                   tool_turn("read_file", {"path": "a.py"}, "c3")]
     said = client.call(2, "foundry", prompt="read both",
                        config={"runtime.max_tool_calls": 1})["structuredContent"]
     assert said["text"] == "tool calls exceeded (1)"
@@ -88,7 +90,9 @@ def test_budgets_may_be_lowered_not_raised_past_the_server_s(home, model, repo):
 
 def test_a_lower_budget_still_holds(client, model):
     model.turns = [tool_turn("read_file", {"path": "a.py"}, "c1"),
-                   tool_turn("read_file", {"path": "b.py"}, "c2"), _finish("never")]
+                   tool_turn("read_file", {"path": "b.py"}, "c2"),
+                   # The last turn (D-197) asks for more than finish: not run.
+                   tool_turn("read_file", {"path": "a.py"}, "c3")]
     said = client.call(1, "foundry", prompt="read both",
                        config={"runtime.max_tool_calls": 1})["structuredContent"]
     assert said["text"] == "tool calls exceeded (1)"

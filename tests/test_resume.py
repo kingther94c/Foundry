@@ -331,15 +331,18 @@ def test_an_interrupted_call_and_the_ones_after_it_are_answered(tmp_path):
 def test_calls_a_budget_skipped_say_why(tmp_path):
     script = [turn(call("c1", "read_file", {"path": "x.txt"}),
                    call("c2", "read_file", {"path": "x.txt"}))]
-    runtime, session, repo = _core(tmp_path, script, budget=Budget(max_tool_calls=1))
+    # A token ceiling leaves them unanswered; a limit on calls has them
+    # answered before the task's last turn (D-197).
+    runtime, session, repo = _core(tmp_path, script, budget=Budget(max_tokens=1))
     (repo / "x.txt").write_text("data\n", encoding="utf-8")
     assert runtime.run_turn("read twice").status is TerminalStatus.PARTIAL
     session.close()
 
     state = read_journal(session.path)
-    assert [(r.call_id, r.outcome) for r in state.repairs] == [("c2", "not_run")]
-    last = state.history[-1].blocks[0]
-    assert "tool calls exceeded (1)" in last.content and "Nothing was changed" in last.content
+    assert [(r.call_id, r.outcome) for r in state.repairs] == [("c1", "not_run"),
+                                                               ("c2", "not_run")]
+    last = state.history[-1].blocks[-1]
+    assert "token budget exceeded (1)" in last.content and "Nothing was changed" in last.content
 
 
 # --- evidence starts over ---------------------------------------------------------
@@ -780,13 +783,13 @@ def test_a_call_a_budget_skipped_is_still_announced(repo, tmp_path):
     home = tmp_path / "home"
     wiring = _wire(repo, home, [turn(call("c1", "read_file", {"path": "a.py"}),
                                      call("c2", "read_file", {"path": "b.py"}))])
-    wiring.runtime.budget = Budget(max_tool_calls=1)
+    wiring.runtime.budget = Budget(max_tokens=1)
     assert wiring.runtime.run_turn("read both").status is TerminalStatus.PARTIAL
     _close(wiring, TerminalStatus.PARTIAL, "budget")
-    assert [r.outcome for r in read_journal(wiring.session.path).repairs] == ["not_run"]
+    assert [r.outcome for r in read_journal(wiring.session.path).repairs] == ["not_run"] * 2
 
     text = _resumed_notice(repo, home, wiring.session.session_id)
-    assert "1 tool call(s) without a recorded result were given one; 0 file(s)" in text
+    assert "2 tool call(s) without a recorded result were given one; 0 file(s)" in text
 
 
 # --- the commands ---------------------------------------------------------------------
