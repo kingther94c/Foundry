@@ -30,7 +30,7 @@ def _files(repo, *paths, commit=True):
     for path in paths:
         (repo / path).parent.mkdir(parents=True, exist_ok=True)
         if not (repo / path).exists():
-            (repo / path).write_text(f"# {path}\n", encoding="utf-8")
+            (repo / path).write_text(f"# {path}\n", encoding="utf-8", newline="\n")
     if commit:
         run_git(["add", "."], repo)
         run_git(["commit", "-q", "-m", "files"], repo)
@@ -54,7 +54,7 @@ def test_a_new_file_git_does_not_ignore_is_found(repo, tmp_path):
 
 
 def test_an_ignored_file_is_not_found_by_its_name(repo, tmp_path):
-    (repo / ".gitignore").write_text("*.env\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("*.env\n", encoding="utf-8", newline="\n")
     _files(repo, ".gitignore", "config/prod.env")
     _, typist, sent = _sent_once(repo, tmp_path, "@prod.env")
     assert sent == "@prod.env" and f"@prod.env: {NO_SUCH}" in _shown(typist)
@@ -159,7 +159,7 @@ def test_a_rule_that_refuses_reading_it_refuses_this(repo, tmp_path):
 
 
 def test_what_git_lists(repo):
-    (repo / ".gitignore").write_text("*.log\n", encoding="utf-8")
+    (repo / ".gitignore").write_text("*.log\n", encoding="utf-8", newline="\n")
     _files(repo, ".gitignore", "src/x.py")
     _files(repo, "src/new.py", "out/run.log", commit=False)
     assert sorted(workspace_files(repo)) == [".gitignore", "a.py", "b.py", "src/new.py",

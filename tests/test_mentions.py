@@ -37,6 +37,7 @@ def _sent_once(repo, tmp_path, message, setup=None):
 
 
 def test_the_file_goes_with_the_message_as_read_file_shows_it(repo, tmp_path):
+    (repo / "a.py").write_text("A = 1\n", encoding="utf-8", newline="\n")  # LF everywhere
     wiring, typist, sent = _sent_once(repo, tmp_path, "what is in @a.py?")
     assert sent == f"what is in @a.py?\n\n{NOTE}a.py (1 lines total)\n     1\tA = 1"
     assert "attached a.py" in _shown(typist)
@@ -50,9 +51,9 @@ def test_punctuation_after_it_ends_the_sentence_not_the_path(repo, tmp_path):
 
 
 def test_a_quoted_path_may_hold_spaces_and_a_folder_its_separator(repo, tmp_path):
-    (repo / "my notes.txt").write_text("hello\n", encoding="utf-8")
+    (repo / "my notes.txt").write_text("hello\n", encoding="utf-8", newline="\n")
     (repo / "src").mkdir()
-    (repo / "src" / "x.py").write_text("X = 1\n", encoding="utf-8")
+    (repo / "src" / "x.py").write_text("X = 1\n", encoding="utf-8", newline="\n")
     _, _, sent = _sent_once(repo, tmp_path, 'read @"my notes.txt" and @src/x.py')
     assert f"{NOTE}my notes.txt (1 lines total)" in sent
     assert f"{NOTE}src/x.py (1 lines total)" in sent
@@ -61,7 +62,7 @@ def test_a_quoted_path_may_hold_spaces_and_a_folder_its_separator(repo, tmp_path
 @pytest.mark.skipif(sys.platform != "win32", reason="a Windows path")
 def test_a_backslash_path_is_the_same_file(repo, tmp_path):
     (repo / "src").mkdir()
-    (repo / "src" / "x.py").write_text("X = 1\n", encoding="utf-8")
+    (repo / "src" / "x.py").write_text("X = 1\n", encoding="utf-8", newline="\n")
     _, _, sent = _sent_once(repo, tmp_path, "read @src\\x.py and @src/x.py")
     assert sent.count(NOTE) == 1 and f"{NOTE}src/x.py (1 lines total)" in sent
 
@@ -82,7 +83,7 @@ def test_a_long_file_goes_as_its_first_window(repo, tmp_path):
 
 def test_at_most_ten_go_with_one_message(repo, tmp_path):
     for number in range(MAX_MENTIONS + 1):
-        (repo / f"f{number}.txt").write_text(f"{number}\n", encoding="utf-8")
+        (repo / f"f{number}.txt").write_text(f"{number}\n", encoding="utf-8", newline="\n")
     message = " ".join(f"@f{number}.txt" for number in range(MAX_MENTIONS + 1))
     _, typist, sent = _sent_once(repo, tmp_path, message)
     assert sent.count(NOTE) == MAX_MENTIONS
@@ -114,7 +115,7 @@ def test_a_folder_is_not_a_file(repo, tmp_path):
 
 
 def test_a_file_outside_the_workspace_is_not_attached(repo, tmp_path):
-    (tmp_path / "outside.txt").write_text("private\n", encoding="utf-8")
+    (tmp_path / "outside.txt").write_text("private\n", encoding="utf-8", newline="\n")
     message = f"@../outside.txt and @{tmp_path / 'outside.txt'}"
     _, typist, sent = _sent_once(repo, tmp_path, message)
     assert sent == message and "private" not in sent
@@ -150,7 +151,7 @@ def test_a_binary_file_is_not_attached(repo, tmp_path):
 
 def test_what_is_attached_is_scrubbed(repo, tmp_path):
     default_redactor().register(SECRET)
-    (repo / "config.txt").write_text(f"key = {SECRET}\n", encoding="utf-8")
+    (repo / "config.txt").write_text(f"key = {SECRET}\n", encoding="utf-8", newline="\n")
     _, _, sent = _sent_once(repo, tmp_path, "@config.txt")
     assert SECRET not in sent and f"key = {PLACEHOLDER}" in sent
 

@@ -368,6 +368,32 @@ class SearchText:
         return ToolOutput(content=body + note, metadata=meta)
 
 
+def _byte_notes(raw: bytes) -> str:
+    """What the numbered lines cannot show, and what a patch does with it (D-191).
+
+    Probing auto mode, a model spent three rounds on shell commands working out
+    whether a file's lines ended in CRLF and whether it began with a byte
+    order mark -- things read_file knew and did not say.
+    """
+    notes = []
+    crlf = raw.count(b"\r\n")
+    lf = raw.count(b"\n") - crlf
+    if crlf and lf:
+        ending = "CRLF" if crlf >= lf else "LF"
+        notes.append(f"mixed line endings ({crlf} CRLF, {lf} LF): apply_patch makes "
+                     f"them all {ending}")
+    elif crlf:
+        notes.append("CRLF line endings, which apply_patch keeps")
+    if raw.startswith(b"\xef\xbb\xbf"):
+        notes.append("a UTF-8 byte order mark, which apply_patch keeps")
+    try:
+        raw.decode("utf-8")
+    except UnicodeDecodeError:
+        notes.append("not valid UTF-8: what does not decode is shown as \ufffd, and "
+                     "apply_patch cannot edit it")
+    return "".join(f"; {note}" for note in notes)
+
+
 @dataclass(slots=True)
 class ReadFile:
     name: str = "read_file"
@@ -431,7 +457,8 @@ class ReadFile:
         raw = resolved.absolute.read_bytes()
         if b"\x00" in raw[:8000]:
             raise ToolError(f"{resolved.relative} appears to be binary; cannot read as text")
-        text = raw.decode("utf-8", errors="replace")
+        notes = _byte_notes(raw)
+        text = raw.removeprefix(b"\xef\xbb\xbf").decode("utf-8", errors="replace")
 
         # Record the read even when partial: the patch tool re-checks the anchor
         # anyway, and refusing to edit a file the model paged through would be
@@ -448,7 +475,7 @@ class ReadFile:
             )
 
         numbered = "\n".join(f"{start + i:>6}\t{line}" for i, line in enumerate(window))
-        header = f"{resolved.relative} ({len(lines)} lines total)"
+        header = f"{resolved.relative} ({len(lines)} lines total{notes})"
         shown_end = start - 1 + len(window)
         footer = ""
         if shown_end < len(lines):
