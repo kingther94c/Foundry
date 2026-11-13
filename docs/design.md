@@ -195,6 +195,8 @@ async def run_turn(user_input):
             decision = await policy.evaluate(call)
             result = await execute_or_reject(call, decision)
             session.record_tool(call, decision, result)
+        # a command failing the same way a third time in a row is told
+        # running it again will not change it (D-195);
         # soft ceilings: consecutive tool rounds, a per-task token ceiling;
         # tripping one means a clean partial/blocked termination
 ```
@@ -249,6 +251,12 @@ async def run_turn(user_input):
   `project_doc_fallback_filenames`, the ceiling `project_doc_max_bytes`,
   [D-086](decision-log.md))] + [environment context: OS/shell/cwd/
   git status] + [conversation history]`.
+- The base prompt's working rules -- scope, what counts as a check, tests
+  are not the spec, a change of approach after two failed fixes, others'
+  changes left alone -- are those codex, Cline, OpenHands, aider and
+  Anthropic's guidance agree on, not Foundry's own; a run nobody watches is
+  told that nobody answers questions and what counts as blocked
+  ([D-192](decision-log.md)).
 - The output budget: every tool output has a byte ceiling, and over it is
   truncated head+tail with a `[truncated: N bytes, artifact_id=...]` marker,
   with the full output written into the session directory for `read_artifact`
@@ -452,7 +460,11 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   (one source, so it cannot drift; the application semantics are described in
   the same text). What Claude writes unasked is read as what it means:
   codex's `@@` hunks, a bare patch without its end line, an added file's
-  blank lines without '+' ([D-189](decision-log.md)).
+  blank lines without '+' ([D-189](decision-log.md)), any of its lines
+  without '+' ([D-193](decision-log.md)), envelopes run together, an end
+  line twice or missing, and markup after it ([D-196](decision-log.md)).
+  A patch that would leave a Python file unable to parse is refused for
+  that file, as SWE-agent's edit is ([D-194](decision-log.md)).
 - `git_status/git_diff`: hardened arguments + stripping `GIT_*` from the
   environment (against the fsmonitor/hooks/pager code execution surface).
   `git_diff` shows what is not committed, or with `base` what this branch

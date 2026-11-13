@@ -140,6 +140,13 @@ def test_two_whole_envelopes_are_one_patch():
     assert [op.content for op in ops] == ["a\n", "b\n"]
 
 
+def test_operations_after_the_last_end_line_are_not_dropped():
+    # The second envelope ran together with the first and lost its own end line.
+    ops = parse_patch("*** Begin Patch\n*** Add File: a.py\n+a\n*** End Patch\n"
+                      "*** Add File: b.py\n+b\n")
+    assert [op.path for op in ops] == ["a.py", "b.py"]
+
+
 def test_text_after_the_last_end_line_is_not_the_patch_s():
     """a-greenfield's patch ended '*** End Patch' then '</invoke>'."""
     ops = parse_patch("*** Begin Patch\n*** Add File: a.py\n+a\n*** End Patch\n</invoke>\n")
