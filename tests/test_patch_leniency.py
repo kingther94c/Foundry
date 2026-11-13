@@ -111,10 +111,47 @@ def test_a_bare_patch_needs_no_end_line():
     assert [(op.action, op.content) for op in ops] == [("add", "b = 1\n")]
 
 
-def test_a_patch_that_began_and_lost_its_end_is_still_refused():
-    # It may have been cut short: what was cut off would be lost unseen.
-    with pytest.raises(InvalidToolCall, match="must end with"):
-        parse_patch("*** Begin Patch\n*** Add File: a.py\n+x\n")
+def test_a_patch_that_began_and_lost_its_end_is_read_whole():
+    # D-189 refused it as possibly cut short; but the patch is a tool call's JSON
+    # arguments, and a call cut short is not valid JSON (D-196).
+    ops = parse_patch("*** Begin Patch\n*** Update File: a.py\n<<<<<<< SEARCH\nx\n=======\ny\n"
+                      ">>>>>>> REPLACE\n")
+    assert ops[0].hunks == (Hunk("x", "y"),)
+
+
+def test_a_hunk_cut_off_is_still_refused():
+    with pytest.raises(InvalidToolCall):
+        parse_patch("*** Begin Patch\n*** Update File: a.py\n<<<<<<< SEARCH\nx\n=======\n")
+
+
+# --- two envelopes run together, and text after the end (D-196) ---------------------------
+
+
+def test_an_end_line_followed_by_more_operations_is_a_separator():
+    """m-ambiguous's patch: an Update, its end line, then an Add File and another end."""
+    ops = parse_patch("*** Begin Patch\n*** Update File: a.py\n<<<<<<< SEARCH\nx\n=======\ny\n"
+                      ">>>>>>> REPLACE\n*** End Patch\n*** Add File: t.py\n+t = 1\n*** End Patch")
+    assert [(op.action, op.path) for op in ops] == [("update", "a.py"), ("add", "t.py")]
+
+
+def test_two_whole_envelopes_are_one_patch():
+    ops = parse_patch("*** Begin Patch\n*** Add File: a.py\n+a\n*** End Patch\n\n"
+                      "*** Begin Patch\n*** Add File: b.py\n+b\n*** End Patch\n")
+    assert [op.content for op in ops] == ["a\n", "b\n"]
+
+
+def test_text_after_the_last_end_line_is_not_the_patch_s():
+    """a-greenfield's patch ended '*** End Patch' then '</invoke>'."""
+    ops = parse_patch("*** Begin Patch\n*** Add File: a.py\n+a\n*** End Patch\n</invoke>\n")
+    assert [(op.path, op.content) for op in ops] == [("a.py", "a\n")]
+
+
+def test_an_operation_after_text_after_the_end_is_still_an_operation():
+    # Not dropped as trailing text: it holds an operation, so it is read, and
+    # the stray line in front of it is refused as before.
+    with pytest.raises(InvalidToolCall, match="unexpected line"):
+        parse_patch("*** Begin Patch\n*** Add File: a.py\n+a\n*** End Patch\nnote\n"
+                    "*** Add File: b.py\n+b\n*** End Patch")
 
 
 # --- blank lines in an added file -------------------------------------------------------------
@@ -132,10 +169,18 @@ def test_blank_lines_before_the_next_operation_are_not_the_files():
     assert [op.content for op in ops] == ["a\n", "b\n"]
 
 
-def test_a_plus_line_after_a_bare_one_is_refused():
-    # Bare to the end reads one way (D-193); a '+' after it could be a marker or text.
-    with pytest.raises(InvalidToolCall, match="must start with '\\+': 'b'"):
-        parse_patch("*** Begin Patch\n*** Add File: a.py\n+a\nb\n+c\n*** End Patch")
+def test_one_line_that_lost_its_plus_among_plus_lines_is_a_line():
+    """m-ambiguous, f-long and g-checklist: '+import csv', 'import io', '+import subprocess'."""
+    ops = parse_patch("*** Begin Patch\n*** Add File: t.py\n+import csv\nimport io\n"
+                      "+import subprocess\n*** End Patch")
+    assert ops[0].content == "import csv\nimport io\nimport subprocess\n"
+
+
+def test_the_end_line_written_twice():
+    """l-repro's patch closed its one Update with two end lines."""
+    ops = parse_patch("*** Begin Patch\n*** Update File: a.py\n<<<<<<< SEARCH\nx\n=======\ny\n"
+                      ">>>>>>> REPLACE\n*** End Patch\n*** End Patch")
+    assert ops[0].hunks == (Hunk("x", "y"),)
 
 
 # --- what a refusal says ---------------------------------------------------------------------------

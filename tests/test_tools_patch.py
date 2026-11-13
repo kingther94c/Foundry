@@ -194,7 +194,6 @@ def test_repeated_failure_nudges_a_reread(ctx):
     "*** Begin Patch\n*** End Patch",
     "*** Begin Patch\n*** Update File: a.py\n*** End Patch",
     "*** Begin Patch\n*** Update File: a.py\n<<<<<<< SEARCH\nx\n*** End Patch",
-    "*** Begin Patch\n*** Add File: a.py\n+x\nmissing plus\n+y\n*** End Patch",  # which? (D-193)
 ])
 def test_malformed_patches_rejected_at_validation(bad):
     with pytest.raises(InvalidToolCall):

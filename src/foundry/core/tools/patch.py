@@ -172,6 +172,32 @@ class FileOp:
     move_to: str = ""
 
 
+def _one_envelope(lines: list[str]) -> list[str]:
+    """Read what real models wrote around the envelope as the one patch it
+    means (D-196): an end line followed by more file operations -- two
+    envelopes run together, with or without the second's begin line -- an end
+    line written twice, and text after the last end line that holds no
+    operation, such as the ``</invoke>`` of a tool call's own markup."""
+    ends = [k for k, line in enumerate(lines) if line.strip() == END]
+    if ends and not any(line.startswith("*** ") for line in lines[ends[-1] + 1:]):
+        lines = lines[:ends[-1] + 1]
+    out: list[str] = []
+    k = 0
+    while k < len(lines):
+        line = lines[k]
+        if line.strip() == END and k + 1 < len(lines):
+            after = next((n for n in range(k + 1, len(lines)) if lines[n].strip()), None)
+            if after is not None and lines[after].strip() == END:
+                k = after  # the end line written twice
+                continue
+            if after is not None and lines[after].startswith((UPDATE, ADD, DELETE, BEGIN)):
+                k = after + 1 if lines[after].strip() == BEGIN else after
+                continue
+        out.append(line)
+        k += 1
+    return out
+
+
 def parse_patch(text: str) -> tuple[FileOp, ...]:
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     while lines and not lines[0].strip():
@@ -192,10 +218,11 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
     # the end line cannot misread a well-formed patch.
     if lines[-1].strip() == "+" + END:
         lines[-1] = END
-    # The bare form's end line goes the way its begin line went: real models
-    # wrote neither (D-189). A patch that opened with the begin line and lost
-    # its end may have been cut short, and is still refused.
-    if bare and lines[-1].strip() != END:
+    lines = _one_envelope(lines)
+    # A missing end line is supplied (D-189 for a bare patch, D-196 for any):
+    # the patch arrives as a tool call's JSON arguments, and a call cut short
+    # is not valid JSON, so what reaches here is all the model sent.
+    if lines[-1].strip() != END:
         lines.append(END)
     if lines[-1].strip() != END:
         raise PatchParseError(f"patch must end with {END!r}")
@@ -269,7 +296,6 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
             i += 1
             body: list[str] = []
             blanks = 0  # empty lines written without their '+', not yet known to be the file's
-            bare: str | None = None  # the first line written without its '+'
             while i < last and not lines[i].startswith("*** "):
                 if not lines[i].strip():
                     # Real models leave the '+' off a blank line (D-189); a
@@ -278,19 +304,14 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
                     blanks += 1
                     i += 1
                     continue
-                if bare is None and not lines[i].startswith("+"):
-                    # Real models, past a blank line, dropped the '+' from every
-                    # line after it (D-193). Written that way to the end, the
-                    # rest is the file as written; a '+' line after it could be
-                    # either, and is refused below.
-                    bare = lines[i]
-                if bare is not None and lines[i].startswith("+"):
-                    raise PatchParseError(
-                        f"line in 'Add File: {path}' must start with '+': {bare!r}"
-                    )
                 body.extend([""] * blanks)
                 blanks = 0
-                body.append(lines[i] if bare is not None else lines[i][1:])
+                # Real models left the '+' off a line among '+' lines -- most
+                # often a file's second import -- and, past a blank line, off
+                # every line to the end (D-193). An added file holds nothing but
+                # the file, so a line without its '+' is a line as written.
+                line = lines[i]
+                body.append(line[1:] if line.startswith("+") else line)
                 i += 1
             # Each '+' line is a line, so the file ends with a newline. Joining
             # alone left every file Foundry created without one; a model that
