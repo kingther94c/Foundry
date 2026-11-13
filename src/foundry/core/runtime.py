@@ -483,6 +483,7 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
             except Cancelled:
                 return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
 
+            self.context.measured(turn.usage.input_tokens)
             self.context.append(turn.as_message())
             self.context.record_usage(turn.usage)
             self._emit(TokenCount(turn.usage, self.context.session_usage))

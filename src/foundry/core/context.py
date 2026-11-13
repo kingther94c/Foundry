@@ -162,6 +162,9 @@ class ContextManager:
     redactor: Redactor = field(default_factory=default_redactor)
     history: list[Message] = field(default_factory=list)
     session_usage: Usage = field(default_factory=Usage)
+    # The provider's input tokens for the last request answered, and the
+    # estimate of what that request sent (D-190); None before the first.
+    _measured: tuple[int, int] | None = None
     _turn_of_message: list[int] = field(default_factory=list)
     _turn: int = 0
     # The conversation's last request as sent, and the positions whose bound
@@ -224,6 +227,7 @@ class ContextManager:
         # A request's first message is the system message.
         self._sent = self._sent[:length + 1]
         self._unbound = {index for index in self._unbound if index <= length}
+        self._measured = None
 
     def unanswered_calls(self) -> list[ToolUseBlock]:
         """The calls in the model's newest message that have no result yet:
@@ -329,7 +333,7 @@ class ContextManager:
         system = self.system_message()
         history = list(self.history)
         budget = int(self.max_context_tokens * self.mask_above_fraction)
-        total = _estimate_tokens([system, *history])
+        total = _estimate_tokens([system, *history]) + self._uncounted()
         cutoff = self._turn - self.mask_after_turns
 
         for index, turn in enumerate(self._turn_of_message):
@@ -346,13 +350,35 @@ class ContextManager:
 
     # -- budget -----------------------------------------------------------
 
-    def estimated_context_tokens(self) -> int:
-        """Rough sizing for the overflow check only.
+    def measured(self, input_tokens: int) -> None:
+        """The provider's count of the request just answered, beside this
+        estimate of what it sent (D-190). Called before the reply joins the
+        history, so the projection is the one that was sent."""
+        if input_tokens > 0:
+            self._measured = (input_tokens, _estimate_tokens(self.project()))
 
-        Never used for reporting: recorded usage always comes from the provider,
-        because a wrong number enforced as a budget is worse than no budget.
+    def estimated_context_tokens(self) -> int:
+        """Sizing for the overflow and compaction checks.
+
+        Four characters to a token leaves out the tool definitions and reads
+        code as wordier than it is: a context counted at 12,000 was 18,000 to
+        the provider, and a 12,000-token compaction limit never fired (D-190).
+        Once a request has been answered, the size is the provider's count of
+        it plus the estimate of what changed since -- never less than the
+        estimate alone.
+
+        Never used for reporting usage: recorded usage always comes from the
+        provider, because a wrong number enforced as a budget is worse than
+        no budget.
         """
-        return _estimate_tokens(self.project())
+        return _estimate_tokens(self.project()) + self._uncounted()
+
+    def _uncounted(self) -> int:
+        """What the estimate missed of the last request the provider counted."""
+        if self._measured is None:
+            return 0
+        real, then = self._measured
+        return max(0, real - then)
 
     def context_exhausted(self) -> bool:
         return self.estimated_context_tokens() > (self.max_context_tokens - self.reserve_output_tokens)
@@ -423,3 +449,5 @@ class ContextManager:
         # A new prefix: nothing from before it is sent again.
         self._sent, self._unbound = (), set()
         self._stripped.clear()
+        # What the provider counted was mostly what was just replaced.
+        self._measured = None
