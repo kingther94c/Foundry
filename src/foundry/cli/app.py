@@ -63,14 +63,14 @@ def cmd_completion(args: argparse.Namespace) -> int:
     return 0
 
 
-def _config_flags(parser: argparse.ArgumentParser, *, modes: tuple[Mode, ...] = tuple(Mode)) -> None:
+def _config_flags(parser: argparse.ArgumentParser, *, modes: tuple[Mode, ...] = tuple(Mode),
+                  default: str = "dont_ask: nobody is there to approve") -> None:
     """The settings a run can be given on its command line (D-042). They win
     over every file and the environment; secrets are not among them."""
     parser.add_argument("-m", "--model", help="the model to use")
     parser.add_argument("--mode", choices=[m.value for m in modes],
                         help="the permission mode" + (
-                            " (default dont_ask: nobody is there to approve)"
-                            if Mode.DEFAULT not in modes else ""))
+                            f" (default {default})" if Mode.DEFAULT not in modes else ""))
     parser.add_argument("-c", "--config", action="append", metavar="KEY=VALUE",
                         help="a setting, such as -c runtime.max_tool_rounds=60 "
                              "(repeatable; no secrets)")
@@ -213,7 +213,9 @@ def build_parser() -> argparse.ArgumentParser:
                          help="a JSON Schema the run's result must match; the result is "
                               "printed as JSON, and written by -o")
     _image_flag(execute)
-    _config_flags(execute, modes=(Mode.DONT_ASK, Mode.PLAN, Mode.ACCEPT_EDITS))
+    _config_flags(execute, modes=(Mode.DONT_ASK, Mode.PLAN, Mode.ACCEPT_EDITS),
+                  default="accept_edits: patches go in unasked; a command still needs "
+                          "an allow rule, as nobody is there to approve")
     execute.set_defaults(func=cmd_exec)
 
     review = sub.add_parser("review", help="review changes headlessly, read-only, as codex "

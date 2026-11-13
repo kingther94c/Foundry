@@ -43,13 +43,15 @@ def _flag(token: str) -> tuple[str, str | None] | None:
 def _advice(name: str, value: str | None, command: str) -> str:
     unattended = command == "exec"
     commands = "commands still need an allow rule" + ("" if unattended else " or your approval")
-    patches = (f"use --mode accept_edits: patches go in without asking, but {commands} "
-               "(Foundry has no sandbox to run them in)")
+    patches = (("exec already applies patches without asking (accept_edits, its default)"
+                if unattended else "use --mode accept_edits: patches go in without asking")
+               + f", but {commands} (Foundry has no sandbox to run them in)")
     if name == "--full-auto":
         return patches
     if name == "--ask-for-approval":
         if unattended:
-            return "exec asks nobody: what no rule allows is refused (--mode dont_ask, its default)"
+            return ("exec asks nobody: patches go in (accept_edits, its default) and a command "
+                    "no rule allows is refused; --mode dont_ask refuses patches too")
         if value == "never":
             return "use --mode dont_ask: what no rule allows is refused rather than asked"
         if value in ("untrusted", "on-failure", "on-request"):

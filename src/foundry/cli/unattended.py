@@ -227,13 +227,15 @@ def cmd_exec(args: argparse.Namespace, read_only: str = "") -> int:
             if stop is not None:
                 return stop
             forked = args.resume
-        # dont_ask unless --mode chose plan or accept_edits; a configured mode
-        # never decides how much an unattended run may do.
+        # exec applies patches unasked unless --mode chose plan or dont_ask
+        # (D-188); review changes nothing. A configured mode never decides how
+        # much an unattended run may do.
+        default = Mode.DONT_ASK if read_only == REVIEW_READ_ONLY else Mode.ACCEPT_EDITS
         wiring = build(Path(args.workspace).resolve(), console=console, interactive=False,
                        resume=args.resume, ephemeral=args.ephemeral,
                        trust=getattr(args, "trust", False),
                        review=read_only == REVIEW_READ_ONLY,
-                       **_config_args(args, mode=Mode(args.mode or Mode.DONT_ASK.value)))
+                       **_config_args(args, mode=Mode(args.mode or default.value)))
     except FoundryError as exc:
         if forked is not None:
             _forget(user_dir() / "sessions", forked)

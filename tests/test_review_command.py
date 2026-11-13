@@ -218,3 +218,12 @@ def test_a_review_is_told_a_new_file_is_not_in_the_diff(repo, scope):
     text, _ = review_task(repo, **scope)
     first = text.split("\n\n")[0]
     assert "new file" in first and "read_file" in first
+
+
+def test_a_review_still_runs_in_dont_ask(repo, tmp_path, monkeypatch, capsys, fake_model):
+    """exec patches unasked by default (D-188); a review changes nothing and
+    says so: its run is dont_ask, not exec's accept_edits."""
+    _model(tmp_path, monkeypatch, fake_model)
+    assert _review(repo, "--uncommitted", "--json") == 0
+    first = json.loads(capsys.readouterr().out.splitlines()[0])
+    assert first["mode"] == "dont_ask"

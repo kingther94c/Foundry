@@ -265,20 +265,22 @@ def test_exec_in_accept_edits_writes_and_says_so(repo, tmp_path, monkeypatch, ca
     assert out.read_text(encoding="utf-8").startswith("A is now 2")
 
 
-def test_exec_stays_dont_ask_whatever_the_config_says(repo, tmp_path, monkeypatch, capsys,
-                                                      fake_model):
+def test_exec_stays_accept_edits_whatever_the_config_says(repo, tmp_path, monkeypatch, capsys,
+                                                           fake_model):
+    """Unattended runs patch the workspace unasked (D-188): a run that could
+    edit nothing without an allow rule did nothing a task asked of it."""
     from test_cli_e2e import text_turn
 
     httpd, handler = fake_model
     home = _exec_home(tmp_path, httpd, monkeypatch)
     with (home / "config.toml").open("a", encoding="utf-8") as fh:
-        fh.write('[runtime]\nmode = "accept_edits"\n')
+        fh.write('[runtime]\nmode = "plan"\n')
     handler.turns, handler.index = [text_turn("hi"), text_turn("still hi")], 0
     out = tmp_path / "last.txt"
     assert app.main(["exec", "hello", "--workspace", str(repo), "-o", str(out)]) == 10
     capsys.readouterr()
     system = httpd.requests[0]["messages"][0]["content"]
-    assert mode_line(Mode.DONT_ASK) in system and UNATTENDED_LINE not in system
+    assert mode_line(Mode.ACCEPT_EDITS) in system and UNATTENDED_LINE in system
     # The model's last reply, after the reminder to call finish.
     assert out.read_text(encoding="utf-8") == "still hi"
 

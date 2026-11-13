@@ -31,8 +31,9 @@ def _refused(capsys, *argv):
 
 @pytest.mark.parametrize("argv, told", [
     (["exec", "--full-auto", "fix it"],
-     "--full-auto is codex's; use --mode accept_edits: patches go in without asking, but "
-     "commands still need an allow rule (Foundry has no sandbox"),
+     "--full-auto is codex's; exec already applies patches without asking (accept_edits, its "
+     "default), but commands still need an allow rule (Foundry has no sandbox"),
+    (["run", "--full-auto"], "use --mode accept_edits: patches go in without asking"),
     (["run", "--full-auto"], "commands still need an allow rule or your approval"),
     (["run", "-a", "never"], "-a never is codex's; use --mode dont_ask"),
     (["run", "--ask-for-approval=on-request"],
@@ -40,11 +41,12 @@ def _refused(capsys, *argv):
     (["run", "-a", "untrusted"], "use --mode default: Foundry asks before anything"),
     (["run", "-a"], "use --mode: default asks before anything no rule allows"),
     (["exec", "-a", "never", "fix it"],
-     "-a never is codex's; exec asks nobody: what no rule allows is refused (--mode dont_ask"),
+     "-a never is codex's; exec asks nobody: patches go in (accept_edits, its default) and a "
+     "command no rule allows is refused; --mode dont_ask refuses patches too"),
     (["run", "-s", "read-only"], "-s read-only is codex's; use --mode plan"),
     (["run", "-sread-only"], "-sread-only is codex's; use --mode plan"),
     (["exec", "--sandbox", "workspace-write", "t"],
-     "--sandbox workspace-write is codex's; use --mode accept_edits"),
+     "--sandbox workspace-write is codex's; exec already applies patches without asking"),
     (["run", "-s", "danger-full-access"], "Foundry has no sandbox (docs/threat-model.md"),
     (["run", "--yolo"], "no mode here runs every command unasked"),
     (["run", "--dangerously-bypass-approvals-and-sandbox"],

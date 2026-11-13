@@ -50,7 +50,7 @@ def test_the_first_event_carries_the_settings(repo, tmp_path, monkeypatch, capsy
     first = json.loads(capsys.readouterr().out.splitlines()[0])
     assert {key: first[key] for key in ("protocol", "profile", "mode", "effort",
                                         "reasoning_summary", "verbosity")} == {
-        "protocol": "openai_compat", "profile": "personal", "mode": "dont_ask",
+        "protocol": "openai_compat", "profile": "personal", "mode": "accept_edits",
         "effort": None, "reasoning_summary": None, "verbosity": None}
 
 
@@ -79,7 +79,7 @@ def test_they_are_said_on_stderr_before_anything_else(repo, tmp_path, monkeypatc
     assert lines[start + 1:start + 5] == [
         f"  workspace {repo.resolve()}",
         "  model     fake (openai_compat, profile personal)",
-        "  mode      dont_ask",
+        "  mode      accept_edits",
         "  effort    the API's default",
     ]
     assert captured.err.index("  effort") < captured.err.index("A is 1")
@@ -153,9 +153,11 @@ def test_a_long_path_is_not_cut_in_two():
 
 
 def test_the_mode_is_the_runs_not_the_files(repo, tmp_path, monkeypatch, capsys, fake_model):
-    """exec runs in dont_ask whatever the files say; saying the file's mode
-    would tell a CI log approvals were possible."""
+    """exec runs in accept_edits whatever the files say (D-188); saying the
+    file's mode would tell a CI log approvals were possible."""
     httpd, handler = fake_model
-    _configure(tmp_path / "home", httpd, monkeypatch, '[runtime]\nmode = "accept_edits"\n')
+    _configure(tmp_path / "home", httpd, monkeypatch, '[runtime]\nmode = "default"\n')
     _exec(handler, "--json", "--workspace", str(repo))
+    assert json.loads(capsys.readouterr().out.splitlines()[0])["mode"] == "accept_edits"
+    _exec(handler, "--json", "--workspace", str(repo), "--mode", "dont_ask")
     assert json.loads(capsys.readouterr().out.splitlines()[0])["mode"] == "dont_ask"
