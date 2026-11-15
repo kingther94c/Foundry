@@ -8,7 +8,7 @@
 > personal API-key path and the corporate Gateway are in the same protocol
 > family, so building the skeleton first is no longer blocked on auth.
 
-## Status (2026-11-10)
+## Status (2026-11-15)
 
 | Milestone | Status | Notes |
 |---|---|---|
@@ -16,21 +16,31 @@
 | M1a file tools + policy | **done** | attack table and decision table both green |
 | M1b run_command + segmenter | **done** | Job Object process-tree cleanup leaves no orphans in practice |
 | M2 personal path E2E + acceptance set | **done** | 8 golden scenarios; the `finish` evidence chain; `foundry report` |
-| M3 corporate Gateway | **partial** | unchanged since 2026-09-01: the entry gate (a tool-call streaming fixture from the Gateway) is not passed, and [OQ-6](open-questions.md) is open |
+| M3 corporate Gateway | **partial** | no contact with the Gateway yet, and [OQ-6](open-questions.md) is open; the entry gate is now Foundry's own probe passing on that machine ([D-198](decision-log.md)), which P15 builds |
 | M4 packaging hardening + disclosure | **done** | the wheelhouse hash-pinned since 2026-11-11 ([D-170](decision-log.md)) |
 | Codex parity, items 1-106 | **done** | 2026-11-06 to 2026-11-09, D-039 to D-145; the table below |
-| After parity, P0-P3, P6-P11, the reruns against Claude | **done** | 2026-11-10 to 13, D-146 to D-187; what is left: P4 waits on the corporate side, and the rerun on the other two protocols on an endpoint for them |
+| After parity, P0-P3, P6-P11, the reruns against Claude | **done** | 2026-11-10 to 13, D-146 to D-187; what is left: P4 waits on the corporate side, and the rerun over Chat Completions is P12's batch |
 | Auto mode on small projects | **done** | 2026-11-13, D-188 to D-191: six projects aimed at editing unattended; `exec` now patches by default |
 | Learning from other agents | **done** | 2026-11-13, D-192 to D-196: the prompt's working rules, edit-time syntax check, repeated-failure note and patch readings, each taken from codex, opencode, Cline, OpenHands, SWE-agent, aider or Anthropic's guidance; D-197, opencode's last turn when a budget runs out |
-| P5, Foundry at work | **under way** | ResearchOS v32 built on the real API ([D-187](decision-log.md)); each further version is chosen from what the work needs |
+| P5, Foundry at work | **paused** | ResearchOS v32 built on the real API ([D-187](decision-log.md)); stopped at the user's word on 2026-11-13; it resumes when they say so |
+| After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden) |
 
-4,925 tests pass (one is skipped) on a machine with no network and no credentials. From
-D-036 to D-181 every feature was verified only against scripted backends: the
-local gateway that served the first live checks has answered nothing since
-2026-11-04. On 2026-11-11 P1's scenarios ran against Claude over the
-Anthropic Messages API ([D-185](decision-log.md)); Chat Completions and
-Responses still have no real endpoint. What comes
-next is in [After parity](#after-parity-2026-11-10-prove-it-then-ship-it).
+The suite collects 5,041 tests, which run green on a machine with no network
+and no credentials. This is the one place that figure is quoted, and
+`tests/test_docs_truth.py` holds it to what a full run collects. From D-036 to
+D-181 every feature was verified only against scripted backends: the local
+gateway that served the first live checks has answered nothing since
+2026-11-04. Since 2026-11-11 the scenarios of P1 and P9 to P11
+([D-185](decision-log.md), [D-186](decision-log.md)), ResearchOS v32
+([D-187](decision-log.md)) and the unattended probes
+([D-188](decision-log.md) to [D-196](decision-log.md)) have run against
+Claude over the Anthropic Messages API. Chat Completions and Responses met a
+real endpoint only before that -- the local gateway in 2026-09, and for Chat
+Completions Anthropic's OpenAI-compatible endpoint in 2026-10
+([D-032](decision-log.md)) -- so nothing landed since D-036 has run on either
+against a model. What comes next is in
+[After P11](#after-p11-2026-11-15-measure-then-harden); what led here is in
+[After parity](#after-parity-2026-11-10-prove-it-then-ship-it).
 
 ### Status as of 2026-09-01, after the first live endpoint check
 
@@ -134,6 +144,14 @@ fixtures first** (an ordinary response / a tool call and its continuation /
 usage / rate limiting / a dropped stream / a malformed event), and only then
 start implementing -- "Responses-compatible" may cover conversation without
 covering agentic tool continuation.
+
+**The gate as it stands since 2026-11-15 ([D-198](decision-log.md))**: nothing
+can be carried off the corporate machine, a fixture included, so the gate is
+Foundry's own probe (P15) passing there for the protocol in use -- an ordinary
+response, a tool call and its continuation, usage, and a reply cut at a small
+output ceiling -- with what it captures kept on that machine. Rate limiting, a
+dropped stream and a malformed event are tested against the relay that plays
+the protocols offline.
 
 - The `responses` adapter (mandatory) + CredentialSource (the intranet auth
   mechanism, [OQ-6](open-questions.md)) + TLS/proxy testing against the real
@@ -362,9 +380,9 @@ the last month went to the last of those. What is owed instead:
   on information from the corporate side.
 - **P5 -- use it.** Further ResearchOS versions built with Foundry, as
   `tools/` and ResearchOS were, so that what Foundry needs next is decided by
-  what gets in the way of real work rather than by a list. Under way: v32,
-  resampling whole snapshots in `compare`, built against the Anthropic API
-  ([D-187](decision-log.md)).
+  what gets in the way of real work rather than by a list. Built: v32,
+  resampling whole snapshots in `compare`, against the Anthropic API
+  ([D-187](decision-log.md)). Paused at the user's word on 2026-11-13.
 
 [D-162](decision-log.md), once P3 was done: what is left that needs no one
 else. P4 waits on the corporate side, and P1's rerun and P5 on a model
@@ -435,6 +453,11 @@ endpoint.
   a new file is not in `git_diff` ([D-179](decision-log.md)); and the
   system prompt now says a question is answered in the reply
   ([D-180](decision-log.md)).
+  Against Claude (2026-11-11, [D-186](decision-log.md)): the twelve
+  scenarios of P9 to P11 again, over Anthropic Messages. Two things read
+  wrong and were put right: a resume or fork counting an accepted `finish`
+  among the calls it had to give a result, and a summary citing an event id
+  the user never sees.
 
 - **Auto mode on small projects.** Asked for by the user on 2026-11-13:
   small projects, each aimed at one thing Foundry must do unattended --
@@ -448,9 +471,102 @@ endpoint.
   and `read_file` names line endings and a byte order mark
   ([D-191](decision-log.md)).
 
+- **Learning from other agents.** Asked on 2026-11-13 how to improve the
+  prompt and the loop, the user said to study the popular coding agents
+  rather than invent. Read from source -- codex, opencode, Cline, OpenHands,
+  SWE-agent, aider, and Anthropic's guidance for Claude -- and taken: the
+  prompt's working rules ([D-192](decision-log.md)), an added file's lines
+  that lost their '+' read as written ([D-193](decision-log.md)), a patch
+  refused when it would leave a Python file unable to parse
+  ([D-194](decision-log.md)), a command that keeps failing the same way told
+  so ([D-195](decision-log.md)), the envelope shapes real models sent
+  ([D-196](decision-log.md)), and a last turn to wind up when a task's
+  rounds or calls run out ([D-197](decision-log.md)). The eleven probes
+  passed before and after, so they could not show a gain: P13's harder set
+  is the answer to that.
+
 Dated, outside Foundry itself: the macro run's scorings fixed in its plan
 (2026-12-07 and 2027-02-08), and, if wanted, weekly forward snapshots under a
 plan of their own ([ResearchOS macro run](../ResearchOS/runs/2026-11-macro-calibration-run/README.md)).
+
+## After P11 (2026-11-15): measure, then harden
+
+[D-198](decision-log.md): at the user's request, a review of the code against
+these documents, once P11, the auto-mode probes and what was taken from other
+agents had landed. What it found:
+
+- **A review round that never landed.** Fixes and their tests from
+  2026-09-01 to 08, uncommitted in an old worktree: both OpenAI-family
+  adapters reading what a real gateway sent, configuration files saved with a
+  byte order mark or as UTF-16, `doctor` reporting what is not so, 'always'
+  rules that never match a chained command, a patch re-indented from its
+  first line alone, and a final gate that softens a reported failure. Its
+  decision numbers were later given to others. It is kept as it was found,
+  and lands piece by piece below.
+- **A stop reason nothing acts on.** The adapters report why a reply ended,
+  and the runtime journals it. A reply cut at the output ceiling, or
+  refused, is taken as a finished turn, and a cut-off summary becomes the
+  conversation's history.
+- **A verification kit outside the repository.** The relay that plays the
+  three protocols, its scenarios, the unattended probes and the mutation
+  check were in a temporary folder. And all eleven probes pass, so they can
+  no longer show that a change is an improvement.
+- **Two protocols no model has answered on since D-036**, as the status
+  above says.
+- **No first day on the corporate machine.** No runbook, no check of the
+  connection, and -- since nothing can be carried off that machine -- no way
+  yet to verify the Gateway.
+- **Documents behind the code.** Four different sizes of the suite, a count
+  of decisions 163 short, a home folder the code does not use.
+- **The macro run's `restore`** stops at the first snapshot whose hash
+  differs, where its plan says only that snapshot goes unscored.
+
+The user's choices: agent capability first, within US$30 of real API use;
+the corporate machine can pull this repository and run it, and nothing
+leaves it, so what comes back is what the user says; the kit and the
+gateway's recorded streams may be public once scanned for anything shaped
+like a credential.
+
+- **P12 -- keep what exists.** The unlanded round archived; this plan here,
+  and the documents held to the code by `tests/test_docs_truth.py`
+  ([D-198](decision-log.md)); the verification kit in the repository under
+  `verify/`, with a smoke run in CI; the Chat Completions batch against
+  Anthropic's OpenAI-compatible endpoint.
+- **P13 -- agent capability.** In this order: the two OpenAI-family adapters
+  read the shapes a real gateway sent; a harder set of probes -- past
+  versions of `tools/` and ResearchOS rebuilt from the tree before them and
+  judged by the hidden tests of their day, a refactor across files, a task
+  that outlives two compactions, one that presses on the output ceiling,
+  visible tests that pass where hidden ones do not, a suite with failures
+  that are not the task's -- with a baseline of several runs each; the
+  runtime acts on a stop reason; a patch is neither placed at the wrong depth
+  nor left half applied; and a check the harness runs itself before it
+  accepts `finish`. One thing changes at a time; the metric, the number of
+  runs and when to stop are written down before a run; each mechanism starts
+  from what two or three popular agents do ([D-192](decision-log.md)); and a
+  closing note says which lever moved the numbers.
+- **P14 -- the macro run's scoring of 2026-12-07**, by 2026-11-30: a
+  snapshot that cannot be rebuilt byte for byte is skipped and named, both
+  arms are scored on the same set, and the scripts get tests. Nothing is
+  rehearsed before the date.
+- **P15 -- a first contact with the corporate machine.** Configuration files
+  in the encodings Windows editors write; a `doctor` that says what is so,
+  and `doctor --online` for the proxy, TLS, the credential, the model list
+  and a stream; `foundry probe`, which runs a fixed set of cases against the
+  endpoint and prints a line for each; a runbook for the install, and a list
+  of what to report back. M3's entry gate becomes that probe passing there.
+- **P16 -- the rest of the unlanded round.** The final gate does not soften
+  a reported failure, and asks who moved a tree that no tool of the session
+  touched; 'always' writes a rule for each part the policy matches, for this
+  workspace.
+- **P17 -- clearing away.** Worktrees and branches no session uses, each
+  removed at the user's word.
+
+Waiting on others: the corporate side, through what the user reports
+([OQ-6](open-questions.md), [OQ-15](open-questions.md)), for P4; the user,
+for the copy of the macro run's inputs that its `restore` needs, for the runs
+against a real endpoint, which start in their own terminal, and for the word
+that resumes P5; and the calendar, for the two scorings above.
 
 ## V2 candidates (explicitly no commitment to order)
 

@@ -5,15 +5,15 @@ wheel install. It owns all of the code and interfaces for its agent loop,
 tools, policy, providers and sessions; it does not fork, call into, or
 impersonate any existing coding agent.
 
-**Current status (2026-11-11): M0-M4 implemented and running, the corporate
-Gateway (M3) still partial; the 106 items of the codex-parity list have
-landed, and so has the work after them that needs no one else (D-146 to
-D-185).** 4,925 tests pass (one is skipped) on a machine with no network and
-no credentials (including the security regressions from six rounds of
-adversarial review, and 780 generated breaker-table invariant combinations).
-P1's scenarios have run against Claude ([D-185](docs/decision-log.md)); what
-is left waits on others -- an endpoint for the Chat Completions and Responses
-protocols, and the corporate machine -- and is in [docs/roadmap.md](docs/roadmap.md). After round 6 there was a separate clean-room check:
+**Current status: M0-M4 implemented and running, the corporate Gateway (M3)
+still partial; the 106 items of the codex-parity list have landed, and so
+have the rounds of verification after them.** The suite runs on a machine
+with no network and no credentials (the security regressions from six rounds
+of adversarial review and the generated breaker-table invariants are among
+its tests). Foundry has done real tasks against Claude over the Anthropic
+Messages API since 2026-11-11 ([D-185](docs/decision-log.md)). What is under
+way, what waits on others, and the figures of the day are in
+[docs/roadmap.md](docs/roadmap.md). After round 6 there was a separate clean-room check:
 rebuild the wheelhouse, install into a fresh venv with `--no-index`, and run a
 real task again (failing tests -> patch -> re-run green -> finish citing the
 event id from its own tool output). All 14 checks passed.
@@ -155,7 +155,7 @@ project_doc_max_bytes = 32768      # characters; 0 reads none of the repository'
 
 | Command | What it does |
 |---|---|
-| `foundry` / `foundry run [task]` | interactive session (the default); a task given here is the first message and the session goes on after it, as `codex "task"` does (not at a terminal, the run ends with it); `/help` lists its commands -- `/status`, `/diff`, `/copy [N]` (the latest answer, or its Nth code block, on the clipboard), `/export [PATH]` (the whole conversation as Markdown, on the clipboard or in a new file), `/rename [NAME]` (a name to resume the session by: `foundry resume NAME`), `/fork` (go on in a copy of the session, keeping this one; `foundry fork` takes what `foundry resume` takes), `/goal [--budget N] OBJECTIVE` (a goal the session works toward, turn after turn, until the model marks it complete or blocked, its token budget runs out, or Ctrl+C pauses it; alone, the goal; `pause`, `resume`, `clear`, `budget N|none`), `/archive` and `/delete` (end the session, then archive it or, once you say so, delete it), `/resume [SESSION]` (go on in another of this workspace's sessions, picked or named; this one ends, and can be resumed), `/side QUESTION` or `/btw QUESTION` (asked on the side, read-only, then dropped from the conversation), `/recap` (the conversation summed up for you, read-only), `/clear` (clear the terminal, then as `/new`), `/rollout` (the journal's path), `/title [ITEM...|none]` (what the terminal's title shows, or pick it for this session), `/warnings` (the session's warnings and errors, again), `/pwd`, `/plan`, `/approve` (plan mode), `/mode [NAME]`, `/model [NAME]` (alone, the endpoint's models), `/effort [LEVEL]`, `/mcp`, `/hooks`, `/memories [use on\|off \| generate on\|off]`, `/undo`, `/compact [focus]`, `/rewind [N]`, `/image [PATH]`, `/review [--base REV | --commit REV] [focus]` (read-only: the uncommitted changes, a branch's since it left REV, or one commit's), `/skills`, `/init`, `/new`, `/exit` (`/cwd` is `/pwd`, as in codex; codex's `/approvals`, `/permissions`, `/mention`, `/cd`, `/usage`, `/debug-config`, `/logout`, and the rest of its popup Foundry has no counterpart for, are told what Foundry has instead) -- and your custom prompts (`~/.foundry/prompts/<name>.md`, used as `/<name> args`, or as codex's `/prompts:<name> args` -- the way to call one a built-in's name hides: `$1`..`$9`, `$ARGUMENTS`, and `$FILE` filled from `FILE=value`). Skills, as codex's -- a folder holding a `SKILL.md` with a `name` and a `description`, in `~/.foundry/skills/`, or a repository's `.agents/skills/` (in the working folder and each one above it to the top) where you trust it; `[[skills.config]]` with a `name` or `path` and `enabled = false` turns one off -- are listed to the model, which loads one with `load_skill` when a task matches it; `$name` in your message sends one with it. Ask for a sub-agent, or for work to be split up, and the model starts one with `spawn_agent`, as codex's: it works on its task in a conversation of its own -- what it reads stays there -- and only its report comes back; read-only unless the model asks otherwise, which is put to you, and its calls are shown as `agent N:`; `subagents = false` under `[runtime]` turns it off. The model reads your own `FOUNDRY.md` (or `AGENTS.md`) from the Foundry folder, then the repository's from its top down to the working directory |
+| `foundry` / `foundry run [task]` | interactive session (the default); a task given here is the first message and the session goes on after it, as `codex "task"` does (not at a terminal, the run ends with it); `/help` lists its commands -- `/status`, `/diff`, `/copy [N]` (the latest answer, or its Nth code block, on the clipboard), `/export [PATH]` (the whole conversation as Markdown, on the clipboard or in a new file), `/rename [NAME]` (a name to resume the session by: `foundry resume NAME`), `/fork` (go on in a copy of the session, keeping this one; `foundry fork` takes what `foundry resume` takes), `/goal [--budget N] OBJECTIVE` (a goal the session works toward, turn after turn, until the model marks it complete or blocked, its token budget runs out, or Ctrl+C pauses it; alone, the goal; `pause`, `resume`, `clear`, `budget N|none`), `/archive` and `/delete` (end the session, then archive it or, once you say so, delete it), `/resume [SESSION]` (go on in another of this workspace's sessions, picked or named; this one ends, and can be resumed), `/side QUESTION` or `/btw QUESTION` (asked on the side, read-only, then dropped from the conversation), `/recap` (the conversation summed up for you, read-only), `/clear` (clear the terminal, then as `/new`), `/rollout` (the journal's path), `/title [ITEM...|none]` (what the terminal's title shows, or pick it for this session), `/warnings` (the session's warnings and errors, again), `/pwd`, `/plan`, `/approve` (plan mode), `/mode [NAME]`, `/model [NAME]` (alone, the endpoint's models), `/effort [LEVEL]`, `/mcp`, `/hooks`, `/memories [use on\|off \| generate on\|off]`, `/undo`, `/compact [focus]`, `/rewind [N]`, `/image [PATH]`, `/review [--base REV | --commit REV] [focus]` (read-only: the uncommitted changes, a branch's since it left REV, or one commit's), `/skills`, `/init`, `/new`, `/exit` (`/cwd` is `/pwd`, as in codex; codex's `/approvals`, `/permissions`, `/mention`, `/cd`, `/usage`, `/debug-config`, `/logout`, and the rest of its popup Foundry has no counterpart for, are told what Foundry has instead) -- and your custom prompts (`prompts\<name>.md` in the Foundry folder -- `%LOCALAPPDATA%\Foundry`, or the folder `FOUNDRY_HOME` names -- used as `/<name> args`, or as codex's `/prompts:<name> args` -- the way to call one a built-in's name hides: `$1`..`$9`, `$ARGUMENTS`, and `$FILE` filled from `FILE=value`). Skills, as codex's -- a folder holding a `SKILL.md` with a `name` and a `description`, in the Foundry folder's `skills\`, or a repository's `.agents/skills/` (in the working folder and each one above it to the top) where you trust it; `[[skills.config]]` with a `name` or `path` and `enabled = false` turns one off -- are listed to the model, which loads one with `load_skill` when a task matches it; `$name` in your message sends one with it. Ask for a sub-agent, or for work to be split up, and the model starts one with `spawn_agent`, as codex's: it works on its task in a conversation of its own -- what it reads stays there -- and only its report comes back; read-only unless the model asks otherwise, which is put to you, and its calls are shown as `agent N:`; `subagents = false` under `[runtime]` turns it off. The model reads your own `FOUNDRY.md` (or `AGENTS.md`) from the Foundry folder, then the repository's from its top down to the working directory |
 | `foundry exec <task> [--json] [-o FILE] [--output-schema FILE] [--ephemeral] [--color always\|never\|auto] [--trust]` | `--trust` trusts the repository, as a yes when asked does -- its instructions and settings are read, in this run and later ones -- as codex's (`foundry review` takes it too); `--color` colours what it says on stderr -- a terminal only by default -- as codex's (`foundry review` takes it too); `--ephemeral` keeps no record of the run once it ends, as codex's: its journal is in a temporary folder, never among the sessions, and removed as it ends (`foundry review` takes it too); `-` as the task reads it from stdin; unattended execution, which first names its session (the `session_started` event with `--json`, a line on stderr without) for `exec --resume`, and what it runs with -- workspace, model, protocol, profile, mode, effort -- as codex's exec does; every ASK becomes DENY (fail-closed). It patches the workspace without asking (`accept_edits`, its default, [D-188](docs/decision-log.md)) and runs only the commands a rule allows; `--mode dont_ask` refuses patches too; `-o` writes its final summary or reply to FILE; `--output-schema` asks for a result matching a JSON Schema, checked by Foundry and printed as the only output |
 | `foundry resume [session] [task]` | continue a recorded session (a task given is its next message): with no id, pick from this workspace's recent ones (Enter is the newest; not at a terminal, `last`); refused if HEAD moved. At a terminal it first shows the conversation so far -- what you typed, the answers, each tool call's line -- as codex's resume does. As codex spells it: `--last [task]` for the newest, `--all` to pick from every workspace's (each continued where it was recorded) |
 | `foundry review [--uncommitted \| --base BRANCH \| --commit SHA [--title T] \| PROMPT] [--json] [-o FILE]` | a review, headless and read-only, as `codex review`: the uncommitted changes, what this branch changed since it left BRANCH, what one commit changed, or what PROMPT asks (`-` reads it from stdin); every edit and command is refused, and the review -- the run's finish summary -- is printed, and written by `-o`. As codex's, `review_model` under `[backend]` is the model reviews run on -- this one, and `/review`'s task, after which the session goes on with its own -- unless `-m` names one. `foundry exec review ...`, as codex spells it too, is the same |
@@ -376,7 +376,7 @@ directory with the most-imported files first, within about 3,000 tokens.
 src/foundry/core/     runtime (the one loop), policy, tools, backends, session, workspace, winapi
 src/foundry/cli/      the terminal UI: event subscriber + approval UI + report
 src/foundry/prompts/  versioned system prompts
-tests/                4658 tests: golden scenarios, attack tables, breaker-table invariants
+tests/                the suite: golden scenarios, attack tables, breaker-table invariants
 ```
 
 `foundry.core` imports neither `foundry.cli` nor any third-party package --
@@ -391,7 +391,7 @@ both are enforced by tests
 | [docs/design.md](docs/design.md) | the design: package structure, core interfaces, key mechanisms |
 | [docs/threat-model.md](docs/threat-model.md) | what is protected, what is not, and where enforcement happens |
 | [docs/roadmap.md](docs/roadmap.md) | milestones and status |
-| [docs/decision-log.md](docs/decision-log.md) | 34 numbered decisions (including the overturned ones) |
+| [docs/decision-log.md](docs/decision-log.md) | the numbered decisions (including the overturned ones) |
 | [docs/open-questions.md](docs/open-questions.md) | open questions |
 | [docs/research/](docs/research/) | research notes, including the [first live endpoint check](docs/research/live-endpoint.md) |
 | [demo/](demo/) | the skeleton in one runnable file, plus a notebook |
@@ -400,9 +400,12 @@ both are enforced by tests
 
 ## Open
 
-The personal path is an OpenAI API key (ChatGPT login is confirmed blocked; the
-evidence is in [docs/research/auth.md](docs/research/auth.md)). The corporate
-Gateway's `responses` adapter is implemented and has contract tests, but **its
-real protocol behaviour is unverified** -- the entry gate for M3 is obtaining a
-tool-call streaming redaction fixture from the Gateway
-([OQ-6](docs/open-questions.md)).
+The personal path is an API key: OpenAI's, or Anthropic's for Claude over its
+native API (ChatGPT login is confirmed blocked; the evidence is in
+[docs/research/auth.md](docs/research/auth.md)). The corporate Gateway's
+`responses` adapter is implemented and has contract tests, but **its real
+protocol behaviour is unverified**, and nothing can be carried off the
+corporate machine to verify it anywhere else. So the entry gate for M3 is
+Foundry's own probe passing on that machine, and the probe is still to be
+built ([OQ-6](docs/open-questions.md), [D-198](docs/decision-log.md)). What
+is being worked on meanwhile is in [docs/roadmap.md](docs/roadmap.md).

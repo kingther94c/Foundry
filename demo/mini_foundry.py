@@ -103,7 +103,7 @@ class ModelTurn:
 # approval prompt at the user first, and only after they approve does anyone
 # discover the arguments were wrong all along.
 #
-# Real Foundry: core/tools/. Nine tools. read_file remembers a digest of what
+# Real Foundry: core/tools/. read_file remembers a digest of what
 # it read so "read before you edit" can be enforced, apply_patch uses anchored
 # search/replace and is atomic per file, run_command uses a Windows Job Object
 # so the whole child process tree can be killed.
@@ -375,11 +375,12 @@ class Session:
 #
 # Here a hard-coded script stands in for a real model, which buys: no API key,
 # deterministic results, the same run every time. The real Foundry's test
-# suite (1436 tests) runs on a machine with no network and no credentials for
+# suite runs on a machine with no network and no credentials for
 # exactly the same reason.
 #
-# Real Foundry: core/backends/. Two adapters, openai_compat (Chat Completions)
-# and responses, over an HTTP/SSE client written on the stdlib.
+# Real Foundry: core/backends/. Three adapters, openai_compat (Chat
+# Completions), responses and anthropic_messages, over an HTTP/SSE client
+# written on the stdlib.
 # ══════════════════════════════════════════════════════════════════════════
 
 def _call(cid: str, name: str, **args) -> ToolCall:

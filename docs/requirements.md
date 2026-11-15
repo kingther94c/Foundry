@@ -59,8 +59,8 @@ protocol adapter layers change.
   one. The runtime exposes only a **typed event stream + asynchronous approval
   requests and responses**; the terminal UI is merely the first subscriber.
   Headless mode (`foundry exec`, where every ASK is treated as DENY,
-  fail-closed) is therefore nearly free: it lands in V1 in M4 if there is
-  budget, and otherwise in V2 ([OQ-16](open-questions.md)).
+  fail-closed) was therefore nearly free, and is in V1
+  ([OQ-16](open-questions.md)).
 - **CLI surface (the V1 minimum)**:
   - `foundry` — open an interactive session in the current directory
   - `foundry login / logout` — credential management for the personal path
@@ -73,7 +73,9 @@ protocol adapter layers change.
   diff summary).
 - **Configuration**: TOML at `~/.foundry/config.toml`; named profiles (such as
   `personal` / `corporate`), each bundling backend + model + policy presets.
-  All layering and precedence is defined solely in §4.3.
+  All layering and precedence is defined solely in §4.3. Throughout this
+  document `~/.foundry/` stands for the Foundry folder: `%LOCALAPPDATA%\Foundry`,
+  or the folder `FOUNDRY_HOME` names.
 
 ## 2. Architectural components
 
@@ -82,7 +84,7 @@ the Foundry CLI (terminal UI, a subscriber to the event stream)
     │  Submission(op) ▼ / Event ▲       <- two queues; approval is an asynchronous event pair
 AgentRuntime (the one loop)
     ├── ContextManager     (new: the transcript->model-context projection, truncation, token accounting)
-    ├── ModelBackend       (protocol adapters: OpenAI-compatible / Responses / Replay / a local endpoint)
+    ├── ModelBackend       (protocol adapters: OpenAI-compatible / Responses / Anthropic Messages (D-032) / Replay / a local endpoint)
     │     └── AuthProvider (credential acquisition/storage/refresh; the token is visible only at the HTTP injection layer)
     ├── PolicyEngine       (the six-step pipeline, see §4.1)
     ├── SessionStore       (versioned JSONL, the single source of truth, deterministically replayable)
@@ -465,7 +467,13 @@ The V1 rules:
 Tool description text is a short paragraph plus one example (the SWE-agent ACI
 evidence: a concise, consolidated, guard-railed tool surface measurably scores
 higher). V1 froze at the first 9; `update_plan` (a visible plan), the first V2
-candidate, is the tenth ([D-037](decision-log.md)).
+candidate, is the tenth ([D-037](decision-log.md)). The tools that came after
+are described in their decisions rather than in this table: `view_image`
+([D-045](decision-log.md)), `repo_map` ([D-046](decision-log.md)), an MCP
+server's tools ([D-043](decision-log.md)), `load_skill`
+([D-113](decision-log.md)), `get_goal` and `update_goal`
+([D-127](decision-log.md)), `spawn_agent` ([D-141](decision-log.md)) and the
+memory tool ([D-145](decision-log.md)).
 
 ### 5.3 apply_patch ([D-010](decision-log.md): a model-neutral anchored format)
 
@@ -644,8 +652,9 @@ compensating control for a no-sandbox V1.
 - **The dependency budget ([D-014](decision-log.md); enumerated, and a new
   dependency needs a decision record)**:
   - Required at runtime: `rich` (terminal rendering, 4 pure-py wheels)
-  - Optional at runtime: `prompt_toolkit` (enhanced approval/input, 2 wheels
-    with wcwidth)
+  - Allowed for and never taken up: `prompt_toolkit` (enhanced approval/input,
+    2 wheels with wcwidth); the prompt reads lines
+    ([D-052](decision-log.md))
   - **Explicitly not used**: httpx/requests (~300 lines of our own on stdlib
     http.client + ssl, bought in exchange for zero-configuration use of the
     Windows system certificate store and 0 wheels), keyring (DPAPI through

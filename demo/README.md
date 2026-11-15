@@ -61,7 +61,7 @@ sentence.** If you get lost reading `src/foundry/`, come back to it and ask
 
 The model is hard-coded into a script (a real backend sends HTTP at that spot).
 That makes the results deterministic and free -- and **it is exactly why
-Foundry's 1436 tests can run on a machine with no network and no credentials**.
+Foundry's own suite can run on a machine with no network and no credentials**.
 
 | Command | What it shows |
 |---|---|
@@ -80,10 +80,10 @@ checking that evidence ourselves**.
 | Section in the demo | Real Foundry | What the real one adds |
 |---|---|---|
 | 1. IR | `core/conversation.py` | Usage accounting, capability negotiation. `arguments` is likewise **deliberately not parsed early** -- models emit broken JSON, and parsing early would make "report that this call was malformed" impossible |
-| 2. Tools | `core/tools/` | Nine tools. `read_file` keeps a digest so "read before you edit" can be enforced; `apply_patch` uses anchored search/replace and is **atomic per file**; `run_command` uses a Job Object so the whole child process tree can be killed, and filters the environment through an allowlist |
+| 2. Tools | `core/tools/` | The built-in tools, and what MCP servers, skills and sub-agents add. `read_file` keeps a digest so "read before you edit" can be enforced; `apply_patch` uses anchored search/replace and is **atomic per file**; `run_command` uses a Job Object so the whole child process tree can be killed, and filters the environment through an allowlist |
 | 3. Policy | `core/policy/` | The six-step pipeline plus the command segmenter. The breaker table has to cope with every spelling of the same command |
 | 4. Session | `core/session.py` | Content-addressed artifacts (large output never enters the conversation), credential redaction, and a degraded path so a failed ledger write cannot take the turn down |
-| 5. Backend | `core/backends/` | Two adapters, Chat Completions and Responses, over a stdlib HTTP/SSE client |
+| 5. Backend | `core/backends/` | Three adapters, Chat Completions, Responses and Anthropic Messages, over a stdlib HTTP/SSE client |
 | 6. Loop | `core/runtime.py` | Budget ceilings, cancellation, re-fetching expired credentials, an error taxonomy, context window management. The **shape is identical** |
 
 ## Three design choices worth understanding on their own

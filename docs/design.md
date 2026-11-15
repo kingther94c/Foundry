@@ -7,6 +7,8 @@
 > interfaces first, then implement them independently").
 > Borrowings are marked (codex) / (claude-code) / (gemini-cli) / (aider) /
 > (openhands) / (luban); the details are in [research/](research/).
+> Throughout, `~/.foundry/` stands for the Foundry folder:
+> `%LOCALAPPDATA%\Foundry`, or the folder `FOUNDRY_HOME` names.
 
 ## 1. Package structure
 
@@ -829,7 +831,7 @@ class ModelBackend(Protocol):
 | Credentials | DPAPI via ctypes | keyring: 6 wheels + a 2560-byte backend ceiling |
 | Process trees | Job Objects via ctypes | psutil: a C extension wheel + the PID snapshot approach loses orphans |
 | Rendering | rich (4 wheels) | textual: ~9 wheels + an app framework that is far too heavy |
-| Approval input | prompt_toolkit (optional, 2 wheels) | — |
+| Approval input | plain line input, a message at a time ([D-052](decision-log.md)) | prompt_toolkit (2 wheels): allowed for as optional by [D-014](decision-log.md) and never taken up -- a dependency the corporate machines may not install |
 | Validation | dataclasses + handwritten | pydantic: a platform binary wheel |
 | Build | hatchling (build machine only) | setuptools brings nothing extra |
 

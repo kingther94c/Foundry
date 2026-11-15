@@ -20,7 +20,7 @@ That disclosure is printed on first run and at the start of every session (the
 | Source | Trust level | Notes |
 |---|---|---|
 | the task the user types in the terminal | trusted | the only source of instructions |
-| user configuration under `~/.foundry/` | trusted | machine-local, written by the user themselves |
+| user configuration under `~/.foundry/` (the Foundry folder: `%LOCALAPPDATA%\Foundry`, or the folder `FOUNDRY_HOME` names) | trusted | machine-local, written by the user themselves |
 | managed policy (ProgramData, ACL-protected) | trusted and takes precedence | can only tighten |
 | **repository file contents** | **untrusted** | may contain injected instructions aimed at the model |
 | **tool output** (command stdout, git diff, read_file results) | **untrusted** | same as above |

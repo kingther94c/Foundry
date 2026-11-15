@@ -1,5 +1,10 @@
-"""The tool surface: the nine V1 tools, update_plan (D-037), view_image
-(D-045) and repo_map (D-046).
+"""The tools every session starts with: the nine V1 tools, update_plan
+(D-037), view_image (D-045) and repo_map (D-046).
+
+The others are registered where what they need is wired: get_goal and
+update_goal (tools/goal.py), load_skill (skills.py), an MCP server's tools
+and resources (mcp.py, mcp_resources.py), and from the CLI spawn_agent and
+the memory tool (cli/wiring.py).
 
 Kept deliberately small. SWE-agent's ablations found concise, guard-railed tools
 raise success rates more than additional tools do, and every tool is also a

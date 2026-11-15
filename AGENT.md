@@ -11,7 +11,7 @@ src/foundry/core/   the runtime: runtime.py (the one loop), policy/, tools/,
                     backends/, session.py, workspace.py, winapi.py
 src/foundry/cli/    the terminal UI: an event subscriber, the approval UI, report
 src/foundry/prompts/ versioned system prompts
-tests/              4658 tests; fixtures/ holds the golden-task sample repo
+tests/              the suite; fixtures/ holds the golden-task sample repo
 demo/               mini_foundry.py + the notebook: the architecture in one file
 run-foundry.py      run the CLI from this clone, no install (foundry.cmd wraps it)
 scripts/            build_wheelhouse.py; delta.py, which keeps DELTA.md;
@@ -96,3 +96,10 @@ Run the suite, and on a branch bring `DELTA.md` up to date. If you changed the d
 `tests/test_demo.py` and `tests/test_demo_notebook.py` are what check them, and
 if you changed the breaker table, `tests/test_prompt_matches_breaker.py` checks
 that the system prompt still tells the model the truth.
+
+`tests/test_docs_truth.py` holds the documents to the code. The size of the
+suite is quoted in one place, the status in [docs/roadmap.md](docs/roadmap.md),
+and a full run fails until that sentence says what the run collected: adding
+or removing a test means bringing it up to date. The roadmap must name the
+latest decision in [docs/decision-log.md](docs/decision-log.md), and no other
+document quotes a size for the suite.
