@@ -1,0 +1,42 @@
+{
+ "name": "s18-resp-mcp-http",
+ "protocol": "responses",
+ "repo": "sample",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"mcp__tracker__get_issue\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"read_mcp_resource\"\npattern = \"tracker *\"\ndecision = \"allow\"\n[mcp_servers.tracker]\nurl = \"http://127.0.0.1:{MCPPORT}/mcp\"\nbearer_token_env_var = \"TRACKER_TOKEN\"\n",
+ "env": {
+  "TRACKER_TOKEN": "{SECRET}"
+ },
+ "services": [
+  [
+   "{PYTHON}",
+   "{KIT}/tracker_mcp.py",
+   "{MCPPORT}",
+   "{SECRET}",
+   "{BASE}/tracker.jsonl"
+  ]
+ ],
+ "faults": {
+  "4": [
+   "stream_error"
+  ]
+ },
+ "runs": [
+  {
+   "args": [
+    "exec",
+    "--json",
+    "Work on ISSUE-7 from the tracker. Read the tracker's contributing guidelines first, and follow them."
+   ]
+  },
+  {
+   "args": [
+    "exec",
+    "--json",
+    "--ephemeral",
+    "Which issues does the tracker list as resources? Answer from the tracker only."
+   ]
+  }
+ ],
+ "check": "python -m pytest tests -q",
+ "top": "notify = [\"{PYTHON}\", \"{KIT}/notify_log.py\", \"{BASE}/notify.jsonl\"]\n"
+}

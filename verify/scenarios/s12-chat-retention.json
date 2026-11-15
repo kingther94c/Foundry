@@ -1,0 +1,20 @@
+{
+ "name": "s12-chat-retention",
+ "protocol": "openai_compat",
+ "repo": "sample",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n",
+ "runs": [
+  {"args": ["exec", "--json", "--trust", "The test suite fails. Find the cause, fix it, and verify the fix."]},
+  {"config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n[runtime]\nsession_retention_days = 30\n",
+   "age_sessions_hours": 960,
+   "args": ["exec", "--json", "--trust", "Without changing anything, say in two sentences what src/calc.py provides."]},
+  {"args": ["sessions"], "workspace": false},
+  {"args": ["prune", "--dry-run"], "workspace": false},
+  {"age_sessions_hours": 960, "args": ["prune", "--days", "30"], "workspace": false},
+  {"args": ["prune", "--dry-run", "--days", "30"], "workspace": false},
+  {"args": ["prune", "--force", "--days", "30"], "workspace": false},
+  {"args": ["sessions"], "workspace": false},
+  {"args": ["doctor"], "workspace": false}
+ ],
+ "check": "python -m pytest tests -q"
+}

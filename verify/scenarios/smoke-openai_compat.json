@@ -1,0 +1,1 @@
+{"name": "smoke-openai_compat", "protocol": "openai_compat", "repo": "sample", "backend": "", "faults": {"1": ["429", "drop"], "2": ["stream_error"]}, "runs": [{"args": ["exec", "--json", "--trust", "What does this project do? Read README.md, then finish."]}]}

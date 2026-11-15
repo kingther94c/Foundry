@@ -1,0 +1,13 @@
+{
+ "name": "s14-chat-repl-approvals",
+ "protocol": "openai_compat",
+ "repo": "sample",
+ "config": "",
+ "runs": [
+  {
+   "args": [],
+   "stdin": "The test suite fails. Find the cause, fix it, and verify the fix.\ns\ns\ns\ns\n/exit\n"
+  }
+ ],
+ "check": "python -m pytest tests -q"
+}

@@ -1,0 +1,15 @@
+{
+ "name": "s22-anth-cli",
+ "protocol": "anthropic_messages",
+ "repo": "sample",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n",
+ "runs": [
+  {"args": ["run", "The test suite fails. Find the cause, fix it, and verify the fix."]},
+  {"args": ["report"], "workspace": false},
+  {"args": ["undo", "--last", "--yes"]},
+  {"args": ["fork", "last", "Fix the failing test again if it fails, and also add a test that add() works with negative numbers."]},
+  {"args": ["policy", "check", "git push origin main"], "workspace": false},
+  {"args": ["features", "list"], "workspace": false}
+ ],
+ "check": "python -m pytest tests -q"
+}

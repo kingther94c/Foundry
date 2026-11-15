@@ -1,0 +1,37 @@
+{
+ "name": "s10-chat-memories",
+ "protocol": "openai_compat",
+ "repo": "sample",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n[features]\nmemories = true\n",
+ "runs": [
+  {
+   "args": [
+    "exec",
+    "--json",
+    "--trust",
+    "The test suite fails. Find the cause, fix it, and verify the fix."
+   ]
+  },
+  {
+   "args": [
+    "memories",
+    "update"
+   ],
+   "workspace": true,
+   "age_sessions_hours": 2
+  },
+  {
+   "args": [
+    "memories",
+    "show"
+   ]
+  },
+  {
+   "args": [
+    "exec",
+    "--json",
+    "Without reading or running anything, say what you know about this repository and its tests from earlier sessions, if anything."
+   ]
+  }
+ ]
+}

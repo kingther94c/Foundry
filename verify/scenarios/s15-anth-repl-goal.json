@@ -1,0 +1,13 @@
+{
+ "name": "s15-anth-repl-goal",
+ "protocol": "anthropic_messages",
+ "repo": "sample",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n",
+ "runs": [
+  {
+   "args": [],
+   "stdin": "!python -m pytest tests -q\nThe run above failed. What does @tests/test_calc.py check, in one sentence?\n/goal Make the test suite pass, then add a function `subtract(a, b)` to src/calc.py with a docstring and a test.\n/side Which files has this session changed so far?\n/recap\n/goal\n/exit\n"
+  }
+ ],
+ "check": "python -m pytest tests -q"
+}

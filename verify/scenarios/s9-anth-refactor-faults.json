@@ -1,0 +1,30 @@
+{
+ "name": "s9-anth-refactor-faults",
+ "protocol": "anthropic_messages",
+ "repo": "tools",
+ "backend": "effort = \"high\"\n",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n",
+ "faults": {
+  "2": [
+   "drop"
+  ],
+  "4": [
+   "overloaded",
+   "stream_error"
+  ],
+  "6": [
+   "429"
+  ]
+ },
+ "runs": [
+  {
+   "args": [
+    "exec",
+    "--json",
+    "--trust",
+    "Rename tools.finance.safe_div to safe_divide everywhere in this package, its callers and tests included, keeping safe_div as a deprecated alias of safe_divide for existing users. Run the tests."
+   ]
+  }
+ ],
+ "check": "python -m pytest tests -q -x"
+}

@@ -1,0 +1,14 @@
+{
+ "name": "s11-resp-mcp-server",
+ "protocol": "responses",
+ "repo": "sample",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n",
+ "faults": {"3": ["429"]},
+ "home_files": {
+  "calls.json": "[{\"name\": \"foundry\", \"arguments\": {\"prompt\": \"Fix the failing tests.\", \"config\": {\"runtime.session_retention_days\": 1}}}, {\"name\": \"foundry\", \"arguments\": {\"prompt\": \"Fix the failing tests.\", \"mode\": \"default\"}}, {\"name\": \"foundry\", \"arguments\": {\"prompt\": \"The test suite fails. Find the cause, fix it, and verify the fix.\", \"config\": {\"runtime.max_tool_rounds\": 40}}}, {\"name\": \"foundry-reply\", \"arguments\": {\"sessionId\": \"$last\", \"prompt\": \"Add a test that adds two negative numbers, and run the suite again.\"}}]"
+ },
+ "runs": [
+  {"argv": ["{PYTHON}", "{KIT}/mcp_client.py", "{REPO}", "{HOME}/calls.json"]}
+ ],
+ "check": "python -m pytest tests -q"
+}

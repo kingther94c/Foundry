@@ -1,0 +1,17 @@
+{
+ "name": "s13-anth-env-skills",
+ "protocol": "anthropic_messages",
+ "repo": "sample",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python *\"\ndecision = \"allow\"\n",
+ "env": {"PATH": ".;bin;{PATH}"},
+ "files": {
+  ".agents/skills/changelog/SKILL.md": "---\nname: changelog\ndescription: How this project records a change in CHANGELOG.md.\n---\n\nRecord every change in CHANGELOG.md, at the top of the `## Unreleased` section,\nin the form that template.md (beside this file) shows. One line per change.\n",
+  ".agents/skills/changelog/template.md": "## Unreleased\n\n- Fixed: <what was wrong, in a few words> (<the file>)\n",
+  "CHANGELOG.md": "# Changelog\n\n## Unreleased\n\n## 0.1.0\n\n- First release.\n",
+  "tools/envcheck.py": "\"\"\"Report the environment the tests see.\"\"\"\nimport os\n\nentries = os.environ.get(\"PATH\", \"\").split(os.pathsep)\nrelative = [e for e in entries if e and not os.path.isabs(e)]\nprint(f\"PATH entries: {len(entries)}; not absolute: {relative}\")\nfor name, value in sorted(os.environ.items()):\n    if value.startswith(\"relay-canary\"):\n        print(f\"credential visible: {name}={value}\")\n    if any(word in name.upper() for word in (\"TOKEN\", \"SECRET\", \"PASSWORD\", \"API_KEY\")):\n        print(f\"credential-shaped variable: {name}\")\nprint(\"FOUNDRY_HOME set:\", \"FOUNDRY_HOME\" in os.environ)\n"
+ },
+ "runs": [
+  {"args": ["exec", "--json", "--trust", "First run `python tools/envcheck.py` and quote its output in your summary. Then: the test suite fails; find the cause, fix it, verify the fix, and record the change as $changelog says."]}
+ ],
+ "check": "python -m pytest tests -q"
+}

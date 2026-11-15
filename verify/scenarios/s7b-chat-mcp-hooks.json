@@ -1,0 +1,21 @@
+{
+ "name": "s7b-chat-mcp-hooks",
+ "protocol": "openai_compat",
+ "repo": "sample",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"apply_patch\"\npattern = \"CHANGES.md\"\ndecision = \"allow\"\n[mcp_servers.fake]\ncommand = \"python\"\nargs = [\"{FOUNDRY}/tests/mcp_fake_server.py\"]\nread_only = true\n[[permissions]]\ntool = \"mcp__fake__add_numbers\"\npattern = \"*\"\ndecision = \"allow\"\n",
+ "home_files": {
+  "hooks.json": "{\"hooks\": {\"PostToolUse\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"python {HOME}/post.py\"}]}], \"Stop\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"python {HOME}/stop.py\"}]}]}}",
+  "post.py": "import json, sys\nevent = json.load(sys.stdin)\nwith open(r'{BASE}/hooklog.txt', 'a', encoding='utf-8') as fh:\n    fh.write(event.get('hook_event_name', '?') + ' ' + str(event.get('tool_name')) + chr(10))\n",
+  "stop.py": "import json, sys, pathlib\nevent = json.load(sys.stdin)\nwith open(r'{BASE}/hooklog.txt', 'a', encoding='utf-8') as fh:\n    fh.write('Stop' + chr(10))\nchanges = pathlib.Path('CHANGES.md')\nif not changes.is_file() or 'add' not in changes.read_text(encoding='utf-8').lower():\n    sys.stderr.write('Before you finish, add a line to CHANGES.md saying what you fixed.')\n    sys.exit(2)\n"
+ },
+ "runs": [
+  {
+   "args": [
+    "exec",
+    "--json",
+    "First use the fake MCP server's tool to add 19 and 23, and say the sum. Then fix the failing test in this repository and verify the fix."
+   ]
+  }
+ ],
+ "check": "python -m pytest tests -q"
+}

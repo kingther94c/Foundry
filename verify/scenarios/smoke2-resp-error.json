@@ -1,0 +1,1 @@
+{"name": "smoke2-resp-error", "protocol": "responses", "repo": "sample", "faults": {"1": ["stream_error"]}, "runs": [{"args": ["exec", "--json", "--trust", "What does this project do? Read README.md, then finish."]}]}

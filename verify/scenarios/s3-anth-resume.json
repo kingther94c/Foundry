@@ -1,0 +1,28 @@
+{
+ "name": "s3-anth-resume",
+ "protocol": "anthropic_messages",
+ "repo": "sample",
+ "backend": "effort = \"medium\"\n",
+ "runs": [
+  {
+   "args": [
+    "exec",
+    "--json",
+    "--trust",
+    "The test suite fails. Find the cause, fix it, and verify the fix."
+   ],
+   "config": "[runtime]\nmax_tool_calls = 2\n[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n"
+  },
+  {
+   "args": [
+    "exec",
+    "resume",
+    "--last",
+    "--json",
+    "--trust"
+   ],
+   "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n"
+  }
+ ],
+ "check": "python -m pytest tests -q"
+}

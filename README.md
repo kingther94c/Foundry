@@ -377,6 +377,7 @@ src/foundry/core/     runtime (the one loop), policy, tools, backends, session, 
 src/foundry/cli/      the terminal UI: event subscriber + approval UI + report
 src/foundry/prompts/  versioned system prompts
 tests/                the suite: golden scenarios, attack tables, breaker-table invariants
+verify/               whole tasks through the CLI, against a relay or a real endpoint; probes; the mutation check
 ```
 
 `foundry.core` imports neither `foundry.cli` nor any third-party package --
@@ -395,6 +396,7 @@ both are enforced by tests
 | [docs/open-questions.md](docs/open-questions.md) | open questions |
 | [docs/research/](docs/research/) | research notes, including the [first live endpoint check](docs/research/live-endpoint.md) |
 | [demo/](demo/) | the skeleton in one runnable file, plus a notebook |
+| [verify/](verify/README.md) | how Foundry is checked from outside: the relay, the scenarios, the probes, the mutation check |
 | [AGENT.md](AGENT.md) | how to work in this repository |
 | [DELTA.md](DELTA.md) | how the current branch differs from main (on main, an empty template) |
 

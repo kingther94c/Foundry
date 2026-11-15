@@ -817,11 +817,18 @@ class ModelBackend(Protocol):
    in no sink, destructive git commands were called zero times.
 5. **E2E smoke**: a local OpenAI-compatible endpoint (free) -> a personal API
    key (sparingly) -> the corporate Gateway (when available).
-4. **A failure telemetry loop** (the aider practice): an offline report script
+6. **A failure telemetry loop** (the aider practice): an offline report script
    reads the session JSONL for patch first-try success rate, failure
    categories, and rounds/tokens per task -- decisions like "add a repo map /
    turn on fuzzy matching / downgrade some backend to whole-file" are then
    driven by numbers.
+7. **Whole tasks, from outside** ([D-199](decision-log.md)): `verify/` runs
+   Foundry through its command line, in a fresh home, against a relay that
+   speaks the three protocols. The relay is answered by an agent that plays
+   the model and sees only what Foundry sent, or by a script (the smoke
+   scenarios CI runs); or there is no relay and the endpoint is real, which a
+   person starts by hand. Probe projects are judged by tests Foundry never
+   sees, and every change's tests go through `verify/mutate.py`.
 
 ## 11. Dependency decision table
 

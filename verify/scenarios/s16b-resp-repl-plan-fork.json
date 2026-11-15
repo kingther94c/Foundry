@@ -1,0 +1,13 @@
+{
+ "name": "s16b-resp-repl-plan-fork",
+ "protocol": "responses",
+ "repo": "sample",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n",
+ "runs": [
+  {
+   "args": [],
+   "stdin": "/mode plan\nAdd a `divide(a, b)` function to src/calc.py that raises ZeroDivisionError with the message \"cannot divide by zero\" when b is 0, with tests; fix anything that already fails.\n/approve\ny\n/diff\n/fork\nIn this copy, also add `power(a, b)` with a test.\n/undo\n/rewind 1\n/status\n/exit\n"
+  }
+ ],
+ "check": "python -m pytest tests -q"
+}

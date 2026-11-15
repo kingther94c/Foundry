@@ -1,0 +1,14 @@
+{
+ "name": "s20-chat-repl-init",
+ "protocol": "openai_compat",
+ "repo": "sample",
+ "remove": ["FOUNDRY.md"],
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n",
+ "runs": [
+  {
+   "args": [],
+   "stdin": "/init\n/model relay-model-2\n/effort high\nFix the failing test, then add a `subtract(a, b)` function to src/calc.py with a docstring and a test.\n/review\n/btw In one sentence: did the review find anything that needs fixing?\n/plan\n/rename subtract-work\n/export notes.md\n/new\n/resume subtract-work\nIn one sentence: what did this session change?\n/status\n/exit\n"
+  }
+ ],
+ "check": "python -m pytest tests -q"
+}

@@ -12,6 +12,8 @@ src/foundry/core/   the runtime: runtime.py (the one loop), policy/, tools/,
 src/foundry/cli/    the terminal UI: an event subscriber, the approval UI, report
 src/foundry/prompts/ versioned system prompts
 tests/              the suite; fixtures/ holds the golden-task sample repo
+verify/             whole tasks run through the CLI against a relay or a real
+                    endpoint; the probes; mutate.py (verify/README.md)
 demo/               mini_foundry.py + the notebook: the architecture in one file
 run-foundry.py      run the CLI from this clone, no install (foundry.cmd wraps it)
 scripts/            build_wheelhouse.py; delta.py, which keeps DELTA.md;
@@ -46,8 +48,9 @@ in, uninstall the editable copy.
 CI runs every suite with `python -X warn_default_encoding -m pytest`, once
 installed editable and once from the clone with only the dependencies
 installed, and builds the wheelhouse (`python scripts/build_wheelhouse.py`) to
-prove the offline `--no-index` install still works. Every job is Windows-only
-by design.
+prove the offline `--no-index` install still works. A last job takes Foundry
+through a task on each protocol against `verify/`'s relay. Every job is
+Windows-only by design.
 
 ## Conventions
 
@@ -103,3 +106,12 @@ and a full run fails until that sentence says what the run collected: adding
 or removing a test means bringing it up to date. The roadmap must name the
 latest decision in [docs/decision-log.md](docs/decision-log.md), and no other
 document quotes a size for the suite.
+
+`verify/` checks Foundry from outside ([verify/README.md](verify/README.md)).
+A change's tests go through its mutation check, `python verify/mutate.py
+MUTATIONS.json tests/test_<feature>.py`: a mutation that survives is something
+no test checks. `python verify/run.py --auto` with the three `smoke-*`
+scenarios is what CI runs, and takes a minute. Anything there that talks to a
+real endpoint (`--live`, `--live-chat`, `live_batch.py`, `probes/run_auto.py`)
+spends money on someone's key: a person starts it, in their own terminal. An
+agent does not, and does not read the stored key to make it possible.

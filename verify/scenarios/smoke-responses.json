@@ -1,0 +1,4 @@
+{"name": "smoke-responses", "protocol": "responses", "repo": "sample",
+ "backend": "reasoning_summary = \"auto\"\n",
+ "faults": {"1": ["429", "drop"], "2": ["stream_error"]},
+ "runs": [{"args": ["exec", "--json", "--trust", "What does this project do? Read README.md, then finish."]}]}

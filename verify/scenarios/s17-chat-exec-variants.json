@@ -1,0 +1,50 @@
+{
+ "name": "s17-chat-exec-variants",
+ "protocol": "openai_compat",
+ "repo": "sample",
+ "backend": "review_model = \"relay-review-model\"\n",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n[runtime]\ndeveloper_instructions = \"Before you finish, say how many tests passed in the last run of the suite.\"\ncompact_prompt = \"Summarise for a colleague taking over: what was asked, which files and functions changed, what was verified and how, and what is left to do.\"\nauto_compact_token_limit = 6000\n",
+ "runs": [
+  {
+   "args": [
+    "exec",
+    "--json",
+    "--ephemeral",
+    "In two sentences: what does this repository contain, and what is wrong with it?"
+   ]
+  },
+  {
+   "args": [
+    "exec",
+    "--json",
+    "The test suite fails. Find the cause, fix it, and verify the fix."
+   ]
+  },
+  {
+   "args": [
+    "exec",
+    "--json",
+    "--resume",
+    "last",
+    "Add a test that adds two negative numbers, and run the suite again."
+   ]
+  },
+  {
+   "args": [
+    "exec",
+    "--json",
+    "--fork",
+    "last",
+    "Also add a `subtract(a, b)` function with a docstring and a test."
+   ]
+  },
+  {
+   "args": [
+    "review",
+    "--json",
+    "--uncommitted"
+   ]
+  }
+ ],
+ "check": "python -m pytest tests -q"
+}

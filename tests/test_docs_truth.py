@@ -49,7 +49,7 @@ def _present_documents() -> list[Path]:
     """What describes Foundry as it is, as against what records a day."""
     demo = ROOT / "demo"
     return [
-        README, ROOT / "AGENT.md",
+        README, ROOT / "AGENT.md", ROOT / "verify" / "README.md",
         *sorted(p for p in DOCS.glob("*.md") if p.name not in DATED),
         *sorted(demo.glob("*.md")), *sorted(demo.glob("*.py")),
         *sorted(demo.glob("*.ipynb")),
@@ -58,7 +58,7 @@ def _present_documents() -> list[Path]:
 
 def _linked_documents() -> list[Path]:
     """Every Markdown document a reader follows links in."""
-    return [README, ROOT / "AGENT.md", ROOT / "DELTA.md",
+    return [README, ROOT / "AGENT.md", ROOT / "DELTA.md", ROOT / "verify" / "README.md",
             *sorted(DOCS.rglob("*.md")), *sorted((ROOT / "demo").glob("*.md"))]
 
 

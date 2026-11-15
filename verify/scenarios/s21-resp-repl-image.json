@@ -1,0 +1,18 @@
+{
+ "name": "s21-resp-repl-image",
+ "protocol": "responses",
+ "repo": "sample",
+ "files_b64": {"red.png": "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGP4z8AARwzEcQCukw/x0F8jngAAAABJRU5ErkJggg=="},
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n",
+ "home_files": {
+  "hooks.json": "{\"hooks\": {\"PostToolUse\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"python {HOME}/post.py\"}]}]}}",
+  "post.py": "import json, sys\nevent = json.load(sys.stdin)\nwith open(r'{BASE}/hooklog.txt', 'a', encoding='utf-8') as fh:\n    fh.write(event.get('hook_event_name', '?') + ' ' + str(event.get('tool_name')) + chr(10))\n"
+ },
+ "runs": [
+  {
+   "args": [],
+   "stdin": "/title\n/image red.png\nWhat colour is this image? Answer in a few words.\n/hooks\n/memories\nThe test suite fails. Find the cause, fix it, and verify the fix.\n/warnings\n/rollout\n/archive\n"
+  }
+ ],
+ "check": "python -m pytest tests -q"
+}

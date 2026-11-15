@@ -1,0 +1,13 @@
+{
+ "name": "s19-anth-repl-compact",
+ "protocol": "anthropic_messages",
+ "repo": "sample",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n[runtime]\ndeveloper_instructions = \"Before you finish, say how many tests passed in the last run of the suite.\"\ncompact_prompt = \"Summarise for a colleague taking over: what was asked, which files and functions changed, what was verified and how, and what is left to do.\"\nauto_compact_token_limit = 7000\n",
+ "runs": [
+  {
+   "args": [],
+   "stdin": "The test suite fails. Find the cause, fix it, and verify the fix.\n/compact\nNow add a `subtract(a, b)` function with a docstring and a test, and a `divide(a, b)` that raises ZeroDivisionError with the message \"cannot divide by zero\", with tests.\n/status\n/exit\n"
+  }
+ ],
+ "check": "python -m pytest tests -q"
+}

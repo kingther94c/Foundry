@@ -1,0 +1,17 @@
+{
+ "name": "s4-chat-compact",
+ "protocol": "openai_compat",
+ "repo": "tools",
+ "backend": "max_context_tokens = 24000\n",
+ "config": "[runtime]\nauto_compact_token_limit = 12000\n",
+ "runs": [
+  {
+   "args": [
+    "exec",
+    "--json",
+    "--trust",
+    "Write a short guide to this package: for each module under tools/, what it is for and each public function in one line. Read the modules themselves rather than guessing, and put the guide in your final report."
+   ]
+  }
+ ]
+}

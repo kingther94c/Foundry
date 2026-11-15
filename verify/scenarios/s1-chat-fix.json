@@ -1,0 +1,17 @@
+{
+ "name": "s1-chat-fix",
+ "protocol": "openai_compat",
+ "repo": "sample",
+ "config": "[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n",
+ "runs": [
+  {
+   "args": [
+    "exec",
+    "--json",
+    "--trust",
+    "The test suite fails. Find the cause, fix it, and verify the fix."
+   ]
+  }
+ ],
+ "check": "python -m pytest tests -q"
+}

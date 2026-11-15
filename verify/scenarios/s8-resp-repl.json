@@ -1,0 +1,14 @@
+{
+ "name": "s8-resp-repl",
+ "protocol": "responses",
+ "repo": "sample",
+ "backend": "reasoning_summary = \"auto\"\n",
+ "config": "[runtime]\nmode = \"accept_edits\"\n[[permissions]]\ntool = \"apply_patch\"\npattern = \"*\"\ndecision = \"allow\"\n[[permissions]]\ntool = \"run_command\"\npattern = \"python -m pytest*\"\ndecision = \"allow\"\n",
+ "runs": [
+  {
+   "args": [],
+   "stdin": "Fix the failing test and verify the fix.\n/diff\n/compact\nAdd a one-line usage example to the docstring of multiply in src/calc.py.\n/undo\ny\n/status\n/exit\n"
+  }
+ ],
+ "check": "python -m pytest tests -q"
+}

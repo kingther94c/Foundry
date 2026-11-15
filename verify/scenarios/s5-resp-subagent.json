@@ -1,0 +1,21 @@
+{
+ "name": "s5-resp-subagent",
+ "protocol": "responses",
+ "repo": "tools",
+ "backend": "reasoning_summary = \"auto\"\n",
+ "home_files": {
+  "schema.json": "{\"type\": \"object\", \"properties\": {\"functions\": {\"type\": \"array\", \"items\": {\"type\": \"string\"}}, \"count\": {\"type\": \"integer\"}}, \"required\": [\"functions\", \"count\"], \"additionalProperties\": false}"
+ },
+ "runs": [
+  {
+   "args": [
+    "exec",
+    "--json",
+    "--trust",
+    "--output-schema",
+    "{HOME}/schema.json",
+    "Use a sub-agent to find every public function defined in tools/dates.py, then report their names and how many there are."
+   ]
+  }
+ ]
+}
