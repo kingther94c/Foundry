@@ -23,9 +23,9 @@
 | Auto mode on small projects | **done** | 2026-11-13, D-188 to D-191: six projects aimed at editing unattended; `exec` now patches by default |
 | Learning from other agents | **done** | 2026-11-13, D-192 to D-196: the prompt's working rules, edit-time syntax check, repeated-failure note and patch readings, each taken from codex, opencode, Cline, OpenHands, SWE-agent, aider or Anthropic's guidance; D-197, opencode's last turn when a budget runs out |
 | P5, Foundry at work | **paused** | ResearchOS v32 built on the real API ([D-187](decision-log.md)); stopped at the user's word on 2026-11-13; it resumes when they say so |
-| After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden). Landed: the plan and the documents held to the code (D-198), the verification kit under `verify/` (D-199), the OpenAI-family adapters reading a real gateway's shapes ([D-200](decision-log.md)) |
+| After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden). Landed: the plan and the documents held to the code (D-198), the verification kit under `verify/` (D-199), the OpenAI-family adapters reading a real gateway's shapes (D-200), three versions of ResearchOS rebuilt from history as probes ([D-201](decision-log.md)) |
 
-The suite collects 5,183 tests, which run green on a machine with no network
+The suite collects 5,189 tests, which run green on a machine with no network
 and no credentials. This is the one place that figure is quoted, and
 `tests/test_docs_truth.py` holds it to what a full run collects. From D-036 to
 D-181 every feature was verified only against scripted backends: the local
@@ -537,7 +537,8 @@ like a credential.
   read the shapes a real gateway sent ([D-200](decision-log.md)); a harder
   set of probes -- past
   versions of `tools/` and ResearchOS rebuilt from the tree before them and
-  judged by the hidden tests of their day, a refactor across files, a task
+  judged by the hidden tests of their day ([D-201](decision-log.md), three
+  so far), a refactor across files, a task
   that outlives two compactions, one that presses on the output ceiling,
   visible tests that pass where hidden ones do not, a suite with failures
   that are not the task's -- with a baseline of several runs each; the

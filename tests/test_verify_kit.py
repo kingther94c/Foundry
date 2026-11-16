@@ -776,3 +776,50 @@ def test_the_probe_runner_stops_at_its_budget_and_counts_what_passed(
     results = json.loads((tmp_path / "out" / "once" / "results.json").read_text(encoding="utf-8"))
     assert (results["runs"], results["passed"]) == (2, 1)
     assert "1 of 2 passed their hidden tests" in capsys.readouterr().out
+
+
+def test_the_probe_runner_lays_a_projects_beside_next_to_the_workspace(scripts, tmp_path):
+    """The third set's ResearchOS finds `tools` at ../tools (D-201): next to
+    the workspace, and so next to the copy the hidden tests judge."""
+    runner = scripts("probes/run_auto")
+    src = tmp_path / "project"
+    (src / "repo" / "tests").mkdir(parents=True)
+    (src / "repo" / "pyproject.toml").write_text("x", encoding="utf-8")
+    (src / "beside" / "tools" / "tools").mkdir(parents=True)
+    (src / "beside" / "tools" / "tools" / "__init__.py").write_text("", encoding="utf-8")
+
+    ws = runner.lay_out(src, tmp_path / "run" / "r-v30")
+
+    assert ws == tmp_path / "run" / "r-v30" / "ws"
+    assert (ws / "pyproject.toml").is_file() and not (ws / "tools").exists()
+    assert (ws.parent / "tools" / "tools" / "__init__.py").is_file()
+    plain = tmp_path / "plain"
+    (plain / "repo").mkdir(parents=True)
+    assert sorted(p.name for p in runner.lay_out(plain, tmp_path / "run2").parent.iterdir()) \
+        == ["ws"]
+
+
+def test_the_probe_runner_skips_a_project_whose_requirements_are_missing(
+        scripts, monkeypatch, tmp_path, capsys):
+    runner = scripts("probes/run_auto")
+    for name, needs in (("a", "json\n"), ("b", "json\nno_such_module_for_this_test\n"), ("c", None)):
+        (tmp_path / "projects" / name).mkdir(parents=True)
+        if needs:
+            (tmp_path / "projects" / name / "requires.txt").write_text(needs, encoding="utf-8")
+    ran = []
+
+    def one(src, out, model, mode, key):
+        ran.append(src.name)
+        return {"status": "completed", "hidden_exit": 0, "tool_calls": 1, "rejected": [],
+                "patch_failures": [], "compactions": 0, "estimated_usd": 0.1, "key_files": []}
+
+    monkeypatch.setattr(runner, "one", one)
+    monkeypatch.setattr(runner.live, "obtain", lambda: "a-key-for-this-test")
+
+    assert runner.missing(tmp_path / "projects" / "b") == ["no_such_module_for_this_test"]
+    assert runner.main(["needs", "--projects", str(tmp_path / "projects"),
+                        "--out", str(tmp_path / "out")]) == 0
+
+    assert ran == ["a", "c"]
+    assert ("skipped: it needs no_such_module_for_this_test, which is not installed "
+            "(pip install no_such_module_for_this_test)") in capsys.readouterr().out

@@ -5,8 +5,11 @@
                                      [--projects DIR] [--out DIR]
 
 Each project (written by make_projects_b.py, and made here when they are
-missing) is copied to OUT/RUN/NAME/ws and given a fresh home whose only
-command rules are the project's allow.txt. It is run once with `foundry exec
+missing; or by make_projects_c.py, named with --projects) is copied to
+OUT/RUN/NAME/ws and given a fresh home whose only command rules are the
+project's allow.txt. What its beside/ holds goes next to ws -- the third
+set's ResearchOS finds `tools` at ../tools -- and a project whose
+requires.txt names a module that is not installed is skipped. It is run once with `foundry exec
 --json`: nobody is asked anything, and what no rule allows is refused. Then
 the project's hidden tests, which Foundry never saw, run on a copy of what it
 left. --repeat runs each project that many times (NAME.1, NAME.2, ...): one
@@ -23,6 +26,7 @@ This spends money on your account. Run it yourself, in your own terminal.
 """
 
 import argparse
+import importlib.util
 import json
 import os
 import shutil
@@ -46,12 +50,28 @@ def git(ws, *args):
                           text=True, encoding="utf-8", errors="replace").stdout
 
 
-def one(src, out, model, mode, key):
-    """Run the project at ``src`` in the new folder ``out``; its summary."""
-    name = src.name
+def missing(src):
+    """The modules the project at ``src`` needs that are not installed."""
+    wanted = src / "requires.txt"
+    names = wanted.read_text(encoding="utf-8").split() if wanted.is_file() else []
+    return [name for name in names if importlib.util.find_spec(name) is None]
+
+
+def lay_out(src, out):
+    """The project's scaffold copied to ``out``/ws, and its beside/ next to it."""
     out.mkdir(parents=True)
     ws = out / "ws"
     shutil.copytree(src / "repo", ws)
+    beside = src / "beside"
+    for item in sorted(beside.iterdir()) if beside.is_dir() else []:
+        shutil.copytree(item, out / item.name)
+    return ws
+
+
+def one(src, out, model, mode, key):
+    """Run the project at ``src`` in the new folder ``out``; its summary."""
+    name = src.name
+    ws = lay_out(src, out)
     git(ws, "init", "-q", "-b", "main")
     git(ws, "config", "core.autocrlf", "false")
     git(ws, "add", "-A")
@@ -159,6 +179,11 @@ def main(argv=None):
                   f"${args.budget:.2f}", flush=True)
             break
         print(f"{time.strftime('%H:%M:%S')} {label} ...", flush=True)
+        needs = missing(args.projects / name)
+        if needs:
+            print(f"   skipped: it needs {', '.join(needs)}, which is not installed "
+                  f"(pip install {' '.join(needs)})", flush=True)
+            continue
         try:
             s = one(args.projects / name, run_dir / label, args.model, args.mode, key)
         except Exception as exc:              # one project's failure does not stop the rest

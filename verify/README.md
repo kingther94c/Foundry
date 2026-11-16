@@ -21,7 +21,7 @@ suite, and CI runs the smoke scenarios (the `verify-smoke` job).
 | `live.py` | what a run against a real endpoint needs: where the key comes from, and what the run cost |
 | `live_batch.py` | a set of scenarios against a real endpoint, one after another |
 | `show.py` | what each scenario of a live batch did |
-| `probes/` | small projects that each aim at one thing an unattended run must do, with tests Foundry never sees |
+| `probes/` | small projects that each aim at one thing an unattended run must do, and versions of ResearchOS rebuilt from history, all with tests Foundry never sees |
 | `mutate.py` | the mutation check every change's tests go through |
 | `mcp_client.py`, `tracker_mcp.py`, `notify_log.py` | what some scenarios start beside Foundry: an MCP client, an MCP server over HTTP, a notify program |
 | `audit_agent.py` | lists the tool calls of the agent that played the model, from its transcript |
@@ -106,6 +106,26 @@ nobody can clarify, a project whose plain `pytest` cannot run).
 and pass on a reference fix, and exits 1 if either is not so. All eleven cost
 about US$0.79 on claude-sonnet-5-5 ([D-192](../docs/decision-log.md)).
 
+```bash
+python verify/probes/make_projects_c.py verify/probes/projects-c
+```
+
+```bash
+python verify/probes/run_auto.py replay --projects verify/probes/projects-c --model claude-haiku-5-5 --repeat 3 --budget 3
+```
+
+The third set is rebuilt from this repository's history
+([D-201](../docs/decision-log.md)): three versions of ResearchOS that Foundry
+built -- v24, v30 and v32 -- each the tree before it with its SPEC section
+appended, `tools` beside it, and the acceptance suite that judged it hidden.
+The rounds and cost each took then are in
+[foundry-acceptance.md](../docs/foundry-acceptance.md). It needs a clone
+with that history, and the Anthropic SDK installed, since one of
+ResearchOS's own tests imports it: `run_auto.py` skips a project whose
+`requires.txt` names a module that is not there. `check_c.py` shows that
+each suite fails on the tree before the version and passes on the tree it
+landed in.
+
 A change is compared with what came before it by running the same projects
 on both: `VERIFY_FOUNDRY` names another checkout -- a `git archive` of the
 commit before -- whose `src/` is run instead of this one's.
@@ -123,7 +143,7 @@ file is put back byte for byte.
 
 ## What is never committed
 
-Run output, logs, results, generated projects: `verify/out/` and
-`verify/probes/projects/` are ignored. Nothing recorded from a real endpoint
+Run output, logs, results, generated projects: `verify/out/`,
+`verify/probes/projects/` and `verify/probes/projects-c/` are ignored. Nothing recorded from a real endpoint
 goes into the repository unless it has been read through first for anything
 shaped like a credential, and `tests/test_verify_kit.py` looks again.
