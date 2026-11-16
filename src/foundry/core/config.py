@@ -813,6 +813,12 @@ def _add_hooks_file(config: Config, path: Path, layer: str) -> None:
         config.record("hooks", len(config.hooks), layer)
 
 
+def managed_policy_path() -> Path:
+    """The machine's policy, which a user's or a repository's settings
+    cannot loosen."""
+    return Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")) / "Foundry" / "policy.toml"
+
+
 def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | None = None,
                 home: Path | None = None, profile: str | None = None,
                 settings: dict[str, dict[str, Any]] | None = None,
@@ -824,7 +830,7 @@ def load_config(workspace: Path | None = None, *, overrides: dict[str, Any] | No
     config = Config()
     root = home or user_dir()
 
-    managed = Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")) / "Foundry" / "policy.toml"
+    managed = managed_policy_path()
     if managed.is_file():
         _apply(config, _load_toml(managed), "managed",
                connection_allowed=True, allow_rules_permitted=True)

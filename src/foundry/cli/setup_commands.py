@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.parse
 from pathlib import Path
 
 from rich.console import Console
@@ -27,7 +28,7 @@ from foundry.cli.wiring import (
     make_backend,
 )
 from foundry.core.auth import CredentialVault
-from foundry.core.config import load_config, user_dir
+from foundry.core.config import Config, load_config, managed_policy_path, user_dir
 from foundry.core.config_edit import set_feature
 from foundry.core.features import ALIASES as FEATURE_ALIASES
 from foundry.core.features import FEATURES, refusal
@@ -39,7 +40,7 @@ from foundry.core.memories import notes as memory_notes
 from foundry.core.memories import summary as memory_summary
 from foundry.core.errors import ConfigError, FoundryError
 from foundry.core.events import EXIT_CODES, TerminalStatus
-from foundry.core.policy.engine import PolicyEngine, Verdict, builtin_rules
+from foundry.core.policy.engine import Layer, PolicyEngine, Verdict, builtin_rules
 from foundry.core.redaction import default_redactor
 from foundry.core.tools.command import RunCommand
 from foundry.core.winapi import IS_WINDOWS
@@ -221,6 +222,38 @@ def cmd_policy(args: argparse.Namespace) -> int:
     return 0
 
 
+def _credential_line(config: Config, home: Path) -> tuple[str, bool]:
+    """Where the credential a session would send comes from, and whether
+    there is one -- its source and the variable's name, never the value."""
+    source = _credential_source(config, CredentialVault(home / "auth.json"))
+    env_var = source.env_var
+    if os.environ.get(env_var):
+        named = " (backend.env_key)" if config.backend.env_key else ""
+        return f"credential  from the variable {env_var}{named}", True
+    if config.backend.env_key:
+        return (f"credential  none: {env_var}, which backend.env_key names, is not set; "
+                "foundry login stores nothing for this backend"), False
+    field = getattr(source, "vault_field", None) or "token"
+    stored = source.vault.load() or {}
+    if stored.get(field):
+        return f"credential  stored by foundry login ({field}, in {home / 'auth.json'})", True
+    return f"credential  none: set {env_var} or run foundry login", False
+
+
+def _shown_proxy(proxy: str) -> tuple[str, bool]:
+    """A proxy's address without its user name and password, and whether it
+    had them."""
+    parts = urllib.parse.urlsplit(proxy)
+    if parts.username is None and parts.password is None:
+        return proxy, False
+    host = parts.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    netloc = host + (f":{parts.port}" if parts.port else "")
+    return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, parts.query,
+                                    parts.fragment)), True
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     console = Console()
     ok = True
@@ -277,15 +310,18 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             pass
 
     home = user_dir()
-    console.print(f"home    {home}")
-    console.print(f"auth    {'present' if (home / 'auth.json').is_file() else 'not signed in'}")
+    console.print(f"home    {home}", soft_wrap=True)
+    # The folder a session would work in: its repository's settings are a
+    # layer of the configuration, and one that cannot be read stops a session.
+    workspace = Path(getattr(args, "workspace", None) or ".").resolve()
+    config = None
 
     # The things build() hard-fails on. Reporting green while every session dies
     # immediately is worse than not having the command. There are three, not two:
     # an unrecognised protocol also stops build() dead, and doctor used to print
     # a healthy-looking config line for one.
     try:
-        config = load_config(home=home)
+        config = load_config(workspace, home=home)
         console.print(f"config  {config.backend.model} via {config.backend.base_url} "
                       f"(mode {config.mode.value}, {len(config.rules)} permission rules)")
         if config.backend.protocol not in _PROTOCOLS:
@@ -301,20 +337,51 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                                       f"kept {days} day(s) after their last write")
                       + " (session_retention_days)")
     except FoundryError as exc:
-        console.print(f"[red]config  {exc}[/red]")
+        console.print(f"[red]config  {escape(str(exc))}[/red]", soft_wrap=True)
+        config = None
         ok = False
+
+    if config is not None:
+        line, present = _credential_line(config, home)
+        # The auth file alone said "present" for a key the backend never
+        # reads, and "not signed in" beside a key in the variable it does.
+        console.print(escape(line) if present else f"[red]{escape(line)}[/red]",
+                      soft_wrap=True)
+        ok = ok and present
+        managed = managed_policy_path()
+        if managed.is_file():
+            rules = sum(1 for rule in config.rules if rule.layer is Layer.MANAGED)
+            console.print(f"policy  {escape(str(managed))}: {rules} permission rule(s) "
+                          "from the machine",
+                          soft_wrap=True)
+        else:
+            console.print(f"policy  none on this machine ({escape(str(managed))})",
+                          soft_wrap=True)
 
     from foundry.core.tools.git import is_git_repository
 
-    cwd = Path.cwd()
-    if is_git_repository(cwd):
-        console.print(f"repo    {cwd}")
+    if is_git_repository(workspace):
+        console.print(f"repo    {escape(str(workspace))}", soft_wrap=True)
     else:
-        console.print(f"[yellow]repo    {cwd} is not a Git repository; "
-                      "a session here would refuse to start[/yellow]")
+        console.print(f"[red]repo    {escape(str(workspace))} is not a Git repository; "
+                      "a session here would refuse to start[/red]", soft_wrap=True)
+        ok = False
 
-    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
-    console.print(f"proxy   {proxy or 'none'}")
+    # The proxy Foundry would use for the endpoint, from the variables or the
+    # Windows settings as its HTTP client reads them; a password in the
+    # address was printed as it was.
+    from foundry.core.httpc import _proxy_for
+
+    target = config.backend.base_url if config is not None else "https://api.openai.com/v1"
+    proxy = _proxy_for(target)
+    host = urllib.parse.urlsplit(target).hostname or target
+    if proxy:
+        address, hidden = _shown_proxy(proxy)
+        console.print(f"proxy   {escape(address)} for {escape(host)}"
+                      + (" (its user name and password not shown)" if hidden else ""),
+                      soft_wrap=True)
+    else:
+        console.print(f"proxy   none for {escape(host)}", soft_wrap=True)
     ca = os.environ.get("FOUNDRY_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")
     console.print(f"ca      {ca or 'Windows system store'}")
 

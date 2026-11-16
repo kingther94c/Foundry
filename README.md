@@ -69,7 +69,11 @@ python -m venv .venv
 that environment's `python` ahead of others), go to the repository you want to
 work in, and run `foundry doctor`, `foundry login`, `foundry`. `doctor` prints
 `source`, the directory the code was imported from, so it is always plain which
-checkout is running.
+checkout is running. It names where the credential a session would send comes
+from (a variable's name or what `foundry login` stored, never the value), the
+proxy Foundry would use without its password, and the machine's policy, and it
+exits 1 where a session could not start or would have no credential; `-C DIR`
+checks another folder.
 
 ### Installed offline (a machine with no package index)
 

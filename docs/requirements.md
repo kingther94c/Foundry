@@ -66,7 +66,9 @@ protocol adapter layers change.
   - `foundry login / logout` — credential management for the personal path
   - `foundry sessions [list|show|export <id>]` — viewing and exporting sessions
   - `foundry doctor` — environment self-check (Python version, git, long
-    paths, proxy/TLS connectivity)
+    paths, the configuration, where the credential would come from, the
+    proxy without its password, the machine policy; it fails where a
+    session could not start or would have no credential, D-203)
 - **The output contract**: the five termination states map to process exit
   codes: `completed=0, partial=10, blocked=11, failed=12, cancelled=13`; the
   final report carries evidence (the verification command + its exit code + a

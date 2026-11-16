@@ -293,6 +293,8 @@ def build_parser() -> argparse.ArgumentParser:
     report.set_defaults(func=cmd_report)
 
     doctor = sub.add_parser("doctor", help="check the environment")
+    doctor.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
+                        help="the folder a session would work in (default: this one)")
     doctor.set_defaults(func=cmd_doctor)
 
     policy = sub.add_parser("policy", help="what the policy decides, as codex execpolicy")
