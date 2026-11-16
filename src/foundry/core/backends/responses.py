@@ -36,6 +36,7 @@ from foundry.core.backends.base import (
     ToolCallComplete,
     TurnFinished,
     UsageUpdate,
+    wire_arguments,
 )
 from foundry.core.conversation import (
     Capabilities,
@@ -247,20 +248,44 @@ def _parse_output(output: list[dict[str, Any]]) -> tuple[str, tuple[ToolUseBlock
     text_parts: list[str] = []
     calls: list[ToolUseBlock] = []
     for item in output or []:
+        if not isinstance(item, dict):
+            continue
         kind = item.get("type")
         if kind == "message":
             for part in item.get("content") or []:
-                if part.get("type") in ("output_text", "text"):
-                    text_parts.append(part.get("text", ""))
+                if isinstance(part, dict) and part.get("type") in ("output_text", "text"):
+                    text_parts.append(part.get("text") or "")
         elif kind == "function_call":
+            # `or`, not a default: a key that is there and null is what a
+            # gateway sends for a call with no arguments (D-200).
             calls.append(ToolUseBlock(
-                call_id=item.get("call_id") or item.get("id", ""),
-                name=item.get("name", ""),
-                arguments=item.get("arguments", "{}"),
+                call_id=item.get("call_id") or item.get("id") or "",
+                name=item.get("name") or "",
+                arguments=wire_arguments(item.get("arguments")),
             ))
         # Reasoning items are shown (_reasoning_of) and, encrypted, sent back
         # (_kept_reasoning, D-089).
     return "".join(text_parts), tuple(calls)
+
+
+def _stop_reason(response: dict[str, Any], calls: Any, *, cut: bool = False) -> StopReason:
+    """Why the turn ended (D-200); ``cut`` is the ``response.incomplete``
+    event. An answer stopped at the output ceiling, or refused, is not a
+    finished one, and both used to be reported as one. A status of
+    "incomplete" with no reason given does not by itself say the answer was
+    cut: the local gateway marks every turn that ends in a tool call that
+    way, so such a turn is a tool-use turn."""
+    details = response.get("incomplete_details")
+    reason = details.get("reason") if isinstance(details, dict) else None
+    if reason == "content_filter":
+        return StopReason.REFUSAL
+    if cut or reason:
+        return StopReason.MAX_TOKENS
+    if calls:
+        return StopReason.TOOL_USE
+    if response.get("status") == "incomplete":
+        return StopReason.MAX_TOKENS
+    return StopReason.END_TURN
 
 
 @dataclass(slots=True)
@@ -337,8 +362,8 @@ class ResponsesBackend:
         self.reasons = self.reasons or _has_reasoning(payload.get("output"))
         turn = ModelTurn(
             text=text, tool_calls=calls, usage=usage,
-            stop_reason=StopReason.TOOL_USE if calls else StopReason.END_TURN,
-            model=payload.get("model", body["model"]),
+            stop_reason=_stop_reason(payload, calls),
+            model=payload.get("model") or body["model"],
             opaque=_opaque(_kept_reasoning(payload.get("output")), body["model"]),
         )
         events: list[StreamEvent] = list(_reasonings(payload.get("output")))
@@ -356,6 +381,8 @@ class ResponsesBackend:
         usage = Usage()
         model = body["model"]
         completed = False
+        terminal: dict[str, Any] = {}
+        cut = False
         shown_reasoning = False
         kept: list[dict[str, Any]] = []
 
@@ -386,15 +413,25 @@ class ResponsesBackend:
                 item = event.get("item") or {}
                 if item.get("type") == "function_call":
                     partial[str(event.get("output_index", len(partial)))] = {
-                        "call_id": item.get("call_id") or item.get("id", ""),
-                        "name": item.get("name", ""),
+                        "call_id": item.get("call_id") or item.get("id") or "",
+                        "name": item.get("name") or "",
+                        # What the item already carries: the local gateway
+                        # sends a call's arguments whole here, and no delta.
+                        "given": wire_arguments(item["arguments"]) if item.get("arguments") else "",
                         "arguments": "",
                     }
 
             elif kind == "response.function_call_arguments.delta":
                 slot = partial.get(str(event.get("output_index", 0)))
-                if slot is not None:
-                    slot["arguments"] += event.get("delta", "")
+                if slot is not None and isinstance(event.get("delta"), str):
+                    slot["arguments"] += event["delta"]
+
+            elif kind == "response.function_call_arguments.done":
+                # The whole of them, in place of the pieces.
+                slot = partial.get(str(event.get("output_index", 0)))
+                if slot is not None and isinstance(event.get("arguments"), str) \
+                        and event["arguments"]:
+                    slot["arguments"] = event["arguments"]
 
             elif kind == "response.output_item.done":
                 item = event.get("item") or {}
@@ -406,33 +443,62 @@ class ResponsesBackend:
                     self.reasons = True
                     kept.extend(_kept_reasoning([item]))
                 if item.get("type") == "function_call":
+                    # What was streamed stands in for what the finished item
+                    # leaves out: one with no arguments used to discard every
+                    # piece that had come before it (D-200).
+                    slot = partial.pop(str(event.get("output_index", 0)), None) or {}
                     calls.append(ToolUseBlock(
-                        call_id=item.get("call_id") or item.get("id", ""),
-                        name=item.get("name", ""),
-                        arguments=item.get("arguments", "{}"),
+                        call_id=item.get("call_id") or item.get("id") or slot.get("call_id") or "",
+                        name=item.get("name") or slot.get("name") or "",
+                        arguments=wire_arguments(item.get("arguments") or slot.get("arguments")
+                                                 or slot.get("given")),
                     ))
-                    partial.pop(str(event.get("output_index", 0)), None)
 
             elif kind in ("response.completed", "response.incomplete"):
                 response = event.get("response") or {}
                 usage = _usage_from(response.get("usage"))
-                model = response.get("model", model)
+                model = response.get("model") or model
                 completed = True
+                terminal, cut = response, kind == "response.incomplete"
                 if not kept:
                     # A gateway that sends only the terminal event.
                     self.reasons = self.reasons or _has_reasoning(response.get("output"))
                     kept = _kept_reasoning(response.get("output"))
-                if not calls and not text_parts:
+                if not calls and not text_parts and not shown_reasoning:
                     # Some gateways only send the terminal event.
-                    if not shown_reasoning:
-                        yield from _reasonings(response.get("output"))
-                    text, parsed = _parse_output(response.get("output", []))
-                    if text:
-                        text_parts.append(text)
-                        # Shown like streamed text: the screen draws deltas, so
-                        # without one a REPL showed no answer at all.
-                        yield TextDelta(text)
-                    calls.extend(parsed)
+                    for shown in _reasonings(response.get("output")):
+                        shown_reasoning = True
+                        yield shown
+                # What the terminal event lists and the stream did not carry
+                # (D-200). A gateway may send nothing but this event; or it
+                # may stream the text and list the calls only here, and taking
+                # the list only when nothing at all had been streamed dropped
+                # such a call: the turn ended on its preamble. Streamed text
+                # is repeated in the list, and so is a streamed call, so text
+                # is taken only when none was streamed, and a call only when
+                # the stream did not finish that one.
+                text, parsed = _parse_output(response.get("output") or [])
+                if text and not text_parts:
+                    text_parts.append(text)
+                    # Shown like streamed text: the screen draws deltas, so
+                    # without one a REPL showed no answer at all.
+                    yield TextDelta(text)
+                no_calls_streamed = not calls and not partial
+                finished = {call.call_id for call in calls}
+                for call in parsed:
+                    begun = next((key for key, slot in partial.items()
+                                  if call.call_id and slot["call_id"] == call.call_id), None)
+                    if begun is not None:
+                        # Begun in the stream and never finished there: the
+                        # list has it whole, unless it has no arguments.
+                        slot = partial.pop(begun)
+                        if call.arguments == "{}":
+                            call = ToolUseBlock(
+                                call_id=call.call_id, name=call.name or slot["name"],
+                                arguments=slot["arguments"] or slot["given"] or "{}")
+                        calls.append(call)
+                    elif no_calls_streamed or (call.call_id and call.call_id not in finished):
+                        calls.append(call)
 
             elif kind == "response.failed":
                 raise_reported_error((event.get("response") or {}).get("error"),
@@ -449,7 +515,7 @@ class ResponsesBackend:
         # Any call whose 'done' event never arrived still has its fragments.
         for slot in partial.values():
             calls.append(ToolUseBlock(call_id=slot["call_id"], name=slot["name"],
-                                      arguments=slot["arguments"] or "{}"))
+                                      arguments=slot["arguments"] or slot["given"] or "{}"))
 
         if not completed:
             # Partial content without a completion event means the connection
@@ -460,11 +526,26 @@ class ResponsesBackend:
                 "the connection was cut mid-turn"
             )
 
+        stop_reason = _stop_reason(terminal, calls, cut=cut)
+        if (stop_reason is StopReason.END_TURN and not text_parts and not kept
+                and not shown_reasoning and not usage.input_tokens
+                and not usage.output_tokens):
+            # A completion event with nothing before it and nothing in it: no
+            # text, no call, no reasoning, no tokens counted. A gateway that
+            # opens the stream, fails inside and closes it tidily sends that,
+            # and it was taken for a finished turn with an empty answer. The
+            # turn is asked again, as the Chat Completions adapter does for a
+            # stream that is only its terminator (D-200).
+            raise StreamDropped(
+                "the response stream carried nothing before its completion event; "
+                "the provider closed the turn without answering"
+            )
+
         for call in calls:
             yield ToolCallComplete(call)
         yield UsageUpdate(usage)
         yield TurnFinished(ModelTurn(
             text="".join(text_parts), tool_calls=tuple(calls), usage=usage,
-            stop_reason=StopReason.TOOL_USE if calls else StopReason.END_TURN,
+            stop_reason=stop_reason,
             model=model, opaque=_opaque(kept, body["model"]),
         ))

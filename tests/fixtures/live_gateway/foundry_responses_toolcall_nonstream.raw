@@ -1,0 +1,1 @@
+{"id":"resp_4dde6e47-9b07-472f-84b9-95fb02654f2b","object":"response","created_at":1788877389,"status":"incomplete","model":"openclaw/foundry","output":[{"type":"function_call","id":"call_3bf9b129-e03b-4666-ae30-5b67a699961e","call_id":"80bb071ce","name":"read_file","arguments":"{\"path\":\"src/calc.py\"}"}],"usage":{"input_tokens":1818,"output_tokens":210,"total_tokens":2028}}

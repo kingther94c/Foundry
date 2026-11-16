@@ -228,7 +228,8 @@ def test_responses_asks_for_a_summary_only_when_configured():
     assert "reasoning" not in responses_body(REQUEST, stream=True)
     assert responses_body(REQUEST, stream=True, reasoning_summary="auto")["reasoning"] == {
         "summary": "auto"}
-    _events, client = _responses([{"type": "response.completed", "response": {}}],
+    _events, client = _responses([{"type": "response.output_text.delta", "delta": "OK"},
+                                  {"type": "response.completed", "response": {}}],
                                  reasoning_summary="detailed")
     assert client.bodies[0]["reasoning"] == {"summary": "detailed"}
 

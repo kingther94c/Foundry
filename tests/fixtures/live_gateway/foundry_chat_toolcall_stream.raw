@@ -1,0 +1,12 @@
+data: {"id":"chatcmpl_3aefca11-924b-4506-8924-4498c4325619","object":"chat.completion.chunk","created":1788877361,"model":"openclaw/foundry","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl_3aefca11-924b-4506-8924-4498c4325619","object":"chat.completion.chunk","created":1788877369,"model":"openclaw/foundry","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"6bdee61ab","type":"function","function":{"name":"read_file","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl_3aefca11-924b-4506-8924-4498c4325619","object":"chat.completion.chunk","created":1788877369,"model":"openclaw/foundry","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"path\":\"src/calc.py\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl_3aefca11-924b-4506-8924-4498c4325619","object":"chat.completion.chunk","created":1788877369,"model":"openclaw/foundry","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"id":"chatcmpl_3aefca11-924b-4506-8924-4498c4325619","object":"chat.completion.chunk","created":1788877369,"model":"openclaw/foundry","choices":[],"usage":{"prompt_tokens":1816,"completion_tokens":189,"total_tokens":2005,"completion_tokens_details":{"reasoning_tokens":166}}}
+
+data: [DONE]
+

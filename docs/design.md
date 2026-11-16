@@ -217,7 +217,9 @@ async def run_turn(user_input):
   blocked ([D-085](decision-log.md)). A stream that breaks after it began is a
   `StreamDropped`: the runtime sends the same request again, up to
   `backend.stream_max_retries` times, since nothing of a turn is acted on
-  before it finishes ([D-099](decision-log.md)). So is a failure the provider
+  before it finishes ([D-099](decision-log.md)). So is a stream that closes
+  tidily having carried nothing -- no text, no call, no tokens counted
+  ([D-200](decision-log.md)). So is a failure the provider
   reports inside a 200 answer -- the Responses API's `error` event or
   `response.failed`, an error chunk or a `finish_reason` of `error` in Chat
   Completions -- unless its code says waiting cannot help (a used-up quota, a

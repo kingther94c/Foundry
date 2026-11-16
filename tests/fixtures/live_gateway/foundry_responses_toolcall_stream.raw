@@ -1,0 +1,32 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_8d778fb1-b0ed-4a72-bf4b-24744499cbd5","object":"response","created_at":1788877389,"status":"in_progress","model":"openclaw/foundry","output":[],"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","response":{"id":"resp_8d778fb1-b0ed-4a72-bf4b-24744499cbd5","object":"response","created_at":1788877389,"status":"in_progress","model":"openclaw/foundry","output":[],"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_bff58d31-28d4-4537-8e68-d97698b39119","role":"assistant","content":[{"type":"output_text","text":""}],"status":"in_progress"}}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","item_id":"msg_bff58d31-28d4-4537-8e68-d97698b39119","output_index":0,"content_index":0,"part":{"type":"output_text","text":""}}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","item_id":"msg_bff58d31-28d4-4537-8e68-d97698b39119","output_index":0,"content_index":0,"text":""}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","item_id":"msg_bff58d31-28d4-4537-8e68-d97698b39119","output_index":0,"content_index":0,"part":{"type":"output_text","text":""}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_bff58d31-28d4-4537-8e68-d97698b39119","role":"assistant","content":[{"type":"output_text","text":""}],"phase":"commentary","status":"completed"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"call_fb741c42-4ef6-4836-8287-9b2ce6b1818a","call_id":"541a5c033","name":"read_file","arguments":"{\"path\":\"src/calc.py\"}"}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","id":"call_fb741c42-4ef6-4836-8287-9b2ce6b1818a","call_id":"541a5c033","name":"read_file","arguments":"{\"path\":\"src/calc.py\"}","status":"completed"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_8d778fb1-b0ed-4a72-bf4b-24744499cbd5","object":"response","created_at":1788877397,"status":"incomplete","model":"openclaw/foundry","output":[{"type":"message","id":"msg_bff58d31-28d4-4537-8e68-d97698b39119","role":"assistant","content":[{"type":"output_text","text":""}],"phase":"commentary","status":"completed"},{"type":"function_call","id":"call_fb741c42-4ef6-4836-8287-9b2ce6b1818a","call_id":"541a5c033","name":"read_file","arguments":"{\"path\":\"src/calc.py\"}"}],"usage":{"input_tokens":1814,"output_tokens":247,"total_tokens":2061}}}
+
+data: [DONE]
+

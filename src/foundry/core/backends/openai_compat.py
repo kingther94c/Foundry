@@ -25,6 +25,7 @@ from foundry.core.backends.base import (
     ToolCallComplete,
     TurnFinished,
     UsageUpdate,
+    wire_arguments,
 )
 from foundry.core.conversation import (
     Capabilities,
@@ -51,6 +52,31 @@ _STOP_REASONS = {
     "length": StopReason.MAX_TOKENS,
     "content_filter": StopReason.REFUSAL,
 }
+
+
+def _slot_of(fragment: dict[str, Any], partial: dict[int | str, dict[str, str]]) -> int | str:
+    """Which call a streamed fragment is a piece of (D-200). The API numbers
+    them. A gateway may quote the number on some fragments and not on others:
+    one call then arrived as two halves, and sorting 0 with "1" raised a
+    TypeError that ended the session in a traceback. Another leaves the number
+    out and sends each call under its own id; all of them used to land in the
+    first call."""
+    index = fragment.get("index")
+    if isinstance(index, int):
+        return index
+    if isinstance(index, str) and index.strip().isdecimal():
+        return int(index)
+    if index is not None:
+        return str(index)
+    call_id = fragment.get("id")
+    if call_id:
+        for key, slot in partial.items():
+            if slot["id"] == call_id:
+                return key
+        numbered = [key for key in partial if isinstance(key, int)]
+        return max(numbered) + 1 if numbered else 0
+    # Neither a number nor an id: more of the call that came last.
+    return next(reversed(partial), 0)
 
 
 def _message_to_wire(message: Message) -> list[dict[str, Any]]:
@@ -251,8 +277,9 @@ class OpenAICompatBackend:
         calls = tuple(
             ToolUseBlock(call_id=c.get("id") or f"call_{i}",
                          name=(c.get("function") or {}).get("name") or "",
-                         arguments=(c.get("function") or {}).get("arguments") or "{}")
+                         arguments=wire_arguments((c.get("function") or {}).get("arguments")))
             for i, c in enumerate(message.get("tool_calls") or [])
+            if isinstance(c, dict)
         )
         turn = ModelTurn(
             text=text, tool_calls=calls, usage=_usage_from(payload.get("usage")),
@@ -277,7 +304,7 @@ class OpenAICompatBackend:
         # Reasoning streams first and is shown whole once the answer starts.
         thinking: list[str] = []
         # Tool call fragments arrive interleaved and keyed by index, not id.
-        partial: dict[int, dict[str, str]] = {}
+        partial: dict[int | str, dict[str, str]] = {}
         usage = Usage()
         finish_reason = "stop"
         model = body["model"]
@@ -343,21 +370,31 @@ class OpenAICompatBackend:
                     yield TextDelta(content)
 
                 for fragment in delta.get("tool_calls") or []:
-                    index = fragment.get("index", 0)
-                    slot = partial.setdefault(index, {"id": "", "name": "", "arguments": ""})
+                    if not isinstance(fragment, dict):
+                        continue
+                    slot = partial.setdefault(_slot_of(fragment, partial),
+                                              {"id": "", "name": "", "arguments": ""})
                     if fragment.get("id"):
                         slot["id"] = fragment["id"]
                     function = fragment.get("function") or {}
                     if function.get("name"):
                         slot["name"] = function["name"]
-                    if function.get("arguments"):
-                        slot["arguments"] += function["arguments"]
+                    piece = function.get("arguments")
+                    if isinstance(piece, str):
+                        slot["arguments"] += piece
+                    elif piece is not None:
+                        # The object itself, where the API streams its text.
+                        slot["arguments"] = wire_arguments(piece)
 
         calls = tuple(
             ToolUseBlock(call_id=slot["id"] or f"call_{index}",
                          name=slot["name"],
                          arguments=slot["arguments"] or "{}")
-            for index, slot in sorted(partial.items())
+            # Numbered slots in the order of their numbers -- 10 after 2 -- and
+            # then whatever else a gateway used for an index, by its text.
+            for index, slot in sorted(
+                partial.items(),
+                key=lambda kv: (0, kv[0], "") if isinstance(kv[0], int) else (1, 0, kv[0]))
         )
 
         # The truncation guard catches "ended with no terminator" but not

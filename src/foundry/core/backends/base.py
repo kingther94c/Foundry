@@ -85,6 +85,18 @@ def model_ids(payload: object) -> list[str]:
                    and entry["id"]})
 
 
+def wire_arguments(value: Any) -> str:
+    """A tool call's arguments as the JSON text ``ToolUseBlock.arguments``
+    holds (D-200). A gateway sends null for a call that has none, and some
+    send the object where the API sends its text. Either reached the runtime
+    as something that is not a string, which nothing there expects: the
+    session ended in a traceback. What is not an object still goes on as
+    text, for the tool layer to report as a malformed call."""
+    if value is None or value == "":
+        return "{}"
+    return value if isinstance(value, str) else json.dumps(value)
+
+
 @dataclass(frozen=True, slots=True)
 class TextDelta:
     text: str

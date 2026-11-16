@@ -139,9 +139,9 @@ MACHINE_SHAPES = {
 }
 
 
-def _found(shapes: dict[str, str]) -> list[str]:
+def _found(shapes: dict[str, str], files: list[Path] | None = None) -> list[str]:
     found = []
-    for path in _files():
+    for path in _files() if files is None else files:
         text = path.read_text(encoding="utf-8", errors="replace")
         found += [f"{path.relative_to(ROOT).as_posix()}: {what}"
                   for what, shape in shapes.items() if re.search(shape, text)]
@@ -154,6 +154,16 @@ def test_nothing_in_the_kit_is_shaped_like_a_credential():
 
 def test_nothing_in_the_kit_names_a_machine_or_a_person():
     assert _found(MACHINE_SHAPES) == []
+
+
+def test_nothing_recorded_from_a_real_endpoint_is_shaped_like_either():
+    """What a gateway or the API sent is in the repository byte for byte, under
+    tests/fixtures: read through before it went in, and looked at again here."""
+    recorded = [path for folder in ("live_gateway", "anthropic")
+                for path in sorted((ROOT / "tests" / "fixtures" / folder).iterdir())]
+
+    assert len(recorded) >= 15
+    assert _found({**CREDENTIAL_SHAPES, **MACHINE_SHAPES}, recorded) == []
 
 
 @pytest.mark.parametrize("text, shapes, what", [
