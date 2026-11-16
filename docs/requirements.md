@@ -71,7 +71,9 @@ protocol adapter layers change.
   codes: `completed=0, partial=10, blocked=11, failed=12, cancelled=13`; the
   final report carries evidence (the verification command + its exit code + a
   diff summary).
-- **Configuration**: TOML at `~/.foundry/config.toml`; named profiles (such as
+- **Configuration**: TOML at `~/.foundry/config.toml`, in UTF-8 (a byte-order
+  mark is taken off; UTF-16 is refused by name, with how to save the file
+  again, D-202); named profiles (such as
   `personal` / `corporate`), each bundling backend + model + policy presets.
   All layering and precedence is defined solely in §4.3. Throughout this
   document `~/.foundry/` stands for the Foundry folder: `%LOCALAPPDATA%\Foundry`,

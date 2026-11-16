@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from foundry.core.config_mcp import _parse_mcp_servers
+from foundry.core.config_text import read_config_text
 from foundry.core.errors import ConfigError
 
 _BARE_KEY = re.compile(r"[A-Za-z0-9_-]+\Z")
@@ -72,10 +73,8 @@ def server_table(name: str, entry: dict[str, Any]) -> str:
 def _read(path: Path) -> tuple[str, dict[str, Any]]:
     if not path.is_file():
         return "", {}
-    try:
-        text = path.read_bytes().decode("utf-8")
-    except (OSError, UnicodeDecodeError) as exc:
-        raise ConfigError(f"cannot read {path}: {exc}") from exc
+    # A UTF-8 mark is not kept: the edited file is written as UTF-8 alone.
+    text = read_config_text(path)
     try:
         return text, tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:

@@ -59,6 +59,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from foundry.core.config_text import read_config_text
 from foundry.core.errors import ConfigError, ToolError
 from foundry.core.winapi import IS_WINDOWS, child_environment, decode_output, find_program
 
@@ -361,9 +362,10 @@ def read_hooks_file(path: Path) -> tuple[Hook, ...]:
     None there is none."""
     if not path.is_file():
         return ()
+    text = read_config_text(path)
     try:
-        data = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        data = json.loads(text)
+    except ValueError as exc:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
     if not isinstance(data, dict):
         raise ConfigError(f'{path}: a hooks file is one JSON object, as {{"hooks": {{...}}}}')

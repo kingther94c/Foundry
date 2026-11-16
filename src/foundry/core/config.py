@@ -35,6 +35,7 @@ from foundry.core.config_sections import (
     _parse_skills,
     title_items,
 )
+from foundry.core.config_text import read_config_text
 from foundry.core.errors import ConfigError
 from foundry.core.features import apply_features
 from foundry.core.hooks import HOOKS_FILE, Hook, parse_hooks, read_hooks_file
@@ -314,10 +315,10 @@ class Config:
 def _load_toml(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
+    text = read_config_text(path)
     try:
-        with path.open("rb") as fh:
-            return tomllib.load(fh)
-    except (tomllib.TOMLDecodeError, OSError) as exc:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
 
 

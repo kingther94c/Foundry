@@ -28,7 +28,8 @@ foundry/
 │   ├── mcp_resources.py     # codex's list/read tools over the servers that offer resources (D-102)
 │   ├── config.py            # typed configuration with provenance: the layers and their precedence;
 │                            #   [mcp_servers] in config_mcp.py, the smaller sections in
-│                            #   config_sections.py (D-161)
+│                            #   config_sections.py (D-161); a file's text, as Windows saves it,
+│                            #   in config_text.py (D-202)
 │   ├── config_edit.py       # `foundry mcp add/remove`: a server's table in the user's config.toml, checked (D-082)
 │   ├── skills.py            # agent skills: found, listed to the model, loaded by load_skill (D-113);
 │                            #   .agents/skills up to the repository's top, [[skills.config]] (D-114)

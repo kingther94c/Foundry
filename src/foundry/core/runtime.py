@@ -40,6 +40,7 @@ from foundry.core.conversation import (
 from foundry.core.errors import (
     AuthError,
     Cancelled,
+    ConfigError,
     FatalError,
     FoundryError,
     InvalidToolCall,
@@ -897,7 +898,7 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
                         self.persist_rule(op)
                         self._emit(Notice(
                             f"remembered: {op.tool} ({op.target}) will not be asked again"))
-                    except OSError as exc:
+                    except (OSError, ConfigError) as exc:
                         self._emit(Notice(
                             f"could not save the rule ({exc}); it applies to this "
                             "session only", level="warning"))

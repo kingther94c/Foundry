@@ -32,6 +32,7 @@ from foundry.core.backends.responses import ResponsesBackend
 from foundry.core.commands import CustomPrompt, load_custom_prompts
 from foundry.core.config import ANTHROPIC_PROTOCOL, Config, load_config, parse_settings, user_dir
 from foundry.core.config_edit import toml_string
+from foundry.core.config_text import read_config_text
 from foundry.core.context import ContextManager
 from foundry.core.mcp import McpServers, start_servers
 from foundry.core.memories import MemoryTool
@@ -216,7 +217,13 @@ def _rule_writer(home: Path, policy: PolicyEngine):
         pattern = _literal(op.target.replace("\\", "/"))
         config_path = home / "config.toml"
         home.mkdir(parents=True, exist_ok=True)
-        existing = config_path.read_text(encoding="utf-8") if config_path.is_file() else ""
+        # Read as the configuration is (a UTF-8 mark taken off): a file that
+        # cannot be is a ConfigError, and the rule is this session's alone.
+        # Its line ends are read as text mode read them: written back in text
+        # mode, a CRLF kept as it was would gain a second CR, which TOML
+        # refuses.
+        existing = (read_config_text(config_path).replace("\r\n", "\n")
+                    if config_path.is_file() else "")
         # Quoted as TOML: a command with a quote in it, written as it was,
         # left a config.toml that no longer parsed (found with D-082).
         entry = (f'\n[[permissions]]\ntool = {toml_string(op.tool)}\n'
