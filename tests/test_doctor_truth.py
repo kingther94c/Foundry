@@ -14,7 +14,9 @@ is the one given with -C, whose repository settings are a layer.
 
 from __future__ import annotations
 
+import re
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -169,3 +171,17 @@ def test_the_machine_policy_and_its_rules(machine, repo, tmp_path, monkeypatch, 
                       'pattern = "curl *"\ndecision = "deny"\n', encoding="utf-8")
     code, shown = _doctor(capsys, "-C", str(repo))
     assert f"policy {policy}: 2 permission rule(s) from the machine" in shown
+
+
+def test_every_ci_step_that_runs_doctor_gives_it_a_credential():
+    """CI runs doctor on a machine with no credential, where it now fails as a
+    session would; both jobs that run it went red on the push of this check."""
+    workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows"
+                / "ci.yml").read_text(encoding="utf-8")
+    steps = re.split(r"\n      - ", workflow)
+    doctors = [step for step in steps if re.search(r"foundry(\.cmd)? doctor\b", step)]
+
+    assert len(doctors) == 2
+    for step in doctors:
+        assert re.search(r"\n        env:\n(          \S.*\n)*?          OPENAI_API_KEY: \S",
+                         step), step

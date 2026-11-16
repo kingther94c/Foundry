@@ -122,6 +122,10 @@ jobs:
         run: python run-foundry.py --version
 
       - name: The command wrapper
+        # doctor fails where a session could not send a credential (D-203); a
+        # placeholder lets it check the rest. Nothing is sent anywhere.
+        env:
+          OPENAI_API_KEY: placeholder-for-doctor
         run: .\foundry.cmd doctor
 
       - name: Foundry suite
@@ -156,7 +160,10 @@ jobs:
         # transitive dependency would only fail there, so it fails here first.
         # With requirements.lock, every dependency is installed only if its
         # wheel has the hash the lock pins (D-164); foundry's own wheel, built
-        # in this job, after them.
+        # in this job, after them. doctor, last, is given a placeholder
+        # credential, as the command wrapper's step is (D-203).
+        env:
+          OPENAI_API_KEY: placeholder-for-doctor
         run: |
           python -m venv fresh
           if (Test-Path requirements.lock) {
