@@ -257,12 +257,18 @@ def make_server(d, port):
                     n = existing[-1]
                 if n is None:
                     n = (existing or [0])[-1] + 1
-                    (d / f"{n}.request.json").write_bytes(raw)
+                    # The meta first, then the request whole: whoever waits for
+                    # N.request.json reads it and N.meta.json the moment it
+                    # appears, and written in place it could be seen empty,
+                    # before its meta existed.
                     (d / f"{n}.meta.json").write_text(json.dumps(
                         {"protocol": protocol, "path": self.path,
                          "auth": "present" if (self.headers.get("Authorization")
                                                or self.headers.get("x-api-key")) else "missing"}),
                         encoding="utf-8")
+                    staged = d / f"{n}.request.part"
+                    staged.write_bytes(raw)
+                    staged.replace(d / f"{n}.request.json")
                     _check_replay(d, n, protocol, body, emitted)
                 attempts[n] = attempts.get(n, 0) + 1
                 attempt = attempts[n]

@@ -25,7 +25,7 @@
 | P5, Foundry at work | **paused** | ResearchOS v32 built on the real API ([D-187](decision-log.md)); stopped at the user's word on 2026-11-13; it resumes when they say so |
 | After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden). Landed: the plan and the documents held to the code (D-198), the verification kit under `verify/` ([D-199](decision-log.md)) |
 
-The suite collects 5,123 tests, which run green on a machine with no network
+The suite collects 5,129 tests, which run green on a machine with no network
 and no credentials. This is the one place that figure is quoted, and
 `tests/test_docs_truth.py` holds it to what a full run collects. From D-036 to
 D-181 every feature was verified only against scripted backends: the local

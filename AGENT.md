@@ -17,6 +17,7 @@ verify/             whole tasks run through the CLI against a relay or a real
 demo/               mini_foundry.py + the notebook: the architecture in one file
 run-foundry.py      run the CLI from this clone, no install (foundry.cmd wraps it)
 scripts/            build_wheelhouse.py; delta.py, which keeps DELTA.md;
+                    ci_annotate.py, CI's failed tests as annotations;
                     sandbox_probe.py, research only (D-165)
 DELTA.md            how this branch differs from main (on main, the empty template)
 docs/               requirements, design, threat model, decision log, research
@@ -49,7 +50,10 @@ CI runs every suite with `python -X warn_default_encoding -m pytest`, once
 installed editable and once from the clone with only the dependencies
 installed, and builds the wheelhouse (`python scripts/build_wheelhouse.py`) to
 prove the offline `--no-index` install still works. A last job takes Foundry
-through a task on each protocol against `verify/`'s relay. Every job is
+through a task on each protocol against `verify/`'s relay. A job's log opens
+only to someone signed in to GitHub; when Foundry's suite fails, CI names
+each failed test as an annotation, which the public API returns to anyone
+(`/repos/OWNER/REPO/check-runs/JOB_ID/annotations`). Every job is
 Windows-only by design.
 
 ## Conventions

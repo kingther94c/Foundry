@@ -349,6 +349,31 @@ def test_a_reply_is_checked_against_what_the_request_offered(relay, tmp_path):
         relay.reply(relay.dir, 1, reply)
 
 
+def test_a_request_appears_whole_and_after_its_meta(relay, monkeypatch):
+    """Whoever waits for N.request.json reads it, and N.meta.json, the moment
+    it appears. Written in place, it could be read empty or before its meta
+    existed: a race a slow machine can lose."""
+    seen = []
+    real = Path.replace
+
+    def replace(self, target):
+        target = Path(target)
+        if target.name.endswith(".request.json"):
+            seen.append((target.name, (target.parent / target.name.replace(
+                "request", "meta")).is_file(), json.loads(self.read_bytes())))
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "replace", replace)
+    _answer_first(relay, {"content": "Hello.", "tool_calls": [], "reasoning": ""})
+    body = {"model": "m", "messages": [{"role": "user", "content": "hi"}]}
+
+    status, _, _ = _post(relay.url + "/chat/completions", body)
+
+    assert status == 200
+    assert seen == [("1.request.json", True, body)]
+    assert not list(relay.dir.glob("*.part"))
+
+
 def test_what_the_player_is_shown_is_only_what_is_new(relay):
     first = {"model": "m", "messages": [{"role": "system", "content": "Be brief."},
                                         {"role": "user", "content": "What is here?"}],

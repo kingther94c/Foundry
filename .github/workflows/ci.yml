@@ -34,7 +34,13 @@ jobs:
       - name: Test
         # -X warn_default_encoding surfaces any open() without an explicit
         # encoding, which on a non-UTF-8 console silently corrupts the journal.
-        run: python -X warn_default_encoding -m pytest tests -q
+        run: python -X warn_default_encoding -m pytest tests -q --junitxml="${{ runner.temp }}/foundry-tests.xml"
+
+      - name: The failed tests, where anyone can read them
+        # A job's log opens only to someone signed in; its annotations are
+        # returned by the public API (scripts/ci_annotate.py).
+        if: failure()
+        run: python scripts/ci_annotate.py "${{ runner.temp }}/foundry-tests.xml"
 
   example-earnings-pm:
     # examples/earnings_pm is built with Foundry as a dogfooding exercise; its
@@ -119,7 +125,11 @@ jobs:
         run: .\foundry.cmd doctor
 
       - name: Foundry suite
-        run: python -X warn_default_encoding -m pytest tests -q
+        run: python -X warn_default_encoding -m pytest tests -q --junitxml="${{ runner.temp }}/foundry-tests.xml"
+
+      - name: The failed tests, where anyone can read them
+        if: failure()
+        run: python scripts/ci_annotate.py "${{ runner.temp }}/foundry-tests.xml"
 
       - name: tools suite
         working-directory: tools
