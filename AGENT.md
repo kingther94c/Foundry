@@ -53,8 +53,10 @@ prove the offline `--no-index` install still works. A last job takes Foundry
 through a task on each protocol against `verify/`'s relay. A job's log opens
 only to someone signed in to GitHub; when Foundry's suite fails, CI names
 each failed test as an annotation, which the public API returns to anyone
-(`/repos/OWNER/REPO/check-runs/JOB_ID/annotations`). Every job is
-Windows-only by design.
+(`/repos/OWNER/REPO/check-runs/JOB_ID/annotations`). CI writes bytecode; a
+machine with `PYTHONDONTWRITEBYTECODE` set does not, so to run the suite as
+CI does, run it with that variable unset. Every job is Windows-only by
+design.
 
 ## Conventions
 

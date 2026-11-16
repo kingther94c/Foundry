@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import os
 import re
 import sys
 import threading
@@ -449,6 +450,36 @@ def test_a_mutation_that_cannot_be_applied_stops_the_run(project, capsys):
     assert _kit("mutate").main([listed, "test_calc.py", "--root", str(project)]) == 2
     assert "cannot apply: not there" in capsys.readouterr().out
     assert (project / "calc.py").read_bytes() == before
+
+
+def test_a_mutation_as_long_as_its_text_and_as_old_is_compiled_afresh(project, capsys,
+                                                                       monkeypatch):
+    """A mutation the length of the text it replaces, written in the second the
+    file was: Python ran the original's cached bytecode for it, and on CI's fast
+    machine the mutation survived. Here every write of calc.py keeps the
+    original's time, so that second is the same on any machine, and bytecode is
+    written, as on CI, whatever this machine's environment says."""
+    monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
+    stamp = (project / "calc.py").stat()
+    real = Path.write_bytes
+
+    def same_second(self, data):
+        written = real(self, data)
+        if self.name == "calc.py":
+            os.utime(self, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        return written
+
+    monkeypatch.setattr(Path, "write_bytes", same_second)
+    listed = _mutations(
+        project, {"name": "minus for plus", "file": "calc.py", "old": "a + b", "new": "a - b"},
+        {"name": "times for plus", "file": "calc.py", "old": "a + b", "new": "a * b"})
+
+    assert _kit("mutate").main([listed, "test_calc.py", "--root", str(project)]) == 0
+
+    out = capsys.readouterr().out
+    assert " 1 killed: minus for plus" in out and " 2 killed: times for plus" in out
+    # Compiled outside the project, which is left as it was.
+    assert not list(project.rglob("*.pyc"))
 
 
 def test_a_run_can_begin_at_a_later_mutation(project, capsys):

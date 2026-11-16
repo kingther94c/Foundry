@@ -8,7 +8,8 @@ first `old` in `file` (relative to the root: this repository unless --root
 names another) becomes `new`, the tests run with -x, and the file is put back.
 A mutation whose tests still pass survived: nothing checks what it changed.
 
-The tests run once before any mutation and must pass. Each file is restored
+The tests run once before any mutation and must pass. Each run compiles the
+code afresh, into a cache of its own outside the root. Each file is restored
 byte for byte, line endings included, and the run stops if one is not. The
 exit status is 1 if a mutation survived and 2 if the run could not be trusted.
 """
@@ -16,8 +17,10 @@ exit status is 1 if a mutation survived and 2 if the run could not be trusted.
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -26,14 +29,22 @@ def digest(path):
 
 
 def tests_pass(root, tests, timeout):
-    """Whether the tests pass in ``root``; a run that times out does not."""
-    try:
-        done = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", *tests],
-            cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return False
+    """Whether the tests pass in ``root``; a run that times out does not.
+
+    Each run compiles into a cache of its own. Python keeps a module's bytecode
+    while the source's size and modification second are what it recorded, and
+    a mutation as long as the text it replaces, written in the second the file
+    was, is both: on a fast machine the tests ran the original's bytecode, and
+    the mutation survived (CI, after D-199)."""
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as cache:
+        env = dict(os.environ, PYTHONPYCACHEPREFIX=cache)
+        try:
+            done = subprocess.run(
+                [sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", *tests],
+                cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=timeout, env=env)
+        except subprocess.TimeoutExpired:
+            return False
     return done.returncode == 0
 
 
