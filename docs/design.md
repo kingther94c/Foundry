@@ -51,6 +51,7 @@ foundry/
 │   ├── netcheck.py          # the checkup's network level: proxy, name, connection, tunnel, TLS (D-204)
 │   ├── checkup.py           # the checkup's cases, its feedback code and its report (D-204)
 │   ├── protocheck.py        # the checkup's protocol level: eight requests through the adapter (D-205)
+│   ├── taskcheck.py         # the checkup's task level: a sample repository, a session, its tests (D-206)
 │   └── winapi.py            # ctypes: DPAPI, Job Objects, reparse tags
 ├── cli/                     # the terminal UI: event subscriber + approval UI (rich); repl.py, the
 │                            #   interactive prompt and its loop; slash_commands.py, the commands

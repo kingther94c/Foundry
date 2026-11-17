@@ -1,5 +1,5 @@
-"""`foundry checkup` (D-204, D-205): the first run on a machine whose results
-leave it only by word of mouth.
+"""`foundry checkup` (D-204, D-205, D-206): the first run on a machine whose
+results leave it only by word of mouth.
 
 Each case gives one line with a short code; the feedback code holds every
 level's mark and the codes of what was not OK, and no host and no secret;
@@ -9,17 +9,22 @@ certificate nobody trusts, a proxy that wants a sign-in, a tunnel to the
 wrong name, a web page where the model list should be -- with a TLS server
 whose certificate is made for the test, and a proxy that answers CONNECT.
 The protocol level asks a gateway on loopback that speaks the three
-protocols, with each fault it can be given (tests/fakegateway.py).
+protocols, with each fault it can be given (tests/fakegateway.py); the task
+level runs a real session against that gateway, which answers as a model
+doing the task would, well or badly. Elsewhere the task level stands in: a
+session takes seconds.
 """
 
 from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import socket
 import socketserver
 import ssl
+import sys
 import threading
 
 import pytest
@@ -40,6 +45,7 @@ SECRET = "sk-checkup-test-0123456789abcdef"
 # The checks the fixture stands in for, as the module defines them.
 REAL_POWERSHELL = checkup.powershell_case
 REAL_LONG_PATHS = checkup.long_paths_case
+REAL_TASK = checkup.task
 
 
 @pytest.fixture(scope="module")
@@ -69,6 +75,8 @@ def machine(tmp_path, monkeypatch):
                         lambda: Case("E", "powershell", OK, "stood in"))
     monkeypatch.setattr(checkup, "long_paths_case",
                         lambda: Case("E", "longpaths", OK, "stood in"))
+    # It adds no case: a code shows a T only where the level was skipped.
+    monkeypatch.setattr(checkup, "task", lambda *args: None)
     return home
 
 
@@ -281,10 +289,10 @@ def test_each_answer_to_the_model_list_has_its_code(endpoint, machine, work, mon
     # A credential refused is refused for a turn too; anything else, a turn
     # is still asked, and this gateway answers it.
     refused = code in ("A401", "A403")
-    assert line.endswith(f" {mark} {'P-' if refused else 'P+'}  {mark}={code}")
+    assert line.endswith(f" {mark} {'P- T-' if refused else 'P+'}  {mark}={code}")
     assert exit_code == (1 if mark == "N!" else 0)
     if refused:
-        assert "P all not checked: the credential was refused" in shown
+        assert "P protocol SKIP all not checked: the credential was refused" in shown
     if code == "HTML" and b"title" in body:
         assert "a web page answered, not a model list (Sign in to Corp)" in shown
     if code == "H500":
@@ -314,7 +322,7 @@ def test_a_closed_port_fails_at_tcp_and_the_endpoint_is_not_asked(machine, work,
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N! P-  N!=TCP0") and code == 1
+    assert line.endswith(" N! P- T-  N!=TCP0") and code == 1
     assert f"127.0.0.1 refused port {port}" in shown
     assert "models not asked: the endpoint was not reached" in shown
 
@@ -329,7 +337,7 @@ def test_a_name_that_does_not_resolve_fails_at_dns_and_a_proxy_script_is_named(
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N! P-  N!=DNS0,PAC") and code == 1
+    assert line.endswith(" N! P- T-  N!=DNS0,PAC") and code == 1
     assert "Windows uses the proxy script http://wpad.example.test/proxy.pac" in shown
     assert "tcp not tried: the name did not resolve" in shown
     assert "tls not tried: the name did not resolve" in shown
@@ -343,7 +351,7 @@ def test_a_certificate_nobody_trusts_is_named_by_its_issuer_until_the_bundle_tru
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N! P-  N!=TLS1") and code == 1
+    assert line.endswith(" N! P- T-  N!=TLS1") and code == 1
     assert ("the certificate (issued by CN=Foundry checkup test CA, O=Foundry tests) is not "
             "trusted by the Windows certificate store") in shown
     assert "set FOUNDRY_CA_BUNDLE to it" in shown
@@ -369,7 +377,7 @@ def test_an_expired_certificate_is_said_to_be(endpoint, machine, work, tmp_path,
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N! P-  N!=TLS5") and code == 1
+    assert line.endswith(" N! P- T-  N!=TLS5") and code == 1
     assert "the certificate (issued by CN=Foundry checkup test CA, O=Foundry tests) has expired" in shown
 
 
@@ -382,7 +390,7 @@ def test_a_proxy_that_wants_a_sign_in_says_what_it_asks_for(proxy, machine, work
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N! P-  N!=PX407") and code == 1
+    assert line.endswith(" N! P- T-  N!=PX407") and code == 1
     assert "the proxy wants a sign-in (407; it asks for Negotiate, NTLM)" in shown
     assert "Foundry can answer only Basic" in shown
     assert (f"proxy http://127.0.0.1:{asking.server_address[1]} for api.example.test, from the "
@@ -425,7 +433,7 @@ def test_a_certificate_for_another_name_is_said_to_be(endpoint, proxy, tls_files
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith("N! P-  C!=KEY0 N!=TLS4") and code == 1
+    assert line.endswith("N! P- T-  C!=KEY0 N!=TLS4") and code == 1
     assert "is not for other.example.test" in shown
 
 
@@ -437,7 +445,7 @@ def test_a_proxy_declared_https_is_refused_before_anything_is_tried(machine, wor
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N! P-  N!=PRXS") and code == 1
+    assert line.endswith(" N! P- T-  N!=PRXS") and code == 1
     assert " dns " not in shown
 
 
@@ -450,8 +458,8 @@ def test_a_utf16_configuration_has_its_own_code_and_the_network_is_not_checked(
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" C! K:? M:? R:? N- P-  C!=CFG16") and code == 1
-    assert "all not checked: the configuration could not be read" in shown
+    assert line.endswith(" C! K:? M:? R:? N- P- T-  C!=CFG16") and code == 1
+    assert "N network SKIP all not checked: the configuration could not be read" in shown
 
 
 def test_a_configuration_in_the_system_code_page_has_its_own_code(machine, work, capsys):
@@ -459,7 +467,7 @@ def test_a_configuration_in_the_system_code_page_has_its_own_code(machine, work,
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" C! K:? M:? R:? N- P-  C!=CFGCP") and code == 1
+    assert line.endswith(" C! K:? M:? R:? N- P- T-  C!=CFGCP") and code == 1
 
 
 def test_a_base_url_that_is_not_an_address_skips_the_network(machine, work, monkeypatch,
@@ -469,8 +477,8 @@ def test_a_base_url_that_is_not_an_address_skips_the_network(machine, work, monk
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N- P-  C!=URL0") and code == 1
-    assert "all not checked: base_url is not an address" in shown
+    assert line.endswith(" N- P- T-  C!=URL0") and code == 1
+    assert "N network SKIP all not checked: base_url is not an address" in shown
 
 
 def test_a_key_in_the_variable_backend_env_key_names(endpoint, machine, work, monkeypatch,
@@ -505,9 +513,9 @@ def test_an_unknown_protocol_is_named_and_the_endpoint_not_asked(endpoint, machi
 
     code, shown, line = _checkup(capsys, work)
 
-    assert " C! K:key-env M:- R:? N+ P-  C!=PRO0" in line and code == 1
+    assert " C! K:key-env M:- R:? N+ P- T-  C!=PRO0" in line and code == 1
     assert "models not asked: the protocol is not one Foundry speaks" in shown
-    assert "P all not checked: the protocol is not one Foundry speaks" in shown
+    assert "P protocol SKIP all not checked: the protocol is not one Foundry speaks" in shown
     assert server.seen == []
 
 
@@ -568,7 +576,9 @@ def test_git_missing_fails_this_machine(endpoint, machine, work, monkeypatch, ca
     code, shown, line = _checkup(capsys, work)
 
     # Without git, the Foundry that ran is named by its version.
-    assert line == f"FB1 v{__version__} E! C+ K:key-env M:- R:chat N+ P+  E!=GIT0"
+    # Nor is a session given the task: it would need git too.
+    assert line == f"FB1 v{__version__} E! C+ K:key-env M:- R:chat N+ P+ T-  E!=GIT0"
+    assert "T a task, end to end SKIP all not checked: git does not run" in shown
     assert code == 1
 
 
@@ -850,7 +860,8 @@ def test_turns_refused_while_the_list_is_given_stop_after_the_first(endpoint, ma
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N+ P!  P!=TXS401") and code == 1
+    assert line.endswith(" N+ P! T-  P!=TXS401") and code == 1
+    assert "T a task, end to end SKIP all not checked: the protocol level failed" in shown
     assert len(server.seen) == 2
     assert "text-once not tried: the first request failed" in shown
     assert "spent 1 request(s), 0 token(s) in and 0 out" in shown
@@ -913,6 +924,202 @@ def test_what_the_protocol_level_received_is_kept_beside_the_report_redacted(
     text = _report(machine)
     assert f"What the protocol level received, as it came and redacted: {folder}" in text
     assert token not in text
+
+
+# --- the task level --------------------------------------------------------
+
+
+@pytest.fixture()
+def tasked(endpoint, machine, monkeypatch):
+    """The real task level, against a gateway with ``faults``."""
+    monkeypatch.setattr(checkup, "task", REAL_TASK)
+
+    def start(faults=(), *, stored=False):
+        server = endpoint(faults=faults)
+        if stored:
+            CredentialVault(machine / "auth.json").save({"api_key": SECRET})
+        else:
+            monkeypatch.setenv("OPENAI_API_KEY", SECRET)
+        _config(machine, f"http://127.0.0.1:{server.server_port}/v1")
+        return server
+
+    return start
+
+
+def _sessions(server):
+    """The requests a session sent: those that offered finish."""
+    return [seen for seen in server.seen if "body" in seen
+            and "finish" in json.dumps(seen["body"].get("tools") or [])]
+
+
+@pytest.mark.parametrize("faults, mark, code", [
+    ((), "T+", ""),
+    (("solver_wrong",), "T!", "TSK0"),
+    (("solver_tests",), "T!", "TSKE"),
+    (("solver_quiet",), "T~", "TSKP"),
+])
+def test_a_session_given_the_sample_task_is_judged_by_its_tests(tasked, machine, work, capsys,
+                                                                faults, mark, code):
+    server = tasked(faults)
+
+    exit_code, shown, line = _checkup(capsys, work)
+
+    assert line.endswith(f" N+ P+ {mark}" + (f"  {mark}={code}" if code else ""))
+    assert exit_code == (1 if mark == "T!" else 0)
+    assert "a session is fixing a sample module, in at most 8 rounds" in shown
+    # It ran as exec runs a task, with the credential, in rounds the gateway saw.
+    sessions = _sessions(server)
+    assert sessions and {seen["authorization"] for seen in sessions} == {f"Bearer {SECRET}"}
+    assert "test_interval.py fail" in json.dumps(sessions[0]["body"])
+    # Its own Foundry folder: nothing of it is left in the user's.
+    assert sorted(path.name for path in machine.iterdir()) == ["checkups", "config.toml"]
+    (folder,) = [path for path in (machine / "checkups").iterdir() if path.is_dir()]
+    events = (folder / "task.jsonl").read_text(encoding="utf-8")
+    assert '"kind": "termination"' in events and SECRET not in events
+    assert f"The task session's events, redacted: {folder / 'task.jsonl'}" in _report(machine)
+
+
+def test_the_task_reports_its_rounds_and_tokens(tasked, work, capsys):
+    tasked()
+
+    _, shown, _ = _checkup(capsys, work)
+
+    found = re.search(r"OK task fixed, and said so: (\d+) round\(s\), (\d+) tool call\(s\), "
+                      r"(\d+) token\(s\) in and (\d+) out", shown)
+    # A read, a patch, the tests, finish; the gateway counts 20 in, 10 out each.
+    assert found and [int(n) for n in found.groups()] == [4, 4, 80, 40]
+    # Nothing it did was refused: the rule for the tests reached it.
+    assert "refused:" not in shown
+
+
+def test_the_session_is_run_as_a_script_runs_a_task(tmp_path):
+    argv = checkup.taskcheck.exec_argv(tmp_path)
+
+    assert argv[:3] == [sys.executable, "-m", "foundry"]
+    assert argv[3:] == ["exec", "--json", "--ephemeral", "-C", str(tmp_path),
+                        "-c", "runtime.max_tool_rounds=8", checkup.taskcheck.TASK]
+
+
+def test_the_session_s_events_are_kept_redacted(tasked, machine, work, monkeypatch, capsys):
+    # What the session said is scrubbed as everything kept is.
+    redactor = checkup.default_redactor().__class__()
+    redactor.register("Fixed the count in overlap.")
+    monkeypatch.setattr(checkup, "default_redactor", lambda: redactor)
+    tasked()
+
+    _checkup(capsys, work)
+
+    (folder,) = [path for path in (machine / "checkups").iterdir() if path.is_dir()]
+    events = (folder / "task.jsonl").read_text(encoding="utf-8")
+    assert "[redacted]" in events and "Fixed the count" not in events
+
+
+def test_a_stored_key_reaches_the_session_in_its_variable(tasked, machine, work, capsys):
+    # The session's Foundry folder has no auth.json: the key the checkup
+    # read goes to it in OPENAI_API_KEY, in memory.
+    server = tasked(stored=True)
+
+    code, shown, line = _checkup(capsys, work)
+
+    assert " K:key-login " in line and line.endswith(" P+ T+") and code == 0
+    assert {seen["authorization"] for seen in _sessions(server)} == {f"Bearer {SECRET}"}
+
+
+def test_the_session_runs_the_tests_with_this_python(tasked, work, tmp_path, monkeypatch,
+                                                     capsys):
+    # A `python` that comes first on PATH is not the one the session uses.
+    decoy = tmp_path / "decoy"
+    decoy.mkdir()
+    (decoy / "python.bat").write_text("@echo not this python & exit /b 1\n", encoding="ascii")
+    monkeypatch.setenv("PATH", f"{decoy}{os.pathsep}{os.environ['PATH']}")
+    tasked()
+
+    code, shown, line = _checkup(capsys, work)
+
+    assert line.endswith(" P+ T+") and code == 0
+
+
+def test_no_task_leaves_the_task_level_out(tasked, work, capsys):
+    server = tasked()
+
+    code, shown, line = _checkup(capsys, work, "--no-task")
+
+    assert line.endswith(" P+ T-") and code == 0
+    assert "T a task, end to end SKIP all not checked: --no-task" in shown
+    assert _sessions(server) == []
+
+
+def test_a_protocol_level_that_failed_leaves_the_task_out(tasked, work, capsys):
+    server = tasked(["drop_tools"])
+
+    code, shown, line = _checkup(capsys, work)
+
+    assert " P! T-  P!=TCS0,TCO0" in line and code == 1
+    assert _sessions(server) == []
+
+
+def test_a_session_that_ends_without_an_outcome(tasked, work, monkeypatch, capsys):
+    tasked()
+    monkeypatch.setattr(checkup.taskcheck, "exec_argv", lambda repo: [
+        sys.executable, "-c", "import sys; sys.stderr.write('boom\\n'); sys.exit(3)"])
+
+    code, shown, line = _checkup(capsys, work)
+
+    assert line.endswith(" T!  T!=TSKX") and code == 1
+    assert "the session ended without an outcome, exit 3: boom" in shown
+
+
+def test_a_session_that_does_not_end_is_stopped(tasked, work, monkeypatch, capsys):
+    tasked()
+    monkeypatch.setattr(checkup.taskcheck, "TIMEOUT_S", 1)
+    monkeypatch.setattr(checkup.taskcheck, "exec_argv", lambda repo: [
+        sys.executable, "-c", "import time; time.sleep(30)"])
+
+    code, shown, line = _checkup(capsys, work)
+
+    assert line.endswith(" T!  T!=TSKT") and code == 1
+    assert "no end after 1 s" in shown
+
+
+def test_a_sample_that_cannot_be_made(tasked, work, monkeypatch, capsys):
+    tasked()
+
+    def broken(folder):
+        raise OSError("no room")
+
+    monkeypatch.setattr(checkup.taskcheck, "make_sample", broken)
+
+    code, shown, line = _checkup(capsys, work)
+
+    assert line.endswith(" T!  T!=TSKS") and code == 1
+    assert "the sample repository could not be made: no room" in shown
+
+
+def test_the_sample_fails_its_tests_until_fixed(tmp_path):
+    repo = checkup.taskcheck.make_sample(tmp_path)
+
+    assert not checkup.taskcheck.tests_pass(repo) and checkup.taskcheck.tests_kept(repo)
+    fixed = (repo / "interval.py").read_text(encoding="utf-8").replace(
+        "end - start)", "end - start + 1)")
+    (repo / "interval.py").write_text(fixed, encoding="utf-8")
+    assert checkup.taskcheck.tests_pass(repo)
+    (repo / "test_interval.py").write_text("", encoding="utf-8")
+    assert not checkup.taskcheck.tests_kept(repo)
+
+
+def test_events_a_session_printed_are_read_and_the_rest_ignored():
+    ran = checkup.taskcheck.Ran()
+    checkup.taskcheck.read_events("\n".join([
+        "not json", "[1]", json.dumps({"kind": "turn_started"}),
+        json.dumps({"kind": "tool_rejected", "tool": "run_command", "display": "rm -r x"}),
+        json.dumps({"kind": "token_count", "session_total": {"input_tokens": 9,
+                                                              "output_tokens": 4}}),
+        json.dumps({"kind": "termination", "status": "partial", "reason": "no finish"})]), ran)
+
+    assert (ran.rounds, ran.tools, ran.input_tokens, ran.output_tokens) == (1, 0, 9, 4)
+    assert ran.refused == ["run_command rm -r x"] and ran.status == "partial"
+    case = checkup.taskcheck.task_case(ran, False, True)
+    assert case.code == "TSK0" and "refused: run_command rm -r x" in case.said
 
 
 # --- what the session's client does with a proxy's password ---------------

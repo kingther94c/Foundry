@@ -81,11 +81,11 @@ level by level, this machine (Python, git, PowerShell, long paths), the
 configuration (the file, the protocol, the endpoint, the model, where the
 credential comes from, the machine's policy), the network to the endpoint
 (the proxy and where it was found, the name, the connection, the proxy's
-tunnel, TLS and who issued the certificate, the endpoint's list of models) and
+tunnel, TLS and who issued the certificate, the endpoint's list of models),
 the protocol (a word streamed and once, whether a proxy holds a stream back, a
 tool call and the turn after its result, a reply cut at a ceiling, a model
-that does not exist): a line for each case, with a short code and what to do
-where something is wrong.
+that does not exist) and a task end to end: a line for each case, with a short
+code and what to do where something is wrong.
 It ends with a feedback code such as `FB1 f4c38e1 E+ C+ K:key-env M:- R:chat N!  N!=TLS1`
 -- each level's mark (`+` OK, `~` a warning, `!` failed, `-` skipped), the
 credential's kind, the machine policy's rules and the protocol, then the codes
@@ -95,7 +95,12 @@ has the detail and four questions only you can answer, beside a folder with
 what each of the protocol level's requests received, redacted. That level asks
 the model eight small questions with fixed prompts and a toy tool -- nothing
 from the workspace is sent -- and says what it spent; `--all-protocols` asks
-the same in the other two protocols at the same address.
+the same in the other two protocols at the same address. Last, a session is
+given a small task as `foundry exec` runs one -- a sample module with an
+off-by-one and the tests that find it, in a repository the checkup makes and
+removes, with a Foundry folder of its own and leave to run `python -m
+unittest` -- and the checkup runs the tests itself afterwards. It takes a
+minute or two and a few rounds of the model; `--no-task` leaves it out.
 
 ### Installed offline (a machine with no package index)
 
@@ -198,7 +203,7 @@ project_doc_max_bytes = 32768      # characters; 0 reads none of the repository'
 | `foundry memories [show]` / `update` / `reset` | codex's memories, once `foundry features enable memories` turns them on: a model reads this workspace's sessions once they have been idle (6 hours) and keeps what a later session here should know, merged into notes and a summary a session starts with -- in a workspace you trust, and for that workspace only. They are written in the background as an interactive session starts; `update` writes them now, `show` prints them, and `reset` forgets them (the sessions before it are not read again). `[memories]` tunes it as codex's does (`generate_memories`, `use_memories`, `max_rollout_age_days`, `min_rollout_idle_hours`, `extract_model`, ...). In a session, `/memories` says what this one uses, and `/memories use off` or `generate off` decides it for this session |
 | `foundry mcp list [--json]` / `get NAME [--json]` / `add NAME -- COMMAND [ARGS...]` / `add NAME --url URL` / `remove NAME` | the MCP servers in your config.toml, as `codex mcp`: `get` shows one in full -- its arguments, environment and address, a value a credential's name marks hidden; `add` takes `--env KEY=VALUE`, `--env-var NAME` (a secret, passed through by name), `--bearer-token-env-var VAR` and `--read-only`; the file is edited in place, comments kept |
 | `foundry doctor` | environment self-check |
-| `foundry checkup [-C DIR] [--all-protocols]` | the first run on a machine: this machine, the configuration, the network to the endpoint and the protocol, checked level by level, a line for each case, a feedback code to read out and a report kept on the machine ([D-204](docs/decision-log.md), [D-205](docs/decision-log.md)) |
+| `foundry checkup [-C DIR] [--all-protocols] [--no-task]` | the first run on a machine: this machine, the configuration, the network to the endpoint, the protocol and a task end to end, checked level by level, a line for each case, a feedback code to read out and a report kept on the machine ([D-204](docs/decision-log.md), [D-205](docs/decision-log.md), [D-206](docs/decision-log.md)) |
 | `foundry policy check COMMAND [--json]` | what the policy would decide for a command here -- at a terminal and unattended, with the rule and the step that decided -- without running it, as `codex execpolicy check` |
 | `foundry completion [powershell\|bash]` | a Tab-completion script for the shell, as `codex completion`: add `foundry completion powershell \| Out-String \| Invoke-Expression` to your `$PROFILE`, or `eval "$(foundry completion bash)"` to `~/.bashrc` (Git Bash); subcommands, flags and `--mode`'s values complete, paths are left to the shell |
 

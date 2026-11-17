@@ -73,9 +73,10 @@ protocol adapter layers change.
     only by word of mouth: this machine, the configuration, the network
     to the endpoint and the protocol (text, a stream's pace, a tool call and
     its continuation, a reply cut at a ceiling, a wrong model), checked level
-    by level, each case a line with a short code, then a feedback code to
-    read out and a report kept on the machine with what each request
-    received (D-204, D-205)
+    by level, and a session given a small task and judged by its tests,
+    each case a line with a short code, then a feedback code to read out
+    and a report kept on the machine with what each request received
+    (D-204, D-205, D-206)
 - **The output contract**: the five termination states map to process exit
   codes: `completed=0, partial=10, blocked=11, failed=12, cancelled=13`; the
   final report carries evidence (the verification command + its exit code + a

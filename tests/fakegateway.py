@@ -2,8 +2,11 @@
 
 It answers what the checkup's protocol level asks -- a word, the numbers to
 40 or to 300, a call of the add tool, the turn after its result -- as the
-three APIs shape it, streamed or once, and it lists its models. Each fault a
-real gateway has been seen to have, or could have, is a switch:
+three APIs shape it, streamed or once, and it lists its models. A request
+that offers ``finish`` is a session's: it is answered as a model that does
+the checkup's task would (D-206) -- a read, a patch, the tests, finish
+citing them.
+Each fault a real gateway has been seen to have, or could have, is a switch:
 
 * ``drop_tools``: the tools are taken out of the request.
 * ``buffer``: a stream is held back and sent whole, a second later.
@@ -16,6 +19,12 @@ real gateway has been seen to have, or could have, is a switch:
 * ``post401``: every turn is refused HTTP 401; the model list is not.
 * ``post500``: every turn fails HTTP 500.
 * ``echo_auth``: the one-word answer quotes the credential it was sent.
+
+And for the task, how the model goes about it:
+
+* ``solver_wrong``: it patches the README, not the module.
+* ``solver_tests``: it changes the tests to fit the module.
+* ``solver_quiet``: it ends with a word instead of finish.
 
 ``speaks`` names the protocols it answers ("chat", "resp", "anth"); a turn in
 another is answered HTTP 404, as at an address that does not exist.
@@ -74,6 +83,63 @@ def _result(protocol: str, body: dict) -> str:
                    if part.get("type") == "tool_result")
 
 
+# The task's patches, as a model would write them.
+_FIX = ("*** Begin Patch\n*** Update File: interval.py\n<<<<<<< SEARCH\n"
+        "    return max(0, end - start)\n=======\n    return max(0, end - start + 1)\n"
+        ">>>>>>> REPLACE\n*** End Patch")
+_README = ("*** Begin Patch\n*** Update File: README.md\n<<<<<<< SEARCH\n# interval\n=======\n"
+           "# interval, fixed\n>>>>>>> REPLACE\n*** End Patch")
+_TESTS = ("*** Begin Patch\n*** Update File: test_interval.py\n<<<<<<< SEARCH\n"
+          "        self.assertEqual(overlap((1, 10), (3, 4)), 2)\n=======\n"
+          "        self.assertEqual(overlap((1, 10), (3, 4)), 1)\n>>>>>>> REPLACE\n"
+          "<<<<<<< SEARCH\n        self.assertEqual(overlap((1, 3), (3, 6)), 1)\n=======\n"
+          "        self.assertEqual(overlap((1, 3), (3, 6)), 0)\n>>>>>>> REPLACE\n"
+          "*** End Patch")
+
+
+def _tool_names(protocol: str, body: dict) -> set[str]:
+    tools = body.get("tools") or []
+    if protocol == "chat":
+        return {tool.get("function", {}).get("name") for tool in tools}
+    return {tool.get("name") for tool in tools}
+
+
+def _results(protocol: str, body: dict) -> list[str]:
+    """The tools' results the conversation holds, in order."""
+    if protocol == "chat":
+        return [_text_of(m.get("content")) for m in body["messages"] if m.get("role") == "tool"]
+    if protocol == "resp":
+        return [_text_of(item.get("output")) for item in body["input"]
+                if item.get("type") == "function_call_output"]
+    return [_text_of(part.get("content")) for m in body["messages"]
+            if isinstance(m.get("content"), list)
+            for part in m["content"] if part.get("type") == "tool_result"]
+
+
+def _solve(protocol: str, body: dict, faults) -> tuple[tuple[str, str, str] | None, str]:
+    """The session's next step: a call (id, name, arguments), or a word."""
+    results = _results(protocol, body)
+    step = len(results)
+    path, patch = (("README.md", _README) if "solver_wrong" in faults
+                   else ("test_interval.py", _TESTS) if "solver_tests" in faults
+                   else ("interval.py", _FIX))
+    if step == 0:
+        # A file is read before it is patched, as Foundry asks.
+        return ("call_s0", "read_file", json.dumps({"path": path})), ""
+    if step == 1:
+        return ("call_s1", "apply_patch", json.dumps({"patch": patch})), ""
+    if step == 2:
+        return ("call_s2", "run_command", json.dumps({"command": "python -m unittest"})), ""
+    if step == 3 and "solver_quiet" not in faults:
+        cited = re.findall(r"event_id=(\d+)", results[-1])
+        claims = [{"claim_text": "python -m unittest passes", "expected_exit_code": 0,
+                   "command_event_id": int(cited[-1])}] if cited else []
+        return ("call_s3", "finish", json.dumps({
+            "status": "completed", "summary": "Fixed the count in overlap.",
+            "claims": claims})), ""
+    return None, "Done."
+
+
 def _asked(body: dict) -> str:
     """What the request asks for, as the checkup words it."""
     words = json.dumps(body)
@@ -129,13 +195,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                        "message": f"model {body.get('model')} not found"}})
             return
         call, text, cut = None, "", None
-        if _continuing(protocol, body):
+        if "finish" in _tool_names(protocol, body):
+            call, text = _solve(protocol, body, faults)
+        elif _continuing(protocol, body):
             if "reject_tool_result" in faults:
                 self._send(400, {"error": {"message": "unsupported message role"}})
                 return
             text = f"The tool says {_result(protocol, body)}."
         elif body.get("tools") and "drop_tools" not in faults:
-            call = '"a=2, b=3"' if "mangle_args" in faults else '{"a": 2, "b": 3}'
+            call = ("call_1", "add",
+                    '"a=2, b=3"' if "mangle_args" in faults else '{"a": 2, "b": 3}')
         elif body.get("tools"):
             text = "I cannot use tools."
         else:
@@ -163,8 +232,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         message = {"role": "assistant", "content": reply["text"] or None}
         finish = "length" if reply["cut"] else "stop"
         if reply["call"] is not None:
-            message["tool_calls"] = [{"id": "call_1", "type": "function",
-                                      "function": {"name": "add", "arguments": reply["call"]}}]
+            call_id, name, arguments = reply["call"]
+            message["tool_calls"] = [{"id": call_id, "type": "function",
+                                      "function": {"name": name, "arguments": arguments}}]
             finish = "tool_calls"
         return {"id": "chatcmpl-1", "object": "chat.completion", "model": reply["model"],
                 "choices": [{"index": 0, "message": message, "finish_reason": finish}],
@@ -174,8 +244,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     @staticmethod
     def _resp_output(reply):
         if reply["call"] is not None:
-            return [{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "add",
-                     "arguments": reply["call"], "status": "completed"}]
+            call_id, name, arguments = reply["call"]
+            return [{"type": "function_call", "id": f"fc_{call_id}", "call_id": call_id,
+                     "name": name, "arguments": arguments, "status": "completed"}]
         return [{"type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
                  "content": [{"type": "output_text", "text": reply["text"],
                               "annotations": []}]}]
@@ -202,8 +273,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     @classmethod
     def _anth_once(cls, reply):
         if reply["call"] is not None:
-            content = [{"type": "tool_use", "id": "toolu_1", "name": "add",
-                        "input": json.loads(reply["call"])}]
+            call_id, name, arguments = reply["call"]
+            content = [{"type": "tool_use", "id": f"toolu_{call_id}", "name": name,
+                        "input": json.loads(arguments)}]
         else:
             content = [{"type": "text", "text": reply["text"]}]
         return {"id": "msg_1", "type": "message", "role": "assistant", "model": reply["model"],
@@ -249,11 +321,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         events += [chunk({"content": piece}) for piece in pieces]
         finish = "length" if reply["cut"] else "stop"
         if reply["call"] is not None:
-            events.append(chunk({"tool_calls": [{"index": 0, "id": "call_1", "type": "function",
-                                                 "function": {"name": "add",
+            call_id, name, arguments = reply["call"]
+            events.append(chunk({"tool_calls": [{"index": 0, "id": call_id, "type": "function",
+                                                 "function": {"name": name,
                                                               "arguments": ""}}]}))
-            half = len(reply["call"]) // 2
-            for part in (reply["call"][:half], reply["call"][half:]):
+            half = len(arguments) // 2
+            for part in (arguments[:half], arguments[half:]):
                 events.append(chunk({"tool_calls": [{"index": 0,
                                                      "function": {"arguments": part}}]}))
             finish = "tool_calls"
@@ -273,7 +346,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             events.append({"type": "response.output_item.added", "output_index": 0,
                            "item": {**item, "arguments": "", "status": "in_progress"}})
             events.append({"type": "response.function_call_arguments.delta", "output_index": 0,
-                           "item_id": item["id"], "delta": reply["call"]})
+                           "item_id": item["id"], "delta": reply["call"][2]})
         else:
             events.append({"type": "response.output_item.added", "output_index": 0,
                            "item": {**item, "content": [], "status": "in_progress"}})
@@ -291,12 +364,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "content": [], "stop_reason": None,
             "usage": {"input_tokens": reply["usage"][0], "output_tokens": 1}}}]
         if reply["call"] is not None:
+            call_id, name, arguments = reply["call"]
             events.append({"type": "content_block_start", "index": 0,
-                           "content_block": {"type": "tool_use", "id": "toolu_1",
-                                             "name": "add", "input": {}}})
+                           "content_block": {"type": "tool_use", "id": f"toolu_{call_id}",
+                                             "name": name, "input": {}}})
             events.append({"type": "content_block_delta", "index": 0,
-                           "delta": {"type": "input_json_delta",
-                                     "partial_json": reply["call"]}})
+                           "delta": {"type": "input_json_delta", "partial_json": arguments}})
         else:
             events.append({"type": "content_block_start", "index": 0,
                            "content_block": {"type": "text", "text": ""}})

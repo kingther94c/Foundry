@@ -2,12 +2,14 @@
 leave it only by word of mouth.
 
 Level by level -- this machine, the configuration, the network, the
-protocol -- each case gives its verdict in one line as it is found. A level
-that cannot be checked because one before it failed is marked skipped rather
-than waited out. At the end come a short summary, the feedback code to read
-out, and the path of the report, kept on the machine beside the answers the
-protocol level received. Nothing from the workspace is sent: the protocol
-level asks with fixed prompts and a toy tool (D-205).
+protocol, a task -- each case gives its verdict in one line as it is found.
+A level that cannot be checked because one before it failed is marked
+skipped rather than waited out. At the end come a short summary, the
+feedback code to read out, and the path of the report, kept on the machine
+beside the answers the protocol level received and the task's events.
+Nothing from the workspace is sent: the protocol level asks with fixed
+prompts and a toy tool (D-205), and the task is done in a repository the
+checkup makes (D-206).
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ import platform
 import re
 import subprocess
 import sys
+import tempfile
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -42,6 +46,7 @@ from foundry.core.httpc import _is_loopback
 from foundry.core.httptap import TapClient
 from foundry.core.netcheck import network_cases
 from foundry.core.policy.engine import Layer
+from foundry.core import taskcheck
 from foundry.core.protocheck import Spent, protocol_cases
 from foundry.core.redaction import default_redactor
 from foundry.core.tools.git import run_git
@@ -61,14 +66,24 @@ class Run:
     def __init__(self, console: Console) -> None:
         self.console = console
         self.cases: list[Case] = []
+        self._shown_level = ""
+
+    def _header(self, level: str) -> None:
+        if level != self._shown_level:
+            self.console.print(f"\n[bold]{level}  {LEVELS[level]}[/bold]")
+            self._shown_level = level
+
+    def note(self, level: str, text: str) -> None:
+        """A line that is not a case: what a long step is doing."""
+        self._header(level)
+        self.console.print(f"[dim]  {escape(text)}[/dim]", soft_wrap=True, highlight=False)
 
     def add(self, case: Case) -> Case:
         # What reaches the screen and the report passes the redactor, as a
         # journal record does: an endpoint's answer is quoted in some cases.
         scrub = default_redactor().scrub
         case = dataclasses.replace(case, said=scrub(case.said), fix=scrub(case.fix))
-        if not self.cases or self.cases[-1].level != case.level:
-            self.console.print(f"\n[bold]{case.level}  {LEVELS[case.level]}[/bold]")
+        self._header(case.level)
         style = STYLE[case.status]
         self.console.print(f"  [{style}]{case.status:<4}[/{style}] {case.code:<7} "
                            f"{escape(case.name):<10} {escape(case.said)}",
@@ -404,6 +419,70 @@ def protocol(run: Run, config: Config, secret: str, *, all_protocols: bool) -> S
     return spent
 
 
+# --- T: a task -------------------------------------------------------------
+
+
+def _session_environment(config: Config, home: Path, secret: str) -> dict[str, str]:
+    """The session's environment: its own Foundry folder, the credential in
+    the variable its configuration reads (in memory, never in a file), and
+    this Foundry on its path."""
+    env = dict(os.environ)
+    env["FOUNDRY_HOME"] = str(home)
+    source = _credential_source(config, CredentialVault(home / "auth.json"))
+    env[source.env_var] = secret
+    package_root = str(Path(foundry.__file__).resolve().parent.parent)
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [package_root,
+                                                      env.get("PYTHONPATH")]))
+    # The `python` the session runs the tests with is the one running this.
+    env["PATH"] = os.pathsep.join(filter(None, [str(Path(sys.executable).parent),
+                                                env.get("PATH")]))
+    env.update({"PYTHONIOENCODING": "utf-8", "NO_COLOR": "1"})
+    return env
+
+
+def task(run: Run, config: Config, secret: str, home: Path, folder: Path) -> None:
+    """A session given the sample task, as exec runs one; its events kept,
+    redacted, in ``folder``; the verdict from the checkup's own test run."""
+    run.note("T", f"a session is fixing a sample module, in at most {taskcheck.ROUNDS} "
+             "rounds: a minute or two")
+    scrub = default_redactor().scrub_bytes
+    with tempfile.TemporaryDirectory(prefix="foundry-checkup-",
+                                     ignore_cleanup_errors=True) as scratch:
+        scratch = Path(scratch)
+        try:
+            repo = taskcheck.make_sample(scratch)
+            user_file = home / "config.toml"
+            mine = user_file.read_text(encoding="utf-8-sig") if user_file.is_file() else ""
+            session_home = scratch / "home"
+            session_home.mkdir()
+            (session_home / "config.toml").write_text(taskcheck.child_config(mine),
+                                                      encoding="utf-8")
+        except (OSError, UnicodeDecodeError, FoundryError) as exc:
+            run.add(Case("T", "task", FAIL, f"the sample repository could not be made: {exc}",
+                         "TSKS", "the temporary folder and git must work: say this line"))
+            return
+        ran = taskcheck.Ran()
+        began = time.monotonic()
+        try:
+            done = subprocess.run(taskcheck.exec_argv(repo), cwd=repo, capture_output=True,
+                                  stdin=subprocess.DEVNULL,
+                                  env=_session_environment(config, session_home, secret),
+                                  timeout=taskcheck.TIMEOUT_S)
+            stdout, stderr, ran.exit_code = done.stdout, done.stderr, done.returncode
+        except subprocess.TimeoutExpired as exc:
+            stdout, stderr, ran.timed_out = exc.stdout or b"", exc.stderr or b"", True
+        ran.seconds = time.monotonic() - began
+        ran.stderr = stderr.decode("utf-8", "replace")
+        taskcheck.read_events(stdout.decode("utf-8", "replace"), ran)
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / "task.jsonl").write_bytes(scrub(stdout))
+            (folder / "task.err").write_bytes(scrub(stderr))
+        except OSError:
+            pass
+        run.add(taskcheck.task_case(ran, taskcheck.tests_pass(repo), taskcheck.tests_kept(repo)))
+
+
 # --- the command ----------------------------------------------------------
 
 
@@ -433,12 +512,13 @@ def cmd_checkup(args: argparse.Namespace) -> int:
     token, about_source = source_token()
     machine(run, about_source)
     config, facts = configuration(run, workspace, home)
+    folder = home / "checkups" / f"checkup-{when:%Y%m%d-%H%M%S}"
     spent = None
     if config is None or run.failed("C", "URL0"):
         why = ("the configuration could not be read" if config is None
                else "base_url is not an address")
-        run.skip("N", why)
-        run.skip("P", why)
+        for level in ("N", "P", "T"):
+            run.skip(level, why)
     else:
         # What the configuration passes to commands and headers is registered
         # with the redactor before anything is shown (D-153).
@@ -446,16 +526,27 @@ def cmd_checkup(args: argparse.Namespace) -> int:
         secret, why = network(run, config, home)
         if secret is None:
             run.skip("P", why)
+            run.skip("T", why)
         else:
             spent = protocol(run, config, secret,
                              all_protocols=getattr(args, "all_protocols", False))
+            if getattr(args, "no_task", False):
+                run.skip("T", "--no-task")
+            elif any(case.level == "P" and case.status == FAIL for case in run.cases):
+                run.skip("T", "the protocol level failed")
+            elif any(case.level == "E" and case.name == "git" and case.status == FAIL
+                     for case in run.cases):
+                run.skip("T", "git does not run")
+            else:
+                task(run, config, secret, home, folder)
 
     code = feedback_code(token, run.cases, facts)
     about = [about_source, f"Python {platform.python_version()} on {platform.platform()}",
              f"Checked from {workspace}"]
-    folder = home / "checkups" / f"checkup-{when:%Y%m%d-%H%M%S}"
     if spent is not None and spent.captures and keep_answers(folder, spent):
         about.append(f"What the protocol level received, as it came and redacted: {folder}")
+    if (folder / "task.jsonl").is_file():
+        about.append(f"The task session's events, redacted: {folder / 'task.jsonl'}")
     text = default_redactor().scrub(report(when=when.strftime("%Y-%m-%d %H:%M"), about=about,
                                            cases=run.cases, code=code))
     path: Path | None = folder.parent / f"{folder.name}.md"

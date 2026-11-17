@@ -304,6 +304,9 @@ def build_parser() -> argparse.ArgumentParser:
                          help="the folder a session would work in (default: this one)")
     checkup.add_argument("--all-protocols", action="store_true",
                          help="ask the endpoint in the other protocols too, at the same address")
+    checkup.add_argument("--no-task", action="store_true",
+                         help="leave out the task level: a session fixing a sample module, "
+                              "which takes a minute or two and a few rounds of the model")
     checkup.set_defaults(func=cmd_checkup)
 
     policy = sub.add_parser("policy", help="what the policy decides, as codex execpolicy")
