@@ -75,6 +75,22 @@ proxy Foundry would use without its password, and the machine's policy, and it
 exits 1 where a session could not start or would have no credential; `-C DIR`
 checks another folder.
 
+On a machine Foundry has not run on before -- the corporate one first -- run
+`foundry checkup` (`python run-foundry.py checkup` from a clone). It checks,
+level by level, this machine (Python, git, PowerShell, long paths), the
+configuration (the file, the protocol, the endpoint, the model, where the
+credential comes from, the machine's policy) and the network to the endpoint
+(the proxy and where it was found, the name, the connection, the proxy's
+tunnel, TLS and who issued the certificate, the endpoint's list of models): a
+line for each case, with a short code and what to do where something is wrong.
+It ends with a feedback code such as `FB1 f4c38e1 E+ C+ K:key-env M:- R:chat N!  N!=TLS1`
+-- each level's mark (`+` OK, `~` a warning, `!` failed, `-` skipped), the
+credential's kind, the machine policy's rules and the protocol, then the codes
+of what was not OK -- which names no host and nothing secret and can be read
+out, and with the path of a report kept in `%LOCALAPPDATA%\Foundry\checkups`, which
+has the detail and four questions only you can answer. The model is asked
+nothing, and nothing from the workspace is sent.
+
 ### Installed offline (a machine with no package index)
 
 The distribution channel for the corporate machine is a wheel
@@ -176,6 +192,7 @@ project_doc_max_bytes = 32768      # characters; 0 reads none of the repository'
 | `foundry memories [show]` / `update` / `reset` | codex's memories, once `foundry features enable memories` turns them on: a model reads this workspace's sessions once they have been idle (6 hours) and keeps what a later session here should know, merged into notes and a summary a session starts with -- in a workspace you trust, and for that workspace only. They are written in the background as an interactive session starts; `update` writes them now, `show` prints them, and `reset` forgets them (the sessions before it are not read again). `[memories]` tunes it as codex's does (`generate_memories`, `use_memories`, `max_rollout_age_days`, `min_rollout_idle_hours`, `extract_model`, ...). In a session, `/memories` says what this one uses, and `/memories use off` or `generate off` decides it for this session |
 | `foundry mcp list [--json]` / `get NAME [--json]` / `add NAME -- COMMAND [ARGS...]` / `add NAME --url URL` / `remove NAME` | the MCP servers in your config.toml, as `codex mcp`: `get` shows one in full -- its arguments, environment and address, a value a credential's name marks hidden; `add` takes `--env KEY=VALUE`, `--env-var NAME` (a secret, passed through by name), `--bearer-token-env-var VAR` and `--read-only`; the file is edited in place, comments kept |
 | `foundry doctor` | environment self-check |
+| `foundry checkup [-C DIR]` | the first run on a machine: this machine, the configuration and the network to the endpoint, checked level by level, a line for each case, a feedback code to read out and a report kept on the machine ([D-204](docs/decision-log.md)) |
 | `foundry policy check COMMAND [--json]` | what the policy would decide for a command here -- at a terminal and unattended, with the rule and the step that decided -- without running it, as `codex execpolicy check` |
 | `foundry completion [powershell\|bash]` | a Tab-completion script for the shell, as `codex completion`: add `foundry completion powershell \| Out-String \| Invoke-Expression` to your `$PROFILE`, or `eval "$(foundry completion bash)"` to `~/.bashrc` (Git Bash); subcommands, flags and `--mode`'s values complete, paths are left to the shell |
 

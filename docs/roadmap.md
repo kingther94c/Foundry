@@ -16,16 +16,16 @@
 | M1a file tools + policy | **done** | attack table and decision table both green |
 | M1b run_command + segmenter | **done** | Job Object process-tree cleanup leaves no orphans in practice |
 | M2 personal path E2E + acceptance set | **done** | 8 golden scenarios; the `finish` evidence chain; `foundry report` |
-| M3 corporate Gateway | **partial** | no contact with the Gateway yet, and [OQ-6](open-questions.md) is open; the entry gate is now Foundry's own probe passing on that machine ([D-198](decision-log.md)), which P15 builds |
+| M3 corporate Gateway | **partial** | no contact with the Gateway yet, and [OQ-6](open-questions.md) is open; the entry gate is now `foundry checkup` OK at every level on that machine ([D-198](decision-log.md), [D-204](decision-log.md)), which P15 builds |
 | M4 packaging hardening + disclosure | **done** | the wheelhouse hash-pinned since 2026-11-11 ([D-170](decision-log.md)) |
 | Codex parity, items 1-106 | **done** | 2026-11-06 to 2026-11-09, D-039 to D-145; the table below |
 | After parity, P0-P3, P6-P11, the reruns against Claude | **done** | 2026-11-10 to 13, D-146 to D-187; what is left: P4 waits on the corporate side, and the rerun over Chat Completions is P12's batch |
 | Auto mode on small projects | **done** | 2026-11-13, D-188 to D-191: six projects aimed at editing unattended; `exec` now patches by default |
 | Learning from other agents | **done** | 2026-11-13, D-192 to D-196: the prompt's working rules, edit-time syntax check, repeated-failure note and patch readings, each taken from codex, opencode, Cline, OpenHands, SWE-agent, aider or Anthropic's guidance; D-197, opencode's last turn when a budget runs out |
 | P5, Foundry at work | **paused** | ResearchOS v32 built on the real API ([D-187](decision-log.md)); stopped at the user's word on 2026-11-13; it resumes when they say so |
-| After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden). Landed: the plan and the documents held to the code (D-198), the verification kit under `verify/` (D-199), the OpenAI-family adapters reading a real gateway's shapes (D-200), three versions of ResearchOS rebuilt from history as probes (D-201), configuration files read as Windows saves them (D-202), a `doctor` that says what is so ([D-203](decision-log.md)) |
+| After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden). Landed: the plan and the documents held to the code (D-198), the verification kit under `verify/` (D-199), the OpenAI-family adapters reading a real gateway's shapes (D-200), three versions of ResearchOS rebuilt from history as probes (D-201), configuration files read as Windows saves them (D-202), a `doctor` that says what is so (D-203), `foundry checkup` with this machine, the configuration and the network ([D-204](decision-log.md)) |
 
-The suite collects 5,212 tests, which run green on a machine with no network
+The suite collects 5,253 tests, which run green on a machine with no network
 and no credentials. This is the one place that figure is quoted, and
 `tests/test_docs_truth.py` holds it to what a full run collects. From D-036 to
 D-181 every feature was verified only against scripted backends: the local
@@ -151,7 +151,8 @@ Foundry's own probe (P15) passing there for the protocol in use -- an ordinary
 response, a tool call and its continuation, usage, and a reply cut at a small
 output ceiling -- with what it captures kept on that machine. Rate limiting, a
 dropped stream and a malformed event are tested against the relay that plays
-the protocols offline.
+the protocols offline. Since [D-204](decision-log.md) that probe is `foundry
+checkup`: every level OK there, and its feedback code said.
 
 - The `responses` adapter (mandatory) + CredentialSource (the intranet auth
   mechanism, [OQ-6](open-questions.md)) + TLS/proxy testing against the real
@@ -554,11 +555,13 @@ like a credential.
   rehearsed before the date.
 - **P15 -- a first contact with the corporate machine.** Configuration files
   in the encodings Windows editors write ([D-202](decision-log.md)); a `doctor`
-  that says what is so ([D-203](decision-log.md)),
-  and `doctor --online` for the proxy, TLS, the credential, the model list
-  and a stream; `foundry probe`, which runs a fixed set of cases against the
-  endpoint and prints a line for each; a runbook for the install, and a list
-  of what to report back. M3's entry gate becomes that probe passing there.
+  that says what is so ([D-203](decision-log.md)); and, at the user's word one
+  command where three were planned, `foundry checkup`: this machine, the
+  configuration and the network to the endpoint ([D-204](decision-log.md)),
+  then the protocol and a task end to end, each case a line with a short code,
+  ending in a feedback code to read out and a report kept there with what
+  only the user can say; a runbook for the install. M3's entry gate becomes
+  every level OK there.
 - **P16 -- the rest of the unlanded round.** The final gate does not soften
   a reported failure, and asks who moved a tree that no tool of the session
   touched; 'always' writes a rule for each part the policy matches, for this

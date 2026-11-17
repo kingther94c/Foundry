@@ -21,6 +21,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from foundry import __version__
+from foundry.cli.checkup import cmd_checkup
 from foundry.cli.codex_flags import hints as codex_hints
 from foundry.cli.completion import SHELLS
 from foundry.cli.completion import script as completion_script
@@ -296,6 +297,12 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
                         help="the folder a session would work in (default: this one)")
     doctor.set_defaults(func=cmd_doctor)
+
+    checkup = sub.add_parser("checkup", help="check what works on this machine, level by "
+                             "level, and give a code to read out")
+    checkup.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
+                         help="the folder a session would work in (default: this one)")
+    checkup.set_defaults(func=cmd_checkup)
 
     policy = sub.add_parser("policy", help="what the policy decides, as codex execpolicy")
     policy_sub = policy.add_subparsers(dest="policy_command", required=True)

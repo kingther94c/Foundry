@@ -47,6 +47,9 @@ foundry/
 │   ├── retention.py         # session_retention_days: the sessions last written more than
 │                            #   N days ago, removed as a session starts (D-163)
 │   ├── httpc.py             # a stdlib HTTP/SSE client (~300 lines)
+│   ├── httptap.py           # an HttpClient that keeps each response as it came, for the checkup (D-204)
+│   ├── netcheck.py          # the checkup's network level: proxy, name, connection, tunnel, TLS (D-204)
+│   ├── checkup.py           # the checkup's cases, its feedback code and its report (D-204)
 │   └── winapi.py            # ctypes: DPAPI, Job Objects, reparse tags
 ├── cli/                     # the terminal UI: event subscriber + approval UI (rich); repl.py, the
 │                            #   interactive prompt and its loop; slash_commands.py, the commands
@@ -64,7 +67,8 @@ foundry/
 │                            #   mcp_server.py, Foundry as an MCP server over stdio (D-103);
 │                            #   app.py, the parser and main; wiring.py builds a session; the
 │                            #   commands are in session_commands.py, unattended.py, login.py,
-│                            #   mcp_commands.py and setup_commands.py (D-158)
+│                            #   mcp_commands.py and setup_commands.py (D-158); checkup.py,
+│                            #   `foundry checkup` (D-204)
 ├── prompts/                 # versioned assets: the base system prompt, the patch format description, the permissions section template
 └── __main__.py              # entry point: bootstraps in UTF-8 mode
 ```

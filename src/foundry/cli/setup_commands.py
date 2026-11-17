@@ -27,7 +27,7 @@ from foundry.cli.wiring import (
     _trusted_paths,
     make_backend,
 )
-from foundry.core.auth import CredentialVault
+from foundry.core.auth import CredentialVault, StaticTokenSource
 from foundry.core.config import Config, load_config, managed_policy_path, user_dir
 from foundry.core.config_edit import set_feature
 from foundry.core.features import ALIASES as FEATURE_ALIASES
@@ -38,6 +38,7 @@ from foundry.core.memories import forget, load_state, run_pass
 from foundry.core.memories import folder as memories_folder
 from foundry.core.memories import notes as memory_notes
 from foundry.core.memories import summary as memory_summary
+from foundry.core.netcheck import shown_proxy
 from foundry.core.errors import ConfigError, FoundryError
 from foundry.core.events import EXIT_CODES, TerminalStatus
 from foundry.core.policy.engine import Layer, PolicyEngine, Verdict, builtin_rules
@@ -222,36 +223,32 @@ def cmd_policy(args: argparse.Namespace) -> int:
     return 0
 
 
-def _credential_line(config: Config, home: Path) -> tuple[str, bool]:
-    """Where the credential a session would send comes from, and whether
-    there is one -- its source and the variable's name, never the value."""
+def credential_found(config: Config, home: Path) -> tuple[str, bool, str]:
+    """Where the credential a session would send comes from -- its source and
+    the variable's name, never the value -- whether there is one, and its
+    kind as the checkup's feedback code says it (D-204): key-env, key-login,
+    key-named, gw-env, gw-login or none."""
     source = _credential_source(config, CredentialVault(home / "auth.json"))
     env_var = source.env_var
+    gateway = isinstance(source, StaticTokenSource)
     if os.environ.get(env_var):
-        named = " (backend.env_key)" if config.backend.env_key else ""
-        return f"credential  from the variable {env_var}{named}", True
+        if config.backend.env_key:
+            return f"from the variable {env_var} (backend.env_key)", True, "key-named"
+        return f"from the variable {env_var}", True, "gw-env" if gateway else "key-env"
     if config.backend.env_key:
-        return (f"credential  none: {env_var}, which backend.env_key names, is not set; "
-                "foundry login stores nothing for this backend"), False
+        return (f"none: {env_var}, which backend.env_key names, is not set; "
+                "foundry login stores nothing for this backend"), False, "none"
     field = getattr(source, "vault_field", None) or "token"
     stored = source.vault.load() or {}
     if stored.get(field):
-        return f"credential  stored by foundry login ({field}, in {home / 'auth.json'})", True
-    return f"credential  none: set {env_var} or run foundry login", False
+        return (f"stored by foundry login ({field}, in {home / 'auth.json'})", True,
+                "gw-login" if gateway else "key-login")
+    return f"none: set {env_var} or run foundry login", False, "none"
 
 
-def _shown_proxy(proxy: str) -> tuple[str, bool]:
-    """A proxy's address without its user name and password, and whether it
-    had them."""
-    parts = urllib.parse.urlsplit(proxy)
-    if parts.username is None and parts.password is None:
-        return proxy, False
-    host = parts.hostname or ""
-    if ":" in host:
-        host = f"[{host}]"
-    netloc = host + (f":{parts.port}" if parts.port else "")
-    return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, parts.query,
-                                    parts.fragment)), True
+def _credential_line(config: Config, home: Path) -> tuple[str, bool]:
+    said, present, _ = credential_found(config, home)
+    return f"credential  {said}", present
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -376,7 +373,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     proxy = _proxy_for(target)
     host = urllib.parse.urlsplit(target).hostname or target
     if proxy:
-        address, hidden = _shown_proxy(proxy)
+        address, hidden = shown_proxy(proxy)
         console.print(f"proxy   {escape(address)} for {escape(host)}"
                       + (" (its user name and password not shown)" if hidden else ""),
                       soft_wrap=True)

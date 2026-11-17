@@ -149,8 +149,11 @@ class HttpClient:
         proxy_port = proxy_parts.port or 8080
         proxy_headers: dict[str, str] = {}
         if proxy_parts.username:
+            # As a URL holds them: a password with @ or : in it must be
+            # written %40 or %3A there, and was sent to the proxy so (D-204).
             token = base64.b64encode(
-                f"{proxy_parts.username}:{proxy_parts.password or ''}".encode()
+                f"{urllib.parse.unquote(proxy_parts.username)}:"
+                f"{urllib.parse.unquote(proxy_parts.password or '')}".encode()
             ).decode()
             proxy_headers["Proxy-Authorization"] = f"Basic {token}"
 
