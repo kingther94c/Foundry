@@ -70,10 +70,12 @@ protocol adapter layers change.
     proxy without its password, the machine policy; it fails where a
     session could not start or would have no credential, D-203)
   - `foundry checkup` — the first run on a machine whose results leave it
-    only by word of mouth: this machine, the configuration and the network
-    to the endpoint, checked level by level, each case a line with a short
-    code, then a feedback code to read out and a report kept on the machine
-    (D-204)
+    only by word of mouth: this machine, the configuration, the network
+    to the endpoint and the protocol (text, a stream's pace, a tool call and
+    its continuation, a reply cut at a ceiling, a wrong model), checked level
+    by level, each case a line with a short code, then a feedback code to
+    read out and a report kept on the machine with what each request
+    received (D-204, D-205)
 - **The output contract**: the five termination states map to process exit
   codes: `completed=0, partial=10, blocked=11, failed=12, cancelled=13`; the
   final report carries evidence (the verification command + its exit code + a

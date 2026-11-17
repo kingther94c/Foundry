@@ -23,9 +23,9 @@
 | Auto mode on small projects | **done** | 2026-11-13, D-188 to D-191: six projects aimed at editing unattended; `exec` now patches by default |
 | Learning from other agents | **done** | 2026-11-13, D-192 to D-196: the prompt's working rules, edit-time syntax check, repeated-failure note and patch readings, each taken from codex, opencode, Cline, OpenHands, SWE-agent, aider or Anthropic's guidance; D-197, opencode's last turn when a budget runs out |
 | P5, Foundry at work | **paused** | ResearchOS v32 built on the real API ([D-187](decision-log.md)); stopped at the user's word on 2026-11-13; it resumes when they say so |
-| After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden). Landed: the plan and the documents held to the code (D-198), the verification kit under `verify/` (D-199), the OpenAI-family adapters reading a real gateway's shapes (D-200), three versions of ResearchOS rebuilt from history as probes (D-201), configuration files read as Windows saves them (D-202), a `doctor` that says what is so (D-203), `foundry checkup` with this machine, the configuration and the network ([D-204](decision-log.md)) |
+| After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden). Landed: the plan and the documents held to the code (D-198), the verification kit under `verify/` (D-199), the OpenAI-family adapters reading a real gateway's shapes (D-200), three versions of ResearchOS rebuilt from history as probes (D-201), configuration files read as Windows saves them (D-202), a `doctor` that says what is so (D-203), `foundry checkup` with this machine, the configuration and the network (D-204) and the protocol ([D-205](decision-log.md)) |
 
-The suite collects 5,253 tests, which run green on a machine with no network
+The suite collects 5,307 tests, which run green on a machine with no network
 and no credentials. This is the one place that figure is quoted, and
 `tests/test_docs_truth.py` holds it to what a full run collects. From D-036 to
 D-181 every feature was verified only against scripted backends: the local
@@ -558,7 +558,8 @@ like a credential.
   that says what is so ([D-203](decision-log.md)); and, at the user's word one
   command where three were planned, `foundry checkup`: this machine, the
   configuration and the network to the endpoint ([D-204](decision-log.md)),
-  then the protocol and a task end to end, each case a line with a short code,
+  the protocol ([D-205](decision-log.md)), then a task end to end, each case
+  a line with a short code,
   ending in a feedback code to read out and a report kept there with what
   only the user can say; a runbook for the install. M3's entry gate becomes
   every level OK there.

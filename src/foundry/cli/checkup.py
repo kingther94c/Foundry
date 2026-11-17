@@ -1,18 +1,19 @@
 """``foundry checkup`` (D-204): the first run on a machine whose results
 leave it only by word of mouth.
 
-Level by level -- this machine, the configuration, the network -- each case
-gives its verdict in one line as it is found. A level that cannot be checked
-because one before it failed is marked skipped rather than waited out. At the
-end come a short summary, the feedback code to read out, and the path of the
-report, kept on the machine. The model is not asked anything here, and
-nothing from the workspace is sent: the endpoint is asked only for its list
-of models.
+Level by level -- this machine, the configuration, the network, the
+protocol -- each case gives its verdict in one line as it is found. A level
+that cannot be checked because one before it failed is marked skipped rather
+than waited out. At the end come a short summary, the feedback code to read
+out, and the path of the report, kept on the machine beside the answers the
+protocol level received. Nothing from the workspace is sent: the protocol
+level asks with fixed prompts and a toy tool (D-205).
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
 import dataclasses
 import datetime
 import importlib.metadata
@@ -41,12 +42,17 @@ from foundry.core.httpc import _is_loopback
 from foundry.core.httptap import TapClient
 from foundry.core.netcheck import network_cases
 from foundry.core.policy.engine import Layer
+from foundry.core.protocheck import Spent, protocol_cases
 from foundry.core.redaction import default_redactor
 from foundry.core.tools.git import run_git
 from foundry.core.winapi import IS_WINDOWS, find_program
 
 PROTOCOL_SHORT = {"openai_compat": "chat", "responses": "resp", "anthropic_messages": "anth"}
 STYLE = {OK: "green", WARN: "yellow", FAIL: "red", SKIP: "dim"}
+# The protocol level waits this long between pieces of an answer.
+PROTOCOL_READ_TIMEOUT_S = 60.0
+# The model list's answers after which a turn would be refused the same way.
+_REFUSED = ("A401", "A403", "PX407")
 
 
 class Run:
@@ -325,27 +331,95 @@ def models_case(backend, tap: TapClient, model: str) -> Case:
                 "than they serve")
 
 
-def network(run: Run, config: Config, home: Path) -> None:
+def network(run: Run, config: Config, home: Path) -> tuple[str | None, str]:
+    """The network level; then the credential, when the protocol level can
+    go on, or why it cannot."""
     ca = os.environ.get("FOUNDRY_CA_BUNDLE") or os.environ.get("SSL_CERT_FILE")
     _, reached = network_cases(config.backend.base_url, ca_bundle=ca, said=run.add)
     if not reached:
         run.add(Case("N", "models", SKIP, "not asked: the endpoint was not reached"))
-        return
+        return None, "the endpoint was not reached"
     if config.backend.protocol not in _PROTOCOLS:
         run.add(Case("N", "models", SKIP, "not asked: the protocol is not one Foundry speaks"))
-        return
+        return None, "the protocol is not one Foundry speaks"
     try:
         secret = _credential_source(config, CredentialVault(home / "auth.json")).acquire()
         backend = make_backend(config, secret.reveal())
     except FoundryError as exc:
         run.add(Case("N", "models", SKIP, f"not asked: {exc}"))
-        return
+        return None, "there is no credential to ask with"
     tap = TapClient(read_timeout=backend.client.read_timeout)
     backend.client = tap
-    run.add(models_case(backend, tap, config.backend.model))
+    case = run.add(models_case(backend, tap, config.backend.model))
+    if case.code in _REFUSED:
+        return None, "the credential was refused"
+    return secret.reveal(), ""
+
+
+# --- P: the protocol ------------------------------------------------------
+
+
+def _ask_protocol(config: Config, secret: str, spent: Spent, *, said=lambda case: None):
+    """The protocol level's cases for this configuration, through its own
+    adapter; what they received is kept under the protocol's short name."""
+    backend = make_backend(config, secret)
+    tap = TapClient(read_timeout=PROTOCOL_READ_TIMEOUT_S)
+    backend.client = tap
+    own = Spent()
+    cases, _ = protocol_cases(backend, tap, config.backend.model, said=said, spent=own)
+    short = PROTOCOL_SHORT[config.backend.protocol]
+    spent.requests += own.requests
+    spent.input_tokens += own.input_tokens
+    spent.output_tokens += own.output_tokens
+    spent.captures += [(f"{short}-{name}", exchange) for name, exchange in own.captures]
+    return cases
+
+
+def _another_protocol(config: Config, secret: str, protocol: str, spent: Spent) -> Case:
+    """The same cases in another protocol at the same address, said as one
+    case: whether the gateway speaks that one too."""
+    other = copy.deepcopy(config)
+    other.backend.protocol = protocol
+    # What one protocol takes and another refuses is left out.
+    other.backend.effort = other.backend.verbosity = other.backend.reasoning_summary = None
+    short = PROTOCOL_SHORT[protocol]
+    failed = [case.code for case in _ask_protocol(other, secret, spent)
+              if case.status == FAIL]
+    if failed:
+        return Case("P", f"also {short}", WARN, f"{protocol} at the same address: "
+                    f"{', '.join(failed)}", f"X{short.upper()}",
+                    "the gateway does not speak this protocol there, or not all of it")
+    return Case("P", f"also {short}", OK, f"{protocol} at the same address works too")
+
+
+def protocol(run: Run, config: Config, secret: str, *, all_protocols: bool) -> Spent:
+    spent = Spent()
+    _ask_protocol(config, secret, spent, said=run.add)
+    if all_protocols:
+        for other in _PROTOCOLS:
+            if other != config.backend.protocol:
+                run.add(_another_protocol(config, secret, other, spent))
+    run.add(Case("P", "spent", OK, f"{spent.requests} request(s), {spent.input_tokens} "
+                 f"token(s) in and {spent.output_tokens} out"))
+    return spent
 
 
 # --- the command ----------------------------------------------------------
+
+
+def keep_answers(folder: Path, spent: Spent) -> bool:
+    """Each answer the protocol level received, as it came, beside what was
+    sent for it -- both redacted -- for the adapters' tests to be run on
+    them where they were made. A request's headers were never kept."""
+    scrub = default_redactor().scrub_bytes
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        for name, exchange in spent.captures:
+            (folder / f"{name}.raw").write_bytes(scrub(exchange.body))
+            (folder / f"{name}.request.json").write_bytes(scrub(exchange.sent))
+    except OSError:
+        return False
+    return True
 
 
 def cmd_checkup(args: argparse.Namespace) -> int:
@@ -359,22 +433,32 @@ def cmd_checkup(args: argparse.Namespace) -> int:
     token, about_source = source_token()
     machine(run, about_source)
     config, facts = configuration(run, workspace, home)
-    if config is None:
-        run.skip("N", "the configuration could not be read")
-    elif run.failed("C", "URL0"):
-        run.skip("N", "base_url is not an address")
+    spent = None
+    if config is None or run.failed("C", "URL0"):
+        why = ("the configuration could not be read" if config is None
+               else "base_url is not an address")
+        run.skip("N", why)
+        run.skip("P", why)
     else:
         # What the configuration passes to commands and headers is registered
         # with the redactor before anything is shown (D-153).
         _guard_credentials(config)
-        network(run, config, home)
+        secret, why = network(run, config, home)
+        if secret is None:
+            run.skip("P", why)
+        else:
+            spent = protocol(run, config, secret,
+                             all_protocols=getattr(args, "all_protocols", False))
 
     code = feedback_code(token, run.cases, facts)
     about = [about_source, f"Python {platform.python_version()} on {platform.platform()}",
              f"Checked from {workspace}"]
+    folder = home / "checkups" / f"checkup-{when:%Y%m%d-%H%M%S}"
+    if spent is not None and spent.captures and keep_answers(folder, spent):
+        about.append(f"What the protocol level received, as it came and redacted: {folder}")
     text = default_redactor().scrub(report(when=when.strftime("%Y-%m-%d %H:%M"), about=about,
                                            cases=run.cases, code=code))
-    path: Path | None = home / "checkups" / f"checkup-{when:%Y%m%d-%H%M%S}.md"
+    path: Path | None = folder.parent / f"{folder.name}.md"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")

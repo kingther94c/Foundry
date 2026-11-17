@@ -302,6 +302,8 @@ def build_parser() -> argparse.ArgumentParser:
                              "level, and give a code to read out")
     checkup.add_argument("-C", "--cd", "--workspace", dest="workspace", default=".",
                          help="the folder a session would work in (default: this one)")
+    checkup.add_argument("--all-protocols", action="store_true",
+                         help="ask the endpoint in the other protocols too, at the same address")
     checkup.set_defaults(func=cmd_checkup)
 
     policy = sub.add_parser("policy", help="what the policy decides, as codex execpolicy")

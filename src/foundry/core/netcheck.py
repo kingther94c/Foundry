@@ -17,7 +17,7 @@ import time
 import urllib.parse
 import urllib.request
 
-from foundry.core.checkup import FAIL, OK, SKIP, WARN, Case
+from foundry.core.checkup import FAIL, OK, SKIP, WARN, Case, Found
 from foundry.core.errors import ConfigError
 from foundry.core.httpc import _build_ssl_context, _is_loopback, _proxy_for
 
@@ -223,23 +223,6 @@ def _unverified_issuer(hop: _Hop, host: str) -> str:
         return ""
 
 
-class _Cases(list):
-    """The cases found so far, each told to ``said`` as it is found: a step
-    can wait ten seconds, and the screen should show the ones before it."""
-
-    def __init__(self, said) -> None:
-        super().__init__()
-        self._said = said
-
-    def append(self, case: Case) -> None:
-        super().append(case)
-        self._said(case)
-
-    def extend(self, cases) -> None:
-        for case in cases:
-            self.append(case)
-
-
 def network_cases(base_url: str, *, ca_bundle: str | None, timeout: float = TIMEOUT_S,
                   said=lambda case: None) -> tuple[list[Case], bool]:
     """The cases of the network level up to the endpoint's door, each told
@@ -248,7 +231,7 @@ def network_cases(base_url: str, *, ca_bundle: str | None, timeout: float = TIME
     parts = urllib.parse.urlsplit(base_url)
     host, scheme = parts.hostname or "", parts.scheme
     port = parts.port or (443 if scheme == "https" else 80)
-    cases = _Cases(said)
+    cases = Found(said)
 
     proxy = _proxy_for(base_url)
     if proxy:

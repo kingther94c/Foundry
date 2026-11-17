@@ -1,5 +1,5 @@
-"""`foundry checkup` (D-204): the first run on a machine whose results leave
-it only by word of mouth.
+"""`foundry checkup` (D-204, D-205): the first run on a machine whose results
+leave it only by word of mouth.
 
 Each case gives one line with a short code; the feedback code holds every
 level's mark and the codes of what was not OK, and no host and no secret;
@@ -8,12 +8,13 @@ made here on loopback -- a closed port, a name that does not resolve, a
 certificate nobody trusts, a proxy that wants a sign-in, a tunnel to the
 wrong name, a web page where the model list should be -- with a TLS server
 whose certificate is made for the test, and a proxy that answers CONNECT.
+The protocol level asks a gateway on loopback that speaks the three
+protocols, with each fault it can be given (tests/fakegateway.py).
 """
 
 from __future__ import annotations
 
 import base64
-import http.server
 import json
 import re
 import socket
@@ -25,16 +26,17 @@ import pytest
 
 from foundry import __version__
 from foundry.cli import app, checkup
-from foundry.core import netcheck
+from foundry.core import netcheck, protocheck
 from foundry.core.auth import CredentialVault
 from foundry.core.checkup import FAIL, OK, SKIP, WARN, Case, feedback_code, report
-from foundry.core.errors import FatalError
+from foundry.core.conversation import ModelTurn, StopReason, ToolUseBlock
+from foundry.core.errors import FatalError, FoundryError, ProtocolError, StreamDropped
 from foundry.core.httpc import HttpClient
+from foundry.core.httptap import Exchange
+from fakegateway import ALL, MODEL, MODELS, Gateway
 from selfsigned import certificate
 
 SECRET = "sk-checkup-test-0123456789abcdef"
-MODEL = "gpt-test"
-MODELS = json.dumps({"data": [{"id": MODEL}, {"id": "other"}]}).encode()
 # The checks the fixture stands in for, as the module defines them.
 REAL_POWERSHELL = checkup.powershell_case
 REAL_LONG_PATHS = checkup.long_paths_case
@@ -77,37 +79,15 @@ def work(tmp_path):
     return folder
 
 
-class _Endpoint(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.server.seen.append({"path": self.path,
-                                 "authorization": self.headers.get("Authorization")})
-        status, content_type, body = self.server.answer
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, *args):
-        pass
-
-
-class _Server(http.server.ThreadingHTTPServer):
-    daemon_threads = True
-
-    def handle_error(self, request, client_address):
-        pass        # a client that refused the certificate
-
-
 @pytest.fixture()
 def endpoint(tls_files):
     servers = []
 
-    def start(answer=(200, "application/json", MODELS), tls=False):
-        """A server answering GET with ``answer``; over TLS with the test's
-        certificate when ``tls`` is true, or with the (cert, key) it is."""
-        server = _Server(("127.0.0.1", 0), _Endpoint)
-        server.answer, server.seen = answer, []
+    def start(answer=(200, "application/json", MODELS), tls=False, faults=(), speaks=ALL):
+        """A gateway answering its model list with ``answer`` and each turn as
+        ``faults`` say; over TLS with the test's certificate when ``tls`` is
+        true, or with the (cert, key) it is."""
+        server = Gateway(answer=answer, faults=faults, speaks=speaks)
         if tls:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(*(tls_files if tls is True else tls))
@@ -187,8 +167,8 @@ def _config(home, base_url, extra=""):
         f'[backend]\nbase_url = "{base_url}"\nmodel = "{MODEL}"\n{extra}', encoding="utf-8")
 
 
-def _checkup(capsys, work):
-    code = app.main(["checkup", "-C", str(work)])
+def _checkup(capsys, work, *more):
+    code = app.main(["checkup", "-C", str(work), *more])
     out = capsys.readouterr()
     shown = out.out + out.err
     lines = [line.strip() for line in shown.splitlines()]
@@ -264,13 +244,17 @@ def test_every_level_ok_against_an_endpoint_that_lists_the_model(endpoint, machi
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line == f"FB1 {checkup.source_token()[0]} E+ C+ K:key-env M:- R:chat N+"
+    assert line == f"FB1 {checkup.source_token()[0]} E+ C+ K:key-env M:- R:chat N+ P+"
     assert code == 0
-    # Asked once, with the credential, which is shown nowhere.
-    assert server.seen == [{"path": "/v1/models", "authorization": f"Bearer {SECRET}"}]
+    # The list once, then the eight turns, each with the credential, which is
+    # shown nowhere.
+    assert [seen["path"] for seen in server.seen] == (["/v1/models"]
+                                                      + ["/v1/chat/completions"] * 8)
+    assert {seen["authorization"] for seen in server.seen} == {f"Bearer {SECRET}"}
     assert "2 model(s) listed, gpt-test among them" in shown
+    assert "spent 8 request(s), 140 token(s) in and 82 out" in shown
     text = _report(machine)
-    assert line in text and "## N network" in text
+    assert line in text and "## N network" in text and "## P protocol" in text
     assert SECRET not in shown and SECRET not in text
 
 
@@ -294,8 +278,13 @@ def test_each_answer_to_the_model_list_has_its_code(endpoint, machine, work, mon
 
     exit_code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(f" {mark}  {mark}={code}")
+    # A credential refused is refused for a turn too; anything else, a turn
+    # is still asked, and this gateway answers it.
+    refused = code in ("A401", "A403")
+    assert line.endswith(f" {mark} {'P-' if refused else 'P+'}  {mark}={code}")
     assert exit_code == (1 if mark == "N!" else 0)
+    if refused:
+        assert "P all not checked: the credential was refused" in shown
     if code == "HTML" and b"title" in body:
         assert "a web page answered, not a model list (Sign in to Corp)" in shown
     if code == "H500":
@@ -325,7 +314,7 @@ def test_a_closed_port_fails_at_tcp_and_the_endpoint_is_not_asked(machine, work,
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N!  N!=TCP0") and code == 1
+    assert line.endswith(" N! P-  N!=TCP0") and code == 1
     assert f"127.0.0.1 refused port {port}" in shown
     assert "models not asked: the endpoint was not reached" in shown
 
@@ -340,7 +329,7 @@ def test_a_name_that_does_not_resolve_fails_at_dns_and_a_proxy_script_is_named(
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N!  N!=DNS0,PAC") and code == 1
+    assert line.endswith(" N! P-  N!=DNS0,PAC") and code == 1
     assert "Windows uses the proxy script http://wpad.example.test/proxy.pac" in shown
     assert "tcp not tried: the name did not resolve" in shown
     assert "tls not tried: the name did not resolve" in shown
@@ -354,7 +343,7 @@ def test_a_certificate_nobody_trusts_is_named_by_its_issuer_until_the_bundle_tru
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N!  N!=TLS1") and code == 1
+    assert line.endswith(" N! P-  N!=TLS1") and code == 1
     assert ("the certificate (issued by CN=Foundry checkup test CA, O=Foundry tests) is not "
             "trusted by the Windows certificate store") in shown
     assert "set FOUNDRY_CA_BUNDLE to it" in shown
@@ -363,7 +352,7 @@ def test_a_certificate_nobody_trusts_is_named_by_its_issuer_until_the_bundle_tru
     monkeypatch.setenv("FOUNDRY_CA_BUNDLE", str(tls_files[0]))
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N+") and code == 0
+    assert line.endswith(" N+ P+") and code == 0
     assert f"trusted by the CA bundle {tls_files[0]}" in shown
     assert server.seen[-1]["authorization"] == f"Bearer {SECRET}"
 
@@ -380,7 +369,7 @@ def test_an_expired_certificate_is_said_to_be(endpoint, machine, work, tmp_path,
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N!  N!=TLS5") and code == 1
+    assert line.endswith(" N! P-  N!=TLS5") and code == 1
     assert "the certificate (issued by CN=Foundry checkup test CA, O=Foundry tests) has expired" in shown
 
 
@@ -393,7 +382,7 @@ def test_a_proxy_that_wants_a_sign_in_says_what_it_asks_for(proxy, machine, work
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N!  N!=PX407") and code == 1
+    assert line.endswith(" N! P-  N!=PX407") and code == 1
     assert "the proxy wants a sign-in (407; it asks for Negotiate, NTLM)" in shown
     assert "Foundry can answer only Basic" in shown
     assert (f"proxy http://127.0.0.1:{asking.server_address[1]} for api.example.test, from the "
@@ -417,11 +406,12 @@ def test_a_tunnel_through_the_proxy_reaches_the_endpoint_and_lists_its_models(
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N+") and code == 0
+    assert line.endswith(" N+ P+") and code == 0
     assert "tunnel the proxy opens a tunnel to api.example.test:443" in shown
     assert "dns 127.0.0.1 is 127.0.0.1 (the proxy looks up api.example.test)" in shown
-    # The tunnel was asked for twice: by the check, and by the client a session uses.
-    assert [seen[0] for seen in tunnel.seen] == ["CONNECT api.example.test:443 HTTP/1.1"] * 2
+    # A tunnel for the check, and one for each request of the client a
+    # session uses: the model list and the eight turns.
+    assert [seen[0] for seen in tunnel.seen] == ["CONNECT api.example.test:443 HTTP/1.1"] * 10
     assert server.seen[-1]["authorization"] == f"Bearer {SECRET}"
 
 
@@ -435,7 +425,7 @@ def test_a_certificate_for_another_name_is_said_to_be(endpoint, proxy, tls_files
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith("N!  C!=KEY0 N!=TLS4") and code == 1
+    assert line.endswith("N! P-  C!=KEY0 N!=TLS4") and code == 1
     assert "is not for other.example.test" in shown
 
 
@@ -447,7 +437,7 @@ def test_a_proxy_declared_https_is_refused_before_anything_is_tried(machine, wor
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N!  N!=PRXS") and code == 1
+    assert line.endswith(" N! P-  N!=PRXS") and code == 1
     assert " dns " not in shown
 
 
@@ -460,7 +450,7 @@ def test_a_utf16_configuration_has_its_own_code_and_the_network_is_not_checked(
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" C! K:? M:? R:? N-  C!=CFG16") and code == 1
+    assert line.endswith(" C! K:? M:? R:? N- P-  C!=CFG16") and code == 1
     assert "all not checked: the configuration could not be read" in shown
 
 
@@ -469,7 +459,7 @@ def test_a_configuration_in_the_system_code_page_has_its_own_code(machine, work,
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" C! K:? M:? R:? N-  C!=CFGCP") and code == 1
+    assert line.endswith(" C! K:? M:? R:? N- P-  C!=CFGCP") and code == 1
 
 
 def test_a_base_url_that_is_not_an_address_skips_the_network(machine, work, monkeypatch,
@@ -479,7 +469,7 @@ def test_a_base_url_that_is_not_an_address_skips_the_network(machine, work, monk
 
     code, shown, line = _checkup(capsys, work)
 
-    assert line.endswith(" N-  C!=URL0") and code == 1
+    assert line.endswith(" N- P-  C!=URL0") and code == 1
     assert "all not checked: base_url is not an address" in shown
 
 
@@ -515,8 +505,9 @@ def test_an_unknown_protocol_is_named_and_the_endpoint_not_asked(endpoint, machi
 
     code, shown, line = _checkup(capsys, work)
 
-    assert " C! K:key-env M:- R:? N+  C!=PRO0" in line and code == 1
+    assert " C! K:key-env M:- R:? N+ P-  C!=PRO0" in line and code == 1
     assert "models not asked: the protocol is not one Foundry speaks" in shown
+    assert "P all not checked: the protocol is not one Foundry speaks" in shown
     assert server.seen == []
 
 
@@ -577,7 +568,7 @@ def test_git_missing_fails_this_machine(endpoint, machine, work, monkeypatch, ca
     code, shown, line = _checkup(capsys, work)
 
     # Without git, the Foundry that ran is named by its version.
-    assert line == f"FB1 v{__version__} E! C+ K:key-env M:- R:chat N+  E!=GIT0"
+    assert line == f"FB1 v{__version__} E! C+ K:key-env M:- R:chat N+ P+  E!=GIT0"
     assert code == 1
 
 
@@ -641,6 +632,287 @@ def test_a_clone_with_changes_is_marked(monkeypatch, changed, token):
 
     assert found == token
     assert said.endswith(" (with local changes)") == bool(changed)
+
+
+# --- the protocol level ---------------------------------------------------
+
+PROTOCOLS = [("openai_compat", "chat", "/v1/chat/completions", "OPENAI_API_KEY"),
+             ("responses", "resp", "/v1/responses", "OPENAI_API_KEY"),
+             ("anthropic_messages", "anth", "/v1/messages", "ANTHROPIC_API_KEY")]
+
+
+@pytest.fixture()
+def gateway():
+    servers = []
+
+    def start(protocol, faults=()):
+        """A backend of ``protocol`` on a gateway with ``faults``, its client
+        a tap; and the gateway."""
+        server = Gateway(faults=faults)
+        threading.Thread(target=server.serve_forever, args=(0.05,), daemon=True).start()
+        servers.append(server)
+        config = checkup.Config()
+        config.backend.base_url = f"http://127.0.0.1:{server.server_port}/v1"
+        config.backend.protocol = protocol
+        config.backend.model = MODEL
+        backend = checkup.make_backend(config, SECRET)
+        tap = checkup.TapClient(read_timeout=10)
+        backend.client = tap
+        return backend, tap, server
+
+    yield start
+    for server in servers:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("protocol, short, path, variable", PROTOCOLS)
+def test_each_protocol_is_asked_every_case_at_its_own_address(endpoint, machine, work, monkeypatch,
+                                                             capsys, protocol, short, path,
+                                                             variable):
+    server = endpoint()
+    monkeypatch.setenv(variable, SECRET)
+    _config(machine, f"http://127.0.0.1:{server.server_port}/v1", f'protocol = "{protocol}"\n')
+
+    code, shown, line = _checkup(capsys, work)
+
+    assert f" R:{short} N+ P+" in line and code == 0
+    turns = server.seen[1:]
+    assert [seen["path"] for seen in turns] == [path] * 8
+    sent = (f"Bearer {SECRET}" if short != "anth" else SECRET)
+    assert {seen["authorization"] for seen in turns} == {sent}
+    for name in ("text", "text-once", "stream", "tool", "tool-once", "continue", "cut",
+                 "badmodel"):
+        assert f"OK {name} " in shown
+    # Two asked a stream, two once, as a session would; the ceiling, and the
+    # model that does not exist, as said.
+    assert [seen["body"]["stream"] for seen in turns[:5]] == [True, False, True, True, False]
+    assert turns[-1]["body"]["model"] == protocheck.NO_SUCH_MODEL
+    assert "cut at the ceiling of 16 tokens, and said so (16 out)" in shown
+    # The gateway says what the tool's result it was sent says.
+    assert "went on with the result: 'The tool says 5.'" in shown
+
+
+# What each fault comes to, whatever the protocol: (the cases not OK and
+# their codes).
+FAULTS = {
+    "drop_tools": {"tool": "TCS0", "tool-once": "TCO0", "continue": ""},
+    "buffer": {"stream": "BUF"},
+    "no_sse": {"text": "NOSSE", "stream": ""},
+    "ignore_ceiling": {"cut": "CUTI"},
+    "hide_cut": {"cut": "CUTU"},
+    "mangle_args": {"tool": "TCSJ", "tool-once": "TCOJ", "continue": ""},
+    "reject_tool_result": {"continue": "CON400"},
+    "any_model": {"badmodel": "BAD0"},
+    "post401": {"text": "TXS401", "text-once": "", "stream": "", "tool": "", "tool-once": "",
+                "continue": "", "cut": "", "badmodel": ""},
+}
+
+
+@pytest.mark.parametrize("fault", sorted(FAULTS))
+@pytest.mark.parametrize("protocol", [protocol for protocol, *_ in PROTOCOLS])
+def test_each_fault_of_a_gateway_has_its_code_in_each_protocol(gateway, protocol, fault):
+    backend, tap, server = gateway(protocol, [fault])
+
+    cases, spent = protocheck.protocol_cases(backend, tap, MODEL)
+
+    assert {case.name: case.code for case in cases if case.status != OK} == FAULTS[fault]
+    # A request each case, and one more for each stream asked of a gateway
+    # that does not stream.
+    posts = [seen for seen in server.seen if "body" in seen]
+    assert spent.requests == len(posts) == len(tap.exchanges)
+    assert spent.requests == {"post401": 1, "no_sse": 13,
+                              "drop_tools": 7, "mangle_args": 7}.get(fault, 8)
+    names = ["text-stream", "text-once", "stream", "tool", "tool-once", "continue", "cut",
+             "badmodel"]
+    skipped = {"post401": names[1:], "drop_tools": ["continue"],
+               "mangle_args": ["continue"]}.get(fault, [])
+    assert [name for name, _ in spent.captures] == [name for name in names
+                                                    if name not in skipped]
+
+
+def test_a_refusal_and_an_empty_answer_are_failures():
+    def asked(**turn):
+        return protocheck.Asked(ModelTurn(**turn), None, None, 0.1)
+
+    refused = protocheck.text_case("text", "TXS", asked(
+        text="I cannot help", stop_reason=StopReason.REFUSAL), stream=False)
+    empty = protocheck.text_case("text", "TXS", asked(text=" "), stream=False)
+
+    assert (refused.status, refused.code) == (FAIL, "TXSR")
+    assert (empty.status, empty.code) == (FAIL, "TXSE")
+
+
+def test_a_call_of_another_tool_or_with_other_numbers():
+    def called(name, arguments):
+        call = ToolUseBlock(call_id="c1", name=name, arguments=arguments)
+        return protocheck.Asked(ModelTurn(text="", tool_calls=(call,)), None,
+                                None, 0.1)
+
+    other = protocheck.tool_case("tool", "TCS", called("sum", '{"a": 2, "b": 3}'))
+    numbers = protocheck.tool_case("tool", "TCS", called("add", '{"a": 3, "b": 2}'))
+    cut = protocheck.tool_case("tool", "TCS", called("add", '{"a": 2, "b"'))
+
+    assert (other.status, other.code) == (FAIL, "TCSN")
+    assert (numbers.status, numbers.code) == (WARN, "TCSA")
+    assert (cut.status, cut.code) == (FAIL, "TCSJ")
+
+
+def test_a_short_stream_is_too_short_to_tell_its_pace():
+    exchange = Exchange(headers={"content-type": "text/event-stream"})
+    for piece in (b"data: 1\n", b"data: 2\n", b"\n"):
+        exchange.took(piece)
+
+    case = protocheck.pace_case(protocheck.Asked(None, None, exchange, 0.1))
+
+    assert case.status == OK and case.said == "2 event(s): too few to tell its pace"
+
+
+def test_a_continuation_without_the_result_is_a_warning():
+    asked = protocheck.Asked(ModelTurn(text="Done."), None, None, 0.1)
+
+    case = protocheck.continue_case(asked)
+
+    assert (case.status, case.code) == (WARN, "CONR")
+
+
+@pytest.mark.parametrize("status, error, code, words", [
+    (401, FoundryError("x"), "TXS401", "does not accept the credential"),
+    (403, FoundryError("x"), "TXS403", "refuses the credential here"),
+    (407, FoundryError("x"), "TXS407", "the proxy wants a sign-in"),
+    (404, FoundryError("x"), "TXS404", "has no such address"),
+    (429, FoundryError("x"), "TXS429", "rate limited"),
+    (400, FoundryError("x"), "TXS400", "refused the request"),
+    # A 5xx is the endpoint's own failure, not a refusal of what was sent.
+    (502, FoundryError("x"), "TXS502", "the endpoint failed"),
+    (200, ValueError("bad"), "TXSX", "Foundry failed reading the answer"),
+    (200, ProtocolError("bad"), "TXSP", "the answer could not be read"),
+    (None, StreamDropped("cut"), "TXSD", "the stream was cut"),
+    (None, FoundryError("the read timed out"), "TXST", "no answer in time"),
+    (None, FoundryError("the stream stalled"), "TXST", "no answer in time"),
+    (None, FoundryError("connection refused"), "TXSN", "the request failed"),
+])
+def test_each_failed_request_has_its_code_and_says_what_it_was(status, error, code, words):
+    exchange = None if status is None else Exchange(status=status)
+
+    found, said, fix = protocheck.failure("TXS", protocheck.Asked(None, error, exchange, 0.1))
+
+    assert found == code and words in said and fix
+
+
+def test_a_ceiling_refused_and_a_failure_of_a_wrong_model_are_warnings():
+    refused = protocheck.Asked(None, FoundryError("x"), Exchange(status=400), 0.1)
+    dropped = protocheck.Asked(None, StreamDropped("cut"), None, 0.1)
+
+    cut = protocheck.cut_case(refused)
+    failed = protocheck.cut_case(protocheck.Asked(None, FoundryError("x"), Exchange(status=503),
+                                                  0.1))
+    wrong = protocheck.wrong_model_case(dropped)
+
+    assert (cut.status, cut.code) == (WARN, "CUT400") and "refuses one of 16 tokens" in cut.fix
+    assert failed.code == "CUT503" and "the endpoint's side" in failed.fix
+    assert (wrong.status, wrong.code) == (WARN, "BADD")
+
+
+def test_a_failing_endpoint_is_asked_once_a_case(gateway):
+    # A session asks again after a 5xx; the checkup says what came, once.
+    backend, tap, server = gateway("openai_compat", ["post500"])
+
+    cases, spent = protocheck.protocol_cases(backend, tap, MODEL)
+
+    assert [case.code for case in cases] == ["TXS500", "TXO500", "STR500", "TCS500", "TCO500",
+                                             "", "CUT500", "BAD500"]
+    assert spent.requests == len(server.seen) == 7
+
+
+def test_what_was_sent_is_kept_redacted_too(endpoint, machine, work, monkeypatch, capsys):
+    # Nothing a session sends in a body is a credential today; a value the
+    # redactor holds is scrubbed from it all the same.
+    redactor = checkup.default_redactor().__class__()
+    redactor.register(protocheck.SAY_READY)
+    monkeypatch.setattr(checkup, "default_redactor", lambda: redactor)
+    server = endpoint()
+    monkeypatch.setenv("OPENAI_API_KEY", SECRET)
+    _config(machine, f"http://127.0.0.1:{server.server_port}/v1")
+
+    _checkup(capsys, work)
+
+    (folder,) = [path for path in (machine / "checkups").iterdir() if path.is_dir()]
+    sent = (folder / "chat-text-once.request.json").read_text(encoding="utf-8")
+    assert "[redacted]" in sent and protocheck.SAY_READY not in sent
+
+
+def test_turns_refused_while_the_list_is_given_stop_after_the_first(endpoint, machine, work,
+                                                                    monkeypatch, capsys):
+    server = endpoint(faults=["post401"])
+    monkeypatch.setenv("OPENAI_API_KEY", SECRET)
+    _config(machine, f"http://127.0.0.1:{server.server_port}/v1")
+
+    code, shown, line = _checkup(capsys, work)
+
+    assert line.endswith(" N+ P!  P!=TXS401") and code == 1
+    assert len(server.seen) == 2
+    assert "text-once not tried: the first request failed" in shown
+    assert "spent 1 request(s), 0 token(s) in and 0 out" in shown
+
+
+def test_a_warning_of_the_protocol_level_leaves_the_exit_code_alone(endpoint, machine, work,
+                                                                     monkeypatch, capsys):
+    server = endpoint(faults=["any_model"])
+    monkeypatch.setenv("OPENAI_API_KEY", SECRET)
+    _config(machine, f"http://127.0.0.1:{server.server_port}/v1")
+
+    code, shown, line = _checkup(capsys, work)
+
+    assert line.endswith(" N+ P~  P~=BAD0") and code == 0
+
+
+def test_all_protocols_says_which_others_the_gateway_speaks_at_the_address(
+        endpoint, machine, work, monkeypatch, capsys):
+    server = endpoint(speaks=("chat", "anth"))
+    monkeypatch.setenv("OPENAI_API_KEY", SECRET)
+    _config(machine, f"http://127.0.0.1:{server.server_port}/v1", 'effort = "minimal"\n')
+
+    code, shown, line = _checkup(capsys, work, "--all-protocols")
+
+    assert line.endswith(" N+ P~  P~=XRESP") and code == 0
+    assert "also resp responses at the same address: TXS404" in shown
+    assert "also anth anthropic_messages at the same address works too" in shown
+    assert "spent 17 request(s)" in shown
+    # The effort this configuration sets went to its own protocol only; the
+    # other was asked with the same credential, as its own header.
+    bodies = {seen["path"]: seen["body"] for seen in server.seen if "body" in seen}
+    assert bodies["/v1/chat/completions"]["reasoning_effort"] == "minimal"
+    assert "output_config" not in bodies["/v1/messages"]
+    assert {seen["authorization"] for seen in server.seen
+            if seen["path"] == "/v1/messages"} == {SECRET}
+
+
+def test_what_the_protocol_level_received_is_kept_beside_the_report_redacted(
+        endpoint, machine, work, monkeypatch, capsys):
+    token = "corp-gateway-token-7f3a9c2e5b81"
+    server = endpoint(faults=["echo_auth"])
+    monkeypatch.setenv("FOUNDRY_GATEWAY_TOKEN", token)
+    _config(machine, f"http://127.0.0.1:{server.server_port}/v1",
+            'credential_source = "gateway_token"\n')
+
+    code, shown, line = _checkup(capsys, work)
+
+    assert line.endswith(" N+ P+") and code == 0
+    (folder,) = [path for path in (machine / "checkups").iterdir() if path.is_dir()]
+    names = sorted(path.name for path in folder.iterdir())
+    assert len(names) == 16 and "chat-text-stream.raw" in names
+    assert "chat-badmodel.request.json" in names
+    raw = (folder / "chat-text-stream.raw").read_bytes()
+    assert b"ready" in raw and b"[redacted]" in raw
+    sent = json.loads((folder / "chat-tool.request.json").read_bytes())
+    assert sent["tools"][0]["function"]["name"] == "add"
+    for path in folder.iterdir():
+        assert token.encode() not in path.read_bytes()
+    assert token not in shown
+    text = _report(machine)
+    assert f"What the protocol level received, as it came and redacted: {folder}" in text
+    assert token not in text
 
 
 # --- what the session's client does with a proxy's password ---------------

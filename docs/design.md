@@ -50,6 +50,7 @@ foundry/
 │   ├── httptap.py           # an HttpClient that keeps each response as it came, for the checkup (D-204)
 │   ├── netcheck.py          # the checkup's network level: proxy, name, connection, tunnel, TLS (D-204)
 │   ├── checkup.py           # the checkup's cases, its feedback code and its report (D-204)
+│   ├── protocheck.py        # the checkup's protocol level: eight requests through the adapter (D-205)
 │   └── winapi.py            # ctypes: DPAPI, Job Objects, reparse tags
 ├── cli/                     # the terminal UI: event subscriber + approval UI (rich); repl.py, the
 │                            #   interactive prompt and its loop; slash_commands.py, the commands

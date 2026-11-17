@@ -57,6 +57,23 @@ class Case:
             raise ValueError(f"a {self.status} needs a short code: {self.name}")
 
 
+class Found(list):
+    """The cases found so far, each told to ``said`` as it is found: a step
+    can wait seconds, and the screen should show the ones before it."""
+
+    def __init__(self, said) -> None:
+        super().__init__()
+        self._said = said
+
+    def append(self, case: Case) -> None:
+        super().append(case)
+        self._said(case)
+
+    def extend(self, cases) -> None:
+        for case in cases:
+            self.append(case)
+
+
 def level_status(cases: list[Case]) -> str:
     """A level fails with any case that fails; it warns with any that warns;
     with none checked, it was skipped."""
