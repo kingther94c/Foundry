@@ -635,6 +635,15 @@ class ApplyPatch:
         patch = args.get("patch")
         if not isinstance(patch, str) or not patch.strip():
             raise InvalidToolCall("patch must be a non-empty string")
+        if "\x00" in patch:
+            # A model behind a gateway sent U+0000 where it meant a backtick
+            # (D-210): the syntax check refuses such a Python file, but any
+            # other would be written with NUL bytes in it.
+            line = patch.count("\n", 0, patch.index("\x00")) + 1
+            raise InvalidToolCall(
+                f"the patch holds a NUL character (U+0000), first on its line {line}, which "
+                "no text file should. Where you meant another character -- a backtick, "
+                "most often -- send the patch again with it.")
 
         ops = parse_patch(patch)
 

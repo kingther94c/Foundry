@@ -438,7 +438,9 @@ def test_validate_takes_only_a_path():
     tool = RepoMap()
     op = tool.validate({})
     assert op.args == {"path": "."} and op.display == "map ." and op.target == "."
-    for bad in ({"path": ""}, {"path": 3}, {"path": "a", "depth": 2}):
+    # "" is the root since D-210, as list_files takes it.
+    assert tool.validate({"path": ""}).args == {"path": "."}
+    for bad in ({"path": "   "}, {"path": 3}, {"path": "a", "depth": 2}):
         with pytest.raises(InvalidToolCall, match="path must be|unknown argument"):
             tool.validate(bad)
 

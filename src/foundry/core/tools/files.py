@@ -149,13 +149,16 @@ class ListFiles:
                     "path": {"type": "string", "description": "Directory, workspace-relative. Defaults to the root."},
                     "pattern": {"type": "string", "description": "Optional glob filter, e.g. *.py"},
                     "max_entries": {"type": "integer", "description": f"Default {MAX_LIST_ENTRIES}."},
+                    "depth": {"type": "integer",
+                              "description": "How many levels down to list: 1 is the "
+                                             "directory itself. Default every level."},
                 },
                 "additionalProperties": False,
             },
         )
 
     def validate(self, args: dict[str, Any]) -> Operation:
-        _reject_unknown(args, {"path", "pattern", "max_entries"})
+        _reject_unknown(args, {"path", "pattern", "max_entries", "depth"})
         # An empty path is the root, as leaving it out is: the schema says it
         # defaults to the root, and a model that sent "" for it was refused.
         path = _require_str(args, "path", ".") or "."
@@ -163,10 +166,15 @@ class ListFiles:
         limit = _require_int(args, "max_entries", MAX_LIST_ENTRIES)
         if limit < 1:
             raise InvalidToolCall("max_entries must be positive")
+        # GPT models reach for codex's depth (D-210); without one, every level.
+        depth = args.get("depth")
+        if depth is not None and (type(depth) is not int or depth < 1):
+            raise InvalidToolCall("depth must be a whole number, 1 or more")
+        levels = "" if depth is None else f", {depth} level{'s' if depth > 1 else ''}"
         return Operation(
             tool=self.name, kind=self.kind,
-            args={"path": path, "pattern": pattern, "max_entries": limit},
-            display=f"list {path} ({pattern})", target=path,
+            args={"path": path, "pattern": pattern, "max_entries": limit, "depth": depth},
+            display=f"list {path} ({pattern}){levels}", target=path,
         )
 
     def execute(self, op: Operation, ctx: ToolContext) -> ToolOutput:
@@ -178,9 +186,12 @@ class ListFiles:
             raise ToolError(f"not a directory: {op.args['path']}")
 
         pattern = op.args["pattern"]
+        depth = op.args.get("depth")
         entries: list[tuple[float, str]] = []
         for dirpath, dirnames, filenames in os.walk(root.absolute):
             _prune(dirpath, dirnames)
+            if depth is not None and len(Path(dirpath).relative_to(root.absolute).parts) + 1 >= depth:
+                dirnames[:] = []
             for filename in filenames:
                 if not fnmatch.fnmatch(filename, pattern):
                     continue

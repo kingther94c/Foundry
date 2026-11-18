@@ -277,6 +277,8 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
     # stops it for the rest of the task: each attempt is a paid call.
     auto_compact: bool = True
     _compact_failed: bool = False
+    # Whether the session has been told compaction waits past its threshold (D-209).
+    _compaction_wait_said: bool = False
     # What a compaction asks for, as codex's compact_prompt (D-142); "" for
     # Foundry's own.
     compact_prompt: str = ""
@@ -541,6 +543,7 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
                 return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
 
             self.context.measured(turn.usage.input_tokens)
+            self._say_compaction_waits()
             self.context.append(turn.as_message())
             self.context.record_usage(turn.usage)
             self._emit(TokenCount(turn.usage, self.context.session_usage))
@@ -609,6 +612,19 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
                 # The last request, and no finish came of it.
                 return self._terminate(TerminalStatus.PARTIAL, self._last_turn,
                                        summary=turn.text.strip())
+
+    def _say_compaction_waits(self) -> None:
+        """Once a session: compaction waits past its threshold, and why (D-209)."""
+        if self._compaction_wait_said or not self.auto_compact:
+            return
+        due, threshold = self.context.compaction_due(), self.context.compaction_threshold()
+        if due <= threshold:
+            return
+        self._compaction_wait_said = True
+        self._emit(Notice(
+            f"the provider counts {self.context.compaction_floor():,} tokens for what no "
+            f"compaction removes, so compacting at {threshold:,} would free little: compaction "
+            f"waits until the context passes {due:,}"))
 
     def _wind_up(self, reason: str, unrun: tuple[ToolUseBlock, ...] = ()) -> TurnOutcome | None:
         """The budget has run out for ``reason``. The task ends partial --

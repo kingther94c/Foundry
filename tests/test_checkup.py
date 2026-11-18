@@ -899,6 +899,21 @@ def test_all_protocols_says_which_others_the_gateway_speaks_at_the_address(
             if seen["path"] == "/v1/messages"} == {SECRET}
 
 
+def test_all_protocols_says_what_another_protocol_warned_of(
+        endpoint, machine, work, monkeypatch, capsys):
+    """A gateway that ignores the output ceiling ignores it in each protocol
+    (OpenClaw's, 2026-11-18): "works too" alone would hide that."""
+    server = endpoint(speaks=("chat", "anth"), faults=["ignore_ceiling"])
+    monkeypatch.setenv("OPENAI_API_KEY", SECRET)
+    _config(machine, f"http://127.0.0.1:{server.server_port}/v1")
+
+    code, shown, line = _checkup(capsys, work, "--all-protocols")
+
+    assert line.endswith(" N+ P~  P~=CUTI,XRESP") and code == 0
+    assert ("also anth anthropic_messages at the same address works too, warning CUTI there"
+            in shown)
+
+
 def test_what_the_protocol_level_received_is_kept_beside_the_report_redacted(
         endpoint, machine, work, monkeypatch, capsys):
     token = "corp-gateway-token-7f3a9c2e5b81"

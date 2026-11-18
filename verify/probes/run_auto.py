@@ -1,8 +1,10 @@
-"""Run the probe projects with `foundry exec` against the real Anthropic API.
+"""Run the probe projects with `foundry exec` against the real Anthropic API,
+or against a gateway that speaks Chat Completions or Responses.
 
     python verify/probes/run_auto.py RUN [NAME ...] [--model MODEL] [--mode MODE]
                                      [--repeat N] [--budget USD]
                                      [--projects DIR] [--out DIR]
+                                     [--gateway URL [--protocol openai_compat|responses]]
 
 Each project (written by make_projects_b.py, and made here when they are
 missing; or by make_projects_c.py, named with --projects) is copied to
@@ -21,6 +23,12 @@ in no file; each run's folder is searched for it afterwards. --budget stops
 before the run that would start once the estimates so far reach that many US
 dollars. VERIFY_FOUNDRY names another checkout whose src/ to run, to compare a
 change with what came before it.
+
+--gateway runs against that base URL instead (a local agent gateway such as
+OpenClaw's, with --model one of its agents): the token is FOUNDRY_VERIFY_KEY or
+typed at a prompt, never the Anthropic key `foundry login` stored. A gateway's
+tokens have no price here, so --budget does not stop it; each run says how
+many requests it made, as a subscription behind one counts them.
 
 This spends money on your account. Run it yourself, in your own terminal.
 """
@@ -68,7 +76,19 @@ def lay_out(src, out):
     return ws
 
 
-def one(src, out, model, mode, key):
+def backend(model, endpoint=None):
+    """The [backend] table of a run's home: Anthropic Messages, or with
+    ``endpoint`` = (protocol, base URL) that gateway. The key is read from
+    live.VARIABLE either way."""
+    if endpoint is None:
+        where = 'protocol = "anthropic_messages"\n'
+    else:
+        protocol, url = endpoint
+        where = f'protocol = "{protocol}"\nbase_url = "{url}"\n'
+    return f'[backend]\n{where}model = "{model}"\nenv_key = "{live.VARIABLE}"\n\n'
+
+
+def one(src, out, model, mode, key, endpoint=None):
     """Run the project at ``src`` in the new folder ``out``; its summary."""
     name = src.name
     ws = lay_out(src, out)
@@ -88,8 +108,7 @@ def one(src, out, model, mode, key):
         runtime += extra[len("[runtime]\n"):]
         extra = ""
     (home / "config.toml").write_text(
-        f'[backend]\nprotocol = "anthropic_messages"\nmodel = "{model}"\n'
-        f'env_key = "{live.VARIABLE}"\n\n' + runtime + extra + rules, encoding="utf-8")
+        backend(model, endpoint) + runtime + extra + rules, encoding="utf-8")
     (home / "trusted.json").write_text(json.dumps({"trusted": [str(ws.resolve())]}),
                                        encoding="utf-8")
     quiet = {k: v for k, v in os.environ.items()
@@ -144,7 +163,7 @@ def one(src, out, model, mode, key):
         "compactions": sum(1 for e in events if e.get("kind") == "compacted"),
         "hidden_exit": hidden.returncode, "hidden_tail": hidden.stdout[-1500:],
         "changed": git(ws, "status", "--short").splitlines(),
-        "usage": used, "estimated_usd": live.cost(model, used),
+        "usage": used, "requests": used["records"], "estimated_usd": live.cost(model, used),
         "key_files": live.scan(out, key), "summary": term.get("summary"),
     }
     (out / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -161,7 +180,13 @@ def main(argv=None):
     parser.add_argument("--budget", type=float, default=None)
     parser.add_argument("--projects", type=Path, default=HERE / "projects")
     parser.add_argument("--out", type=Path, default=HERE.parent / "out" / "probes")
+    parser.add_argument("--gateway", default=None,
+                        help="the base URL of a gateway to run against instead of Anthropic")
+    parser.add_argument("--protocol", default="openai_compat",
+                        choices=("openai_compat", "responses"),
+                        help="what the gateway speaks (with --gateway)")
     args = parser.parse_args(argv)
+    endpoint = (args.protocol, args.gateway) if args.gateway else None
 
     if not args.projects.is_dir():
         subprocess.run([sys.executable, str(HERE / "make_projects_b.py"), str(args.projects)],
@@ -169,7 +194,8 @@ def main(argv=None):
     names = args.names or sorted(d.name for d in args.projects.iterdir() if d.is_dir())
     run_dir = args.out / args.run
     run_dir.mkdir(parents=True)
-    key = live.obtain()
+    key = (live.obtain("Token for the gateway (not shown, not stored): ", stored=False)
+           if endpoint else live.obtain())
     spent, summaries = 0.0, []
     labels = [(name, name if args.repeat == 1 else f"{name}.{turn}")
               for name in names for turn in range(1, args.repeat + 1)]
@@ -185,23 +211,28 @@ def main(argv=None):
                   f"(pip install {' '.join(needs)})", flush=True)
             continue
         try:
-            s = one(args.projects / name, run_dir / label, args.model, args.mode, key)
+            s = one(args.projects / name, run_dir / label, args.model, args.mode, key, endpoint)
         except Exception as exc:              # one project's failure does not stop the rest
             print(f"   failed to run: {exc!r}", flush=True)
             continue
         summaries.append(s)
         spent += s["estimated_usd"] or 0.0
+        priced = (f"about ${s['estimated_usd']}" if s["estimated_usd"] is not None
+                  else "not priced")
         print(f"   {s['status']} | hidden tests {'pass' if s['hidden_exit'] == 0 else 'FAIL'}"
               f" | {s['tool_calls']} calls, {len(s['rejected'])} refused, "
               f"{len(s['patch_failures'])} patch failures, {s['compactions']} compactions"
-              f" | about ${s['estimated_usd']}"
+              f" | {s.get('requests', 0)} requests, {priced}"
               + (f" | THE KEY IS IN {s['key_files']}" if s["key_files"] else ""), flush=True)
     passed = sum(1 for s in summaries if s["hidden_exit"] == 0)
+    requests = sum(s.get("requests", 0) for s in summaries)
     (run_dir / "results.json").write_text(json.dumps(
-        {"model": args.model, "runs": len(summaries), "passed": passed,
+        {"model": args.model, "endpoint": args.gateway or "anthropic",
+         "protocol": args.protocol if args.gateway else "anthropic_messages",
+         "runs": len(summaries), "passed": passed, "requests": requests,
          "estimated_usd": round(spent, 4), "summaries": summaries}, indent=1), encoding="utf-8")
-    print(f"{passed} of {len(summaries)} passed their hidden tests; about ${spent:.2f}",
-          flush=True)
+    print(f"{passed} of {len(summaries)} passed their hidden tests; {requests} requests; "
+          f"about ${spent:.2f}", flush=True)
     (run_dir / "DONE").write_text("done", encoding="utf-8")
     return 0
 

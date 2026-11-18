@@ -379,7 +379,11 @@ class RepoMap:
         unknown = set(args) - {"path"}
         if unknown:
             raise InvalidToolCall(f"unknown argument(s): {', '.join(sorted(unknown))}")
+        # "" is the root, as leaving it out is and as list_files takes it
+        # (D-149): a GPT model behind a gateway sent it four times (D-210).
         path = args.get("path", ".")
+        if path == "":
+            path = "."
         if not isinstance(path, str) or not path.strip():
             raise InvalidToolCall("path must be a non-empty string")
         return Operation(tool=self.name, kind=self.kind, args={"path": path},

@@ -165,6 +165,13 @@ class ContextManager:
     # The provider's input tokens for the last request answered, and the
     # estimate of what that request sent (D-190); None before the first.
     _measured: tuple[int, int] | None = None
+    # The provider's count of the first request answered since the session
+    # began or last compacted (D-209): what no compaction takes away -- the
+    # instructions, the tools, the user's messages, the summary. None while it
+    # is not known: before that request, and in a resumed session until it
+    # compacts, as its first request carries the history it resumed with.
+    _floor: int | None = None
+    _floor_pending: bool = True
     _turn_of_message: list[int] = field(default_factory=list)
     _turn: int = 0
     # The conversation's last request as sent, and the positions whose bound
@@ -210,6 +217,7 @@ class ContextManager:
         self._turn = turn
         if usage is not None:
             self.session_usage = usage
+        self._floor, self._floor_pending = None, False
         self._sent = tuple(sent)
         self._unbound = {
             index for index in range(1, min(len(self._sent), len(self.history) + 1))
@@ -356,6 +364,8 @@ class ContextManager:
         history, so the projection is the one that was sent."""
         if input_tokens > 0:
             self._measured = (input_tokens, _estimate_tokens(self.project()))
+            if self._floor_pending:
+                self._floor, self._floor_pending = input_tokens, False
 
     def estimated_context_tokens(self) -> int:
         """Sizing for the overflow and compaction checks.
@@ -386,10 +396,32 @@ class ContextManager:
     # -- compaction (D-040) -------------------------------------------------
 
     def needs_compaction(self) -> bool:
-        """Whether masking has left too much: the projection is past the
-        compaction threshold and there is model output to summarise."""
+        """Whether masking has left too much: the projection is past where
+        compaction is due and there is model output to summarise."""
         return (self.compactable()
-                and self.estimated_context_tokens() > self.compaction_threshold())
+                and self.estimated_context_tokens() > self.compaction_due())
+
+    def compaction_due(self) -> int:
+        """Where automatic compaction starts now: the threshold, or later
+        where it would free too little (D-209).
+
+        A compaction keeps the instructions, the tools and the user's
+        messages, and costs a request and the detail it summarises. Where the
+        provider counted this window's first request past half the threshold,
+        compacting at the threshold frees less than half of it -- a gateway
+        that counted every request past a 12,000-token limit compacted 34
+        times in 75 requests and never finished. There it waits until the
+        context has grown half the threshold past that count. Never past the
+        point the window counts as full."""
+        threshold = self.compaction_threshold()
+        if self._floor is None:
+            return threshold
+        return min(max(threshold, self._floor + threshold // 2),
+                   self.max_context_tokens - self.reserve_output_tokens)
+
+    def compaction_floor(self) -> int | None:
+        """The provider's count of this window's first request, once known."""
+        return self._floor
 
     def compaction_threshold(self) -> int:
         """Where automatic compaction starts: a share of the window (D-040),
@@ -451,3 +483,5 @@ class ContextManager:
         self._stripped.clear()
         # What the provider counted was mostly what was just replaced.
         self._measured = None
+        # A new window: its first request is what the next compaction keeps.
+        self._floor, self._floor_pending = None, True

@@ -350,6 +350,17 @@ def _delete(wiring: "Wiring", console: Console, arguments: str) -> str | None:
     return DELETE_SESSION
 
 
+def _compacts_past(runtime, context) -> str:
+    """Where compaction starts, when the user set a limit or it waits past
+    its threshold (D-094, D-209)."""
+    if not runtime.auto_compact:
+        return ""
+    due, threshold = context.compaction_due(), context.compaction_threshold()
+    if due > threshold:
+        return f"; compacts past {due:,} ({threshold:,} would free little here)"
+    return f"; compacts past {threshold:,}" if context.compact_above_tokens else ""
+
+
 def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
     runtime, config = wiring.runtime, wiring.config
     context = runtime.context
@@ -369,8 +380,7 @@ def _status(wiring: "Wiring", console: Console, arguments: str) -> None:
         ("tokens", f"{usage.input_tokens:,} in ({usage.cached_input_tokens:,} cached), "
                    f"{usage.output_tokens:,} out"),
         ("context", f"about {used:,} of {limit:,} tokens ({100 * used // max(limit, 1)}%)"
-                    + (f"; compacts past {context.compaction_threshold():,}"
-                       if runtime.auto_compact and context.compact_above_tokens else "")),
+                    + _compacts_past(runtime, context)),
         ("notes", ", ".join(wiring.instructions) or "no FOUNDRY.md or AGENTS.md loaded"),
     ]
     if wiring.mcp is not None and wiring.mcp.summary():

@@ -25,23 +25,25 @@ PRICES = {
 }
 
 
-def obtain(prompt="Anthropic API key for the live runs (not shown, not stored): "):
+def obtain(prompt="Anthropic API key for the live runs (not shown, not stored): ", stored=True):
     """The key: the variable when it is set, else what `foundry login` stored
     for Anthropic, read in this process, else typed at a prompt that shows
-    nothing."""
+    nothing. With ``stored`` false the stored key is not looked at: a run
+    against another endpoint must never send it the Anthropic key."""
     key = os.environ.get(VARIABLE, "").strip()
     if key:
         return key
-    sys.path.insert(0, str(ROOT / "src"))
-    try:
-        from foundry.core.auth import CredentialVault
-        from foundry.core.config import user_dir
-        stored = CredentialVault(user_dir() / "auth.json").load() or {}
-    except Exception:                      # no vault here, or not this user's
-        stored = {}
-    key = str(stored.get("anthropic_api_key") or "").strip()
-    if key:
-        return key
+    if stored:
+        sys.path.insert(0, str(ROOT / "src"))
+        try:
+            from foundry.core.auth import CredentialVault
+            from foundry.core.config import user_dir
+            vault = CredentialVault(user_dir() / "auth.json").load() or {}
+        except Exception:                      # no vault here, or not this user's
+            vault = {}
+        key = str(vault.get("anthropic_api_key") or "").strip()
+        if key:
+            return key
     import getpass
     key = getpass.getpass(prompt).strip()
     if not key:

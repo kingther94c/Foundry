@@ -557,6 +557,24 @@ def test_with_neither_the_key_is_typed_and_a_run_with_none_stops(live, monkeypat
         live.obtain()
 
 
+def test_a_key_for_another_endpoint_is_never_the_stored_anthropic_one(live, monkeypatch, tmp_path):
+    """A gateway's run asks for its own token: the Anthropic key `foundry
+    login` stored must not be sent to anyone else."""
+    import getpass
+
+    from foundry.core.auth import CredentialVault
+
+    CredentialVault(tmp_path / "foundry-home" / "auth.json").save(
+        {"anthropic_api_key": "a-key-foundry-stored"})
+    asked = []
+    monkeypatch.setattr(getpass, "getpass", lambda prompt: asked.append(prompt) or "a-gateway-token")
+
+    assert live.obtain("Token for the gateway: ", stored=False) == "a-gateway-token"
+    assert asked == ["Token for the gateway: "]
+    monkeypatch.setenv(live.VARIABLE, "a-token-in-the-variable")
+    assert live.obtain("Token for the gateway: ", stored=False) == "a-token-in-the-variable"
+
+
 def test_a_folder_is_searched_for_the_key_itself(live, tmp_path):
     (tmp_path / "home" / "sessions").mkdir(parents=True)
     (tmp_path / "home" / "sessions" / "events.jsonl").write_text(
@@ -748,8 +766,9 @@ def test_the_probe_runner_stops_at_its_budget_and_counts_what_passed(
         (tmp_path / "projects" / name).mkdir(parents=True)
     ran = []
 
-    def one(src, out, model, mode, key):
+    def one(src, out, model, mode, key, endpoint=None):
         ran.append((src.name, out.name, model, key))
+        assert endpoint is None
         return {"status": "completed", "hidden_exit": 0 if src.name == "a" else 1,
                 "tool_calls": 3, "rejected": [], "patch_failures": [], "compactions": 0,
                 "estimated_usd": 0.3, "key_files": []}
@@ -776,6 +795,57 @@ def test_the_probe_runner_stops_at_its_budget_and_counts_what_passed(
     results = json.loads((tmp_path / "out" / "once" / "results.json").read_text(encoding="utf-8"))
     assert (results["runs"], results["passed"]) == (2, 1)
     assert "1 of 2 passed their hidden tests" in capsys.readouterr().out
+
+
+def test_the_probe_runner_runs_against_a_gateway_with_a_token_of_its_own(
+        scripts, monkeypatch, tmp_path, capsys):
+    runner = scripts("probes/run_auto")
+    (tmp_path / "projects" / "a").mkdir(parents=True)
+    ran, asked = [], []
+
+    def one(src, out, model, mode, key, endpoint=None):
+        ran.append((model, key, endpoint))
+        return {"status": "completed", "hidden_exit": 0, "tool_calls": 4, "rejected": [],
+                "patch_failures": [], "compactions": 0, "requests": 6,
+                "estimated_usd": None, "key_files": []}
+
+    def obtain(*args, **kwargs):
+        asked.append(kwargs)
+        return "a-gateway-token"
+
+    monkeypatch.setattr(runner, "one", one)
+    monkeypatch.setattr(runner.live, "obtain", obtain)
+
+    assert runner.main(["gw", "--model", "openclaw/foundry", "--gateway",
+                        "http://127.0.0.1:18789/v1", "--protocol", "responses", "--budget", "0.01",
+                        "--repeat", "2", "--projects", str(tmp_path / "projects"),
+                        "--out", str(tmp_path / "out")]) == 0
+
+    # Unpriced, so the budget does not stop it; never the stored Anthropic key.
+    assert ran == [("openclaw/foundry", "a-gateway-token",
+                    ("responses", "http://127.0.0.1:18789/v1"))] * 2
+    assert asked == [{"stored": False}]
+    out = capsys.readouterr().out
+    assert "6 requests, not priced" in out
+    assert "2 of 2 passed their hidden tests; 12 requests" in out
+    results = json.loads((tmp_path / "out" / "gw" / "results.json").read_text(encoding="utf-8"))
+    assert (results["endpoint"], results["protocol"], results["requests"]) == (
+        "http://127.0.0.1:18789/v1", "responses", 12)
+
+
+def test_a_probe_run_s_home_names_the_endpoint_and_the_variable(scripts):
+    import tomllib
+
+    runner = scripts("probes/run_auto")
+
+    anthropic = tomllib.loads(runner.backend("claude-haiku-5-5"))["backend"]
+    gateway = tomllib.loads(runner.backend(
+        "openclaw/foundry", ("openai_compat", "http://127.0.0.1:18789/v1")))["backend"]
+
+    assert anthropic == {"protocol": "anthropic_messages", "model": "claude-haiku-5-5",
+                         "env_key": runner.live.VARIABLE}
+    assert gateway == {"protocol": "openai_compat", "base_url": "http://127.0.0.1:18789/v1",
+                       "model": "openclaw/foundry", "env_key": runner.live.VARIABLE}
 
 
 def test_the_probe_runner_lays_a_projects_beside_next_to_the_workspace(scripts, tmp_path):
@@ -808,7 +878,7 @@ def test_the_probe_runner_skips_a_project_whose_requirements_are_missing(
             (tmp_path / "projects" / name / "requires.txt").write_text(needs, encoding="utf-8")
     ran = []
 
-    def one(src, out, model, mode, key):
+    def one(src, out, model, mode, key, endpoint=None):
         ran.append(src.name)
         return {"status": "completed", "hidden_exit": 0, "tool_calls": 1, "rejected": [],
                 "patch_failures": [], "compactions": 0, "estimated_usd": 0.1, "key_files": []}

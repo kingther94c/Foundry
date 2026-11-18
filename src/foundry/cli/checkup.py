@@ -398,13 +398,17 @@ def _another_protocol(config: Config, secret: str, protocol: str, spent: Spent) 
     # What one protocol takes and another refuses is left out.
     other.backend.effort = other.backend.verbosity = other.backend.reasoning_summary = None
     short = PROTOCOL_SHORT[protocol]
-    failed = [case.code for case in _ask_protocol(other, secret, spent)
-              if case.status == FAIL]
+    cases = _ask_protocol(other, secret, spent)
+    failed = [case.code for case in cases if case.status == FAIL]
     if failed:
         return Case("P", f"also {short}", WARN, f"{protocol} at the same address: "
                     f"{', '.join(failed)}", f"X{short.upper()}",
                     "the gateway does not speak this protocol there, or not all of it")
-    return Case("P", f"also {short}", OK, f"{protocol} at the same address works too")
+    # It speaks it; what it warned of there is said too, or "works too"
+    # would hide a ceiling ignored or a stream held back in that protocol.
+    warned = [case.code for case in cases if case.status == WARN]
+    return Case("P", f"also {short}", OK, f"{protocol} at the same address works too"
+                + (f", warning {', '.join(warned)} there" if warned else ""))
 
 
 def protocol(run: Run, config: Config, secret: str, *, all_protocols: bool) -> Spent:

@@ -94,6 +94,18 @@ the cache, so the bill is somewhat higher.
 python verify/probes/run_auto.py baseline --model claude-haiku-5-5 --repeat 3 --budget 3
 ```
 
+Against a local agent gateway instead -- OpenClaw's, say, whose agents
+answer on Chat Completions or on Responses -- `--gateway` names its base URL
+and `--model` one of its agents:
+
+```bash
+python verify/probes/run_auto.py gw --gateway http://127.0.0.1:18789/v1 --model openclaw/foundry --protocol openai_compat
+```
+
+The token is `FOUNDRY_VERIFY_KEY` or typed at the prompt, never the Anthropic
+key `foundry login` stored; each run says how many requests it made rather
+than what it cost ([D-208](../docs/decision-log.md)).
+
 Each project is a scaffold, a task, the commands a rule allows, and hidden
 tests. `foundry exec` gets the first three and is asked nothing; the hidden
 tests then judge what it left. `make_projects.py` writes the first set (a

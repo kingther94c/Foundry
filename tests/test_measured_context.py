@@ -56,8 +56,10 @@ def test_no_count_is_no_measurement():
 
 
 def test_the_limit_the_probe_set_now_fires():
-    """Probe F: counted at about 11,000, sent as 18,000, limit 12,000."""
+    """Probe F: counted at about 11,000, sent as 18,000, limit 12,000; its
+    first request counted at 5,000 (D-209)."""
     context = _context(compact_above_tokens=12_000)
+    context.measured(5_000)
     assert _plain(context) < 12_000 and not context.needs_compaction()
     context.measured(18_000)
     assert context.needs_compaction()
@@ -110,15 +112,18 @@ def test_a_session_compacts_on_the_provider_s_count(tmp_path):
 
     from test_compaction import _Model, _core, _summary_requests, call, turn
 
-    work = [replace(turn(call("r0", "read_file", {"path": "f0.txt"})), usage=Usage(17_000, 5)),
+    # The first request, what no compaction removes, is small (D-209).
+    work = [replace(turn(call("r0", "read_file", {"path": "f0.txt"})), usage=Usage(2_000, 5)),
+            replace(turn(call("r1", "read_file", {"path": "f1.txt"})), usage=Usage(17_000, 5)),
             turn(text="done")]
     model = _Model(work)
     runtime, session, repo = _core(tmp_path, [], max_context=20_000, reserve=0)
     runtime.backend = model
-    (repo / "f0.txt").write_text("small\n", encoding="utf-8")
+    for name in ("f0.txt", "f1.txt"):
+        (repo / name).write_text("small\n", encoding="utf-8")
     assert runtime.context.compaction_threshold() == 16_000
-    runtime.run_turn("read f0.txt")
-    assert _summary_requests(model) == [1]
+    runtime.run_turn("read f0.txt and f1.txt")
+    assert _summary_requests(model) == [2]
     # The count kept is the last work request's, not the summary request's.
     assert runtime.context._measured[0] == 10
 
