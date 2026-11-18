@@ -10,7 +10,9 @@
     python forecast_arm.py status                 what each arm has sealed, failed and spent
     python forecast_arm.py restore                in a fresh clone, whose arms hold only the
                                                   committed prediction.json files: copy the
-                                                  rest of cases/ back in (checked first)
+                                                  rest of cases/ back in (checked first); a
+                                                  snapshot that does not match is left out
+                                                  and named, and is not scored
 
 ANTHROPIC_API_KEY must be set. Only the anthropic client reads it; it is never printed or
 written. Each snapshot is one `python -m researchos forecast` call, with the arm's
@@ -101,6 +103,8 @@ def _matches(path: Path, digest: str) -> bool:
 
 
 def _checked_hashes() -> dict[str, str]:
+    """Every snapshot of inputs.sha256, each of which must match it: the arms are set up
+    from all of them or not at all."""
     hashes = _hashes()
     for rel, digest in hashes.items():
         if not _matches(HERE / rel, digest):
@@ -109,24 +113,37 @@ def _checked_hashes() -> dict[str, str]:
 
 
 def restore() -> int:
-    """In a fresh clone: put cases/ back into arms that git brought back without them."""
-    hashes = _checked_hashes()
-    copied = 0
-    for arm in ARMS:
-        for rel, digest in hashes.items():
-            case_dir = (HERE / rel).parent
+    """In a fresh clone: put cases/ back into arms that git brought back without them.
+
+    PLAN.md: lost cases are rebuilt at the same commit and must match inputs.sha256, and a
+    snapshot that does not is not scored. So a snapshot is restored on its own: one whose
+    rebuilt case.json does not match, or is missing, is left out and named, and the others
+    are restored (this stopped at the first that did not match). An arm's case.json that
+    does not match is never overwritten; its snapshot is left out too."""
+    copied, left_out = 0, []
+    for rel, digest in _hashes().items():
+        case_dir = (HERE / rel).parent
+        in_arms = [arm_dir(arm) / case_dir.name / "case.json" for arm in ARMS]
+        if any(path.exists() and not _matches(path, digest) for path in in_arms):
+            left_out.append(case_dir.name)
+            continue
+        if not _matches(HERE / rel, digest):
+            if not all(path.exists() for path in in_arms):
+                left_out.append(case_dir.name)
+            continue
+        for arm in ARMS:
             dest = arm_dir(arm) / case_dir.name
             dest.mkdir(parents=True, exist_ok=True)
             for source in sorted(case_dir.iterdir()):
                 target = dest / source.name
-                if target.exists():
-                    if source.name == "case.json" and not _matches(target, digest):
-                        raise SystemExit(f"{target} does not match inputs.sha256")
-                    continue
-                shutil.copy(source, target)
-                copied += 1
+                if not target.exists():
+                    shutil.copy(source, target)
+                    copied += 1
     print(f"{copied} files restored into " + " and ".join(arm_dir(arm).name for arm in ARMS)
           + "; no prediction.json was touched")
+    if left_out:
+        print(f"not restored, as it does not match inputs.sha256, and so not scored: "
+              f"{', '.join(sorted(left_out))}")
     return 0
 
 

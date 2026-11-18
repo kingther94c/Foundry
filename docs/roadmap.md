@@ -23,7 +23,7 @@
 | Auto mode on small projects | **done** | 2026-11-13, D-188 to D-191: six projects aimed at editing unattended; `exec` now patches by default |
 | Learning from other agents | **done** | 2026-11-13, D-192 to D-196: the prompt's working rules, edit-time syntax check, repeated-failure note and patch readings, each taken from codex, opencode, Cline, OpenHands, SWE-agent, aider or Anthropic's guidance; D-197, opencode's last turn when a budget runs out |
 | P5, Foundry at work | **paused** | ResearchOS v32 built on the real API ([D-187](decision-log.md)); stopped at the user's word on 2026-11-13; it resumes when they say so |
-| After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden). Landed: the plan and the documents held to the code (D-198), the verification kit under `verify/` (D-199), the OpenAI-family adapters reading a real gateway's shapes (D-200), three versions of ResearchOS rebuilt from history as probes (D-201), configuration files read as Windows saves them (D-202), a `doctor` that says what is so (D-203), `foundry checkup` with this machine, the configuration and the network (D-204), the protocol (D-205) and a task end to end ([D-206](decision-log.md)) |
+| After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden). Landed: the plan and the documents held to the code (D-198), the verification kit under `verify/` (D-199), the OpenAI-family adapters reading a real gateway's shapes (D-200), three versions of ResearchOS rebuilt from history as probes (D-201), configuration files read as Windows saves them (D-202), a `doctor` that says what is so (D-203), `foundry checkup` with this machine, the configuration and the network (D-204), the protocol (D-205) and a task end to end (D-206), the macro run scoring the snapshots that match and naming the rest ([D-207](decision-log.md)) |
 
 The suite collects 5,323 tests, which run green on a machine with no network
 and no credentials. This is the one place that figure is quoted, and
@@ -551,8 +551,8 @@ like a credential.
   closing note says which lever moved the numbers.
 - **P14 -- the macro run's scoring of 2026-12-07**, by 2026-11-30: a
   snapshot that cannot be rebuilt byte for byte is skipped and named, both
-  arms are scored on the same set, and the scripts get tests. Nothing is
-  rehearsed before the date.
+  arms are scored on the same set, and the scripts get tests
+  ([D-207](decision-log.md)). Nothing is rehearsed before the date.
 - **P15 -- a first contact with the corporate machine.** Configuration files
   in the encodings Windows editors write ([D-202](decision-log.md)); a `doctor`
   that says what is so ([D-203](decision-log.md)); and, at the user's word one
@@ -572,7 +572,8 @@ like a credential.
 
 Waiting on others: the corporate side, through what the user reports
 ([OQ-6](open-questions.md), [OQ-15](open-questions.md)), for P4; the user,
-for the copy of the macro run's inputs that its `restore` needs, for the runs
+for the copy of the macro run's inputs, without which a snapshot or more goes
+unscored ([D-207](decision-log.md)), for the runs
 against a real endpoint, which start in their own terminal, and for the word
 that resumes P5; and the calendar, for the two scorings above.
 

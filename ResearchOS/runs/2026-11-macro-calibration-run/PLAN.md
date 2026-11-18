@@ -274,3 +274,16 @@ gives the steps.
   2 both ways: as fixed above, and with `--resample cases`. Neither
   replaces the other.
 - The 2026-11-02 scoring is not redone; it keeps the one interval it gave.
+
+## Amendment, 2026-11-18, before the 2026-12-07 scoring
+
+- The rule is unchanged: a snapshot whose rebuilt cases do not match
+  `inputs.sha256` is not scored (Not committed, above). The scripts did not
+  follow it: `forecast_arm.py restore` stopped at the first snapshot that
+  did not match, so one would have kept every other from being scored.
+- Now `restore` leaves such a snapshot out and names it, and `secondary.py`
+  leaves it out of both arms, so that the two are scored on the same
+  snapshots, and lists it in `secondary-<date>.json` under `not_scored`.
+  `setup`, which made the arms, still takes every snapshot or none.
+- If the private copy is lost, 2026-10-30's snapshot is expected not to
+  match: its series have posted since. The 2026-11-02 scoring is not redone.

@@ -135,6 +135,13 @@ Run the same again on or after 2026-12-07 and on or after 2027-02-08. In a
 new environment: step 1, unpack the private copy, `python forecast_arm.py
 restore`, then `python secondary.py`.
 
+Without the private copy, rebuild the cases at the same commit (`prepare.py
+fetch` and `build`, as in step 2, but no `hashes`: `inputs.sha256` stays as
+committed), then `restore`. A snapshot whose rebuilt `case.json` does not
+match `inputs.sha256` -- 2026-10-30's, whose series have posted since, is
+expected not to -- is left out and named by `restore`, and `secondary.py`
+leaves it out of both arms and lists it under `not_scored`. Report that list.
+
 ## Report
 
 When a step ends the work for now, report:

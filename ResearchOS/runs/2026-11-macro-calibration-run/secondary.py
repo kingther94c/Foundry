@@ -19,7 +19,10 @@ What it writes to secondary-<today>.json holds no level and is committed:
   amendment of 2026-11-13);
 - every blend rule with --perspectives macro on each arm, without its per-key rows;
 - agreement --perspectives macro on each arm;
-- the snapshots any of whose calls was served by another model (forecast_arm.py).
+- the snapshots any of whose calls was served by another model (forecast_arm.py);
+- the snapshots not scored: PLAN.md scores no snapshot whose case.json does not match
+  inputs.sha256, as a case rebuilt after the first may not. One that does not match in
+  either arm is left out of both, so the arms are scored on the same snapshots.
 """
 
 from __future__ import annotations
@@ -64,6 +67,19 @@ def _trend(record: dict, sign: int) -> float:
     return 0.5 + 0.1 * sign * (1 if change > 0 else -1)
 
 
+def scoring_sets() -> tuple[dict[str, list[str]], list[str]]:
+    """Per arm, the sealed snapshots to score; and the snapshots not scored, those sealed
+    in an arm whose case.json there does not match inputs.sha256, left out of both arms."""
+    digests = {Path(rel).parent.name: digest for rel, digest in forecast_arm._hashes().items()}
+    sealed = {arm: forecast_arm._state(arm)[0] for arm in forecast_arm.ARMS}
+    not_scored = sorted({case_id for arm, ids in sealed.items() for case_id in ids
+                         if not forecast_arm._matches(
+                             forecast_arm.arm_dir(arm) / case_id / "case.json",
+                             digests[case_id])})
+    return ({arm: [c for c in ids if c not in not_scored] for arm, ids in sealed.items()},
+            not_scored)
+
+
 def summarize(records: list[dict]) -> dict:
     def mean(values):
         return sum(values) / len(values)
@@ -104,12 +120,15 @@ def main() -> int:
     for target in config["targets"]:
         prepare.fetch_fred(target["id"], folder=series)
 
+    to_score, not_scored = scoring_sets()
     summary = {"scored_on": today.isoformat(), "arms": {},
                "served_by_another_model": sorted(set().union(
-                   *(forecast_arm.fallbacks(arm) for arm in forecast_arm.ARMS)))}
+                   *(forecast_arm.fallbacks(arm) for arm in forecast_arm.ARMS))),
+               "not_scored": {"snapshots": not_scored,
+                              "reason": "case.json does not match inputs.sha256 (PLAN.md)"}}
     scores = {}
     for arm in forecast_arm.ARMS:
-        sealed, _, _ = forecast_arm._state(arm)
+        sealed = to_score[arm]
         root = work / f"arm-{arm}"
         for case_id in sealed:
             (root / case_id).mkdir(parents=True)
@@ -144,6 +163,8 @@ def main() -> int:
     path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8", newline="\n")
     counts = [f"{arm} {entry['score']['n']} keys" for arm, entry in summary["arms"].items()]
     print(f"wrote {path.name}: scored {', '.join(counts)}")
+    if not_scored:
+        print(f"not scored, as not matching inputs.sha256: {', '.join(not_scored)}")
     return 0
 
 
