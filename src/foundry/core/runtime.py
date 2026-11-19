@@ -141,8 +141,13 @@ HOOK_RULE = "hook.PreToolUse"
 
 @dataclass(slots=True)
 class Budget:
-    max_tool_rounds: int = 40
-    max_tool_calls: int = 200
+    # A task's rounds and calls (D-214): past twice the most any probe has
+    # taken, at the five calls to a round there have always been. 40 cut a
+    # seven-step build off in half its runs; codex and Claude Code set none,
+    # OpenHands 500 iterations -- but Foundry has no default ceiling on what a
+    # task spends, so these are what bound an unattended run.
+    max_tool_rounds: int = 100
+    max_tool_calls: int = 500
     max_tokens: int | None = None
     max_consecutive_failures: int = 4
 

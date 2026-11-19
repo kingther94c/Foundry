@@ -5,7 +5,7 @@ or against a gateway that speaks Chat Completions or Responses.
                                      [--repeat N] [--budget USD]
                                      [--projects DIR] [--out DIR]
                                      [--gateway URL [--protocol openai_compat|responses]]
-                                     [--verify COMMAND]
+                                     [--verify COMMAND] [--rounds N]
 
 Each project (written by make_projects_b.py, and made here when they are
 missing; or by make_projects_c.py, named with --projects) is copied to
@@ -34,6 +34,9 @@ many requests it made, as a subscription behind one counts them.
 --verify gives each run `foundry exec --verify COMMAND` (D-213): Foundry runs
 COMMAND itself when the model finishes as completed, and refuses the finish
 while it fails; each run says how many of its checks failed.
+
+--rounds sets each run's runtime.max_tool_rounds; left out, Foundry's own
+default applies. Each run says how many rounds it took.
 
 This spends money on your account. Run it yourself, in your own terminal.
 """
@@ -93,13 +96,28 @@ def backend(model, endpoint=None):
     return f'[backend]\n{where}model = "{model}"\nenv_key = "{live.VARIABLE}"\n\n'
 
 
+def home_config(src, model, endpoint=None, rounds=None):
+    """The config.toml of a run of the project at ``src``: the backend, the
+    project's own settings, its command rules, and ``rounds`` as the task's
+    round limit when given -- Foundry's default otherwise."""
+    rules = "".join(f'\n[[permissions]]\ntool = "run_command"\npattern = "{p}"\n'
+                    'decision = "allow"\nreason = "probe project"\n'
+                    for p in (src / "allow.txt").read_text(encoding="utf-8").split("\n") if p)
+    extra = (src / "extra.toml").read_text(encoding="utf-8")
+    runtime = "[runtime]\n" + (f"max_tool_rounds = {rounds}\n" if rounds is not None else "")
+    if extra.startswith("[runtime]\n"):
+        runtime += extra[len("[runtime]\n"):]
+        extra = ""
+    return backend(model, endpoint) + runtime + extra + rules
+
+
 def exec_argv(task, ws, mode=None, verify=None):
     """The `foundry exec` a run is."""
     return [sys.executable, "-m", "foundry", "exec", task, "--workspace", str(ws), "--json",
             *(["--mode", mode] if mode else []), *(["--verify", verify] if verify else [])]
 
 
-def one(src, out, model, mode, key, endpoint=None, verify=None):
+def one(src, out, model, mode, key, endpoint=None, verify=None, rounds=None):
     """Run the project at ``src`` in the new folder ``out``; its summary."""
     name = src.name
     ws = lay_out(src, out)
@@ -110,16 +128,8 @@ def one(src, out, model, mode, key, endpoint=None, verify=None):
 
     home = out / "home"
     home.mkdir()
-    rules = "".join(f'\n[[permissions]]\ntool = "run_command"\npattern = "{p}"\n'
-                    'decision = "allow"\nreason = "probe project"\n'
-                    for p in (src / "allow.txt").read_text(encoding="utf-8").split("\n") if p)
-    extra = (src / "extra.toml").read_text(encoding="utf-8")
-    runtime = "[runtime]\nmax_tool_rounds = 40\n"
-    if extra.startswith("[runtime]\n"):
-        runtime += extra[len("[runtime]\n"):]
-        extra = ""
-    (home / "config.toml").write_text(
-        backend(model, endpoint) + runtime + extra + rules, encoding="utf-8")
+    (home / "config.toml").write_text(home_config(src, model, endpoint, rounds),
+                                      encoding="utf-8")
     (home / "trusted.json").write_text(json.dumps({"trusted": [str(ws.resolve())]}),
                                        encoding="utf-8")
     quiet = {k: v for k, v in os.environ.items()
@@ -171,6 +181,7 @@ def one(src, out, model, mode, key, endpoint=None, verify=None):
         "tool_calls": len(tools), "tools": [e.get("tool") for e in tools],
         "rejected": rejected, "patch_failures": patch_failures,
         "compactions": sum(1 for e in events if e.get("kind") == "compacted"),
+        "rounds": sum(1 for e in events if e.get("kind") == "turn_started"),
         "checks_failed": sum(1 for e in events if e.get("kind") == "notice"
                              and str(e.get("text", "")).startswith("your check failed")),
         "hidden_exit": hidden.returncode, "hidden_tail": hidden.stdout[-1500:],
@@ -199,6 +210,9 @@ def main(argv=None):
                         help="what the gateway speaks (with --gateway)")
     parser.add_argument("--verify", default=None, metavar="COMMAND",
                         help="exec --verify COMMAND for every run (D-213)")
+    parser.add_argument("--rounds", type=int, default=None, metavar="N",
+                        help="runtime.max_tool_rounds for every run (Foundry's default when "
+                             "left out)")
     args = parser.parse_args(argv)
     endpoint = (args.protocol, args.gateway) if args.gateway else None
 
@@ -226,7 +240,8 @@ def main(argv=None):
             continue
         try:
             s = one(args.projects / name, run_dir / label, args.model, args.mode, key, endpoint,
-                    **({"verify": args.verify} if args.verify else {}))
+                    **({"verify": args.verify} if args.verify else {}),
+                    **({"rounds": args.rounds} if args.rounds is not None else {}))
         except Exception as exc:              # one project's failure does not stop the rest
             print(f"   failed to run: {exc!r}", flush=True)
             continue
@@ -238,14 +253,14 @@ def main(argv=None):
               f" | {s['tool_calls']} calls, {len(s['rejected'])} refused, "
               f"{len(s['patch_failures'])} patch failures, {s['compactions']} compactions"
               + (f", {s.get('checks_failed', 0)} checks failed" if args.verify else "")
-              + f" | {s.get('requests', 0)} requests, {priced}"
+              + f" | {s.get('rounds', 0)} rounds, {s.get('requests', 0)} requests, {priced}"
               + (f" | THE KEY IS IN {s['key_files']}" if s["key_files"] else ""), flush=True)
     passed = sum(1 for s in summaries if s["hidden_exit"] == 0)
     requests = sum(s.get("requests", 0) for s in summaries)
     (run_dir / "results.json").write_text(json.dumps(
         {"model": args.model, "endpoint": args.gateway or "anthropic",
          "protocol": args.protocol if args.gateway else "anthropic_messages",
-         "verify": args.verify,
+         "verify": args.verify, "rounds": args.rounds,
          "runs": len(summaries), "passed": passed, "requests": requests,
          "estimated_usd": round(spent, 4), "summaries": summaries}, indent=1), encoding="utf-8")
     print(f"{passed} of {len(summaries)} passed their hidden tests; {requests} requests; "

@@ -234,7 +234,7 @@ def test_a_trusted_repositorys_own_settings_still_apply(repo, tmp_path):
     repository's must still be read after it, where it is trusted."""
     _write(repo / ".foundry" / "config.toml", "[runtime]\nmax_tool_rounds = 5\n")
     untrusted = _wire(repo, tmp_path / "home", [])
-    assert untrusted.config.max_tool_rounds == 40
+    assert untrusted.config.max_tool_rounds == 100
     untrusted.session.close()
     home = tmp_path / "home2"
     _remember_trust(home, repo)

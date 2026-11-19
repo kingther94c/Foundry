@@ -329,6 +329,11 @@ starts once the context passes 80% of the window, or sooner with
 `auto_compact_token_limit = 200000` under `[runtime]`, as codex's
 `model_auto_compact_token_limit`.
 
+A task -- one message at the prompt, or one `exec` -- has 100 rounds of the
+model and 500 tool calls (`max_tool_rounds` and `max_tool_calls` under
+`[runtime]`). When either runs out, the model is asked once more, with only
+`finish` to call, to say what was done, what was checked and what is left.
+
 What the model shows of its reasoning appears dim under "thinking" before it
 acts: Claude's thinking summaries, the reasoning DeepSeek-style servers stream,
 and -- with `reasoning_summary = "auto"` under `[backend]` -- a Responses

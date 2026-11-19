@@ -218,8 +218,9 @@ class BackendConfig:
 class Config:
     backend: BackendConfig = field(default_factory=BackendConfig)
     mode: Mode = Mode.DEFAULT
-    max_tool_rounds: int = 40
-    max_tool_calls: int = 200
+    # Budget's own defaults (D-214).
+    max_tool_rounds: int = 100
+    max_tool_calls: int = 500
     max_output_bytes: int = 32_000
     # A ceiling, not a default: run_command keeps its own lower default and
     # clamps every request to this. Shipping it at the tool's own maximum leaves

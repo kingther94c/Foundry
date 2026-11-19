@@ -866,6 +866,46 @@ def test_the_probe_runner_gives_each_run_the_users_check(scripts, monkeypatch, t
     assert "--verify" not in runner.exec_argv("t", tmp_path)
 
 
+def test_the_probe_runner_sets_the_round_limit_only_when_told(scripts, monkeypatch, tmp_path,
+                                                              capsys):
+    """--rounds N is each run's runtime.max_tool_rounds; with none, the run's
+    config leaves it to Foundry's default, beside the project's own settings."""
+    import tomllib
+
+    runner = scripts("probes/run_auto")
+    src = tmp_path / "projects" / "a"
+    src.mkdir(parents=True)
+    (src / "allow.txt").write_text("python -m pytest*\n", encoding="utf-8")
+    (src / "extra.toml").write_text("[runtime]\nauto_compact_token_limit = 12000\n",
+                                    encoding="utf-8")
+
+    told = tomllib.loads(runner.home_config(src, "m", rounds=100))
+    left = tomllib.loads(runner.home_config(src, "m"))
+
+    assert told["runtime"] == {"max_tool_rounds": 100, "auto_compact_token_limit": 12000}
+    assert left["runtime"] == {"auto_compact_token_limit": 12000}
+    assert told["permissions"][0]["pattern"] == "python -m pytest*"
+
+    ran = []
+
+    def one(src, out, model, mode, key, endpoint=None, rounds=None):
+        ran.append(rounds)
+        return {"status": "completed", "hidden_exit": 0, "tool_calls": 2, "rejected": [],
+                "patch_failures": [], "compactions": 0, "rounds": 7,
+                "estimated_usd": 0.1, "key_files": []}
+
+    monkeypatch.setattr(runner, "one", one)
+    monkeypatch.setattr(runner.live, "obtain", lambda: "a-key-for-this-test")
+    where = ["--projects", str(tmp_path / "projects"), "--out", str(tmp_path / "out")]
+    assert runner.main(["more", "--rounds", "100", *where]) == 0
+    assert runner.main(["default", *where]) == 0
+
+    assert ran == [100, None]
+    assert "| 7 rounds, 0 requests" in capsys.readouterr().out
+    results = json.loads((tmp_path / "out" / "more" / "results.json").read_text(encoding="utf-8"))
+    assert results["rounds"] == 100
+
+
 def test_a_probe_run_s_home_names_the_endpoint_and_the_variable(scripts):
     import tomllib
 
