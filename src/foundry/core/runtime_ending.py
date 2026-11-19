@@ -10,8 +10,33 @@ from typing import Any
 
 from foundry.core.errors import FoundryError
 from foundry.core.events import Notice, StepStatus, TerminalStatus, Termination
+from foundry.core.policy.engine import Mode
+from foundry.core.policy.segmenter import segment_command
 from foundry.core.session import EventType
+from foundry.core.tools.command import MAX_TIMEOUT_S
 from foundry.core.tools.finish import ValidationClaim, verify_claims
+
+# The user's check (D-213): exec --verify, or runtime.verify_command. Foundry
+# runs it itself when the model finishes as completed; a failure refuses the
+# finish and the model goes on, told what it printed -- aider's auto-test and
+# a Stop hook that blocks, as Claude Code has it. At the last check, or with
+# no request left to fix anything in, the task ends partial instead.
+VERIFY_ATTEMPTS = 3
+VERIFY_REFUSED = (
+    "finish was not accepted: the user's check, `{command}`, ran as you finished and "
+    "failed ({how}) -- check {attempt} of {attempts}. Find the cause in what it printed, "
+    "fix it, and call finish again; if it cannot pass, finish with status partial and "
+    "say why.\n\n{output}")
+VERIFY_FAILED = "the user's check failed"
+
+
+def verify_problem(command: str) -> str:
+    """Why ``command`` cannot be the user's check, or "": a list of commands
+    is not one, for only the last one's exit code survives (D-213)."""
+    if len(segment_command(command).segments) > 1:
+        return ("it runs several commands, and only the last one's exit code survives "
+                "in PowerShell 5.1; name one command, or a script that runs them all")
+    return ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +69,14 @@ class TaskEnding:
         rejected = list(result.rejected)
         status, reason = result.status, result.reason
         summary = outcome.summary
+        if self._unverified:
+            # Its last check failed, or it had no request left to fix anything
+            # in: the finish ends the task, but not as completed (D-213).
+            rejected.append(self._unverified)
+            if status is TerminalStatus.COMPLETED:
+                status, reason = TerminalStatus.PARTIAL, VERIFY_FAILED
+        elif self._verified:
+            summary += f"\n\nChecked by Foundry as the task ended: {self._verified}."
 
         # Fresh Git evidence at finish. A model that moved HEAD -- committing
         # through a wrapper the breaker's argv scan cannot see -- would leave a
@@ -96,6 +129,61 @@ class TaskEnding:
                                   "step(s) not marked completed", level="warning"))
 
         return self._terminate(status, reason, summary, result_json=outcome.result_json)
+
+    def _verify_finish(self) -> str:
+        """The user's check, run as the model finishes as completed (D-213):
+        what the model is told when it failed and the task goes on, or "" when
+        the finish stands -- passed, not checked, or failed for the last time,
+        which ``_finalize`` then reports."""
+        command = self.verify_command
+        if (not command or self._finish.status is not TerminalStatus.COMPLETED
+                # A run that may change nothing has nothing to check, and a
+                # check may write (a test cache, a build).
+                or self.policy.read_only or self.policy.mode is Mode.PLAN):
+            return ""
+        self._verify_runs += 1
+        attempt = self._verify_runs
+        self._emit(Notice(f"the model finished: running your check, {command} "
+                          f"(check {attempt} of {VERIFY_ATTEMPTS})"))
+        tool = self.registry.get("run_command")
+        timeout = min(MAX_TIMEOUT_S, getattr(self.tool_ctx, "max_command_timeout_s",
+                                             MAX_TIMEOUT_S))
+        try:
+            op = tool.validate({"command": command, "timeout_s": timeout})
+            output = tool.execute(op, self.tool_ctx)
+        except FoundryError as exc:
+            meta, content = {}, f"$ {command}\nthe check could not be run: {exc}"
+        else:
+            meta, content = output.metadata, output.content
+        ordinal = meta.get("event_ordinal") or 0
+        if ordinal:
+            content += f"\n[event_id={ordinal}]"
+        passed = (meta.get("exit_code") == 0 and not meta.get("timed_out")
+                  and not meta.get("output_incomplete"))
+        how = ("passed" if passed
+               else f"timed out after {meta['timeout_s']}s" if meta.get("timed_out")
+               else "its output could not all be read" if meta.get("output_incomplete")
+               else f"exit code {meta['exit_code']}" if meta.get("exit_code") is not None
+               else "it could not be run")
+        last = attempt >= VERIFY_ATTEMPTS or self._last_turn is not None
+        verdict = "accepted" if passed else "partial" if last else "refused"
+        self._journal(EventType.VERIFY, {"command": command, "attempt": attempt,
+                                         "event_ordinal": ordinal, "outcome": how,
+                                         "finish": verdict})
+        if passed:
+            self._verified, self._unverified = f"{command} exited 0", ""
+            self._emit(Notice(f"your check passed: {command}"))
+            return ""
+        if last:
+            self._unverified = (f"the user's check, {command}, failed as the model finished "
+                                f"({how}; check {attempt} of {VERIFY_ATTEMPTS})")
+            self._emit(Notice(f"your check failed ({how}); the task ends partial",
+                              level="warning"))
+            return ""
+        self._emit(Notice(f"your check failed ({how}); the model is told and goes on",
+                          level="warning"))
+        return VERIFY_REFUSED.format(command=command, how=how, attempt=attempt,
+                                     attempts=VERIFY_ATTEMPTS, output=content)
 
     def _refresh_credentials(self) -> bool:
         """Re-acquire once per session, and only retry if the value changed.

@@ -90,6 +90,11 @@ class EventType:
     # The sessions the user's session_retention_days removed as this one
     # started (D-163), and those it left because they were in use.
     SESSIONS_PRUNED = "sessions_pruned"
+    # The user's check, run as the model finished as completed (D-213): the
+    # command, which check of the task it was, the command_exec record of its
+    # run, how it ended, and whether the finish was accepted, refused, or
+    # ended the task as partial.
+    VERIFY = "verify"
 
 
 # Types whose loss on a power failure would break the evidence chain: synced

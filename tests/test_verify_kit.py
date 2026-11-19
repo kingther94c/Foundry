@@ -838,6 +838,34 @@ def test_the_probe_runner_runs_against_a_gateway_with_a_token_of_its_own(
         "http://127.0.0.1:18789/v1", "responses", 12)
 
 
+def test_the_probe_runner_gives_each_run_the_users_check(scripts, monkeypatch, tmp_path, capsys):
+    """--verify is exec's (D-213), for every run; each says how many of its
+    checks failed."""
+    runner = scripts("probes/run_auto")
+    (tmp_path / "projects" / "a").mkdir(parents=True)
+    ran = []
+
+    def one(src, out, model, mode, key, endpoint=None, verify=None):
+        ran.append(verify)
+        return {"status": "completed", "hidden_exit": 0, "tool_calls": 2, "rejected": [],
+                "patch_failures": [], "compactions": 0, "checks_failed": 1,
+                "estimated_usd": 0.1, "key_files": []}
+
+    monkeypatch.setattr(runner, "one", one)
+    monkeypatch.setattr(runner.live, "obtain", lambda: "a-key-for-this-test")
+    assert runner.main(["checked", "--verify", "python -m pytest -q", "--projects",
+                        str(tmp_path / "projects"), "--out", str(tmp_path / "out")]) == 0
+
+    assert ran == ["python -m pytest -q"]
+    assert "0 compactions, 1 checks failed" in capsys.readouterr().out
+    results = json.loads((tmp_path / "out" / "checked" / "results.json")
+                         .read_text(encoding="utf-8"))
+    assert results["verify"] == "python -m pytest -q"
+    assert runner.exec_argv("t", tmp_path, "plan", "pytest")[-4:] == [
+        "--mode", "plan", "--verify", "pytest"]
+    assert "--verify" not in runner.exec_argv("t", tmp_path)
+
+
 def test_a_probe_run_s_home_names_the_endpoint_and_the_variable(scripts):
     import tomllib
 

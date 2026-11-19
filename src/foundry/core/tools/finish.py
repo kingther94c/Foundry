@@ -36,6 +36,14 @@ class ValidationClaim:
         }
 
 
+# What the model is told of the user's check (D-213): told only when the
+# finish is refused, it spent a request finding out what one run of the check
+# would have told it.
+VERIFY_NOTE = (
+    " When you finish with status completed, Foundry runs the user's check, "
+    "`{command}`, itself: if it fails, the finish is refused and you are shown "
+    "what it printed. Run it yourself before you finish.")
+
 RESULT_NOTE = (
     " This run asks for a result: pass it as `result`, a value matching the "
     "schema given for it, whenever status is completed (and with any other "
@@ -50,9 +58,15 @@ class Finish:
     # exec --output-schema (D-051): the shape the run's result must have,
     # already checked by json_schema.check_schema; None asks for no result.
     result_schema: Any = None
+    # The user's check (D-213), said in the description; "" for none.
+    verify_command: str = ""
 
     def schema(self) -> ToolSchema:
         schema = self._schema()
+        if self.verify_command:
+            schema = ToolSchema(name=schema.name, parameters=schema.parameters,
+                                description=schema.description
+                                + VERIFY_NOTE.format(command=self.verify_command))
         if self.result_schema is None:
             return schema
         result, definitions = embedded(self.result_schema, "#/properties/result")

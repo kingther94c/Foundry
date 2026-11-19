@@ -230,6 +230,9 @@ class Config:
     # deleting a developer's journals on a default they never chose is not a
     # change to make quietly.
     session_retention_days: int = 0
+    # A check Foundry runs itself when the model finishes a task as completed
+    # (D-213); "" for none. The user's to name, never a repository's.
+    verify_command: str = ""
     # Summary compaction before the context fills (D-040); off, a long task
     # ends partial(context window exhausted) as before.
     auto_compact: bool = True
@@ -514,6 +517,20 @@ def _apply(config: Config, data: dict[str, Any], layer: str, *,
         config.session_retention_days = value
         config.record("session_retention_days", value, layer)
 
+    if "verify_command" in runtime:
+        # Run by Foundry itself, with no rule or question in front of it
+        # (D-213): a repository or a client naming it would run a command of
+        # its choosing on the user's machine.
+        if tighten_only:
+            raise ConfigError(f"{layer} config may not set verify_command: a command Foundry "
+                              "runs unasked is yours to name; set it in your own config.toml")
+        value = runtime["verify_command"]
+        if not isinstance(value, str):
+            raise ConfigError("verify_command must be a command as a string, \"\" for none, "
+                              f"got {type(value).__name__}")
+        config.verify_command = value.strip()
+        config.record("verify_command", config.verify_command, layer)
+
     if "project_doc_max_bytes" in runtime:
         value = runtime["project_doc_max_bytes"]
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -702,7 +719,8 @@ def _apply_env(config: Config) -> None:
 # The runtime table's settings, for ``-c`` to check a name against: an
 # unknown one is a typo, not a setting nobody reads.
 _RUNTIME_KEYS = ("max_tool_rounds", "max_tool_calls", "max_output_bytes", "command_timeout_s",
-                 "session_retention_days", "auto_compact", "show_reasoning", "mode",
+                 "session_retention_days", "verify_command", "auto_compact",
+                 "show_reasoning", "mode",
                  "project_doc_max_bytes", "project_doc_fallback_filenames",
                  "auto_compact_token_limit", "file_opener", "terminal_title", "subagents",
                  "developer_instructions", "compact_prompt", "experimental_compact_prompt_file")

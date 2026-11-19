@@ -500,7 +500,13 @@ def evaluate(call) -> Decision:            # Decision = ALLOW | ASK(reason) | DE
   it also takes `result`, required with `completed` and checked against the
   schema by `core/json_schema.py` (a subset of JSON Schema; a schema using
   more is refused before the run); the result is carried by the termination
-  record and event and is what `exec` prints.
+  record and event and is what `exec` prints. With the user's check
+  (`exec --verify COMMAND` or `runtime.verify_command`,
+  [D-213](decision-log.md)) a `completed` finish first runs COMMAND, through
+  `run_command` as a recorded command: while it fails the finish is refused,
+  answered with what it printed, and the task goes on; the third failure, or
+  any on a budget's last request, ends the task `partial`. Plan mode and a
+  review run no check; the finish tool's description names it.
 - `update_plan(explanation?, plan)` ([D-037](decision-log.md)): replaces the
   session's plan (at most 20 one-line steps, at most one `in_progress`; empty
   clears it). Read-only and always allowed; the runtime keeps the plan, emits
@@ -712,7 +718,9 @@ class ModelBackend(Protocol):
   [D-127](decision-log.md); `sessions_pruned` for the sessions the user's
   `session_retention_days` removed as this one started, and those it left,
   [D-163](decision-log.md); said once the front end listens,
-  [D-168](decision-log.md)).
+  [D-168](decision-log.md); `verify` for each run of the user's check at a
+  finish, with the `command_exec` it was and whether the finish was accepted,
+  refused or ended the task partial, [D-213](decision-log.md)).
   An image
   is journaled by the id of the artifact that holds its bytes, written once
   however many requests repeat it ([D-045](decision-log.md)).

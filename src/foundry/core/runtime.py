@@ -323,6 +323,14 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
     # The sub-agent running for this runtime's spawn_agent call (D-141), None
     # otherwise: a cancel reaches it too.
     child: "AgentRuntime | None" = None
+    # The user's check, run as the model finishes as completed (D-213); ""
+    # for none. A sub-agent has none: its finish ends a part of the task.
+    verify_command: str = ""
+    # This task's checks so far; what the last one that passed showed, and
+    # why the finish that ended it is not completed, once that is so.
+    _verify_runs: int = 0
+    _verified: str = ""
+    _unverified: str = ""
 
     def __post_init__(self) -> None:
         # A backend that retries says so (D-085). Without this a 429 or a
@@ -422,6 +430,7 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
         self._compact_failed = False
         self._goal_wrap_up = False
         self._last_turn = None
+        self._verify_runs, self._verified, self._unverified = 0, "", ""
         self._turn_id = str(self.context.turn + 1)
 
         message = user_input
@@ -599,6 +608,15 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
                         break
                 self._dispatch(call)
                 if self._finish is not None:
+                    refused = self._verify_finish()
+                    if self._cancelled:
+                        return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
+                    if refused:
+                        # The user's check failed (D-213): the call is answered
+                        # as one refused, and the task goes on.
+                        self._finish = None
+                        self._reply(call, refused, is_error=True)
+                        continue
                     again = (self._stop_hooks(self._finish.summary or turn.text, continued)
                              if self.hooks is not None else "")
                     if not again:

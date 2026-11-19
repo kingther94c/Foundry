@@ -5,6 +5,7 @@ or against a gateway that speaks Chat Completions or Responses.
                                      [--repeat N] [--budget USD]
                                      [--projects DIR] [--out DIR]
                                      [--gateway URL [--protocol openai_compat|responses]]
+                                     [--verify COMMAND]
 
 Each project (written by make_projects_b.py, and made here when they are
 missing; or by make_projects_c.py, named with --projects) is copied to
@@ -29,6 +30,10 @@ OpenClaw's, with --model one of its agents): the token is FOUNDRY_VERIFY_KEY or
 typed at a prompt, never the Anthropic key `foundry login` stored. A gateway's
 tokens have no price here, so --budget does not stop it; each run says how
 many requests it made, as a subscription behind one counts them.
+
+--verify gives each run `foundry exec --verify COMMAND` (D-213): Foundry runs
+COMMAND itself when the model finishes as completed, and refuses the finish
+while it fails; each run says how many of its checks failed.
 
 This spends money on your account. Run it yourself, in your own terminal.
 """
@@ -88,7 +93,13 @@ def backend(model, endpoint=None):
     return f'[backend]\n{where}model = "{model}"\nenv_key = "{live.VARIABLE}"\n\n'
 
 
-def one(src, out, model, mode, key, endpoint=None):
+def exec_argv(task, ws, mode=None, verify=None):
+    """The `foundry exec` a run is."""
+    return [sys.executable, "-m", "foundry", "exec", task, "--workspace", str(ws), "--json",
+            *(["--mode", mode] if mode else []), *(["--verify", verify] if verify else [])]
+
+
+def one(src, out, model, mode, key, endpoint=None, verify=None):
     """Run the project at ``src`` in the new folder ``out``; its summary."""
     name = src.name
     ws = lay_out(src, out)
@@ -117,8 +128,7 @@ def one(src, out, model, mode, key, endpoint=None):
     env = {**quiet, "PYTHONPATH": str(UNDER_TEST / "src"), "FOUNDRY_HOME": str(home),
            live.VARIABLE: key}
     task = (src / "task.txt").read_text(encoding="utf-8").strip()
-    argv = [sys.executable, "-m", "foundry", "exec", task, "--workspace", str(ws), "--json",
-            *(["--mode", mode] if mode else [])]
+    argv = exec_argv(task, ws, mode, verify)
 
     began = time.time()
     done = subprocess.run(argv, cwd=str(out), env=env, capture_output=True, text=True,
@@ -161,6 +171,8 @@ def one(src, out, model, mode, key, endpoint=None):
         "tool_calls": len(tools), "tools": [e.get("tool") for e in tools],
         "rejected": rejected, "patch_failures": patch_failures,
         "compactions": sum(1 for e in events if e.get("kind") == "compacted"),
+        "checks_failed": sum(1 for e in events if e.get("kind") == "notice"
+                             and str(e.get("text", "")).startswith("your check failed")),
         "hidden_exit": hidden.returncode, "hidden_tail": hidden.stdout[-1500:],
         "changed": git(ws, "status", "--short").splitlines(),
         "usage": used, "requests": used["records"], "estimated_usd": live.cost(model, used),
@@ -185,6 +197,8 @@ def main(argv=None):
     parser.add_argument("--protocol", default="openai_compat",
                         choices=("openai_compat", "responses"),
                         help="what the gateway speaks (with --gateway)")
+    parser.add_argument("--verify", default=None, metavar="COMMAND",
+                        help="exec --verify COMMAND for every run (D-213)")
     args = parser.parse_args(argv)
     endpoint = (args.protocol, args.gateway) if args.gateway else None
 
@@ -211,7 +225,8 @@ def main(argv=None):
                   f"(pip install {' '.join(needs)})", flush=True)
             continue
         try:
-            s = one(args.projects / name, run_dir / label, args.model, args.mode, key, endpoint)
+            s = one(args.projects / name, run_dir / label, args.model, args.mode, key, endpoint,
+                    **({"verify": args.verify} if args.verify else {}))
         except Exception as exc:              # one project's failure does not stop the rest
             print(f"   failed to run: {exc!r}", flush=True)
             continue
@@ -222,13 +237,15 @@ def main(argv=None):
         print(f"   {s['status']} | hidden tests {'pass' if s['hidden_exit'] == 0 else 'FAIL'}"
               f" | {s['tool_calls']} calls, {len(s['rejected'])} refused, "
               f"{len(s['patch_failures'])} patch failures, {s['compactions']} compactions"
-              f" | {s.get('requests', 0)} requests, {priced}"
+              + (f", {s.get('checks_failed', 0)} checks failed" if args.verify else "")
+              + f" | {s.get('requests', 0)} requests, {priced}"
               + (f" | THE KEY IS IN {s['key_files']}" if s["key_files"] else ""), flush=True)
     passed = sum(1 for s in summaries if s["hidden_exit"] == 0)
     requests = sum(s.get("requests", 0) for s in summaries)
     (run_dir / "results.json").write_text(json.dumps(
         {"model": args.model, "endpoint": args.gateway or "anthropic",
          "protocol": args.protocol if args.gateway else "anthropic_messages",
+         "verify": args.verify,
          "runs": len(summaries), "passed": passed, "requests": requests,
          "estimated_usd": round(spent, 4), "summaries": summaries}, indent=1), encoding="utf-8")
     print(f"{passed} of {len(summaries)} passed their hidden tests; {requests} requests; "

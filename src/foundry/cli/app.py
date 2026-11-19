@@ -46,6 +46,7 @@ from foundry.cli.unattended import cmd_exec, cmd_record, cmd_review
 from foundry.core.errors import FoundryError
 from foundry.core.events import EXIT_CODES, TerminalStatus
 from foundry.core.policy.engine import Mode
+from foundry.core.runtime_ending import VERIFY_ATTEMPTS
 
 
 def cmd_completion(args: argparse.Namespace) -> int:
@@ -213,6 +214,11 @@ def build_parser() -> argparse.ArgumentParser:
     execute.add_argument("--output-schema", metavar="FILE",
                          help="a JSON Schema the run's result must match; the result is "
                               "printed as JSON, and written by -o")
+    execute.add_argument("--verify", metavar="COMMAND",
+                         help="a check Foundry runs itself when the model finishes as "
+                              "completed; while it fails, the model is shown why and goes "
+                              f"on, and after {VERIFY_ATTEMPTS} failed checks the run ends "
+                              "partial (runtime.verify_command)")
     _image_flag(execute)
     _config_flags(execute, modes=(Mode.DONT_ASK, Mode.PLAN, Mode.ACCEPT_EDITS),
                   default="accept_edits: patches go in unasked; a command still needs "

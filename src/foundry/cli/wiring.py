@@ -66,6 +66,7 @@ from foundry.core.resume import (
 )
 from foundry.core.retention import sweep
 from foundry.core.runtime import AgentRuntime, Budget
+from foundry.core.runtime_ending import verify_problem
 from foundry.core.session import AuditLog, EventType, SessionStore
 from foundry.core.skills import (
     Skills,
@@ -301,6 +302,12 @@ def build(workspace_path: Path, *, home: Path | None = None,
     if review and config.backend.review_model and "model" not in (overrides or {}):
         # codex's review_model (D-143): the review's whole run is on it.
         config.backend.model = config.backend.review_model
+    if review:
+        # A review changes nothing, so it has nothing to check (D-213).
+        config.verify_command = ""
+    problem = verify_problem(config.verify_command) if config.verify_command else ""
+    if problem:
+        raise ConfigError(f"verify_command {config.verify_command!r}: {problem}")
     _guard_credentials(config)
 
     current = capture_baseline(workspace.root)
@@ -542,6 +549,8 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
     sink = EventSink(redactor=default_redactor())
     sink.subscribe(renderer.handle)
 
+    # The model is told of the user's check before it finishes (D-213).
+    registry.get("finish").verify_command = config.verify_command
     runtime = AgentRuntime(
         backend=backend, registry=registry, policy=policy, context=context,
         tool_ctx=ToolContext(workspace=workspace, artifacts=session.artifacts,
@@ -570,6 +579,7 @@ def _assemble_with(workspace: Workspace, config: Config, trusted: bool, baseline
                        mcp={client.server.name: client for client in mcp.clients})
                if config.active_hooks() else None),
         start_sources=["resume" if state is not None else "startup"],
+        verify_command=config.verify_command,
     )
     # A cancel from another thread (foundry mcp-server, D-103) reaches a
     # running command, search or MCP call, which poll this, not only the next
@@ -811,6 +821,10 @@ def _config_args(args: argparse.Namespace, *, mode: Mode | None = None) -> dict:
     if chosen is not None:
         overrides["mode"] = chosen
     settings = parse_settings(args.config or [])
+    verify = getattr(args, "verify", None)
+    if verify is not None:
+        # exec --verify (D-213): -c runtime.verify_command, named.
+        settings.setdefault("runtime", {})["verify_command"] = verify
     # codex's --enable and --disable (D-144): -c features.NAME=true and =false.
     switched: dict[str, bool] = {}
     for flag, value in (("enable", True), ("disable", False)):
