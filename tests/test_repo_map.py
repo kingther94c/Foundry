@@ -434,13 +434,15 @@ def test_a_stub_file_can_be_outlined(tmp_path):
     assert _map(tmp_path, "api.pyi").content == "api.pyi\n    1 def f(x: int) -> str"
 
 
-def test_validate_takes_only_a_path():
+def test_validate_takes_a_path_and_a_depth():
     tool = RepoMap()
     op = tool.validate({})
     assert op.args == {"path": "."} and op.display == "map ." and op.target == "."
     # "" is the root since D-210, as list_files takes it.
     assert tool.validate({"path": ""}).args == {"path": "."}
-    for bad in ({"path": "   "}, {"path": 3}, {"path": "a", "depth": 2}):
+    # A depth since D-212, as list_files takes one.
+    assert tool.validate({"path": "a", "depth": 2}).args == {"path": "a", "depth": 2}
+    for bad in ({"path": "   "}, {"path": 3}, {"path": "a", "max_entries": 2}):
         with pytest.raises(InvalidToolCall, match="path must be|unknown argument"):
             tool.validate(bad)
 

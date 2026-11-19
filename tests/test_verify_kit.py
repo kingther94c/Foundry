@@ -61,7 +61,12 @@ def scripts(monkeypatch):
 def _files() -> list[Path]:
     return sorted(p for p in KIT.rglob("*") if p.is_file() and "__pycache__" not in p.parts
                   and "out" not in p.relative_to(KIT).parts[:1]
-                  and p.relative_to(KIT).parts[:2] != ("probes", "projects"))
+                  and not _generated(p.relative_to(KIT).parts))
+
+
+def _generated(parts: tuple[str, ...]) -> bool:
+    """A probe set the generators wrote, under probes/projects*: not the kit's own."""
+    return parts[:1] == ("probes",) and len(parts) > 2 and parts[1].startswith("projects")
 
 
 # -- the scenarios -----------------------------------------------------------
@@ -198,7 +203,7 @@ def test_the_kit_is_ascii_and_its_scripts_compile():
 def test_what_a_run_writes_is_ignored():
     ignored = (KIT / ".gitignore").read_text(encoding="utf-8").split()
 
-    assert {"out/", "probes/projects/"} <= set(ignored)
+    assert {"out/", "probes/projects/", "probes/projects-c/", "probes/projects-d/"} <= set(ignored)
 
 
 # -- the relay ---------------------------------------------------------------
@@ -893,3 +898,29 @@ def test_the_probe_runner_skips_a_project_whose_requirements_are_missing(
     assert ran == ["a", "c"]
     assert ("skipped: it needs no_such_module_for_this_test, which is not installed "
             "(pip install no_such_module_for_this_test)") in capsys.readouterr().out
+
+
+def test_the_fourth_sets_hidden_tests_fail_on_each_scaffold_and_pass_on_its_reference(
+        tmp_path, capsys):
+    """make_projects_d.py writes each project's scaffold and a reference
+    solution over it; check_c.py runs the hidden tests on both (D-211). A test
+    that passes on a scaffold judges nothing, and one that fails on the
+    reference cannot be passed."""
+    import subprocess
+
+    made = subprocess.run([sys.executable, str(KIT / "probes" / "make_projects_d.py"),
+                           str(tmp_path / "d")], capture_output=True, text=True,
+                          encoding="utf-8")
+    assert made.returncode == 0, made.stderr
+    names = sorted(p.name for p in (tmp_path / "d").iterdir())
+    assert names == ["o-money", "p-spec", "q-rootcause", "r-long"]
+    for name in names:
+        project = tmp_path / "d" / name
+        assert (project / "hidden_only").is_file() and (project / "reference").is_dir()
+        assert all(p.read_bytes().isascii() for p in project.rglob("*.py"))
+
+    assert _kit("probes/check_c").main([str(tmp_path / "d")]) == 0
+
+    out = capsys.readouterr().out
+    assert out.count("scaffold -> ") == 4 and out.count("reference -> ") == 4
+    assert "OK: 4 versions" in out

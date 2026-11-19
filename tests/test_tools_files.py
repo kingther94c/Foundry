@@ -41,9 +41,10 @@ def test_search_text_reports_matches(ctx):
     assert "src/app.py:1" in out.content
 
 
-def test_search_text_rejects_bad_regex(ctx):
-    with pytest.raises(InvalidToolCall, match="invalid regular expression"):
-        SearchText().validate({"query": "([unclosed"})
+def test_search_text_takes_a_query_that_is_no_regex_as_text(ctx):
+    # Refused until D-212: a model searching for `tax(` means the text.
+    op = SearchText().validate({"query": "([unclosed"})
+    assert op.args["literal"] and op.display.startswith("search '([unclosed' as text")
 
 
 def test_read_file_numbers_lines_and_records_digest(ctx):

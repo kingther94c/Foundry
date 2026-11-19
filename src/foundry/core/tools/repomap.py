@@ -370,13 +370,17 @@ class RepoMap:
                     "path": {"type": "string",
                              "description": "A directory or a .py file, workspace-relative. "
                                             "Defaults to the root."},
+                    "depth": {"type": "integer",
+                              "description": "For a directory, how many levels down to map "
+                                             "(1 is the directory itself); every level when "
+                                             "left out."},
                 },
                 "additionalProperties": False,
             },
         )
 
     def validate(self, args: dict[str, Any]) -> Operation:
-        unknown = set(args) - {"path"}
+        unknown = set(args) - {"path", "depth"}
         if unknown:
             raise InvalidToolCall(f"unknown argument(s): {', '.join(sorted(unknown))}")
         # "" is the root, as leaving it out is and as list_files takes it
@@ -386,8 +390,14 @@ class RepoMap:
             path = "."
         if not isinstance(path, str) or not path.strip():
             raise InvalidToolCall("path must be a non-empty string")
-        return Operation(tool=self.name, kind=self.kind, args={"path": path},
-                         display=f"map {path}", target=path)
+        # As list_files takes it (D-210): a GPT model sent repo_map one too (D-212).
+        depth = args.get("depth")
+        if depth is not None and (type(depth) is not int or depth < 1):
+            raise InvalidToolCall("depth must be a whole number, 1 or more")
+        levels = "" if depth is None else f", {depth} level{'s' if depth > 1 else ''}"
+        return Operation(tool=self.name, kind=self.kind,
+                         args={"path": path, **({} if depth is None else {"depth": depth})},
+                         display=f"map {path}{levels}", target=path)
 
     def execute(self, op: Operation, ctx: ToolContext) -> ToolOutput:
         try:
@@ -398,7 +408,7 @@ class RepoMap:
             return self._one(root, ctx)
         if not root.absolute.is_dir():
             raise ToolError(f"no such path: {op.args['path']}")
-        return self._tree(root, op.args["path"], ctx)
+        return self._tree(root, op.args["path"], ctx, op.args.get("depth"))
 
     def _read(self, full: Path, rel: str) -> FileOutline | str:
         """The file's outline, or why it has none."""
@@ -436,7 +446,7 @@ class RepoMap:
         return ToolOutput(content=body, truncated=truncated,
                           metadata={"files": 1, "shown": 1, "unparsed": 0, "incomplete": False})
 
-    def _walk(self, root, ctx: ToolContext):
+    def _walk(self, root, ctx: ToolContext, depth: int | None = None):
         """The Python files under ``root``, workspace-relative, sorted.
 
         Pruned like list_files, and of hidden directories too: a `.claude` or
@@ -447,6 +457,8 @@ class RepoMap:
             _prune(dirpath, dirnames)
             dirnames[:] = [d for d in dirnames if not d.startswith(".")
                            and d not in _SKIP_NAMES and not d.endswith(_SKIP_SUFFIXES)]
+            if depth is not None and len(Path(dirpath).relative_to(root.absolute).parts) + 1 >= depth:
+                dirnames[:] = []
             for filename in filenames:
                 if filename.endswith(".py"):
                     full = Path(dirpath) / filename
@@ -454,8 +466,9 @@ class RepoMap:
         found.sort()
         return found
 
-    def _tree(self, root, shown_path: str, ctx: ToolContext) -> ToolOutput:
-        files = self._walk(root, ctx)
+    def _tree(self, root, shown_path: str, ctx: ToolContext,
+              depth: int | None = None) -> ToolOutput:
+        files = self._walk(root, ctx, depth)
         if not files:
             return ToolOutput(content=f"(no Python files under {shown_path}; repo_map "
                                       "outlines Python only -- use list_files)",

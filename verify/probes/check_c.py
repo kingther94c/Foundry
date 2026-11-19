@@ -2,7 +2,9 @@
 and passes on the tree it landed in. python verify/probes/check_c.py [PROJECTS [NAME ...]]
 
 PROJECTS is where make_projects_c.py wrote them; by default, projects-c/ here.
-NAME limits the check to those projects. Only the hidden suite runs, on a copy
+The fourth set has the same layout -- its scaffold in repo/, a reference
+solution laid over it in reference/ -- and is checked the same way, with
+PROJECTS where make_projects_d.py wrote it. NAME limits the check to those projects. Only the hidden suite runs, on a copy
 of each tree with the project's beside/ next to it, as run_auto.py lays them
 out. A suite that passes on the tree before judges nothing, and one that fails
 on the tree the version landed in cannot be passed: either is a FAIL line and

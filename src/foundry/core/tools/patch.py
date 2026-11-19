@@ -148,12 +148,17 @@ def _at_at_hunk(lines: list[str], i: int, last: int, path: str) -> tuple["Hunk",
                 f"line in an @@ hunk for {path} must start with ' ', '-' or '+': {line!r}")
     if i < last and lines[i].strip() == END_OF_FILE:
         i += 1
-    if not changed:
-        raise PatchParseError(f"an @@ hunk for {path} changes nothing")
     if not any(line.strip() for line in old):
+        if not changed:
+            raise PatchParseError(f"an @@ hunk for {path} changes nothing")
         raise PatchParseError(
             f"an @@ hunk for {path} has no context or removed line to find its place by; "
             "give the lines around the change")
+    if not changed:
+        # Context lines alone say where the hunks after them are, as codex's
+        # apply_patch reads them: a GPT model wrote ` def parse(...)` so, six
+        # times in one run, before the hunk that changed the function (D-212).
+        return Hunk("\n".join(old), "\n".join(new), anchor=True), i
     return Hunk("\n".join(old), "\n".join(new)), i
 
 
@@ -161,6 +166,9 @@ def _at_at_hunk(lines: list[str], i: int, last: int, path: str) -> tuple["Hunk",
 class Hunk:
     search: str
     replace: str
+    # Context lines alone: found like any hunk, changing nothing, and the
+    # hunks after it are looked for after it (D-212).
+    anchor: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -289,6 +297,10 @@ def parse_patch(text: str) -> tuple[FileOp, ...]:
                     f"update of {path} has no {SEARCH_OPEN} hunk. Each change is "
                     f"{SEARCH_OPEN}, the exact lines to find, {DIVIDER}, the lines to put "
                     f"in their place, {REPLACE_CLOSE}")
+            if all(hunk.anchor for hunk in hunks):
+                raise PatchParseError(
+                    f"an @@ hunk for {path} changes nothing: a line starting with a space "
+                    "is kept as it is; mark a removed line '-' and an added one '+'")
             ops.append(FileOp("update", path, tuple(hunks), move_to=move_to))
 
         elif line.startswith(ADD):
@@ -402,19 +414,23 @@ def reindent(replacement: str, search: str, original_span: str) -> str | None:
     return "\n".join(out)
 
 
-def locate(haystack: str, needle: str) -> Located | list[str]:
+def locate(haystack: str, needle: str, first: bool = False) -> Located | list[str]:
     """Find a unique occurrence, loosening only in ways that cannot mislocate.
 
     Returns the span, or a list of near-miss lines to quote back. The >80%
     similarity rung aider offers is deliberately not implemented: a silently
     misplaced edit is worse than a failed one, and this tool tells the model
-    exactly what to fix.
+    exactly what to fix. With ``first``, the haystack is what follows an
+    anchor, and the first occurrence is the one meant, as in codex (D-212).
     """
     if not needle:
         return ["(empty search block)"]
 
+    def taken(count: int) -> bool:
+        return count == 1 or (first and count > 1)
+
     count = haystack.count(needle)
-    if count == 1:
+    if taken(count):
         start = haystack.index(needle)
         return Located(start, start + len(needle), "exact")
     if count > 1:
@@ -422,14 +438,14 @@ def locate(haystack: str, needle: str) -> Located | list[str]:
 
     # Rung 2: ignore trailing whitespace differences.
     norm_hay, norm_needle = _normalize_ws(haystack), _normalize_ws(needle)
-    if norm_hay.count(norm_needle) == 1:
+    if taken(norm_hay.count(norm_needle)):
         span = _map_span(haystack, norm_hay, norm_needle)
         if span:
             return Located(span[0], span[1], "trailing-whitespace")
 
     # Rung 3: ignore leading indentation differences.
     flat_hay, flat_needle = _strip_indent(haystack), _strip_indent(needle)
-    if flat_needle and flat_hay.count(flat_needle) == 1:
+    if flat_needle and taken(flat_hay.count(flat_needle)):
         span = _map_span(haystack, flat_hay, flat_needle)
         if span:
             return Located(span[0], span[1], "indentation")
@@ -885,11 +901,19 @@ class ApplyPatch:
             notes.append(f"mixed line endings normalized to "
                          f"{'CRLF' if line_ending == chr(13) + chr(10) else 'LF'}")
 
+        # Past an anchor, the hunks after it are looked for after it, and the
+        # first occurrence there is the one meant (D-212).
+        floor, anchored = 0, 0
         for index, hunk in enumerate(file_op.hunks, start=1):
             search = hunk.search.replace("\r\n", "\n")
-            result = locate(working, search)
+            result = locate(working[floor:], search, first=bool(anchored))
             if isinstance(result, list):
-                raise ToolError(self._explain(index, result, resolved.relative))
+                raise ToolError(self._explain(index, result, resolved.relative, anchored))
+            result = Located(result.start + floor, result.end + floor, result.rung)
+            rungs.append(result.rung)
+            if hunk.anchor:
+                floor, anchored = result.end, index
+                continue
 
             replacement = hunk.replace.replace("\r\n", "\n")
             if result.rung == "indentation":
@@ -904,7 +928,6 @@ class ApplyPatch:
                 replacement = adjusted
 
             working = working[:result.start] + replacement + working[result.end:]
-            rungs.append(result.rung)
 
         _refuse_broken_python(move_relative or resolved.relative, text, working)
         return _Planned(file_op, path, resolved.relative, working, line_ending, had_bom,
@@ -912,13 +935,15 @@ class ApplyPatch:
                         old_text=text)
 
     @staticmethod
-    def _explain(index: int, near: list[str], relative: str) -> str:
+    def _explain(index: int, near: list[str], relative: str, anchored: int = 0) -> str:
         if near and near[0].startswith("__AMBIGUOUS__"):
             count = near[0].removeprefix("__AMBIGUOUS__")
             return (f"hunk {index}: SEARCH text appears {count} times in {relative}; "
                     "include more surrounding lines to make it unique")
+        where = (f"{relative} after hunk {anchored}, whose context lines alone mark where "
+                 "the hunks after it are" if anchored else relative)
         if not near:
-            return f"hunk {index}: SEARCH text not found in {relative}"
+            return f"hunk {index}: SEARCH text not found in {where}"
         quoted = "\n".join(f"    {line}" for line in near)
-        return (f"hunk {index}: SEARCH text not found in {relative}. "
+        return (f"hunk {index}: SEARCH text not found in {where}. "
                 f"Nearest lines in the file:\n{quoted}")

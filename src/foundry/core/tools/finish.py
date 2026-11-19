@@ -127,8 +127,11 @@ class Finish:
         for item in raw_claims:
             if not isinstance(item, dict):
                 raise InvalidToolCall("each claim must be an object")
-            text = item.get("claim_text")
-            event_id = item.get("command_event_id")
+            # `claim` and `event_id` are the names a GPT model behind a gateway
+            # gave them, in the finish that was to end a run whose rounds had
+            # run out: refused, that run ended with no summary at all (D-212).
+            text = item.get("claim_text", item.get("claim"))
+            event_id = item.get("command_event_id", item.get("event_id"))
             if not isinstance(text, str) or not text.strip():
                 raise InvalidToolCall("claim_text must be a non-empty string")
             if isinstance(event_id, bool) or not isinstance(event_id, int):

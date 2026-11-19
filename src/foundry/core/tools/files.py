@@ -238,6 +238,9 @@ class SearchText:
                     "path": {"type": "string", "description": "Directory to search, workspace-relative."},
                     "glob": {"type": "string", "description": "Filename filter, e.g. *.py"},
                     "ignore_case": {"type": "boolean"},
+                    "max_results": {"type": "integer",
+                                    "description": f"Show at most this many matches "
+                                                   f"(never more than {MAX_SEARCH_MATCHES})."},
                 },
                 "required": ["query"],
                 "additionalProperties": False,
@@ -245,18 +248,26 @@ class SearchText:
         )
 
     def validate(self, args: dict[str, Any]) -> Operation:
-        _reject_unknown(args, {"query", "path", "glob", "ignore_case"})
+        _reject_unknown(args, {"query", "path", "glob", "ignore_case", "max_results"})
         query = _require_str(args, "query")
         path = _require_str(args, "path", ".") or "."
         glob = _require_str(args, "glob", "*")
         ignore_case = args.get("ignore_case", False)
         if not isinstance(ignore_case, bool):
             raise InvalidToolCall("ignore_case must be a boolean")
+        # A GPT model behind a gateway asked for max_results seven times in one
+        # run, and searched for `tax(` and `.total(` meaning the text (D-212).
+        limit = args.get("max_results", MAX_SEARCH_MATCHES)
+        if type(limit) is not int or limit < 1:
+            raise InvalidToolCall("max_results must be a whole number, 1 or more")
+        limit = min(limit, MAX_SEARCH_MATCHES)
         try:
             re.compile(query)
+            literal = ""
         except re.error as exc:
-            raise InvalidToolCall(f"invalid regular expression: {exc}") from exc
-        nested = _nested_quantifier(query)
+            # Not a regular expression: the text as written, and the result says so.
+            literal = str(exc)
+        nested = None if literal else _nested_quantifier(query)
         if nested is not None:
             # Refused rather than run: `re` has no step limit and holds the GIL
             # while backtracking, so one line of ~40 repeated characters against
@@ -268,10 +279,16 @@ class SearchText:
                 "without the nesting -- e.g. 'a+b' rather than '(a+)+b', or "
                 r"'^\s*\w+' rather than '(\s*\w+)+'."
             )
+        checked: dict[str, Any] = {"query": query, "path": path, "glob": glob,
+                                   "ignore_case": ignore_case}
+        if limit != MAX_SEARCH_MATCHES:
+            checked["max_results"] = limit
+        if literal:
+            checked["literal"] = literal
         return Operation(
-            tool=self.name, kind=self.kind,
-            args={"query": query, "path": path, "glob": glob, "ignore_case": ignore_case},
-            display=f"search {query!r} in {path} ({glob})", target=path,
+            tool=self.name, kind=self.kind, args=checked,
+            display=f"search {query!r}{' as text' if literal else ''} in {path} ({glob})",
+            target=path,
         )
 
     def execute(self, op: Operation, ctx: ToolContext) -> ToolOutput:
@@ -281,7 +298,10 @@ class SearchText:
             raise ToolError(str(exc)) from exc
 
         flags = re.IGNORECASE if op.args["ignore_case"] else 0
-        regex = re.compile(op.args["query"], flags)
+        literal = op.args.get("literal", "")
+        query = re.escape(op.args["query"]) if literal else op.args["query"]
+        regex = re.compile(query, flags)
+        limit = op.args.get("max_results", MAX_SEARCH_MATCHES)
         glob = op.args["glob"]
         matches: list[str] = []
         skipped: list[str] = []
@@ -340,7 +360,7 @@ class SearchText:
                         break
                     if regex.search(line):
                         total += 1
-                        if len(matches) < MAX_SEARCH_MATCHES:
+                        if len(matches) < limit:
                             # Indentation kept: a patch's context lines
                             # must match it, and a model given stripped lines
                             # read the file again to learn it (D-149).
@@ -370,13 +390,16 @@ class SearchText:
 
         meta = {"count": total, "skipped": len(skipped) + len(undecodable),
                 "undecodable": len(undecodable), "incomplete": timed_out}
+        head = (f"[not a regular expression ({literal}): searched for the text as "
+                "written]\n\n" if literal else "")
         if not matches:
-            return ToolOutput(content="(no matches)" + note, metadata={**meta, "count": 0})
+            return ToolOutput(content=head + "(no matches)" + note,
+                              metadata={**meta, "count": 0})
         body = "\n".join(matches)
-        if total > MAX_SEARCH_MATCHES:
-            body += (f"\n\n[{total} total matches, showing {MAX_SEARCH_MATCHES}. "
+        if total > limit:
+            body += (f"\n\n[{total} total matches, showing {limit}. "
                      "Narrow the query or restrict path/glob.]")
-        return ToolOutput(content=body + note, metadata=meta)
+        return ToolOutput(content=head + body + note, metadata=meta)
 
 
 def _byte_notes(raw: bytes) -> str:

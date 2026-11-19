@@ -138,6 +138,20 @@ ResearchOS's own tests imports it: `run_auto.py` skips a project whose
 each suite fails on the tree before the version and passes on the tree it
 landed in.
 
+```bash
+python verify/probes/make_projects_d.py verify/probes/projects-d
+```
+
+The fourth set is harder than the first two, which a GPT model behind a
+gateway nearly always passed ([D-211](../docs/decision-log.md)): money moved
+from floats to whole cents across ten modules, with old files still loading;
+thirteen rules in a spec whose visible tests pass long before it is done; a
+stale build whose cause is a fingerprint that loses boundaries, next to a
+known failure that is someone else's; and seven steps against a format
+document under a small compaction limit. Each project carries a reference
+solution, `reference/`, and is judged by its hidden tests alone, one of which
+runs the project's own tests. `check_c.py` takes this set too.
+
 A change is compared with what came before it by running the same projects
 on both: `VERIFY_FOUNDRY` names another checkout -- a `git archive` of the
 commit before -- whose `src/` is run instead of this one's.
@@ -156,6 +170,6 @@ file is put back byte for byte.
 ## What is never committed
 
 Run output, logs, results, generated projects: `verify/out/`,
-`verify/probes/projects/` and `verify/probes/projects-c/` are ignored. Nothing recorded from a real endpoint
+`verify/probes/projects/`, `verify/probes/projects-c/` and `verify/probes/projects-d/` are ignored. Nothing recorded from a real endpoint
 goes into the repository unless it has been read through first for anything
 shaped like a credential, and `tests/test_verify_kit.py` looks again.
