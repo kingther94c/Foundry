@@ -294,6 +294,12 @@ async def run_turn(user_input):
   count of the last request plus the estimate of what changed since, never
   less than the estimate alone. Masking, compaction and the overflow check
   use it; a compaction or a rewind drops the count until the next request.
+  A count more than half again past the most its request could hold --
+  three characters to the token, a token for each character outside ASCII,
+  the tools offered -- beyond what the provider adds to every request, is
+  not the request's size: an agent gateway counts every call it makes
+  behind one. That most, plus what the provider adds, is taken instead
+  ([D-215](decision-log.md)).
 - **Compaction by summary** ([D-040](decision-log.md)): masking cannot touch
   the last rounds, so once the projection is still past 80% of the window, the
   runtime asks the model for a handoff summary and the history becomes the

@@ -29,7 +29,7 @@ from typing import Any, Callable
 
 from foundry.core.backends.base import (ModelBackend, ReasoningComplete, TextDelta,
                                         TurnFinished, UsageUpdate)
-from foundry.core.context import ContextManager
+from foundry.core.context import ContextManager, schema_chars
 from foundry.core.conversation import (
     Message,
     ToolSchema,
@@ -284,6 +284,8 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
     _compact_failed: bool = False
     # Whether the session has been told compaction waits past its threshold (D-209).
     _compaction_wait_said: bool = False
+    # Whether the session has been told a count was past its request (D-215).
+    _overcount_said: bool = False
     # What a compaction asks for, as codex's compact_prompt (D-142); "" for
     # Foundry's own.
     compact_prompt: str = ""
@@ -556,18 +558,23 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
             except Cancelled:
                 return self._terminate(TerminalStatus.CANCELLED, "interrupted by user")
 
-            self.context.measured(turn.usage.input_tokens)
+            taken_as = self.context.measured(turn.usage.input_tokens)
+            self._say_overcount(turn.usage.input_tokens, taken_as)
             self._say_compaction_waits()
             self.context.append(turn.as_message())
             self.context.record_usage(turn.usage)
             self._emit(TokenCount(turn.usage, self.context.session_usage))
-            self._journal(EventType.TOKEN_USAGE, {
+            record: dict[str, Any] = {
                 "input_tokens": turn.usage.input_tokens,
                 "output_tokens": turn.usage.output_tokens,
                 # Already included in input_tokens; recorded separately so the
                 # report can tell cache reads from full-price input.
                 "cached_input_tokens": turn.usage.cached_input_tokens,
-            })
+            }
+            if taken_as is not None:
+                # Spent as counted; the context sized as this (D-215).
+                record["sized_as"] = taken_as
+            self._journal(EventType.TOKEN_USAGE, record)
             self._goal_spent(turn.usage)
 
             if not turn.tool_calls:
@@ -635,6 +642,17 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
                 # The last request, and no finish came of it.
                 return self._terminate(TerminalStatus.PARTIAL, self._last_turn,
                                        summary=turn.text.strip())
+
+    def _say_overcount(self, counted: int, taken_as: int | None) -> None:
+        """Once a session: the provider counted a request past what it could
+        hold, and the context is sized without that count (D-215)."""
+        if taken_as is None or self._overcount_said:
+            return
+        self._overcount_said = True
+        self._emit(Notice(
+            f"the provider counted {counted:,} input tokens for a request that holds at most "
+            f"about {taken_as:,}; a gateway may count every call it makes behind one, so the "
+            f"context is sized from what was sent where a count is that far past it"))
 
     def _say_compaction_waits(self) -> None:
         """Once a session: compaction waits past its threshold, and why (D-209)."""
@@ -732,6 +750,8 @@ class AgentRuntime(HookCalls, HistoryEditing, GoalAndNotices, TaskEnding):
             # The conversation's own request: the next is compared with it
             # (D-048). A compaction's request is outside the conversation.
             self.context.mark_sent()
+            # What its count is weighed against includes the tools (D-215).
+            self.context.tool_chars = schema_chars(request.tools)
         # The journal has to hold enough to rebuild the request, or "the
         # transcript is the source of truth" is only a slogan: replay, resume,
         # and any audit of what was actually sent all read this record. The

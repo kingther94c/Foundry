@@ -59,8 +59,11 @@ def test_a_context_counted_past_the_limit_waits_for_room_to_free():
     context.measured(22_000)
     assert context.estimated_context_tokens() >= 22_000
     assert not context.needs_compaction()
+    # What the provider counts grows with what the context holds (D-215).
+    context.append(Message.text(Role.ASSISTANT, "x" * 17_700))
     context.measured(27_900)
     assert not context.needs_compaction()
+    context.append(Message.text(Role.ASSISTANT, "x" * 600))
     context.measured(28_100)
     assert context.needs_compaction()
 
@@ -113,7 +116,10 @@ def test_never_past_the_point_the_window_counts_as_full():
 # --- in a session ----------------------------------------------------------------------------
 
 
-def _session(tmp_path, counts):
+def _session(tmp_path, counts, lines=()):
+    """Request i is counted as counts[i]; file i, read after it, has lines[i]
+    lines of sixty characters, so the next count can grow by what it adds
+    (D-215)."""
     from test_compaction import _Model, _core
     from test_resume import call, turn
 
@@ -124,7 +130,8 @@ def _session(tmp_path, counts):
     runtime.backend = model
     runtime.context.compact_above_tokens = 12_000
     for i in range(len(counts)):
-        (repo / f"f{i}.txt").write_text("small\n", encoding="utf-8")
+        size = lines[i] if i < len(lines) else 0
+        (repo / f"f{i}.txt").write_text("small\n" + ("a" * 59 + "\n") * size, encoding="utf-8")
     events = []
     runtime.events.subscribe(events.append)
     return runtime, model, events
@@ -133,7 +140,8 @@ def _session(tmp_path, counts):
 def test_a_gateway_that_counts_every_request_past_the_limit_compacts_once_there_is_room(tmp_path):
     from test_compaction import _summary_requests
 
-    runtime, model, events = _session(tmp_path, [22_000, 23_000, 24_000, 29_000])
+    runtime, model, events = _session(tmp_path, [22_000, 23_000, 24_000, 29_000],
+                                      lines=[50, 50, 200])
     runtime.run_turn("read the four files")
 
     # Not after every request: once the count passed 28,000.
@@ -147,7 +155,7 @@ def test_a_gateway_that_counts_every_request_past_the_limit_compacts_once_there_
 def test_where_the_limit_leaves_room_nothing_is_said(tmp_path):
     from test_compaction import _summary_requests
 
-    runtime, model, events = _session(tmp_path, [4_000, 13_000])
+    runtime, model, events = _session(tmp_path, [4_000, 13_000], lines=[450])
     runtime.run_turn("read the two files")
 
     assert _summary_requests(model) == [2]

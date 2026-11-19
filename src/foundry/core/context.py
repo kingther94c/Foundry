@@ -84,6 +84,45 @@ def _estimate_tokens(messages) -> int:
     return chars // 4
 
 
+# A provider's count is taken as the size of the request it answers only while
+# it is no more than half again the most that request could hold, beyond the
+# least the provider has counted past that most (D-215).
+COUNT_MARGIN = 0.5
+
+
+def _most_tokens(messages) -> int:
+    """The most a request's messages could count, generously: three
+    characters to the token, fewer than code or English takes; every
+    character outside ASCII a token of its own, as CJK text takes; four more a
+    message for its framing; an image as a provider charges for one. Reasoning
+    bound to the conversation goes back with the request, so it counts too."""
+    narrow = wide = images = 0
+    for message in messages:
+        for block in message.blocks:
+            if isinstance(block, TextBlock):
+                texts: tuple[str, ...] = (block.text,)
+            elif isinstance(block, ToolResultBlock):
+                texts, images = (block.content,), images + len(block.images)
+            elif isinstance(block, ToolUseBlock):
+                texts = (block.arguments, block.name)
+            elif isinstance(block, OpaqueBlock):
+                texts = (block.data,)
+            else:
+                texts, images = (), images + isinstance(block, ImageBlock)
+            for text in texts:
+                outside = len(text) - len(text.encode("ascii", "ignore"))
+                narrow += len(text) - outside
+                wide += outside
+    return -(-narrow // 3) + wide + 4 * len(messages) + IMAGE_TOKEN_ESTIMATE * images
+
+
+def schema_chars(tools) -> int:
+    """The characters of the tool definitions a request offers, which the
+    provider counts with it (D-215)."""
+    return sum(len(t.name) + len(t.description) + len(json.dumps(t.parameters))
+               for t in tools)
+
+
 def _masked(message: Message) -> Message:
     # A result already shorter than the notice is left alone: replacing it
     # would cost context, not save it. Its images go either way.
@@ -172,6 +211,12 @@ class ContextManager:
     # compacts, as its first request carries the history it resumed with.
     _floor: int | None = None
     _floor_pending: bool = True
+    # The characters of the tool definitions the conversation's requests
+    # offer (D-215); the runtime sets it with each request.
+    tool_chars: int = 0
+    # The least the provider has counted past the most a request could hold
+    # (D-215): what it adds to every request, if anything. None before a count.
+    _least_extra: int | None = None
     _turn_of_message: list[int] = field(default_factory=list)
     _turn: int = 0
     # The conversation's last request as sent, and the positions whose bound
@@ -358,14 +403,36 @@ class ContextManager:
 
     # -- budget -----------------------------------------------------------
 
-    def measured(self, input_tokens: int) -> None:
+    def measured(self, input_tokens: int) -> int | None:
         """The provider's count of the request just answered, beside this
         estimate of what it sent (D-190). Called before the reply joins the
-        history, so the projection is the one that was sent."""
-        if input_tokens > 0:
-            self._measured = (input_tokens, _estimate_tokens(self.project()))
-            if self._floor_pending:
-                self._floor, self._floor_pending = input_tokens, False
+        history, so the projection is the one that was sent.
+
+        A count is the request's size only while it is no more than half
+        again the most the request could hold, beyond the least the provider
+        has counted past that most (D-215). An agent gateway counts every
+        call it makes behind a request: against OpenClaw's, 229 of 532
+        requests were counted at 1.8 to 6 times what they could hold, the
+        other 303 at no more than it, and such counts set off 51 of 66
+        compactions while the history was under the limit. A count past it
+        is taken as that most, plus what the provider has always added; that
+        is returned, and None when the count stood."""
+        if input_tokens <= 0:
+            return None
+        projection = self.project()
+        most = _most_tokens(projection) + -(-self.tool_chars // 3)
+        ceiling = most + max(0, self._least_extra or 0)
+        stands = (self._least_extra is None
+                  or input_tokens <= ceiling + int(most * COUNT_MARGIN))
+        if stands:
+            extra = input_tokens - most
+            self._least_extra = (extra if self._least_extra is None
+                                 else min(self._least_extra, extra))
+        counted = input_tokens if stands else ceiling
+        self._measured = (counted, _estimate_tokens(projection))
+        if self._floor_pending:
+            self._floor, self._floor_pending = counted, False
+        return None if stands else counted
 
     def estimated_context_tokens(self) -> int:
         """Sizing for the overflow and compaction checks.

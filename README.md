@@ -327,7 +327,10 @@ conversation continues from the summary (`/compact` does it on request;
 `auto_compact = false` under `[runtime]` in `config.toml` turns it off). It
 starts once the context passes 80% of the window, or sooner with
 `auto_compact_token_limit = 200000` under `[runtime]`, as codex's
-`model_auto_compact_token_limit`.
+`model_auto_compact_token_limit`. The context's size is the provider's count
+of the last request plus what has been added since; a count far past what
+the request could hold -- an agent gateway may count every call it made
+behind one -- is set aside, and Foundry says so once.
 
 A task -- one message at the prompt, or one `exec` -- has 100 rounds of the
 model and 500 tool calls (`max_tool_rounds` and `max_tool_calls` under

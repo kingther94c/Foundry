@@ -114,14 +114,16 @@ def test_a_session_compacts_on_the_provider_s_count(tmp_path):
 
     # The first request, what no compaction removes, is small (D-209).
     work = [replace(turn(call("r0", "read_file", {"path": "f0.txt"})), usage=Usage(2_000, 5)),
-            replace(turn(call("r1", "read_file", {"path": "f1.txt"})), usage=Usage(17_000, 5)),
+            replace(turn(call("r1", "read_file", {"path": "f1.txt"})), usage=Usage(7_000, 5)),
             turn(text="done")]
     model = _Model(work)
-    runtime, session, repo = _core(tmp_path, [], max_context=20_000, reserve=0)
+    runtime, session, repo = _core(tmp_path, [], max_context=8_000, reserve=0)
     runtime.backend = model
-    for name in ("f0.txt", "f1.txt"):
-        (repo / name).write_text("small\n", encoding="utf-8")
-    assert runtime.context.compaction_threshold() == 16_000
+    # f0.txt is what the second count grew by: a count is weighed against
+    # what its request holds (D-215).
+    (repo / "f0.txt").write_text(("a" * 59 + "\n") * 250, encoding="utf-8")
+    (repo / "f1.txt").write_text("small\n", encoding="utf-8")
+    assert runtime.context.compaction_threshold() == 6_400
     runtime.run_turn("read f0.txt and f1.txt")
     assert _summary_requests(model) == [2]
     # The count kept is the last work request's, not the summary request's.
