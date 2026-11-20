@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from rich.text import Text
 
 from foundry.cli.render import safe, sanitize
-from foundry.core.context import SUMMARY_PREFIX
+from foundry.core.context import is_summary
 from foundry.core.conversation import ImageBlock, Role, TextBlock, ToolUseBlock
 from foundry.core.errors import FoundryError
 
@@ -58,7 +58,7 @@ def show_conversation(wiring: "Wiring") -> None:
 
 def _user(console, message, typed: dict[str, str]) -> None:
     text = message.text_content
-    if text.startswith(SUMMARY_PREFIX):
+    if is_summary(text):
         console.print("[dim](what came before was compacted into a summary)[/dim]")
         return
     lines = typed.get(text, text).splitlines()

@@ -57,13 +57,22 @@ COMPACT_USER_FRACTION = 0.1
 COMPACT_SUMMARY_FRACTION = 0.15
 # Less than this left of the user's share is not worth a cut-down message.
 _MIN_KEPT_CHARS = 200
+# How a summary begins, the same since D-040: what tells one from the user's
+# own messages, in a journal written before the rest of the prefix changed too.
+SUMMARY_MARK = "This conversation was compacted to free context."
 SUMMARY_PREFIX = (
-    "This conversation was compacted to free context. Earlier replies and tool "
-    "output are gone; the user's messages from before it are kept above, and "
-    "below is the summary you wrote of the work so far. Re-read a file before "
-    "patching it, and run a command again rather than trusting its remembered "
-    "output.\n\n"
+    SUMMARY_MARK + " Earlier replies and tool output are gone; the user's "
+    "messages from before it are kept above, and below is the summary you wrote "
+    "of the work so far. Open the files it names for the next step; what other "
+    "files held is summarised, so read them again only where the work needs more "
+    "than the summary gives. Re-read a file before patching it, and run a command "
+    "again rather than trusting its remembered output.\n\n"
 )
+
+
+def is_summary(text: str) -> bool:
+    """Whether a user message is a compaction's summary (D-040, D-216)."""
+    return text.startswith(SUMMARY_MARK)
 
 
 def _estimate_tokens(messages) -> int:
@@ -526,7 +535,7 @@ class ContextManager:
             if message.role is not Role.USER:
                 continue
             text = message.text_content
-            if not text.strip() or text.startswith(SUMMARY_PREFIX):
+            if not text.strip() or is_summary(text):
                 continue
             if len(text) > budget:
                 if budget >= _MIN_KEPT_CHARS or not kept:

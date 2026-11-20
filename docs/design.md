@@ -304,7 +304,10 @@ async def run_turn(user_input):
   the last rounds, so once the projection is still past 80% of the window, the
   runtime asks the model for a handoff summary and the history becomes the
   user's own messages (newest first within 10% of the window) plus the summary
-  (at most 15%, with the plan appended). `/compact [focus]` does it on request,
+  (at most 15%, with the plan appended). The summary names the files the
+  next step opens and writes down what later steps need from the others,
+  and the note before it says to read others again only where the work
+  needs more ([D-216](decision-log.md)). `/compact [focus]` does it on request,
   and a summary no smaller than what it replaced is shown as such
   ([D-184](decision-log.md));
   `runtime.auto_compact = false` turns the automatic one off, and

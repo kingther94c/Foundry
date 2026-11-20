@@ -38,7 +38,7 @@ from foundry.cli.session_settings import (
 )
 from foundry.core.commands import PROMPTS, builtin_prompt, expand, usage_hint
 from foundry.core.config_sections import TERMINAL_TITLE_ITEMS, title_items
-from foundry.core.context import SUMMARY_PREFIX
+from foundry.core.context import is_summary
 from foundry.core.conversation import Message, Role, TextBlock
 from foundry.core.errors import Cancelled, ConfigError, FoundryError, PromptError, ToolError
 from foundry.core.events import Notice
@@ -792,7 +792,7 @@ def rewind_points(history: list[Message]) -> list[int]:
     the conversation, or its last compaction, began."""
     start = 0
     for index, message in enumerate(history):
-        if message.role is Role.USER and message.text_content.startswith(SUMMARY_PREFIX):
+        if message.role is Role.USER and is_summary(message.text_content):
             start = index + 1
     return [index for index in range(start, len(history))
             if history[index].role is Role.USER

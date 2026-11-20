@@ -23,9 +23,9 @@
 | Auto mode on small projects | **done** | 2026-11-13, D-188 to D-191: six projects aimed at editing unattended; `exec` now patches by default |
 | Learning from other agents | **done** | 2026-11-13, D-192 to D-196: the prompt's working rules, edit-time syntax check, repeated-failure note and patch readings, each taken from codex, opencode, Cline, OpenHands, SWE-agent, aider or Anthropic's guidance; D-197, opencode's last turn when a budget runs out |
 | P5, Foundry at work | **paused** | ResearchOS v32 built on the real API ([D-187](decision-log.md)); stopped at the user's word on 2026-11-13; it resumes when they say so |
-| After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden). Landed: the plan and the documents held to the code (D-198), the verification kit under `verify/` (D-199), the OpenAI-family adapters reading a real gateway's shapes (D-200), three versions of ResearchOS rebuilt from history as probes (D-201), configuration files read as Windows saves them (D-202), a `doctor` that says what is so (D-203), `foundry checkup` with this machine, the configuration and the network (D-204), the protocol (D-205) and a task end to end (D-206), the macro run scoring the snapshots that match and naming the rest (D-207), Foundry run against the user's local OpenClaw gateway (D-208) and what that found: compaction that waited for nothing (D-209) and the tool calls a GPT model sends (D-210), a fourth probe set harder than the first two (D-211) and what it found (D-212), a check Foundry runs itself before it accepts `finish` (D-213), a task's budget of 100 rounds and 500 calls (D-214), and a context no longer sized by a count past its request ([D-215](decision-log.md)) |
+| After P11, P12-P17 | **under way** | 2026-11-15, [D-198](decision-log.md): agent capability first, within US$30 of real API use; [After P11](#after-p11-2026-11-15-measure-then-harden). Landed: the plan and the documents held to the code (D-198), the verification kit under `verify/` (D-199), the OpenAI-family adapters reading a real gateway's shapes (D-200), three versions of ResearchOS rebuilt from history as probes (D-201), configuration files read as Windows saves them (D-202), a `doctor` that says what is so (D-203), `foundry checkup` with this machine, the configuration and the network (D-204), the protocol (D-205) and a task end to end (D-206), the macro run scoring the snapshots that match and naming the rest (D-207), Foundry run against the user's local OpenClaw gateway (D-208) and what that found: compaction that waited for nothing (D-209) and the tool calls a GPT model sends (D-210), a fourth probe set harder than the first two (D-211) and what it found (D-212), a check Foundry runs itself before it accepts `finish` (D-213), a task's budget of 100 rounds and 500 calls (D-214), a context no longer sized by a count past its request (D-215), and a compaction's summary that names what the next step reads ([D-216](decision-log.md)) |
 
-The suite collects 5,387 tests, which run green on a machine with no network
+The suite collects 5,394 tests, which run green on a machine with no network
 and no credentials. This is the one place that figure is quoted, and
 `tests/test_docs_truth.py` holds it to what a full run collects. From D-036 to
 D-181 every feature was verified only against scripted backends: the local
@@ -550,7 +550,8 @@ like a credential.
   accepts `finish` ([D-213](decision-log.md), `exec --verify`); and a round
   limit the long probes do not run out of ([D-214](decision-log.md)); and a
   context sized from what was sent where a gateway counts more than its
-  request ([D-215](decision-log.md)). One thing changes at a time; the metric, the number of
+  request ([D-215](decision-log.md)); and a compaction's summary that
+  names the files the next step opens ([D-216](decision-log.md)). One thing changes at a time; the metric, the number of
   runs and when to stop are written down before a run; each mechanism starts
   from what two or three popular agents do ([D-192](decision-log.md)); and a
   closing note says which lever moved the numbers.
